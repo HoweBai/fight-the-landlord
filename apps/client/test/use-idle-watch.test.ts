@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { GameClient } from '../src/net/socket';
 import { startIdleWatch, IDLE_TIMEOUT_MS } from '../src/composables/useIdleWatch';
+import { connectionDeadCopy } from '../src/net/connection-copy';
 import { FakeSocket, playerViewFixture, serverMessage } from './helpers/fake-socket';
 import { triggerAppHide, triggerAppShow } from './helpers/uni-stub';
 
@@ -205,6 +206,63 @@ describe('useIdleWatch', () => {
     vi.advanceTimersByTime(60 * 60 * 1000); // 1h
     expect(socket.disconnectCalls).toBe(0);
 
+    client.destroy();
+  });
+});
+
+/**
+ * P0-4：空闲断连**不得**把客户端卡进「永不重连」。
+ *
+ * 机制：`socket.disconnect()`（socket.io）会置 `skipReconnect = true` —— 自动重连就此
+ * 停摆，而旧的 `GameClient.disconnect()` 只留相位 `reconnecting`：NoticeStack 的内置
+ * 重连入口只在 `dead` 出现 ⇒ 大厅用户看到「重连中」却永远不会重连，`room.match` 等
+ * 请求一直缓冲。
+ *
+ * 判据：空闲挂起后相位 = `dead` + 死因 `idle`（可重试），用户点「重新连接」直达
+ * `client.retryConnect()` → `socket.connect()`；对局中（大厅 vs 牌桌两种页面状态）豁免。
+ */
+describe('P0-4：空闲挂起后的重连出口', () => {
+  it('大厅空闲超时 ⇒ dead/idle（可重试），不是停在 reconnecting', () => {
+    const socket = new FakeSocket();
+    const client = makeClient(socket);
+    socket.emitConnect();
+
+    const phases: string[] = [];
+    client.onConnectionState((s) => phases.push(`${s.phase}:${s.deadReason ?? '-'}`));
+
+    const ctrl = startIdleWatch({ client, isInGame: () => false, now: () => Date.now() });
+    vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 1000);
+
+    const state = client.connectionState;
+    expect(state.phase).toBe('dead');
+    expect(state.deadReason).toBe('idle');
+    // 重连入口（NoticeStack / ConnectionOverlay 共用 connectionDeadCopy）必须可用。
+    expect(connectionDeadCopy(state).canRetry).toBe(true);
+    // 中间不得闪一下 reconnecting：它会让 UI 显示「重连中」，而自动重连已被禁用。
+    expect(phases).toEqual(['dead:idle']);
+
+    client.retryConnect();
+    expect(socket.connectCalls).toBeGreaterThanOrEqual(1);
+    expect(client.connectionState.phase).toBe('reconnecting');
+    expect(client.connectionState.deadReason).toBeNull();
+
+    ctrl.stop();
+    client.destroy();
+  });
+
+  it('对局中（view/roomCode 非空）⇒ 空闲不断连，相位保持 connected', () => {
+    const socket = new FakeSocket();
+    const client = makeClient(socket);
+    socket.emitConnect();
+
+    const view = playerViewFixture({ state: 'playing', seat: 0 });
+    const ctrl = startIdleWatch({ client, isInGame: () => view !== null, now: () => Date.now() });
+    vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 10_000);
+
+    expect(socket.disconnectCalls).toBe(0);
+    expect(client.connectionState.phase).toBe('connected');
+
+    ctrl.stop();
     client.destroy();
   });
 });

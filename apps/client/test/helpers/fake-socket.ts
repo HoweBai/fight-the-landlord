@@ -89,7 +89,15 @@ export class FakeSocket implements SocketLike {
 
   disconnect(): void {
     this.disconnectCalls += 1;
+    const wasConnected = !this.disconnected;
     this.disconnected = true;
+    /**
+     * 与 socket.io-client 4.8.4 的真实行为对齐（`socket.js` 的 `disconnect()`：
+     * `if (this.connected) onclose('io client disconnect')`）—— 主动断开**同步**派发
+     * socket 级 `disconnect` 事件。漏掉它，`GameClient` 的断连处置在测试里永远不跑，
+     * 「主动断开后的连接相位」这类判据只能假绿。
+     */
+    if (wasConnected) this.handlers.get('disconnect')?.('io client disconnect');
   }
 
   get connected(): boolean {

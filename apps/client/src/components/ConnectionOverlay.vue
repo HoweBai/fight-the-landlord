@@ -6,10 +6,12 @@
  *    带上 Manager 报告的尝试次数；
  *  - `dead`：全屏遮罩 + 居中卡片，阻断一切牌桌操作（链路已死，点什么都送不出去）。
  *
- * 终态有三种死因（`ConnectionState.deadReason`），标题/正文/动作策略统一由
+ * 终态有四种死因（`ConnectionState.deadReason`），标题/正文/动作策略统一由
  * `net/connection-copy.ts#connectionDeadCopy` 决定（**单一真源**，本组件只呈现）：
  *  - `give_up`：自动重连 `RECONNECT_GIVE_UP_ATTEMPTS` 次（现 22，退避窗口 ≈ 6 分钟）
  *    仍失败 → 给「重新连接」；
+ *  - `idle`（P0-4）：大厅空闲 25 分钟主动挂起（socket.io 主动断开禁用自动重连）
+ *    → 同样给「重新连接」；
  *  - `server_rejected`：服务端终止性踢线。
  *    · `11003` 封禁：**不给重试**（再连也必被拒），给「重新登录」+「返回大厅」；文案与
  *      登录路径同源（`copy.ts` 的 K1 全串），不在这里另造；

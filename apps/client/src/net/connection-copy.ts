@@ -40,14 +40,16 @@ const RATE_LIMITED_MESSAGE = '同一网络的连接数已达上限。请关闭�
 /**
  * 终态（`phase === 'dead'`）的标题/正文/动作策略。
  *
- * `canRetry`：give-up / 无码踢线（空闲踢线可恢复）/ 10006 并发上限 / 10008 端闸 /
- * 10007 上游临时不可用；
+ * `canRetry`：give-up / 空闲挂起（P0-4）/ 无码踢线（空闲踢线可恢复）/ 10006 并发上限 /
+ * 10008 端闸 / 10007 上游临时不可用；
  * `canRelogin`：`session_expired` 与**所有** `server_rejected`（再次被拒时的登录出口）。
  */
 export function connectionDeadCopy(state: ConnectionState): ConnectionCopy {
   const rejected = state.deadReason === 'server_rejected';
   const canRetry =
     state.deadReason === 'give_up' ||
+    // P0-4：空闲挂起是**用户动作可恢复**的主动断开（不是网络故障），必须给重连入口。
+    state.deadReason === 'idle' ||
     (rejected &&
       (state.deadCode === null ||
         state.deadCode === ErrCode.RATE_LIMITED ||
@@ -55,6 +57,14 @@ export function connectionDeadCopy(state: ConnectionState): ConnectionCopy {
         state.deadCode === ErrCode.UPSTREAM_UNAVAILABLE));
   const canRelogin = state.deadReason === 'session_expired' || rejected;
 
+  if (state.deadReason === 'idle') {
+    return {
+      title: '连接已暂停',
+      message: '长时间未操作，连接已暂停。点「重新连接」即可继续。',
+      canRetry: true,
+      canRelogin: false,
+    };
+  }
   if (state.deadReason === 'session_expired') {
     return {
       title: '登录已过期',

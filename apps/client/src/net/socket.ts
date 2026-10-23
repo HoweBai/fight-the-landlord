@@ -151,7 +151,7 @@ export interface ReconnectReason {
  */
 export type ConnectionPhase = 'connected' | 'reconnecting' | 'dead';
 
-export type ConnectionDeadReason = 'give_up' | 'server_rejected' | 'session_expired';
+export type ConnectionDeadReason = 'give_up' | 'server_rejected' | 'session_expired' | 'idle';
 
 export interface ConnectionState {
   phase: ConnectionPhase;
@@ -468,22 +468,36 @@ export class GameClient {
     this.attachSocket();
   }
 
+  /**
+   * P0-4：空闲挂起标志。`disconnect()` 主动断开期间置位 ⇒ `handleSocketDisconnect`
+   * **不**把相位改回 `reconnecting`（socket.io 此刻已置 `skipReconnect`，那个相位
+   * 永远等不到自动重连）；`retryConnect()` / `connect()` 复位。
+   */
+  private idleSuspended = false;
+
   /** 建立连接（socket.io 会自动重连，这里只负责 lifecycle 语义）。 */
   connect(): void {
+    this.idleSuspended = false;
     this.socket.connect();
   }
 
   /**
-   * 主动断开底层 socket（不销毁会话，重连链由 socket.io 接管）。
+   * 空闲挂起（`useIdleWatch` 的唯一调用点）：断开底层 socket，并**显式提供重连出口**。
    *
-   * 与 `destroy()` 的区别：`destroy()` 会清空所有事件订阅 + 销毁 socket，是彻底结束；
-   * 本方法只断开连接（等同 `socket.disconnect()`），让 socket.io 走自动重连。
+   * ⚠️ P0-4：socket.io 的 `socket.disconnect()` 会置 `skipReconnect = true` ——
+   * **自动重连就此被禁用**（旧注释「重连链由 socket.io 接管」是错误归因）。若只断开
+   * 不判死，相位会停在 `reconnecting`：大厅的重连入口只在 `dead` 出现 ⇒ 用户看到
+   * 「重连中」却永远不重连，`room.match` 等请求一直缓冲。
    *
-   * 用途：`useIdleWatch` 在「非对局 + 25min 空闲」时调用——断开后引擎层链路归零，
-   * socket.io 自动重连，重连成功触发 `connect` 事件（其中 `touchActivity()` 重置计时）。
+   * 因此这里主动判 `dead` + 死因 `idle`（`connectionDeadCopy` 给「重新连接」出口），
+   * 用户点它 → `retryConnect()` → `socket.connect()`，回到正常重连链。
+   * `idleSuspended` 门住同一次 `disconnect` 事件里的相位回退（不闪 `reconnecting`）。
    */
   disconnect(): void {
+    if (this.destroyed) return;
+    this.idleSuspended = true;
     this.socket.disconnect();
+    this.updateConnection({ phase: 'dead', deadReason: 'idle', deadCode: null });
   }
 
   /**
@@ -536,6 +550,7 @@ export class GameClient {
     if (this.destroyed) return;
     this.serverRejected = false;
     this.giveUpRequested = false;
+    this.idleSuspended = false;
     this.updateConnection({ phase: 'reconnecting', deadReason: null, deadCode: null, attempt: 0 });
     this.socket.connect();
   }
@@ -1218,8 +1233,10 @@ export class GameClient {
       // ⚠️ 此路径「先释放」是安全的：socket.io 会自动重连，被唤醒的 `send()` 即使
       // 此刻仍进缓冲，也会随重连成功被冲刷（相位未判死、不触发 fail-fast）。
       this.releasePendingAndWakeWaiters();
-      // 项 2：普通断线 ⇒ 进入重连态；give-up 主动触发的 disconnect 不回退相位。
-      if (!this.giveUpRequested) this.updateConnection({ phase: 'reconnecting' });
+      // 项 2：普通断线 ⇒ 进入重连态；give-up / 空闲挂起主动触发的 disconnect 不回退相位。
+      if (!this.giveUpRequested && !this.idleSuspended) {
+        this.updateConnection({ phase: 'reconnecting' });
+      }
       return;
     }
 
