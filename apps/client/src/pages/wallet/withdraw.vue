@@ -131,48 +131,66 @@ async function onSubmitWithdraw(replayed = false) {
     return;
   }
 
-  // 敏感操作再认证（开关开才走）。
-  let reauthTicket: string | undefined;
-  if (store.withdrawReAuthEnabled) {
-    const password = await askPassword('请输入登录密码以验证身份');
-    if (password === null) return; // 用户取消
-    const reRes = await reauth(password);
-    if (reRes.code !== 0) {
-      await dispatchRestFailure(reRes, {
-        toast: (report) => {
-          setError(
-            'withdraw',
-            playerMessage(report.code, { context: 'rest', serverMessage: report.message }),
-          );
-        },
-        signOutLocally: (report) => {
-          stopGameSession();
-          auth.sessionEnded(playerMessage(report.code, { context: 'auth' }));
-        },
-        replay: async () => {
-          // reauth 不自动重放：避免重复密码校验；提示用户重新提交（TOAST/BACK_TO_LOBBY 已处置）。
-        },
-      });
-      return;
-    }
-    reauthTicket = reRes.data?.ticket;
-    if (!reauthTicket) {
-      setError('withdraw', '密码验证失败，请稍后重试');
-      return;
-    }
-  }
-
+  /**
+   * P1-5：忙碌位从**弹出密码框之前**开始罩 —— 密码框未决期间按钮仍可点，旧实现
+   * 会弹两次密码框、发两次 reauth、最终提交两笔。
+   *
+   * `finally` 只负责复位；ack 处置放在 try 之后（`replay` 会回调本函数，入口守卫
+   * 需要此时 busy 已放行，否则重放被静默吃掉）。
+   */
   withdrawBusy.value = true;
-  notices.dismiss('withdraw');
-  notices.dismiss('withdraw-result');
-  withdrawResult.value = null;
-  let res;
+  let res: Awaited<ReturnType<typeof pay.applyPayWithdrawal>>;
   try {
-    res = await pay.applyPayWithdrawal(check.coins, reauthTicket);
-  } catch (e) {
-    setError('withdraw', '提现申请失败，请稍后重试');
-    reportError('wallet.applyPayWithdrawal', e);
-    return;
+    // 敏感操作再认证（开关开才走）。
+    let reauthTicket: string | undefined;
+    if (store.withdrawReAuthEnabled) {
+      const password = await askPassword('请输入登录密码以验证身份');
+      if (password === null) return; // 用户取消
+      let reRes: Awaited<ReturnType<typeof reauth>>;
+      try {
+        reRes = await reauth(password);
+      } catch (e) {
+        // P1-5：网络异常（fetch reject）与 11002 的响应分支同一可见出口 ——
+        // 旧实现没人接这个异常（无提示、busy 也不复位）。
+        setError('withdraw', '密码验证失败，请稍后重试');
+        reportError('wallet.reauth', e);
+        return;
+      }
+      if (reRes.code !== 0) {
+        await dispatchRestFailure(reRes, {
+          toast: (report) => {
+            setError(
+              'withdraw',
+              playerMessage(report.code, { context: 'rest', serverMessage: report.message }),
+            );
+          },
+          signOutLocally: (report) => {
+            stopGameSession();
+            auth.sessionEnded(playerMessage(report.code, { context: 'auth' }));
+          },
+          replay: async () => {
+            // reauth 不自动重放：避免重复密码校验；提示用户重新提交（TOAST/BACK_TO_LOBBY 已处置）。
+          },
+        });
+        return;
+      }
+      reauthTicket = reRes.data?.ticket;
+      if (!reauthTicket) {
+        setError('withdraw', '密码验证失败，请稍后重试');
+        return;
+      }
+    }
+
+    notices.dismiss('withdraw');
+    notices.dismiss('withdraw-result');
+    withdrawResult.value = null;
+    try {
+      res = await pay.applyPayWithdrawal(check.coins, reauthTicket);
+    } catch (e) {
+      setError('withdraw', '提现申请失败，请稍后重试');
+      reportError('wallet.applyPayWithdrawal', e);
+      return;
+    }
   } finally {
     // ⚠️ 先放行再处置：忙碌位只罩「请求在途」，否则 replay 分支会被入口守卫静默吃掉。
     withdrawBusy.value = false;

@@ -296,3 +296,60 @@ describe('③ 提现再认证', () => {
     expect(uniStub.calls.showModal, '不得为 reauth 失败自动重弹密码框').toHaveLength(1);
   });
 });
+
+/**
+ * P1-5：再认证期间的**按钮闸门**与网络异常。
+ *
+ * 旧实现把 `withdrawBusy = true` 放在 reauth 之后 ⇒ 密码框未决期间按钮仍可点：
+ * 双击会弹两次密码框、发两次 reauth、最终提交两笔；而 reauth 的 fetch 异常没人接
+ *（`reauth()` 抛错，与 11002 的响应分支不同）⇒ 无提示、无复位。
+ */
+describe('P1-5：再认证的双击与网络异常', () => {
+  it('双击提交（密码框未决期间）⇒ 只弹一次密码框、只发一笔提现', async () => {
+    const uniStub = installUniStub();
+    useGameStore().setClientConfig(walletClientConfig({ withdrawReAuthEnabled: true }));
+    const { wrapper, calls } = mountWithdraw();
+    await flushPromises();
+
+    await wrapper.find('.withdraw-input').setValue('2000');
+    await wrapper.find('.withdraw-submit').trigger('click');
+    // 密码框尚未确认（busy 必须已置位）⇒ 第二次点击不得再开一个密码框。
+    await wrapper.find('.withdraw-submit').trigger('click');
+    await flushPromises();
+
+    expect(uniStub.calls.showModal).toHaveLength(1);
+    uniStub.calls.showModal[0]!.success?.({ confirm: true });
+    await flushPromises();
+
+    expect(countCalls(calls, '/auth/reauth')).toBe(1);
+    expect(countCalls(calls, '/pay/withdrawals')).toBe(1);
+  });
+
+  it('reauth 网络异常（fetch reject）⇒ busy 复位 + 可见错误提示、不提交提现', async () => {
+    const uniStub = installUniStub();
+    useGameStore().setClientConfig(walletClientConfig({ withdrawReAuthEnabled: true }));
+    const { wrapper, calls } = mountWithdraw(
+      makeRoute({
+        reauth: () => {
+          throw new Error('network down');
+        },
+      }),
+    );
+    await flushPromises();
+
+    await wrapper.find('.withdraw-input').setValue('2000');
+    await wrapper.find('.withdraw-submit').trigger('click');
+    await flushPromises();
+    uniStub.calls.showModal[0]!.success?.({ confirm: true });
+    await flushPromises();
+
+    expect(
+      wrapper.find('.wallet-withdraw__submit').attributes('disabled'),
+      '失败后必须复位，不能把按钮永久锁死',
+    ).toBeUndefined();
+    expect(wrapper.find('[data-notice-id="withdraw"] .notice__text').text()).toContain(
+      '密码验证失败',
+    );
+    expect(countCalls(calls, '/pay/withdrawals'), 'reauth 异常不得提交').toBe(0);
+  });
+});
