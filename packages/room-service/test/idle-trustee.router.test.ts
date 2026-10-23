@@ -124,6 +124,52 @@ describe('C19 · 四处 via 映射钉死', () => {
     expect(game.trustee).toHaveBeenCalledWith('ROOM1', 'alice', false, 'reconnect');
   });
 
+  /**
+   * P1-11：解除托管是一次**写**（version+1，且行动者本人时重排 deadline）。
+   * ack 若带回清除**前**的 version/deadline，客户端会以旧版本为基准，下一次动作撞 13004。
+   */
+  it('P1-11：清除托管后重新取 view —— ack.version / turnDeadlineAt 是清除后的权威值', async () => {
+    const { deps, game, reconnect } = makeDeps();
+    reconnect.resolveRecoverableRoom.mockResolvedValue(hit('ROOM1'));
+    game.view
+      .mockResolvedValueOnce(
+        view({ version: 5, trustees: [true, false, false], turnDeadlineAt: 1_000 }),
+      )
+      .mockResolvedValueOnce(
+        view({ version: 6, trustees: [false, false, false], turnDeadlineAt: 2_000 }),
+      );
+
+    const ack = await route(deps, makeSocket('alice'), C('game.reconnect', {}));
+
+    expect(ack.code).toBe(0);
+    expect(ack.data).toMatchObject({
+      version: 6,
+      turnDeadlineAt: 2_000,
+      trustees: [false, false, false],
+    });
+    expect(game.view).toHaveBeenCalledTimes(2);
+    expect(game.view).toHaveBeenLastCalledWith('ROOM1', 'alice');
+  });
+
+  it('P1-11 fail-open：刷新视图失败 ⇒ 退回旧视图并就地改写 trustees（重连不失败）', async () => {
+    const { deps, game, reconnect } = makeDeps();
+    reconnect.resolveRecoverableRoom.mockResolvedValue(hit('ROOM1'));
+    game.view
+      .mockResolvedValueOnce(
+        view({ version: 5, trustees: [true, false, false], turnDeadlineAt: 1_000 }),
+      )
+      .mockRejectedValueOnce(new GameServiceError(ErrCode.UPSTREAM_UNAVAILABLE, '服务暂不可用'));
+
+    const ack = await route(deps, makeSocket('alice'), C('game.reconnect', {}));
+
+    expect(ack.code).toBe(0);
+    expect(ack.data).toMatchObject({
+      version: 5,
+      turnDeadlineAt: 1_000,
+      trustees: [false, false, false],
+    });
+  });
+
   it("在局 `room.join` ⇒ via 'reconnect'、on=false", async () => {
     const { deps, game, rooms } = makeDeps();
     rooms.findOne.mockResolvedValue(playingRoom());

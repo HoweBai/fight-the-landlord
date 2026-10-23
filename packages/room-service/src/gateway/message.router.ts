@@ -941,9 +941,11 @@ async function clearTrusteeForReturn(deps: RouterDeps, roomCode: string, userId:
 }
 
 /**
- * C22：`game.reconnect` 的 ack 快照 —— **清除成功后**就地改写 `trustees[自己座位]=false`
+ * C22 + P1-11：`game.reconnect` 的 ack 快照 —— **清除成功后重新取 view**（拿权威的
+ * version/deadline），并保证快照里自己座位的 `trustees=false`
  *（r1 重要 19：ack 不得带 `trustee=true`，否则客户端会把「刚解除」渲染成托管中，
- * 直到下一次推送才纠正）。**清除失败 ⇒ 原样返回旧视图**（fail-open 的显式接受格）。
+ * 直到下一次推送才纠正）。**清除失败 ⇒ 原样返回旧视图**（fail-open 的显式接受格）；
+ * 刷新视图失败 ⇒ 退回旧视图 + 就地改写（同样 fail-open）。
  *
  * 只在局（bidding / playing）才转发：`init` 尚未开始（game-service 守卫会以 13009 拒绝）、
  * `ended` 无治理量 —— 两格都是「注定失败」的噪音 RPC（与 C21 的 waiting-leave 同一条理由）。
@@ -956,14 +958,31 @@ async function viewWithTrusteeCleared(
 ): Promise<PlayerView> {
   if (view.state !== 'bidding' && view.state !== 'playing') return view;
   if (!(await clearTrusteeForReturn(deps, roomCode, userId))) return view;
-  // 多玩法（Task 2.2 / RH4）：按**实际长度**改写，不截 3 元组 —— 跑得快 2/4 人重连
-  // 不得把 trustees 截成 3（旧实现 `[view.trustees[0..2]]` 会丢座位/错位）。
-  // ⚠️ `DdzPlayerView` 为旧客户端把 trustees 收窄成 3 元组（类型层）；本函数对 pdk 视图
-  // 同样按真实长度改写（运行期正确）。Task 5.3 的客户端联合类型落地后可去掉这层断言。
-  const trustees = view.trustees.map((trustee, index) =>
-    index === view.seat ? false : trustee,
-  ) as [boolean, boolean, boolean];
-  return { ...view, trustees };
+  /**
+   * 清除成功 ⇒ ack 快照**不得**带自己座位的 `trustee=true`（r1 重要 19：客户端会把
+   * 「刚解除」渲染成托管中）。新取回的视图也过同一条改写：game-service 若仍回显旧
+   * 治理态（极端抖动），ack 仍以「刚清除」为准。
+   *
+   * 多玩法（Task 2.2 / RH4）：按**实际长度**改写，不截 3 元组 —— 跑得快 2/4 人重连
+   * 不得把 trustees 截成 3（旧实现 `[view.trustees[0..2]]` 会丢座位/错位）。
+   * ⚠️ `DdzPlayerView` 为旧客户端把 trustees 收窄成 3 元组（类型层）；本函数对 pdk 视图
+   * 同样按真实长度改写（运行期正确）。Task 5.3 的客户端联合类型落地后可去掉这层断言。
+   */
+  const withOwnTrusteeCleared = (v: PlayerView): PlayerView => {
+    const trustees = v.trustees.map((trustee, index) =>
+      index === v.seat ? false : trustee,
+    ) as [boolean, boolean, boolean];
+    return { ...v, trustees };
+  };
+  try {
+    const fresh = (await deps.game.view(roomCode, userId)) as PlayerView | null;
+    if (fresh) return withOwnTrusteeCleared(fresh);
+  } catch (err) {
+    deps.logger.warn(
+      `Reconnect view refresh failed for ${userId} in ${roomCode}: ${String(err)}`,
+    );
+  }
+  return withOwnTrusteeCleared(view);
 }
 
 /**
