@@ -320,6 +320,16 @@ export class GameService implements OnApplicationShutdown {
         timeoutCount: p.timeoutCount ?? 0,
         trustee: p.trustee ?? false,
       }));
+      /**
+       * P0-1：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。`JSON.stringify`
+       * 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」⇒ 不归一化的话，
+       * 重载后**人类座位会被误判成机器人**（托管 toggle 被拒、`trustees` 恒 false、
+       * 超时不计数）。这里把非字符串/空串一律折回 `undefined`，与 `startGame`
+       * 写入的稀疏形态一致。缺 `botIds`（老会话/全人类）保持原样。
+       */
+      session.botIds = session.botIds?.map((id) =>
+        typeof id === 'string' && id.length > 0 ? id : undefined,
+      );
       return session as unknown as S;
     } catch {
       this.logger.error(`Corrupt session in Redis for room ${roomCode}`);
@@ -872,7 +882,10 @@ export class GameService implements OnApplicationShutdown {
    * ⇒ 机器人。⛔ 也不用 `isBot`——它在生产恒为 false（那会让豁免全线失效）。
    */
   private isBotSeat(session: AnyGameSession, seatIdx: number): boolean {
-    return session.botIds?.[seatIdx] !== undefined;
+    // P0-1：只认**有效 botId**（非空字符串）。`!== undefined` 会把 JSON 往返后的
+    // `null`（稀疏数组空洞）也当成机器人。
+    const botId = session.botIds?.[seatIdx];
+    return typeof botId === 'string' && botId.length > 0;
   }
 
   /** 所有 deadline 写入点统一走它（按**下一行动者**档；机器人/缺位 ⇒ normal）。 */

@@ -81,9 +81,13 @@ export function buildPlayerView(session: GameSession, seat: number): PlayerView 
   // 挂机治理 T3（规格 C5 / C23 的 view 半边）：按座位的托管态（徽标数据面）。
   // ⚠️ 这是 `trustees` 的**唯一生产写入点**。机器人判定按 `botIds` 的**座位下标**
   // （⛔ 不按 `p.id` —— 那是对外 displayId，与内部 botId 恒不相等）；机器人座位恒 false。
-  const trustees = session.players.map((p, i) =>
-    session.botIds?.[i] !== undefined ? false : p.trustee === true,
-  ) as [boolean, boolean, boolean];
+  const trustees = session.players.map((p, i) => {
+    // P0-1：只认**有效 botId**（非空字符串）——`!== undefined` 会把 JSON 往返后
+    // 的 `null`（稀疏数组空洞）当成机器人，把人类座位的托管态恒置 false。
+    const botId = session.botIds?.[i];
+    const isBot = typeof botId === 'string' && botId.length > 0;
+    return isBot ? false : p.trustee === true;
+  }) as [boolean, boolean, boolean];
 
   const view: PlayerView = {
     roomCode: session.roomCode,
