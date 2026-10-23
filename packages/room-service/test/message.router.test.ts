@@ -451,6 +451,58 @@ describe('routeClientMessage', () => {
     expect(match.addToQueue).toHaveBeenCalledWith('alice', 'random', 15, undefined, {}, { gameType: 'doudizhu', playerCount: 3 });
   });
 
+  /**
+   * P1-9：换场的**校验必须先于撤销旧票**。
+   *
+   * 旧实现：维度不同 ⇒ 立刻 `cancelQueue`，随后才查场次开关/入场门槛 —— 新场次被拒
+   *（12010/14003）时玩家已经退出旧队列、也没进新队列，等于凭空丢队。
+   */
+  it('P1-9：换场被开关拒绝（12010）⇒ 旧队列原样保留', async () => {
+    const { deps, redis, match, configCache } = makeDeps();
+    await redis.zadd('match:queue:random:15:global', Date.now(), 'alice');
+    match.readMeta.mockResolvedValue({
+      playerId: 'alice',
+      mode: 'random',
+      baseScore: 15,
+      region: 'global',
+      enteredAt: Date.now(),
+      latency: 0,
+      attempts: 0,
+    });
+    configCache.goldRoomEnabled.mockReturnValue(false);
+
+    const ack = await route(deps, makeSocket('alice'), C('room.match', { mode: 'gold', baseScore: 15 }));
+
+    expect(ack.code).toBe(12010);
+    expect(match.cancelQueue, '被拒绝的换场不得撤旧票').not.toHaveBeenCalled();
+    expect(match.addToQueue).not.toHaveBeenCalled();
+    expect(await redis.zscore('match:queue:random:15:global', 'alice')).not.toBeNull();
+  });
+
+  it('P1-9：换场被入场门槛拒绝（14003）⇒ 旧队列原样保留', async () => {
+    const { deps, redis, match, configCache, currency } = makeDeps();
+    await redis.zadd('match:queue:random:15:global', Date.now(), 'alice');
+    match.readMeta.mockResolvedValue({
+      playerId: 'alice',
+      mode: 'random',
+      baseScore: 15,
+      region: 'global',
+      enteredAt: Date.now(),
+      latency: 0,
+      attempts: 0,
+    });
+    configCache.goldRoomEnabled.mockReturnValue(true);
+    configCache.entryMultiplier.mockReturnValue(10);
+    currency.get.mockResolvedValue({ balances: [{ ownerId: 'alice', balance: 149, exists: true }] });
+
+    const ack = await route(deps, makeSocket('alice'), C('room.match', { mode: 'gold', baseScore: 15 }));
+
+    expect(ack.code).toBe(14003);
+    expect(match.cancelQueue, '门槛拒绝不得撤旧票').not.toHaveBeenCalled();
+    expect(match.addToQueue).not.toHaveBeenCalled();
+    expect(await redis.zscore('match:queue:random:15:global', 'alice')).not.toBeNull();
+  });
+
   it('room.match.extend：调 extendWait 且恒回 0（票不在时由服务端幂等 no-op）', async () => {
     const { deps, match } = makeDeps();
 

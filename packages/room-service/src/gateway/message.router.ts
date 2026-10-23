@@ -533,6 +533,12 @@ async function handleMatch(
     ),
   ]);
   const inAnyQueue = existing !== null || existingOthers.some((v) => v !== null);
+  /**
+   * P1-9：换场时**旧票的撤销必须晚于新场次的所有校验**（开关/入场门槛）。
+   * 旧实现在这里就 `cancelQueue` ⇒ 新场次被 12010/14003 拒时，玩家既不在旧队列、
+   * 也进不了新队列（凭空丢队）。这里只记「待换队」，真正撤票放在校验之后。
+   */
+  let pendingQueueSwitch = false;
   if (meta === null) {
     if (inAnyQueue) {
       await deps.match.cancelQueue(userId);
@@ -556,7 +562,8 @@ async function handleMatch(
     deps.logger.log(
       `Player ${userId} switching match queue ${meta.mode}/${metaGameType}/${metaPlayerCount}/${meta.baseScore}/${meta.region} -> ${mode}/${matchGameType}/${matchPlayerCount}/${baseScore}/${DEFAULT_REGION}`,
     );
-    await deps.match.cancelQueue(userId);
+    // P1-9：撤旧票排到「开关 + 入场门槛」校验之后（见下方 pendingQueueSwitch 的落点）。
+    pendingQueueSwitch = true;
   }
 
   /**
@@ -574,7 +581,8 @@ async function handleMatch(
   /**
    * ② 场次开关（C1/C2 · 设计 D2；§10 文案逐字）。顺序是契约的一部分（D8 锚点）：
    * **dup 探测 → 开关 → 门槛** —— 已在队列里的人先拿 12009（他的排队状态没变），
-   * 开关只拦**新的**入队。
+   * 开关只拦**新的**入队。换场（P1-9）的撤旧票排在开关+门槛**之后**：
+   * 被拒的换场不得让玩家从旧队列消失。
    */
   if (!modeEnabled(deps, mode)) {
     return fail(ErrCode.ROOM_MODE_DISABLED, '该场次暂未开放');
@@ -598,6 +606,14 @@ async function handleMatch(
     if (balance < needed) {
       return fail(ErrCode.E_ENTRY_THRESHOLD, `金币不足：该场次需要 ≥ ${needed}`);
     }
+  }
+
+  /**
+   * P1-9：新场次通过了**全部**校验（开关 + 入场门槛，上面的每个拒绝分支都在此之前
+   * `return`）⇒ 现在才撤销旧票。到这一步之后只剩入队/写 meta，不再有拒绝面。
+   */
+  if (pendingQueueSwitch) {
+    await deps.match.cancelQueue(userId);
   }
 
   /**
