@@ -53,6 +53,7 @@ import {
 import {
   FAILSAFE_CLIENT_CONFIG,
   normalizeClientConfig,
+  repairRoomMode,
 } from "../../composables/useClientConfig";
 import { usePageAlignment } from "../../composables/usePageAlignment";
 import { useVersionCheck } from "../../composables/useVersionCheck";
@@ -201,19 +202,9 @@ function selectSession(mode: RoomMode) {
 }
 
 /**
- * 场次可用性修复：服务端把**当前选中的**场次关掉了、而另一个开着 ⇒ 选中切到开着的那一个。
- *
- * 为什么在这里：否则「开始游戏」必然被服务端 12010 拒（客户端**已知**的事实不该送出去撞墙
- * —— D2「服务端裁决 + 客户端隐藏」的同一精神）。两个都关 ⇒ 保持原值（空态不渲染任何入口，
- * 没有「送出去」这一说）。
+ * 场次可用性修复见 `useClientConfig.ts#repairRoomMode`（P1-12 起与开始游戏页的价格刷新
+ * 共用同一份实现 —— 两处各写一份就迟早漂移）。
  */
-function repairRoomMode() {
-  const enabled: RoomMode[] = [];
-  if (store.freeRoomEnabled) enabled.push("random");
-  if (store.goldRoomEnabled) enabled.push("gold");
-  if (enabled.length > 0 && !enabled.includes(store.roomMode))
-    store.setRoomMode(enabled[0]!);
-}
 
 /** S5.4：只展示服务端开启的玩法（旧服务端无 `games` ⇒ 只有斗地主）。 */
 const visibleModes = computed(() => GAME_MODES.filter((m) => store.modeEnabled(m.id)));

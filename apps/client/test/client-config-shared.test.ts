@@ -4,11 +4,12 @@
  * 判据：`FAILSAFE_CLIENT_CONFIG`/`normalizeClientConfig` 是**唯一真源**（lobby/game 共用）；
  * 两价格 `number|null`（缺键/旧服务端/非数字 ⇒ null ⇒ 购买面板不渲染）；`reset()` 不清。
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import {
   FAILSAFE_CLIENT_CONFIG,
   normalizeClientConfig,
+  refreshClientConfig,
 } from '../src/composables/useClientConfig';
 import { useGameStore } from '../src/stores/game';
 
@@ -69,5 +70,44 @@ describe('useClientConfig（共享加载/归一化）', () => {
     store.setClientConfig(minimal as never);
     expect(store.cardCounterPricePerGameCoins).toBeNull();
     expect(store.cardCounterPricePerHourCoins).toBeNull();
+  });
+
+  /**
+   * P1-12：管理端关闭场次后，`refreshClientConfig`（开始游戏页的价格刷新）也必须像大厅一样
+   * 修正 `roomMode` —— 否则客户端会继续发已被关闭的 `mode:'gold'`，必然撞服务端 12010。
+   */
+  function stubConfig(data: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ code: 0, data }),
+      })),
+    );
+  }
+
+  it('P1-12：roomMode=gold + 刷新到 goldRoomEnabled=false ⇒ 修正为 random', async () => {
+    const store = useGameStore();
+    store.setClientConfig({ ...FAILSAFE_CLIENT_CONFIG, freeRoomEnabled: true, goldRoomEnabled: true });
+    store.setRoomMode('gold');
+    stubConfig({ baseScoreLevels: [], freeRoomEnabled: true, goldRoomEnabled: false });
+
+    expect(await refreshClientConfig()).toBe(true);
+
+    expect(store.roomMode).toBe('random');
+    vi.unstubAllGlobals();
+  });
+
+  it('P1-12 负对照：两个场次都关 ⇒ 保持原值（不猜一个入口）', async () => {
+    const store = useGameStore();
+    store.setClientConfig({ ...FAILSAFE_CLIENT_CONFIG, freeRoomEnabled: true, goldRoomEnabled: true });
+    store.setRoomMode('gold');
+    stubConfig({ baseScoreLevels: [], freeRoomEnabled: false, goldRoomEnabled: false });
+
+    expect(await refreshClientConfig()).toBe(true);
+
+    expect(store.roomMode).toBe('gold');
+    vi.unstubAllGlobals();
   });
 });

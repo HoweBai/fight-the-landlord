@@ -1,5 +1,5 @@
 import type { ClientConfig } from '@fight-the-landlord/protocol';
-import type { ClientConfigState } from '../stores/game';
+import type { ClientConfigState, RoomMode } from '../stores/game';
 import { useGameStore } from '../stores/game';
 import { fetchClientConfig } from '../net/rest';
 
@@ -89,6 +89,25 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
 }
 
 /**
+ * P1-12：**场次可用性修复**（原住在 `lobby.vue`，现上移为唯一真源）——
+ * 服务端把**当前选中的**场次关掉了、而另一个开着 ⇒ 选中切到开着的那一个。
+ *
+ * 为什么必须共享：大厅的配置加载与 `refreshClientConfig()`（开始游戏页的价格刷新）
+ * 都会写 store；只在其中一处修复，另一条路径就会让客户端继续发已被关闭的
+ * `mode`（必然撞服务端 12010 —— 客户端**已知**的事实不该送出去撞墙）。
+ * 两个都关 ⇒ 保持原值（空态不渲染任何入口，没有「送出去」这一说）。
+ */
+export function repairRoomMode(): void {
+  const store = useGameStore();
+  const enabled: RoomMode[] = [];
+  if (store.freeRoomEnabled) enabled.push('random');
+  if (store.goldRoomEnabled) enabled.push('gold');
+  if (enabled.length > 0 && !enabled.includes(store.roomMode)) {
+    store.setRoomMode(enabled[0]!);
+  }
+}
+
+/**
  * 重新拉取一次配置并落 store（开始游戏页的「价格已更新」处置）。
  * 失败 ⇒ `false`（不写 fail-safe —— 调用方只需知道刷新没成功，不覆盖已有配置）。
  */
@@ -97,6 +116,8 @@ export async function refreshClientConfig(): Promise<boolean> {
     const res = await fetchClientConfig();
     if (res.code !== 0 || res.data === null || res.data === undefined) return false;
     useGameStore().setClientConfig(normalizeClientConfig(res.data));
+    // P1-12：与大厅同一份修复 —— 管理端刚关掉当前场次时，下一次匹配不得再发旧 mode。
+    repairRoomMode();
     return true;
   } catch {
     return false;
