@@ -804,4 +804,76 @@ describe('§4.4：开局为人类座位写重连记录（断点④）', () => {
     });
   });
 });
+
+/**
+ * P0-2 回归：**开局失败后的重试不得丢机器人身份**。
+ *
+ * 机制：首次 `startRoom` 已把机器人补满座（`room.players.length >= maxPlayers`），
+ * 若 `game.start` / `robotFunding.ensureBots` 失败 ⇒ 重试走 `fillBots` 的「房满早退」
+ *（`bindings: []`），而 `buildStartPlayers` 只按**本次** bindings 装饰 ⇒ 机器人缺
+ * `botId`/`skillLevel` ⇒ game-service 的 `driveRobotTurn` 起不来，机器人永久不动。
+ *
+ * 判据：失败一次后重试成功 ⇒ `game.start` 载荷里的机器人仍带完整身份；
+ * 金币场重试还会重新执行此前失败的 `ensureBots`。
+ */
+describe('P0-2：开局失败后的重试仍带机器人身份', () => {
+  it('game.start 首次失败 ⇒ 重试时已入座机器人仍带 botId/skillLevel/thinkingSpeed', async () => {
+    await manualRoom('RETRY01', ['u1']);
+    // `GameClient.start` 内部恰好重试 1 次 ⇒ 首次 `startRoom` 要连续失败 2 次才返回 false。
+    let remainingFailures = 2;
+    handlers.set(RPC_PATTERNS.gameStart, () => {
+      if (remainingFailures > 0) {
+        remainingFailures -= 1;
+        return throwError(() => new Error('game-service down'));
+      }
+      return of({ ok: true, data: {} });
+    });
+
+    expect(await service.startRoom('RETRY01', { strict: true })).toBe(false);
+    // 失败前补位已完成：房已满（1 人 + 2 机器人），重试必然走「房满早退」。
+    expect((await rooms.findOne('RETRY01'))!.players).toHaveLength(3);
+
+    expect(await service.startRoom('RETRY01', { strict: true })).toBe(true);
+
+    const startCalls = calls.filter((c) => c.pattern === RPC_PATTERNS.gameStart);
+    // 首次 2 次（内建重试）全失败 + 重试 1 次成功。
+    expect(startCalls).toHaveLength(3);
+    const retryPlayers = (startCalls.at(-1)!.data as { players: Array<Record<string, unknown>> })
+      .players;
+    const robots = retryPlayers.filter((p) => p.isRobot === true);
+    expect(robots).toHaveLength(2);
+    for (const robot of robots) {
+      expect(robot.botId, `重试载荷缺 botId：${JSON.stringify(robot)}`).toMatch(/^bot-/);
+      expect(robot.skillLevel).toBe('beginner');
+      expect(robot.thinkingSpeed).toBe(900);
+      expect(robot.id).toMatch(/^p_/);
+    }
+  });
+
+  it('ensureBots 首次失败（gold）⇒ 重试时恢复机器人身份并重跑 ensure', async () => {
+    await rooms.create({ mode: 'gold', roomCode: 'RETRY02' });
+    await rooms.join('RETRY02', 'u1');
+    robotFunding.ensureBots.mockRejectedValueOnce(new Error('robot pool empty'));
+
+    expect(await service.startRoom('RETRY02', { strict: true })).toBe(false);
+    expect((await rooms.findOne('RETRY02'))!.players).toHaveLength(3);
+
+    expect(await service.startRoom('RETRY02', { strict: true })).toBe(true);
+
+    // 重试必须重新为同一批内部 botId 注资（首次失败的那一步不能因「房满早退」被跳过）。
+    expect(robotFunding.ensureBots).toHaveBeenCalledTimes(2);
+    expect(robotFunding.ensureBots.mock.calls.at(-1)![0]).toEqual(['bot-1', 'bot-2']);
+
+    const robots = (
+      calls.filter((c) => c.pattern === RPC_PATTERNS.gameStart).at(-1)!.data as {
+        players: Array<Record<string, unknown>>;
+      }
+    ).players.filter((p) => p.isRobot === true);
+    expect(robots).toHaveLength(2);
+    for (const robot of robots) {
+      expect(robot.botId).toMatch(/^bot-/);
+      expect(robot.skillLevel).toBe('beginner');
+    }
+  });
+});
 });

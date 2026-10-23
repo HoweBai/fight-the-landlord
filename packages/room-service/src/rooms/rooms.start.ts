@@ -455,10 +455,6 @@ export class RoomStartService {
     code: string,
     room: Room,
   ): Promise<{ seats: Seat[]; bindings: BotBinding[] } | null> {
-    if (room.players.length >= room.maxPlayers) {
-      return { seats: room.players, bindings: [] };
-    }
-
     let current = room;
     const botBindings: BotBinding[] = [];
     const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
@@ -486,6 +482,19 @@ export class RoomStartService {
           displayId: bot.displayId,
         });
       }
+      /**
+       * P0-2：**恢复本次没有补位的已入座机器人**（`game.start` / `ensureBots` 失败后的
+       * 重试路径必走这里：房已满 ⇒ 上面的循环一步不走）。不恢复的话
+       * `buildStartPlayers` 只按**本次** bindings 装饰 ⇒ 机器人缺 `botId`/`skillLevel`
+       * ⇒ game-service 的 `driveRobotTurn` 起不来，机器人永久不动。
+       *
+       * 恢复来源是 robot-service 的**持久化绑定**（`room → seat` 索引 + `bot:{botId}`，
+       * `robot.acquire` 对已绑定座位幂等返回原实例 —— R201），它同时带回
+       * `skillLevel` / `personality.thinkingSpeed`；room 侧的 `room:{code}:bots`
+       * 只有 `seat → botId`，不足以还原 `game.start` 载荷。失败按补位失败处理
+       *（catch ⇒ `null` ⇒ 不开局），绝不能带着缺身份的机器人开局。
+       */
+      botBindings.push(...(await this.recoverBotBindings(code, current.players, botBindings)));
       // R207：`seat → botId` 落 `room:{code}:bots`（局终 `robot.release` 的唯一来源）
       await writeBotBindings(this.redis, code, botBindings);
       /**
@@ -514,6 +523,53 @@ export class RoomStartService {
       this.logger.error(`Bot fill failed for ${code}: ${String(err)}`);
       return null;
     }
+  }
+
+  /**
+   * P0-2：为**已在座但不在本次 bindings 里**的机器人恢复完整绑定。
+   *
+   * `robot.acquire` 对已绑定 `{roomCode, seat}` 幂等（回报原 `BotInstance`），因此这里
+   * **不会新分配机器人**：只要 robot-service 的绑定还在，`botId`/`skillLevel`/
+   * `thinkingSpeed` 与首次补位完全一致。空集 ⇒ 零 RPC（全人类满房的行为不变）。
+   *
+   * 任何座位拿不到有效实例 ⇒ **抛**（落入 `fillBots` 的 catch ⇒ 不开局）：
+   * 缺 `botId` 的机器人上桌后永远不会动，比「本轮不开、下轮重试」更糟。
+   */
+  private async recoverBotBindings(
+    code: string,
+    seats: Seat[],
+    known: ReadonlyArray<BotBinding>,
+  ): Promise<BotBinding[]> {
+    const coveredSeats = new Set(known.map((b) => b.seat));
+    // 绑定与座位表以 `displayId` 关联（`Seat.userId` 是出站 id）：座位号以 bindings 为准，
+    // 但身份判定两者任一命中即视为已覆盖，避免对同一机器人重复 acquire。
+    const coveredDisplayIds = new Set(known.map((b) => b.displayId));
+    const missingSeats = seats
+      .filter(
+        (s) => s.isRobot && !coveredSeats.has(s.seat) && !coveredDisplayIds.has(s.userId),
+      )
+      .map((s) => s.seat);
+    if (missingSeats.length === 0) return [];
+
+    const { bots } = await this.robot.acquire(code, missingSeats);
+    const bySeat = new Map((bots ?? []).map((b) => [b.seat, b]));
+    return missingSeats.map((seatNo) => {
+      const bot = bySeat.get(seatNo);
+      if (!bot?.botId || !bot.displayId) {
+        throw new Error(`robot.acquire recovered no bot for ${code} seat ${seatNo}`);
+      }
+      return {
+        seat: seatNo,
+        botId: bot.botId,
+        skillLevel: bot.skillLevel,
+        thinkingSpeed:
+          typeof bot.personality?.thinkingSpeed === 'number' &&
+          Number.isFinite(bot.personality.thinkingSpeed)
+            ? bot.personality.thinkingSpeed
+            : 2000,
+        displayId: bot.displayId,
+      };
+    });
   }
 
   /**
