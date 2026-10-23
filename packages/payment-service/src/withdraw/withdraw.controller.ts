@@ -65,15 +65,22 @@ export class WithdrawController {
       if (typeof ticket !== 'string' || ticket.length === 0) {
         throw httpException(ErrCode.FORBIDDEN, 'reauth ticket required');
       }
+      /**
+       * P0-3：**Redis 故障与票据无效必须分开**（原先同在一个 `try` 里，catch 把故意抛出的
+       * FORBIDDEN 也改写成「服务不可用」，且 FORBIDDEN 当时无 HTTP 映射 ⇒ 500）：
+       *  - 票据无效/过期/已消费 ⇒ 403 + `FORBIDDEN`（客户端应重新再认证）；
+       *  - Redis 不可用 ⇒ 503 + `UPSTREAM_UNAVAILABLE`（客户端稍后重试即可）。
+       * 两者都是 fail-closed：绝不放行。
+       */
+      let claimed: number;
       try {
-        const claimed = await this.redis.del(REAUTH_KEY(uid, ticket));
-        if (claimed !== 1) {
-          // DEL 返回 0 = 键不存在（过期/已用/跨用户）。fail-closed：拦截提现。
-          throw httpException(ErrCode.FORBIDDEN, 'reauth ticket invalid or expired');
-        }
+        claimed = await this.redis.del(REAUTH_KEY(uid, ticket));
       } catch {
-        // Redis 故障 → fail-closed（不能因为 Redis 抖动就让提现闸空了）。
-        throw httpException(ErrCode.FORBIDDEN, 'reauth service unavailable');
+        throw httpException(ErrCode.UPSTREAM_UNAVAILABLE, 'reauth service unavailable');
+      }
+      if (claimed !== 1) {
+        // DEL 返回 0 = 键不存在（过期/已用/跨用户）。fail-closed：拦截提现。
+        throw httpException(ErrCode.FORBIDDEN, 'reauth ticket invalid or expired');
       }
     }
 

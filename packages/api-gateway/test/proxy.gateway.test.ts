@@ -1253,6 +1253,46 @@ describe('ProxyGateway (WS proxy)', () => {
     });
 
     /**
+     * P0-3：再认证链的两枚**路径限定**头必须真的落到下游请求上。
+     * `headersOf()` 产出了但 `forward()` 不映射 ⇒ user-service 401 / payment-service
+     * 永远看不到票据 —— 与本片修复前的断点同形。
+     */
+    it('P0-3：forward 映射 Authorization 与 X-Reauth-Ticket（未提供则缺席）', async () => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({ code: 0 }),
+        }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      try {
+        await gateway.forwardToUserSvc('POST', '/api/auth/reauth', { password: 'p' }, fakeRes(), {
+          userId: 'u1',
+          authorization: 'Bearer access-1',
+        });
+        let init = fetchMock.mock.calls[0]![1] ?? {};
+        expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer access-1');
+        expect((init.headers as Record<string, string>)['X-Reauth-Ticket']).toBeUndefined();
+
+        fetchMock.mockClear();
+        await gateway.forwardToPaymentSvc(
+          'POST',
+          '/api/pay/withdrawals',
+          { coins: 100 },
+          fakeRes(),
+          { userId: 'u1', reauthTicket: 't-1' },
+        );
+        init = fetchMock.mock.calls[0]![1] ?? {};
+        expect((init.headers as Record<string, string>)['X-Reauth-Ticket']).toBe('t-1');
+        expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    /**
      * R143（A7）：**结构性判据**（与负载无关 —— 切片 7 的通用教训③）：
      * 断言排入的**超时值**，而不是等墙钟。删掉 `signal: AbortSignal.timeout(...)`
      * 这一行 ⇒ 本用例红。

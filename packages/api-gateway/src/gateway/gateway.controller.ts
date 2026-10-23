@@ -18,10 +18,14 @@ import {
   ADMIN_ACTOR_HEADER,
   ADMIN_HEADER,
   ADMIN_ROLE_HEADER,
+  AUTHORIZATION_HEADER,
+  REAUTH_TICKET_HEADER,
   TOKEN_JTI_HEADER,
   TRACE_ID_HEADER,
   USER_ID_HEADER,
   isLogoutPath,
+  isReauthPath,
+  isWithdrawApplyPath,
   type DownstreamHeaders,
 } from '../auth/identity-headers';
 // ③ T5（§2.10）：登录路径判定（clientIp 产出的唯一开关）—— 与中间件豁免/限流登录桶
@@ -1499,6 +1503,24 @@ function headersOf(req: any): DownstreamHeaders {
   const tokenJti = req?.headers?.[TOKEN_JTI_HEADER];
   if (isLogoutPath(path) && typeof tokenJti === 'string' && tokenJti.length > 0) {
     headers.tokenJti = tokenJti;
+  }
+
+  // P0-3：提现再认证链的两枚**路径限定**头（与 R31 同一条纪律 —— 一条路径一份产出，
+  // 不得扩散成通用透传）。
+  //  - `/api/auth/reauth`：user-service 的 `JwtAuthGuard` 要从 `Authorization` 提取 Bearer；
+  //    其它路径已由 `JwtMiddleware` 验签并注入 `X-User-Id`，无需也不得再转发 token。
+  //  - `POST /api/pay/withdrawals`：payment-service 的一次性票据头。
+  if (isReauthPath(path)) {
+    const authorization = req?.headers?.[AUTHORIZATION_HEADER];
+    if (typeof authorization === 'string' && authorization.length > 0) {
+      headers.authorization = authorization;
+    }
+  }
+  if (isWithdrawApplyPath(path)) {
+    const ticket = req?.headers?.[REAUTH_TICKET_HEADER];
+    if (typeof ticket === 'string' && ticket.length > 0) {
+      headers.reauthTicket = ticket;
+    }
   }
   return headers;
 }

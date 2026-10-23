@@ -785,6 +785,11 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (headers?.traceId) outbound['X-Trace-Id'] = headers.traceId;
     // R31：只服务 `/api/auth/logout`，不下发客户端、不进 §5.2 通用身份契约。
     if (headers?.tokenJti) outbound['X-Token-Jti'] = headers.tokenJti;
+    // P0-3：`Authorization` 只由 `headersOf()` 在 `/api/auth/reauth` 产出
+    // （user-service 的 `JwtAuthGuard` 需要 Bearer）；⛔ 不是全局透传。
+    if (headers?.authorization) outbound['Authorization'] = headers.authorization;
+    // P0-3：一次性再认证票据只由 `headersOf()` 在 `POST /api/pay/withdrawals` 产出。
+    if (headers?.reauthTicket) outbound['X-Reauth-Ticket'] = headers.reauthTicket;
     // §5.2 规则 3（N7）：**每一跳**都带上内部 token（四个下游服务在全部业务路由校验它）。
     if (headers?.internalToken) outbound['X-Internal-Token'] = headers.internalToken;
     // 片⑦ T10（D6）：管理标记头。`headersOf()` 只从**验真产物**（`AdminAuthMiddleware`

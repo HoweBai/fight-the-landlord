@@ -20,6 +20,9 @@ import { ErrCode } from '@fight-the-landlord/protocol';
  */
 export const HTTP_STATUS: Partial<Record<ErrCode, number>> = {
   [ErrCode.BAD_PARAM]: 400,
+  // P0-3（提现再认证闸）：票据无效/过期/已消费的守卫码 —— 不补则 403 经 `?? 500`
+  // 静默变 500，客户端无法区分「重新再认证」与「服务故障」。与 user/currency 表同值。
+  [ErrCode.FORBIDDEN]: 403,
   // T7（玩家面订单控制器）：`X-User-Id` 缺失/空的守卫码——不补则 401 经 `?? 500` **静默变
   // 500**（同一「⚙️8 学费」；照 user/currency 表先例，其余服务同表）。网关恒注入 ⇒ 只影响
   // 直连形态（直连还须过 internal-token 中间件）。

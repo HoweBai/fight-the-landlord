@@ -24,6 +24,30 @@ export const INTERNAL_TOKEN_HEADER = 'x-internal-token';
 export const TOKEN_JTI_HEADER = 'x-token-jti';
 
 /**
+ * P0-3：提现再认证链的两枚**客户端**头（不是网关注入的验真产物）。
+ *
+ *  - `AUTHORIZATION`：仅 `/api/auth/reauth` 转发给 user-service —— 该端点由
+ *    `JwtAuthGuard`（Bearer 提取）鉴权。⛔ 不得扩散成全局透传：其它路径已经由
+ *    `JwtMiddleware` 验签并注入 `X-User-Id`，Authorization 在那些跳上没有消费方。
+ *  - `X-REAUTH-TICKET`：仅 `POST /api/pay/withdrawals` 转发给 payment-service ——
+ *    一次性再认证票据（5 分钟，DEL 原子消费）。⛔ 不得扩散到其它支付路径。
+ *
+ * 判定与转发都在 `headersOf()`（唯一产出点），`forward()` 只做字段→头名的映射。
+ */
+export const AUTHORIZATION_HEADER = 'authorization';
+export const REAUTH_TICKET_HEADER = 'x-reauth-ticket';
+
+/** `X-Reauth-Ticket` 的唯一合法消费路径：`POST /api/pay/withdrawals`（exact match）。 */
+export function isWithdrawApplyPath(path: string): boolean {
+  return path === '/api/pay/withdrawals' || path === '/pay/withdrawals';
+}
+
+/** `Authorization` 的唯一合法转发路径：`POST /api/auth/reauth`（exact match）。 */
+export function isReauthPath(path: string): boolean {
+  return path === '/api/auth/reauth' || path === '/auth/reauth';
+}
+
+/**
  * 片⑦ D6②：管理标记头（`config-service` 的 `XAdminGuard` 逐字信任「存在且恰好 `'1'`」）。
  *
  * `AdminAuthMiddleware` 在**验完管理令牌之后**注入、并在验签**之前剥掉**客户端伪造值
@@ -74,6 +98,16 @@ export interface DownstreamHeaders {
   traceId?: string;
   /** 仅 logout 路径携带（见 `TOKEN_JTI_HEADER`）。 */
   tokenJti?: string;
+  /**
+   * P0-3：仅 `/api/auth/reauth` 路径携带（客户端 Bearer，供 user-service
+   * `JwtAuthGuard` 提取）。`forward()` 映射回 `Authorization`。
+   */
+  authorization?: string;
+  /**
+   * P0-3：仅 `POST /api/pay/withdrawals` 携带（一次性再认证票据）。
+   * `forward()` 映射回 `X-Reauth-Ticket`。
+   */
+  reauthTicket?: string;
   /**
    * §5.2 规则 3：网关**每一跳**都注入（N7）。
    *

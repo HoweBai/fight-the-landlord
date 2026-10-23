@@ -2476,6 +2476,8 @@ describe('GatewayController（支付 T13：真 Nest app —— 路由登记/静�
   let authBaseUrl: string;
   let calls: Array<[string, string]>;
   let authCalls: Array<[string, string, unknown, unknown, unknown]>;
+  /** P0-3：reauth 的 user-service 转发记录（真中间件链）。 */
+  let authUserCalls: Array<[string, string, unknown, unknown, unknown]>;
   let mockJwt: { verify: ReturnType<typeof vi.fn> };
   let mockSession: { isActive: ReturnType<typeof vi.fn> };
 
@@ -2501,9 +2503,15 @@ describe('GatewayController（支付 T13：真 Nest app —— 路由登记/静�
     // ② 认证链 app（真 JwtMiddleware + 真 AdminAuthMiddleware，顺序照 app.module.ts；
     //    限流中间件不在此组——它的三档桶在 http-rate-limit.test.ts 单独钉）
     authCalls = [];
+    authUserCalls = [];
     const authProxy = {
       forwardToPaymentSvc: vi.fn(async (m: string, path: string, body: unknown, res: any, headers: unknown) => {
         authCalls.push([m, path, body, res, headers]);
+        res.status(200).json({ code: 0, data: { path } });
+      }),
+      // P0-3：reauth 这一跳（真中间件链 ⇒ 证明 JwtMiddleware 不吞 Authorization）。
+      forwardToUserSvc: vi.fn(async (m: string, path: string, body: unknown, res: any, headers: unknown) => {
+        authUserCalls.push([m, path, body, res, headers]);
         res.status(200).json({ code: 0, data: { path } });
       }),
     };
@@ -2623,5 +2631,126 @@ describe('GatewayController（支付 T13：真 Nest app —— 路由登记/静�
     // 深度相等 ⇒ 「无管理头」是不变量：三枚（admin/adminActor/adminRole）多一枚都会红。
     // traceId 由 JwtMiddleware 兜底生成（本探测 app 没有全局 trace 中间件）。
     expect(call[4]).toEqual({ userId: 'u1', traceId: expect.any(String) });
+  });
+
+  it('P0-3 真中间件链：reauth 的 Bearer 与 withdrawals 的票据头都进入下游头（路径限定）', async () => {
+    mockJwt.verify.mockReturnValue({ sub: 'u1', typ: 'access', jti: 'j1' });
+
+    const reauthRes = await fetch(`${authBaseUrl}/api/auth/reauth`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer access-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'pw' }),
+    });
+    expect(reauthRes.status).toBe(200);
+    const reauthCall = authUserCalls.at(-1)!;
+    expect(reauthCall[1]).toBe('/api/auth/reauth');
+    expect(reauthCall[4]).toMatchObject({ authorization: 'Bearer access-1', userId: 'u1' });
+
+    const withdrawRes = await fetch(`${authBaseUrl}/api/pay/withdrawals`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer access-1',
+        'X-Reauth-Ticket': 't-1',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ coins: 100 }),
+    });
+    expect(withdrawRes.status).toBe(200);
+    const withdrawCall = authCalls.at(-1)!;
+    expect(withdrawCall[4]).toMatchObject({ reauthTicket: 't-1', userId: 'u1' });
+    // 路径限定：提现这一跳不得顺带透传 Authorization。
+    expect(withdrawCall[4]).not.toHaveProperty('authorization');
+  });
+});
+
+/**
+ * P0-3：提现再认证链的**网关转发边界**。
+ *
+ * 断点：`/api/auth/reauth` 用 `headersOf(req)` 转发但从不带 `Authorization` ⇒
+ * user-service 的 `JwtAuthGuard` 拿不到 Bearer（401）；`POST /api/pay/withdrawals`
+ * 的 `X-Reauth-Ticket` 也不在 `forward()` 的出站白名单里 ⇒ payment-service 永远
+ * 看不到票据。两条开口都必须是**路径限定**的：不得把 Authorization 变成全局透传，
+ * 也不得让票据头扩散到其它支付路径。
+ */
+describe('P0-3：再认证链的头转发（路径限定）', () => {
+  const res = {} as never;
+  const make = () => {
+    const proxy = {
+      forwardToUserSvc: vi.fn(async () => undefined),
+      forwardToPaymentSvc: vi.fn(async () => undefined),
+    };
+    return { controller: new GatewayController(proxy as unknown as ProxyGateway), proxy };
+  };
+  const req = (originalUrl: string, headers: Record<string, string> = {}) => ({ originalUrl, headers });
+
+  it('POST /api/auth/reauth 把客户端 Bearer 传给 user-service', async () => {
+    const { controller, proxy } = make();
+
+    await controller.reauth(
+      { password: 'pw' },
+      res,
+      req('/api/auth/reauth', { authorization: 'Bearer access-1', 'x-user-id': 'u1' }),
+    );
+
+    expect(proxy.forwardToUserSvc).toHaveBeenCalledWith(
+      'POST',
+      '/api/auth/reauth',
+      { password: 'pw' },
+      res,
+      expect.objectContaining({ authorization: 'Bearer access-1', userId: 'u1' }),
+    );
+  });
+
+  it('其他已验签路径不转发 Authorization（即便客户端带了）', async () => {
+    const { controller, proxy } = make();
+
+    await controller.logout(
+      { refreshToken: 'r' },
+      res,
+      req('/api/auth/logout', { authorization: 'Bearer access-1', 'x-token-jti': 'jti-1' }),
+    );
+
+    const headers = (
+      proxy.forwardToUserSvc.mock.calls as unknown as Array<
+        [string, string, unknown, unknown, Record<string, unknown>]
+      >
+    )[0]![4];
+    expect(headers).not.toHaveProperty('authorization');
+    expect(headers).toMatchObject({ tokenJti: 'jti-1' });
+  });
+
+  it('POST /api/pay/withdrawals 把 x-reauth-ticket 传给 payment-service', async () => {
+    const { controller, proxy } = make();
+
+    await controller.payWithdrawApply(
+      { coins: 100 },
+      res,
+      req('/api/pay/withdrawals', { 'x-reauth-ticket': 't-1', 'x-user-id': 'u1' }),
+    );
+
+    expect(proxy.forwardToPaymentSvc).toHaveBeenCalledWith(
+      'POST',
+      '/api/pay/withdrawals',
+      { coins: 100 },
+      res,
+      expect.objectContaining({ reauthTicket: 't-1', userId: 'u1' }),
+    );
+  });
+
+  it('其他支付路径不转发 x-reauth-ticket', async () => {
+    const { controller, proxy } = make();
+
+    await controller.payWithdrawalsMine(
+      res,
+      req('/api/pay/withdrawals/mine', { 'x-reauth-ticket': 't-1', 'x-user-id': 'u1' }),
+    );
+
+    const headers = (
+      proxy.forwardToPaymentSvc.mock.calls as unknown as Array<
+        [string, string, unknown, unknown, Record<string, unknown>]
+      >
+    )[0]![4];
+    expect(headers).not.toHaveProperty('reauthTicket');
+    expect(headers).toMatchObject({ userId: 'u1' });
   });
 });
