@@ -355,6 +355,8 @@ async function loadClientConfig(replayed = false) {
           ? FAILSAFE_CLIENT_CONFIG
           : normalizeClientConfig(res.data);
       store.setClientConfig(cfg);
+      // P1-10：`data === null` 是违约响应 —— 与失败同一处置（配置未知，不是「服务端说关」）。
+      if (res.data == null) store.markClientConfigFailsafe();
       repairRoomMode();
       // S5.4：当前玩法若被服务端关闭 ⇒ 切到第一个可见玩法（并修复底分选中）
       repairActiveMode();
@@ -364,6 +366,8 @@ async function loadClientConfig(replayed = false) {
       return;
     }
     store.setClientConfig(FAILSAFE_CLIENT_CONFIG);
+    // P1-10：失败路径的 `cardCounterEnabled=false` 是「未知」不是「关」——打标记供牌桌区分。
+    store.markClientConfigFailsafe();
     repairActiveMode();
     levelsEmpty.value = store.activeLevels.length === 0;
     setLevelsFailure();
@@ -387,6 +391,7 @@ async function loadClientConfig(replayed = false) {
      * Task 8：与信封失败同一处置（静态失败位 + sticky 项）；原始异常只进上报链。
      */
     store.setClientConfig(FAILSAFE_CLIENT_CONFIG);
+    store.markClientConfigFailsafe();
     repairActiveMode();
     levelsEmpty.value = store.activeLevels.length === 0;
     setLevelsFailure();

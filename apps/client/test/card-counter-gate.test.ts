@@ -99,4 +99,25 @@ describe('记牌器开关 fail-safe 门控', () => {
     await flushPromises();
     expect(store.cardCounterEnabled).toBe(false);
   });
+
+  /**
+   * P1-10：失败路径的 `cardCounterEnabled=false` 必须被标记为「未知」（FAILSAFE），
+   * 否则牌桌会把已付费权益当成「服务端关」而隐藏记牌器。
+   */
+  it('⑥ P1-10：拉取失败 ⇒ clientConfigFailsafe=true', async () => {
+    stubConfig({ code: 10007, message: '下游不可用', data: null });
+    const store = useGameStore();
+    mountLobby();
+    await flushPromises();
+    expect(store.clientConfigFailsafe).toBe(true);
+  });
+
+  it('⑦ P1-10：成功拿到服务端配置 ⇒ 失败标记退场（false 恢复为权威的「关」）', async () => {
+    stubConfig({ code: 0, data: { ...baseConfig, cardCounterEnabled: false } });
+    const store = useGameStore();
+    store.markClientConfigFailsafe();
+    mountLobby();
+    await flushPromises();
+    expect(store.clientConfigFailsafe).toBe(false);
+  });
 });

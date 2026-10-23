@@ -81,9 +81,26 @@ const moreOpen = ref(false);
 
 /**
  * 记牌器权益门（统一判定表，spec §2.7）：壳计算，board 只消费结果。
+ *
+ * ⚠️ P1-10：总开关的 `false` 有两种含义 —— 服务端明确关（权威）与配置拉取失败
+ *（FAILSAFE = 未知）。后者不得覆盖本房 `game.card_counter{active}` 这个服务端权益事实。
  */
 const cardCounterGate = computed(() => {
-  if (!store.cardCounterEnabled) return false;
+  if (!store.cardCounterEnabled) {
+    /**
+     * P1-10：配置拉取失败时 `cardCounterEnabled=false` 是 **FAILSAFE = 未知**，不是
+     * 「服务端说关」。此时以**本房服务端权益**为准：`game.card_counter{active}` 是权威
+     * entitlement（开局时下发）⇒ 已付费的记牌器不得被一次配置抖动隐藏。
+     * 非 FAILSAFE（服务端明确关）仍按原语义一律不渲染。
+     */
+    const status = store.cardCounterStatus;
+    return (
+      store.clientConfigFailsafe &&
+      status !== null &&
+      status.roomCode === store.roomCode &&
+      status.active
+    );
+  }
   const status = store.cardCounterStatus;
   if (status !== null && status.roomCode === store.roomCode) return status.active;
   if (

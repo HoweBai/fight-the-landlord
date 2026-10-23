@@ -9,6 +9,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import TablePage from '../src/pages/table/table.vue';
 import { useGameStore } from '../src/stores/game';
+import { FAILSAFE_CLIENT_CONFIG } from '../src/composables/useClientConfig';
 import { startGameSession, stopGameSession } from '../src/composables/useGameSession';
 import { clearSession } from '../src/net/storage';
 import { FakeSocket, serverMessage } from './helpers/fake-socket';
@@ -62,6 +63,38 @@ describe('牌桌记牌器判定表（收费态）', () => {
     const wrapper = mountTable();
     await pushStatus(wrapper, { roomCode: 'ROOM1', active: true });
     expect(wrapper.find('.table__counter').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  /**
+   * P1-10：`GET /api/config` 失败时 lobby 写 FAILSAFE（`cardCounterEnabled=false`）——
+   * 那是「未知」而不是「服务端说关」。本房 `game.card_counter{active}` 是服务端权益事实，
+   * 已付费玩家不得因一次配置失败被隐藏记牌器。
+   */
+  it('P1-10：配置拉取失败（FAILSAFE）+ 本房 status active ⇒ 记牌器仍渲染', async () => {
+    const store = useGameStore();
+    // 与 lobby 失败路径同形：先写 FAILSAFE，再打「未知」标记。
+    store.setClientConfig(FAILSAFE_CLIENT_CONFIG);
+    store.markClientConfigFailsafe();
+    store.setRoom('ROOM1', 0);
+
+    const wrapper = mountTable();
+    await pushStatus(wrapper, { roomCode: 'ROOM1', active: true, source: 'credit' });
+
+    expect(wrapper.find('.counter').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('P1-10 负对照：服务端明确关（非 FAILSAFE）⇒ status active 也不渲染', async () => {
+    setupStore({ enabled: false }); // setClientConfig 之外的直写 = 已拿到服务端配置的形态
+    useGameStore().setClientConfig({
+      ...FAILSAFE_CLIENT_CONFIG,
+      baseScoreLevels: [],
+      cardCounterEnabled: false,
+    });
+    const wrapper = mountTable();
+    await pushStatus(wrapper, { roomCode: 'ROOM1', active: true });
+    expect(wrapper.find('.counter').exists()).toBe(false);
     wrapper.unmount();
   });
 

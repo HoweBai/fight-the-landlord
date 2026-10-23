@@ -214,6 +214,16 @@ export const useGameStore = defineStore('game', {
      */
     cardCounterEnabled: false,
     /**
+     * P1-10：最近一次 `GET /api/config` **没有拿到服务端配置**的标记
+     *（lobby 的失败/违约路径置 `true`；`setClientConfig` 收到服务端配置即清 `false`）。
+     *
+     * 🔴 为什么需要它：失败路径写的是 `FAILSAFE_CLIENT_CONFIG`，其中
+     * `cardCounterEnabled: false` 的含义是「**未知**」而不是「服务端说关」。牌桌的记牌器
+     * 门控若只看 `cardCounterEnabled`，已付费玩家会因一次网络抖动被隐藏记牌器
+     *（本房 `game.card_counter{active}` 是服务端权威权益）。本标记只用于区分这两种 false。
+     */
+    clientConfigFailsafe: false,
+    /**
      * 记牌器收费片（第 51/52 键裸名）：`null` = 未知（旧服务端/缺键/拉取失败）⇒
      * 购买面板整块不渲染（不编价格）。
      */
@@ -626,6 +636,8 @@ export const useGameStore = defineStore('game', {
      * `ClientConfigState`。
      */
     setClientConfig(cfg: ClientConfigState) {
+      // P1-10：服务端配置到达 ⇒ 上一轮的「失败标记」退场（false 现在是权威的「关」）。
+      this.clientConfigFailsafe = false;
       this.baseScoreLevels = cfg.baseScoreLevels;
       // 多玩法（S5.4）：`games` 缺省 = 旧服务端（只有斗地主可见）。
       this.games = cfg.games ?? {};
@@ -646,6 +658,16 @@ export const useGameStore = defineStore('game', {
       this.withdrawMinCoins = cfg.withdrawMinCoins;
       this.withdrawMaxCoinsPerOrder = cfg.withdrawMaxCoinsPerOrder;
       this.withdrawDailyMaxCoins = cfg.withdrawDailyMaxCoins;
+    },
+
+    /**
+     * P1-10：`GET /api/config` **没有拿到服务端配置**（网络失败 / 非 0 信封 / 违约响应）。
+     *
+     * 调用方随后仍会写 `FAILSAFE_CLIENT_CONFIG`（各闸按 fail-safe 语义），本标记让消费点
+     * 能区分「服务端明确关」与「配置未知」。
+     */
+    markClientConfigFailsafe() {
+      this.clientConfigFailsafe = true;
     },
 
     /** ② 大厅的场次切换：写选中的场次（开始游戏页的 `room.match` 读它）。**不是**对局状态。 */
