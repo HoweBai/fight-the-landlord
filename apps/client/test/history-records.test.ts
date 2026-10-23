@@ -721,3 +721,80 @@ describe('⑦ 筛选胶囊：文字垂直居中（uni-button 是 display:block�
     );
   });
 });
+
+/**
+ * P1-7：翻页与筛选的**竞态**。
+ *
+ * 场景：第 2 页（加载更多）在途时用户切筛选 ⇒ 新第一页先回来、旧第 2 页后到。
+ * 旧实现无条件 `records = [...records, ...page.items]` 并覆盖 `nextCursor`
+ * ⇒ 旧筛选的行混进新列表、新 `nextCursor`（null）被旧游标覆盖、「到达底部」再次发请求。
+ *
+ * 判据：旧响应一字节都不落 —— 不追加、不覆盖 cursor、不改 loading/错误。
+ */
+describe('P1-7：加载更多与筛选切换的竞态', () => {
+  it('先发「加载更多」再切筛选：旧响应后到不追加、不覆盖新 cursor', async () => {
+    const calls: FetchCall[] = [];
+    let releaseOldPage!: (response: unknown) => void;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        const index = calls.length - 1;
+        if (index === 1) {
+          // 「加载更多」的第 2 页：挂住，稍后**后于**筛选响应返回。
+          return new Promise((resolve) => {
+            releaseOldPage = resolve;
+          });
+        }
+        const body =
+          index === 0
+            ? { code: 0, data: page([recordFixture({ roomCode: 'ROOM-A', endedAt: T0 })], 'C1') }
+            : { code: 0, data: page([recordFixture({ roomCode: 'ROOM-B', endedAt: T1 })], null) };
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(body),
+        });
+      }),
+    );
+
+    const wrapper = mount(HistoryPage, { global: { plugins: [pinia] } });
+    await flushPromises();
+    expect(wrapper.findAll('.history__card')).toHaveLength(1);
+
+    // 第 2 页在途……
+    await wrapper.find('.history__list').trigger('scrolltolower');
+    await flushPromises();
+
+    // ……此时切筛选（新第一页立刻返回）。
+    const goldChip = wrapper
+      .findAll('.history__chip')
+      .find((chip) => chip.text().trim() === '金币场');
+    expect(goldChip, '筛选胶囊必须存在').toBeDefined();
+    await goldChip!.trigger('click');
+    await flushPromises();
+
+    expect(calls[2]!.url).toContain('mode=gold');
+    expect(wrapper.findAll('.history__card'), '筛选结果替换列表').toHaveLength(1);
+
+    // 旧第 2 页后到：不得追加、不得把 nextCursor（null）覆盖成 C_OLD。
+    releaseOldPage({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          code: 0,
+          data: page([recordFixture({ roomCode: 'ROOM-OLD', endedAt: T0 - 60_000 })], 'C_OLD'),
+        }),
+    });
+    await flushPromises();
+
+    expect(wrapper.findAll('.history__card'), '旧响应不得污染新列表').toHaveLength(1);
+
+    // 新列表已是终页（nextCursor=null）⇒ 触底不再发请求；旧游标若覆盖了它，这里会多第 4 发。
+    await wrapper.find('.history__list').trigger('scrolltolower');
+    await flushPromises();
+    expect(calls).toHaveLength(3);
+  });
+});

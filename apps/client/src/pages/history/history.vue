@@ -85,6 +85,13 @@ const error = ref('');
 /** 展开中的卡片键（`${roomCode}:${endedAt}` —— 房号可复用，必须带上结束时间）。 */
 const expandedKeys = ref<ReadonlySet<string>>(new Set());
 
+/**
+ * P1-7：**请求代际**。每次 `load()` 自增；响应回来时代际不符 ⇒ 旧响应（翻页在途时
+ * 用户切了筛选、或重放取代了它）一字节都不落：不追加列表、不覆盖 `nextCursor`、
+ * 不改 `loading`/`error`。只靠 `loading` 闸挡不住已发出的请求。
+ */
+let loadGeneration = 0;
+
 // ─── 2026-10 战绩筛选 ──────────────────────────────────────────────────────
 
 /** 模式筛选：`undefined` = 全部；否则精确匹配。 */
@@ -254,6 +261,7 @@ function buildFetchOptions(cursor: string | undefined) {
 }
 
 async function load(cursor: string | undefined, replayed = false) {
+  const generation = ++loadGeneration;
   loading.value = true;
   error.value = '';
   try {
@@ -283,6 +291,8 @@ async function load(cursor: string | undefined, replayed = false) {
       return;
     }
     const res = await rest.fetchMyRecords(buildFetchOptions(cursor));
+    // P1-7：晚到的旧响应直接丢弃（切筛选/重放已经发出了更新的一代）。
+    if (generation !== loadGeneration) return;
     if (res.code === 0) {
       /**
        * 成功 = 服务端说什么就是什么（含空页）。`?? 空页` 只防**违约响应**（`code 0` 却不给
@@ -313,6 +323,8 @@ async function load(cursor: string | undefined, replayed = false) {
       replay: () => (replayed ? Promise.resolve() : load(cursor, true)),
     });
   } catch {
+    // P1-7：旧一代的失败同样不上屏（新请求才是用户此刻等待的结果）。
+    if (generation !== loadGeneration) return;
     /**
      * ⚠️ **H5 上 `fetch` 的拒绝会抛出**（`src/net/rest.ts:81-83` 记着这条传播行为）⇒
      * 少了这一支，网络故障（离线 / DNS / 连接被拒）会在挂载那一刻静默收场，只剩一个
@@ -323,7 +335,8 @@ async function load(cursor: string | undefined, replayed = false) {
     error.value = '历史战绩加载失败，请稍后重试';
     showHistoryError(error.value);
   } finally {
-    loading.value = false;
+    // P1-7：loading 归新一代所有 —— 旧请求收尾不得提前放行触底翻页。
+    if (generation === loadGeneration) loading.value = false;
   }
 }
 
