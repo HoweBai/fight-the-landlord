@@ -867,7 +867,8 @@ describe('GatewayController（R75/N3 —— 路径参数形状 + 编码）', () 
  * 记录片 T6（I1 / 设计 D4）：`GET /api/records/mine` —— **首次 GET query 透传**。
  *
  * 两层：
- *  - 直接实例化：白名单（恰好 `cursor`/`limit` 两键，其余丢弃）+ 每值 `encodeURIComponent`
+ *  - 直接实例化：白名单（`cursor`/`limit`/`gameType` + P1-6 的 `mode`/`from`/`to`，其余丢弃）
+ *    + 每值 `encodeURIComponent`
  *    （R75 查询走私纪律：Express 已解码的 `,`/`&`/`#` 不得以裸形态拼进下游 URL）；
  *  - 真 Nest app：**真实 Express 解码环**——`%2C` 等经 Express 解码后又必须被我们编码回去，
  *    直接调控制器测不到这一环（与上面「路径参数形状 + 编码」同一条理由）。
@@ -927,6 +928,32 @@ describe('GatewayController（记录片 T6：records/mine 转发与 query 白名
     expect(proxy.forwardToUserSvc).toHaveBeenLastCalledWith(
       'GET',
       '/api/records/mine?cursor=c1&limit=7&gameType=paodekuai',
+      null,
+      res,
+      {},
+    );
+  });
+
+  it('P1-6：筛选参数 mode/from/to 到达下游；未知键仍被丢弃', async () => {
+    const { controller, proxy } = make();
+
+    await controller.getMyRecords(
+      res,
+      req({
+        query: {
+          cursor: 't0,42',
+          limit: '30',
+          mode: 'gold',
+          from: '1700000000000',
+          to: '1700086400000',
+          smuggle: '1',
+        },
+      }),
+    );
+
+    expect(proxy.forwardToUserSvc).toHaveBeenCalledWith(
+      'GET',
+      '/api/records/mine?cursor=t0%2C42&limit=30&mode=gold&from=1700000000000&to=1700086400000',
       null,
       res,
       {},

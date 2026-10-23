@@ -343,8 +343,9 @@ export class GatewayController {
    * 注入、下游等值写死）。**不进公开白名单 = 默认验签**（I1 行）。
    *
    * ⚠️ **首次 GET query 透传**（本仓此前无一条 GET query 先例）：按 R75 查询走私纪律走
-   * `recordsQueryOf()` —— 白名单恰好 `cursor`/`limit` 两键 + 每值 `encodeURIComponent`
-   * 后再拼下游 URL。`cursor` 是下游（user-service）的**不透明串**，这里只做编码、不解析。
+   * `recordsQueryOf()` —— 白名单 `cursor`/`limit` + `mode`/`from`/`to`（P1-6 筛选）+
+   * 每值 `encodeURIComponent` 后再拼下游 URL。`cursor` 是下游（user-service）的
+   * **不透明串**，这里只做编码、不解析。
    */
   @Get('records/mine')
   async getMyRecords(@Res() res: any, @Req() req: any) {
@@ -1294,11 +1295,15 @@ export class GatewayController {
 }
 
 /**
- * 记录片 T6（I1 / 设计 D4）：`GET /api/records/mine` 的 query **白名单** ——
- * `cursor`/`limit`（分页）+ `gameType`（多玩法 Task 5.0：缺省下游按斗地主）。
- * 数组顺序即拼装顺序（确定性，便于断言与排障）。
+ * 记录片 T6（I1 / 设计 D4）+ P1-6（战绩筛选）：`GET /api/records/mine` 的 query
+ * **白名单** —— `cursor`/`limit`（分页）+ `gameType`（多玩法 Task 5.0：缺省下游按
+ * 斗地主）+ `mode`/`from`/`to` 筛选（与客户端 `fetchMyRecords` 及 user-service
+ * `records.controller` 的入参逐字同套）。数组顺序即拼装顺序（确定性，便于断言与排障）。
+ *
+ * ⚠️ 未列键仍然**静默丢弃**（`whitelistedQueryOf` 的玩家面先例）：筛选值本身不在这里
+ * 校验 —— `mode` 非法 / `from>to` 由 user-service 的锁内校验给 400（网关不做第二份规则）。
  */
-const RECORDS_QUERY_KEYS = ['cursor', 'limit', 'gameType'] as const;
+const RECORDS_QUERY_KEYS = ['cursor', 'limit', 'gameType', 'mode', 'from', 'to'] as const;
 
 /**
  * 多玩法（Task 5.0）：`GET /api/rooms` 的 query 白名单 —— 恰 `gameType` 一键。
