@@ -7,7 +7,7 @@
  * 令牌同时持久化到本地（`net/storage.ts`）：刷新页面后 `hydrate()` 能把它写回
  * `clientConfig.token`，socket 握手才用得上（§5.1）。
  */
-import { defineStore } from 'pinia';
+import { defineStore, getActivePinia } from 'pinia';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import * as rest from '../net/rest';
 import { dispatchRestFailure } from '../net/errors';
@@ -357,4 +357,18 @@ export const useAuthStore = defineStore('auth', {
       syncPageStack(page);
     },
   },
+});
+
+/**
+ * P1-8：REST 的 10004 恢复由 `rotateRefreshToken()` 写 storage + clientConfig，但**不碰
+ * store**（net 层不 import store，见 `rest.ts#bindRestTokenRotationHook` 的分层说明）。
+ * 在 store 模块加载时注册反向钩子：任何 `authedRequest` 的轮换都会回填 `accessToken` /
+ * `refreshToken`，`signOut()` 的 R35「先轮换再登出」因此拿到的是最新 refresh token
+ *（旧 token 的 jti 已被轮换吊销，用它登出等于吊销落空）。
+ *
+ * `getActivePinia()` 守卫：模块加载本身不建实例；纯工具测试（无 Pinia）时 no-op。
+ */
+rest.bindRestTokenRotationHook(() => {
+  if (!getActivePinia()) return;
+  useAuthStore().syncTokensFromStorage();
 });

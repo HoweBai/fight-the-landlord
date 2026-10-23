@@ -230,6 +230,20 @@ export async function logout(
 }
 
 /**
+ * P1-8：REST 侧 refresh 轮换成功后的**会话回填钩子**。
+ *
+ * `rotateRefreshToken()` 只把新令牌写回 storage + clientConfig；`signOut()` 读的却是
+ * auth store 字段 ⇒ 不同步的话登出仍拿**已作废的旧 refresh token**（服务端吊销落空）。
+ * net 层**不 import store**（同 token-refresh.ts 的分层纪律）⇒ 由 auth store 在模块
+ * 加载时注册反向钩子（`syncTokensFromStorage()`）。缺省 no-op（纯 REST 单测无需 Pinia）。
+ */
+let tokenRotationHook: (() => void) | null = null;
+
+export function bindRestTokenRotationHook(hook: (() => void) | null): void {
+  tokenRotationHook = hook;
+}
+
+/**
  * 带鉴权的请求：遇 `ErrCode.TOKEN_EXPIRED` 先经 `rotateRefreshToken()`（token-refresh.ts 五态单飞）
  * 确保令牌新鲜，**rotated** 则重放一次；`unavailable` 返回 `10007` 信封（不杀会话）；
  * `invalid` / `no_session` 原样返回 `10004`（消费点按 `CLIENT_ACTION` 表处置，行为不变）。
@@ -249,6 +263,8 @@ export async function authedRequest<T>(
   if (first.code !== ErrCode.TOKEN_EXPIRED) return first;
   const result: TokenRenewResult = await rotateRefreshToken();
   if (result === 'rotated') {
+    // P1-8：把新令牌同步回 auth store（否则 signOut 用旧的 refresh token 登出）。
+    tokenRotationHook?.();
     return send<T>(method, path, body, undefined, extraHeaders);
   }
   if (result === 'unavailable') {

@@ -358,3 +358,71 @@ describe('net/rest 的鉴权与轮换（§5.1）', () => {
     vi.unstubAllGlobals();
   });
 });
+
+/**
+ * P1-8：REST 轮换成功后 **auth store 必须同步**。
+ *
+ * 断点：`authedRequest` 的 10004 恢复走 `rotateRefreshToken()`（只写 storage +
+ * clientConfig），而 `signOut()` 读的是 store 字段里的 refresh token ⇒ 轮换后登出仍拿
+ * **已作废的旧 token**，服务端吊销（删两个 jti）不可达。
+ */
+describe('P1-8：轮换后 store 同步与登出吊销', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  function jsonOnce(body: unknown, status = 200) {
+    return { ok: status < 400, status, text: async () => JSON.stringify(body) } as Response;
+  }
+
+  it('REST 轮换后 signOut 携带新 refresh token（服务端吊销路径可达）', async () => {
+    const { createPinia, setActivePinia } = await import('pinia');
+    setActivePinia(createPinia());
+    const { installUniStub } = await import('./helpers/uni-stub');
+    installUniStub();
+
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      if (url.endsWith('/rooms')) {
+        const roomsCalls = calls.filter((c) => c.url.endsWith('/rooms')).length;
+        return roomsCalls === 1
+          ? jsonOnce({ code: 10004, message: 'expired', data: null }, 401)
+          : jsonOnce({ code: 0, data: [] });
+      }
+      if (url.endsWith('/auth/refresh')) {
+        return jsonOnce({ code: 0, data: { accessToken: 'access-2', refreshToken: 'refresh-2' } });
+      }
+      return jsonOnce({ code: 0, data: null });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { clientConfig } = await import('../src/config');
+    clientConfig.token = 'access-1';
+    (await import('../src/net/storage')).saveSession({
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      userId: 'u1',
+      phone: '',
+      nickname: '',
+    });
+
+    const { useAuthStore } = await import('../src/stores/auth');
+    const auth = useAuthStore();
+    auth.hydrate();
+    expect(auth.refreshToken).toBe('refresh-1');
+
+    const rest = await import('../src/net/rest');
+    expect((await rest.authedGet('/rooms')).code).toBe(0);
+    // 轮换写的是 storage；store 必须同步拿到新值（否则下面登出用旧的）。
+    expect(auth.accessToken).toBe('access-2');
+    expect(auth.refreshToken).toBe('refresh-2');
+
+    await auth.signOut();
+
+    const logout = calls.find((c) => c.url.endsWith('/auth/logout'));
+    expect(logout, 'signOut 必须真的打服务端登出').toBeDefined();
+    expect(JSON.parse(String(logout!.init.body))).toEqual({ refreshToken: 'refresh-2' });
+    expect((logout!.init.headers as Record<string, string>).Authorization).toBe('Bearer access-2');
+  });
+});
