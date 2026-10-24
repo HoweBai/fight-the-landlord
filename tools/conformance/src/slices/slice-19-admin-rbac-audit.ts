@@ -770,10 +770,18 @@ export async function runSlice19(): Promise<Checks> {
     expectHttp(checks, await g5('P3 只读', 'PATCH', `/api/admin/accounts/${s.viewerId}`, s.viewerToken, { role: 'viewer' }), 403, ErrCode.FORBIDDEN, 'G5 P3 只读 ⇒ 403');
 
     // P4（PUT /config/:key 前缀，非 changes）：超管+运营 放行（非法值 ⇒ 下游 400）；财务/只读 403
-    expectHttp(checks, await g5('P4 超管', 'PUT', '/api/admin/config/room.friendRoomEnabled', s.adminToken, { value: 'yes' }), 400, ErrCode.BAD_PARAM, 'G5 P4 超管（非法值 ⇒ 下游 400 = 已放行）');
-    expectHttp(checks, await g5('P4 运营', 'PUT', '/api/admin/config/room.friendRoomEnabled', s.operToken, { value: 'yes' }), 400, ErrCode.BAD_PARAM, 'G5 P4 运营（放行 ⇒ 下游 400）');
-    expectHttp(checks, await g5('P4 财务', 'PUT', '/api/admin/config/room.friendRoomEnabled', s.finToken, { value: 'yes' }), 403, ErrCode.FORBIDDEN, 'G5 P4 财务 ⇒ 403');
-    expectHttp(checks, await g5('P4 只读', 'PUT', '/api/admin/config/room.friendRoomEnabled', s.viewerToken, { value: 'yes' }), 403, ErrCode.FORBIDDEN, 'G5 P4 只读 ⇒ 403');
+    expectHttp(checks, await g5('P4 超管', 'PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled', s.adminToken, { value: 'yes' }), 400, ErrCode.BAD_PARAM, 'G5 P4 超管（非法值 ⇒ 下游 400 = 已放行）');
+    expectHttp(checks, await g5('P4 运营', 'PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled', s.operToken, { value: 'yes' }), 400, ErrCode.BAD_PARAM, 'G5 P4 运营（放行 ⇒ 下游 400）');
+    expectHttp(checks, await g5('P4 财务', 'PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled', s.finToken, { value: 'yes' }), 403, ErrCode.FORBIDDEN, 'G5 P4 财务 ⇒ 403');
+    expectHttp(checks, await g5('P4 只读', 'PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled', s.viewerToken, { value: 'yes' }), 403, ErrCode.FORBIDDEN, 'G5 P4 只读 ⇒ 403');
+
+    // 旧平台键只读：400 + 废弃文案（与上面的非法值 400 区分开，不能互相冒充）
+    const p4Legacy = await g5('P4 旧键', 'PUT', '/api/admin/config/room.friendRoomEnabled', s.adminToken, { value: true });
+    expectHttp(checks, p4Legacy, 400, ErrCode.BAD_PARAM, 'G5 P4 旧平台键只读');
+    checks.that(
+      String(p4Legacy.body?.message ?? '').includes('已废弃'),
+      `G5 P4 旧键 400 文案含「已废弃」—— 实际 ${JSON.stringify(p4Legacy.body?.message)}`,
+    );
 
     // P5（POST /wallet/adjust 精确）：超管+财务 放行（非法 body ⇒ 下游 400）；运营/只读 403
     expectHttp(checks, await g5('P5 超管', 'POST', '/api/admin/wallet/adjust', s.adminToken, {}), 400, ErrCode.BAD_PARAM, 'G5 P5 超管（放行 ⇒ 下游 400）');
@@ -799,7 +807,7 @@ export async function runSlice19(): Promise<Checks> {
     expectHttp(checks, await g5('P8 财务 summary', 'GET', '/api/admin/wallet/summary', s.finToken, undefined), 200, ErrCode.OK, 'G5 P8 财务 GET summary ⇒ 200');
 
     // P9（未登记的非 GET：连超管也 403 fail-closed）
-    expectHttp(checks, await g5('P9 DELETE', 'DELETE', '/api/admin/config/room.friendRoomEnabled', s.adminToken, undefined), 403, ErrCode.FORBIDDEN, 'G5 P9 未登记 DELETE ⇒ 403（超管也拒）');
+    expectHttp(checks, await g5('P9 DELETE', 'DELETE', '/api/admin/config/game.doudizhu.friendRoomEnabled', s.adminToken, undefined), 403, ErrCode.FORBIDDEN, 'G5 P9 未登记 DELETE ⇒ 403（超管也拒）');
     expectHttp(checks, await g5('P9 POST changes', 'POST', '/api/admin/accounts/changes', s.adminToken, {}), 403, ErrCode.FORBIDDEN, 'G5 P9 未登记 POST /accounts/changes ⇒ 403');
     expectHttp(checks, await g5('P9 PUT adjust', 'PUT', '/api/admin/wallet/adjust', s.adminToken, {}), 403, ErrCode.FORBIDDEN, 'G5 P9 未登记 PUT /wallet/adjust ⇒ 403');
 

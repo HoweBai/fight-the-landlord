@@ -43,7 +43,7 @@
  * ─── 副作用与复原（一条也不许泄漏给 `--list` 下的后续切片）──────────────────
  *  - 谓词开关：用例内**逐次自还原**（关 ⇒ 开 ⇒ 关 ⇒ 开 ⇒ 关）+ `finally` 兜底（**默认关**
  *    是生产种子态；留着开会让后续切片全部崩）；
- *  - 配置：`risk.minGames`/`risk.winRateThreshold` 降阈后还原种子（100 / 0.8），`finally` 兜底；
+ *  - 配置：`game.doudizhu.risk.minGames`/`game.doudizhu.risk.winRateThreshold` 降阈后还原种子（100 / 0.8），`finally` 兜底；
  *  - 注入：`risk.scanIntervalMs=5000`（④）与 `risk.devicesCleanupIntervalMs=5000`（④b）用毕即
  *    **PUT 回知基线 3600000 + 重建**，`finally` 兜底（④b 的键同样兜底 —— 5000 不许泄漏）；
  *  - 动作面：dismiss/throttle/unthrottle/ban/unban **全对**（旗在用例内清光：manual 旗
@@ -120,8 +120,8 @@ const RISK_SCAN_INTERVAL_RESTORE = 3_600_000;
 /** 配置键（逐字；规格 §2.1-3 第 18–25 键）。 */
 const K_PRED_SAME_DEVICE = 'risk.predicate.sameDevice';
 const K_PRED_SAME_IP = 'risk.predicate.sameIp';
-const K_WIN_RATE = 'risk.winRateThreshold';
-const K_MIN_GAMES = 'risk.minGames';
+const K_WIN_RATE = 'game.doudizhu.risk.winRateThreshold';
+const K_MIN_GAMES = 'game.doudizhu.risk.minGames';
 const K_DEVICE_LIMIT = 'risk.deviceLimit';
 const K_DEVICE_WINDOW_DAYS = 'risk.deviceWindowDays';
 const K_AUTO_THROTTLE = 'risk.autoThrottle';
@@ -743,7 +743,7 @@ export async function runSlice20(): Promise<Checks> {
     );
     // 非法写入（域外/三位小数都非法；0.785 是规格 §2.1-3 的点名样本）⇒ 400 且**不落库**。
     const g1Illegal = await adminPutConfig(K_WIN_RATE, 0.785, s.adminToken);
-    checks.eq(g1Illegal.status, 400, '① PUT risk.winRateThreshold=0.785（三位小数）⇒ HTTP 400');
+    checks.eq(g1Illegal.status, 400, '① PUT game.doudizhu.risk.winRateThreshold=0.785（三位小数）⇒ HTTP 400');
     checks.eq(g1Illegal.body?.code, ErrCode.BAD_PARAM, '① 非法写入 ⇒ code 10001（借）');
     const g1Readback = await adminGetConfig<AdminConfigData>(s.adminToken);
     checks.eq(

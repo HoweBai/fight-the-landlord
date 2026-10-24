@@ -36,7 +36,7 @@ export async function runSlice06(): Promise<Checks> {
   checks.eq(user.nickname, user.nickname?.trim(), '注册返回的昵称已 trim');
 
   // ── 片⑦ 前置（T14）：好友房开关必须**开** ────────────────────────
-  // 本片第 6 步要 `POST /api/rooms` 建房，而片⑦ 起该路由按 `room.friendRoomEnabled`
+  // 本片第 6 步要 `POST /api/rooms` 建房，而片⑦ 起该路由按 `game.doudizhu.friendRoomEnabled`
   // 缓存值拦截（关 ⇒ 12006）。这里经管理面置 true 并**轮询至建房生效**（≤30s）。
   // ⚠️ 只开**不还原**（规格 §3 编排：开关的复原是 slice-14 收尾的职责）。
   await setFriendRooms(true, user.accessToken);

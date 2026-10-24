@@ -37,8 +37,8 @@ import { rpcCall, type RpcEndpoint } from '../lib/rpc';
 
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const RUN_TAG = Date.now().toString(36).toUpperCase().slice(-4);
-const PRICE_GAME = 'game.cardCounterPricePerGameCoins';
-const PRICE_HOUR = 'game.cardCounterPricePerHourCoins';
+const PRICE_GAME = 'game.doudizhu.cardCounterPricePerGameCoins';
+const PRICE_HOUR = 'game.doudizhu.cardCounterPricePerHourCoins';
 const PRICE_GAME_SEED = 10;
 const PRICE_HOUR_SEED = 100;
 
@@ -248,7 +248,7 @@ export async function runSlice28(): Promise<Checks> {
     await sleep(1500);
 
     step('C2：关总开关 → 同号重放仍成功（effect 不评估当前态）→ 还原');
-    const offPut = await adminPutConfig('game.cardCounterEnabled', false, admin);
+    const offPut = await adminPutConfig('game.doudizhu.cardCounterEnabled', false, admin);
     checks.eq(offPut.body?.code, ErrCode.OK, 'C2 关总开关');
     await sleep(1500);
     const offReplay = await postJson(
@@ -262,7 +262,7 @@ export async function runSlice28(): Promise<Checks> {
       '1',
       'C2 ops 仍 1 条（未二次扣费）',
     );
-    const onPut = await adminPutConfig('game.cardCounterEnabled', true, admin);
+    const onPut = await adminPutConfig('game.doudizhu.cardCounterEnabled', true, admin);
     checks.eq(onPut.body?.code, ErrCode.OK, 'C2 还原总开关');
     await sleep(1500);
 

@@ -6,7 +6,7 @@
  * · 收尾（费率还原 + 队列零残留 + 读数自证）。
  *
  * 🔴 费率纪律（规格 §5 逐字）：用例「**临时开费率 ⇒ 还原**」（先例 slice-15:45 / slice-13 J22 /
- * slice-18 F）。2026-10-21 起台费在 `game.baseScoreLevels[].entryFeePercent`：进入前**快照实际档位表**，
+ * slice-18 F）。2026-10-21 起台费在 `game.levels.doudizhu[].entryFeePercent`：进入前**快照实际档位表**，
  * 只临时改 15 档；正常/`finally` 都写回**语义快照**（每条显式 `entryFeePercent ?? 0`，避免旧形态 400）。
  * **正常路径还原失败 = 片内硬失败**；不硬编码种子、不覆盖测试服人工配置。
  *
@@ -76,7 +76,7 @@ const HEALTH_CONTAINERS = [
 ] as const;
 
 /** 台费唯一来源（2026-10-21 起）：档位表的第三列。 */
-const LEVELS_KEY = 'game.baseScoreLevels';
+const LEVELS_KEY = 'game.levels.doudizhu';
 /** 临时开启态的台费金额：15 档 10% ⇒ fee = max(1, floor(15×10/100)) = 1（金额=公式的载体）。 */
 const ENTRY_FEE_AMOUNT = 1;
 /** 两真人预充（规格 §12.1 同族：5,000,000 = 5 笔 ×1e6；admin 单笔上限 1e6）。 */

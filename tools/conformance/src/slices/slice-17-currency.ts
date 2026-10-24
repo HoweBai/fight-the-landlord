@@ -49,7 +49,7 @@
  *    判定对象永远是**真后端的回答**（库行 / 服务响应 / 容器日志 / prometheus API）。
  *    ⚠️ ② 金币场 T12 起 C14 的键集断言改为**逐字名单**（7 键），不再 import `CLIENT_CONFIG_KEYS`；
  *    支付片 T5 同步：逐字名单 7 → 14（⚙️11 七裸名）；广告片 T23 同步：14 → 15 键（+裸名
- *    `reliefAdpid`，第 15 键）；台费阶段 2 删除派生字段 `entryFeePercents` 后 20 键。
+ *    `reliefAdpid`，第 15 键）；台费阶段 2 删除派生字段 `entryFeePercents` 后 21 键。
  *  - **零 `skip()`、零分支**（基线静态回填的前提）：全部断言在任何环境下都执行。
  *
  * ─── 本片对真栈的副作用与复原 ────────────────────────────────────────────
@@ -1395,19 +1395,19 @@ export async function runSlice17(): Promise<Checks> {
     checks.that(c12Page.body.includes('/api/admin/wallet/adjust'), '⑪ C12 app.js 含 adjust 端点串');
     checks.that(c12Page.body.includes('销毁：残差 '), '⑪ C12 app.js 含销毁行文案针脚（本片）');
 
-    step('⑪ C14 负对照：/api/config 键集 = 客户端 20 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
+    step('⑪ C14 负对照：/api/config 键集 = 客户端 21 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
     const c14Config = await getJson<Record<string, unknown>>('/api/config', userP.accessToken);
     checks.eq(c14Config.body?.code, ErrCode.OK, '⑪ C14 /api/config code 0');
     const c14Keys = Object.keys(c14Config.body?.data ?? {});
-    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15 键；台费阶段 2：派生字段删除后 20 键
+    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15 键；台费阶段 2：派生字段删除后 21 键
     // （§2.5/⚙️11；逐字名单，不随协议常量漂）。
     checks.eq(
       c14Keys.sort().join(','),
-      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      '⑪ C14 键集（排序后）恰好客户端 20 键',
+      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      '⑪ C14 键集（排序后）恰好客户端 21 键',
     );
     // 内部键**显式名单**（T12 起含 rakePercent/reliefAmount；前缀兜底断言在 slice-18 A 组）。
-    const c14InternalLeaks = ['currency.signupGrant', 'currency.rakePercent', 'currency.reliefAmount'].filter((key) =>
+    const c14InternalLeaks = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'].filter((key) =>
       JSON.stringify(c14Config.body?.data ?? null).includes(key),
     );
     checks.that(

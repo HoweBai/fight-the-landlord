@@ -26,7 +26,7 @@ const PDK_ENABLED_KEY = 'game.paodekuai.enabled';
 /** 等待开关在 room-service 的配置缓存里生效（观测点 = 建房行为）。 */
 async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
   const admin = await adminLogin();
-  // ⚠️ REST 建房有**两道闸**，顺序固定：controller 入口先查 `room.friendRoomEnabled`
+  // ⚠️ REST 建房有**两道闸**，顺序固定：controller 入口先查 `game.doudizhu.friendRoomEnabled`
   //    （关 ⇒ 12006），之后 service 才看玩法开关。只开 paodekuai 不开好友房 ⇒
   //    探针永远读 12006（2026-10-24 CI 实测：slice-14 收尾把好友房还原 false）。
   //    `setFriendRooms` 自带建房轮询（≤30s），且它的探针会占掉 opener 的等待房 ⇒

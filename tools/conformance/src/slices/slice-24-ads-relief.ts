@@ -27,7 +27,7 @@
  *  ① 键空间面（ad-channel 管理面）：掩码读（value 恒 null+指纹=宿主复算）· super_admin
  *     写读回 · 非 SA（operator/finance/viewer）×（PUT/DELETE）⇒ 403 · 种子密钥生效
  *     （末态 = 四键空间回种子）。
- *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 20 键（排序字面，含第 15 键
+ *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 21 键（排序字面，含第 15 键
  *     `reliefAdpid`）· 内部键零泄漏（`ad.`/`currency.` 前缀扫描）· 管理面 65 键 ·
  *     adpid 空串种子方向 + 非空下发生效 + 还原（末态 = adpid=''）。
  *  ③ 签发面（前置 = ③ 内 PUT `reliefEnabled=true` 并等到快照生效；末态 = 开关 ON）：
@@ -90,6 +90,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import https from 'node:https';
 import { resolve } from 'node:path';
 import {
+  CONFIG_KEYS,
   ErrCode,
   RPC_PATTERNS,
   type CurrencyApplyData,
@@ -163,7 +164,7 @@ const RELIEF_AMOUNT_SEED = 200;
 /** `/api/config` 的**恰好**键集（排序后逐字；记牌器收费片起 = 20 键——阶段 2 已删除派生字段 `entryFeePercents`；
  *  广告片起 `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 /** §2.7 新告警两条（⓪ 的「规则 27 就位」面）。 */
 const AD_ALERT_RULES = ['ReliefCallbackBroken', 'ReliefGrantZero'] as const;
 /** ⓪ 的容器健康面（本片依赖的真栈容器——含门口与 Prometheus）。 */
@@ -792,12 +793,12 @@ export async function runSlice24(): Promise<Checks> {
     checks.that(activeLeft.length === 0, `① 三枚一次性账号均已 disabled（不留活跃凭据）—— 残留 ${JSON.stringify(activeLeft)}`);
 
     /* ── ② 键面 ─────────────────────────────────────────────────────────── */
-    step('② 键面：/api/config 恰 20 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
+    step('② 键面：/api/config 恰 21 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
     const uCfg = await registerUser(61);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     expectHttp(checks, cfgA as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/config（玩家面）');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 20 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 21 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
     checks.eq((cfgA.body?.data as Record<string, unknown>)?.[AD_KEY_CLIENT], '', `② ${AD_KEY_CLIENT} 空串种子方向（fail 方向 = 空串 ⇒ 入口不渲染）`);
     const cfgRaw = JSON.stringify(cfgA.body?.data ?? null);
     checks.that(
@@ -806,7 +807,7 @@ export async function runSlice24(): Promise<Checks> {
     );
     const adminCfg = await adminGetConfig<{ config: Record<string, { value: unknown; version: number }> }>(adminToken);
     expectHttp(checks, adminCfg as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/admin/config（管理面）');
-    checks.eq(Object.keys(adminCfg.body?.data?.config ?? {}).length, 65, '② 管理面键总数 65（既有 51 + 跑得快 14 键）');
+    checks.eq(Object.keys(adminCfg.body?.data?.config ?? {}).length, CONFIG_KEYS.length, '② 管理面键总数 = protocol CONFIG_KEYS.length');
     checks.eq(adminCfg.body?.data?.config?.[AD_KEY_CONFIG]?.value, '', '② 管理面 ad.reliefAdpid 值 = 空串（string 种子首例的 JSON 字面量落地）');
 
     // adpid 非空 ⇒ 客户端面生效（每次查库；组内还原）。

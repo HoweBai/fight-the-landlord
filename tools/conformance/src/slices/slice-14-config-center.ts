@@ -62,7 +62,7 @@ const EDGE_HTTP_PORT = process.env.EDGE_HTTP_PORT ?? '8080';
 const EDGE_HTTPS_PORT = process.env.EDGE_HTTPS_PORT ?? '8443';
 
 /** 好友房开关的键名 —— **写死**（C13；规格 §2.2 四十四键之一）。 */
-const FRIEND_ROOM_KEY = 'room.friendRoomEnabled';
+const FRIEND_ROOM_KEY = 'game.doudizhu.friendRoomEnabled';
 
 // ────────────────────────────────────────────────────────────────────────────
 // docker 助手（形态先例见文件头）
@@ -115,7 +115,7 @@ function tailOut(out: string, lines = 3): string {
 }
 
 /**
- * C2/C17b 的「直接改库」：把 `room.friendRoomEnabled` 置 true、version+1、`updated_by='drill'`。
+ * C2/C17b 的「直接改库」：把 `game.doudizhu.friendRoomEnabled` 置 true、version+1、`updated_by='drill'`。
  *
  * 🔴 命令形态**照规格 §C2 逐字**（`slice-14` 的 mysql 先例形态）：容器内两变量
  * （`MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE`）由 compose 提供；`-e "…"` 内的字符串字面量用
@@ -126,7 +126,7 @@ function tailOut(out: string, lines = 3): string {
 const MYSQL_FLIP_TRUE_SH =
   `mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "UPDATE platform_config SET ` +
   `value=CAST(\\"true\\" AS JSON), version=version+1, updated_at=NOW(3), updated_by=\\"drill\\" ` +
-  `WHERE \\\`key\\\`=\\"room.friendRoomEnabled\\""`;
+  `WHERE \\\`key\\\`=\\"game.doudizhu.friendRoomEnabled\\""`;
 
 /** 直接改库翻转（C2 手法；C17b 重复同一形态）。 */
 function flipFriendRoomInDb(): CommandResult {
@@ -452,7 +452,7 @@ export async function runSlice14(): Promise<Checks> {
     step('C5半：真栈 2 例非法 PUT ⇒ 400 且值未变（adminGetConfig 前后对比）');
     const c5Before = await adminGetConfig<AdminConfigData>(admin);
     const c5Bads: ReadonlyArray<[string, unknown]> = [
-      ['robot.ruleFallback', 'yes'],        // 严格 boolean ⇒ 字符串非法
+      ['game.doudizhu.robot.ruleFallback', 'yes'],        // 严格 boolean ⇒ 字符串非法
       ['room.matchScanIntervalMs', 0],      // 整数 0 < n ≤ 600000 ⇒ 0 非法
     ];
     for (const [key, value] of c5Bads) {
@@ -495,15 +495,15 @@ export async function runSlice14(): Promise<Checks> {
     const c6Relogin = await adminLogin();                     // 抛 = 还原失败；成功 = 自证
     checks.that(c6Relogin.length > 0, 'C6半③ 还原后正确口令可登录（自证还原到位）');
 
-    step('C7：GET /api/config 的 data 键集（排序后）恰好十九键 + 值类型正确');
+    step('C7：GET /api/config 的 data 键集（排序后）恰好二十一键 + 值类型正确');
     const c7 = await getJson<Record<string, unknown>>('/api/config', user.accessToken);
     checks.eq(c7.body?.code, ErrCode.OK, 'C7 GET /api/config code 0');
-    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15；台费阶段 2：派生字段删除后 20 键
-    // （§2.5/⚙️11 客户端 20 键，含九裸名——`entryFeePercents` 已删除）。
+    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15；台费阶段 2：派生字段删除后 21 键
+    // （§2.5/⚙️11 客户端 21 键，含九裸名——`entryFeePercents` 已删除）。
     checks.eq(
       Object.keys(c7.body?.data ?? {}).sort().join(','),
-      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      'C7 data 键集（排序后）恰好 20 键（含 cardCounterEnabled）',
+      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      'C7 data 键集（排序后）恰好 21 键（含 cardCounterEnabled）',
     );
     checks.that(
       Array.isArray(c7.body?.data?.baseScoreLevels) && (c7.body!.data!.baseScoreLevels as unknown[]).length > 0 &&

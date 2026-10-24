@@ -5,7 +5,7 @@
  *  ⓪ 起手自证 + 清源：五个容器 healthy（room/user/currency/gateway/config）+ **金币队列清源**
  *     （`match:queue:gold:*` 与 gold 票的 `match:meta:*`——E 组的补位谓词是「队里恰好这两个
  *     真人」，任何上一轮崩溃留下的陈旧票都会把第三个座位吃掉）；
- *  A 配置：`/api/config` 恰 20 键 + 内部键零泄漏 + 管理面 65 键种子 + 改金开关后生效；
+ *  A 配置：`/api/config` 恰 21 键 + 内部键零泄漏 + 管理面 65 键种子 + 改金开关后生效；
  *  B 开关：gold 关 ⇒ 12010、开 ⇒ 不再 12010；free 关 ⇒ random 12010、恢复；
  *  C 门槛：0 余额 ⇒ 14003（含所需金额）→ 管理面补足 ⇒ 入队成功；
  *  D 取消排队（C21）：入队 → 探针（ZSCORE/meta 指纹，`slice-12:438-473` 先例）→ unmatch →
@@ -14,7 +14,7 @@
  *     打完整局 → 结算广播 + `game.balances` 恰 3 座 + **按结算前余额复算期望 delta 逐座比对**
  *     （复算内含截断/分摊/残差公式；**不直断和=0**）+ botId 局中读 + robots 账户形态 +
  *     战绩 moneyDelta = 实际变动；
- *  F 抽水：`currency.rakePercent=10` 再打一局（同 E 口径）→ 赢家实收 = g − floor(g×10/100)、
+ *  F 抽水：`game.doudizhu.rakePercent=10` 再打一局（同 E 口径）→ 赢家实收 = g − floor(g×10/100)、
  *     entries 和 = −(抽水+残差)（管理面读余额核对）→ 复原 0；
  *  G 救助（**广告片 T22 原位改写为新链驱动**）：GET 裁决 reason 面 + 签名 GET 回调样本
  *     （v1.4：query 八字段 + sha256(secret:trans_id)，终态 200 `{"isValid":true}`）
@@ -49,8 +49,8 @@
  *    且每条 `checks.*` 都不落在「长度随数据变」的循环里（金币局的三座/两真人都是定长）。
  *
  * ─── 本片对真栈的副作用与复原 ────────────────────────────────────────────
- *  配置：`room.freeRoomEnabled` 临时 FALSE、`currency.rakePercent` 临时 10、
- *  `currency.reliefEnabled` 临时 TRUE；`room.goldRoomEnabled` 的**种子已是 TRUE**
+ *  配置：`game.doudizhu.freeRoomEnabled` 临时 FALSE、`game.doudizhu.rakePercent` 临时 10、
+ *  `currency.reliefEnabled` 临时 TRUE；`game.doudizhu.goldRoomEnabled` 的**种子已是 TRUE**
  *  （2026-10-04 用户裁决「金币场默认开」）—— A 组开头**确保**它开着（管理面 PUT，
  *  兼容旧库/上一轮留下的 false），B 组内临时 FALSE 后还原 —— 收官与 `finally`
  *  双重复原（阈值见 §1.1 种子）；注入 `currency.reconcileIntervalMs=3000`（管理面 PUT）重起
@@ -61,6 +61,7 @@ import { spawnSync } from 'node:child_process';
 import https from 'node:https';
 import { resolve } from 'node:path';
 import {
+  CONFIG_KEYS,
   ErrCode,
   RPC_PATTERNS,
   type CurrencyApplyData,
@@ -132,17 +133,17 @@ const adSecret = (): string => (cachedAdSecret ??= loadAdCallbackSecret());
  *  阶段 2 已删除派生字段 `entryFeePercents`；
  *  `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间，UTF-16 `'A'<'E'`）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 
 /** §12.1 A 组：内部键零泄漏的**显式名单**（+ 全量 `currency.` 前缀扫描兜底）。 */
-const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'currency.rakePercent', 'currency.reliefAmount'] as const;
+const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'] as const;
 
 /** §1.1 的六新键（A 组对管理面 65 键的核对名单）。 */
 const NEW_KEYS = [
-  'room.freeRoomEnabled',
-  'room.goldRoomEnabled',
-  'currency.entryMultiplier',
-  'currency.rakePercent',
+  'game.doudizhu.freeRoomEnabled',
+  'game.doudizhu.goldRoomEnabled',
+  'game.doudizhu.entryMultiplier',
+  'game.doudizhu.rakePercent',
   'currency.reliefEnabled',
   'currency.reliefAmount',
 ] as const;
@@ -986,12 +987,12 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // A 配置
     // ══════════════════════════════════════════════════════════════════════
-    step('A：/api/config 恰 20 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
+    step('A：/api/config 恰 21 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
     const uCfg = await registerUser(2);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     checks.eq(cfgA.body?.code, ErrCode.OK, 'A /api/config code 0');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 20 键');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 21 键');
     checks.that(
       Array.isArray((cfgA.body?.data as any)?.baseScoreLevels) &&
         ((cfgA.body!.data as any).baseScoreLevels as unknown[]).length > 0,
@@ -1022,15 +1023,15 @@ export async function runSlice18(): Promise<Checks> {
     }
     const adminCfg = await adminGetConfig<AdminConfigData>(admin);
     const adminKeys = Object.keys(adminCfg.body?.data?.config ?? {});
-    checks.eq(adminKeys.length, 65, 'A 管理面键总数 51（17 既有 + 9 支付 + 8 风控 + 6 节奏 + 1 广告 + 2 客户端接入 + 3 机器人补位开关 + 1 提现再认证 + 1 设备绑定 + 1 记牌器开关 + 2 记牌器价格）');
+    checks.eq(adminKeys.length, CONFIG_KEYS.length, 'A 管理面键总数 = protocol CONFIG_KEYS.length');
     const missingNewKeys = NEW_KEYS.filter((k) => !adminKeys.includes(k));
     checks.that(
       missingNewKeys.length === 0,
       `A 管理面含六新键（缺 ${JSON.stringify(missingNewKeys)}；实读 ${adminKeys.length} 键）`,
     );
     const sixValues = {
-      entryMultiplier: adminCfg.body?.data?.config?.['currency.entryMultiplier']?.value,
-      rakePercent: adminCfg.body?.data?.config?.['currency.rakePercent']?.value,
+      entryMultiplier: adminCfg.body?.data?.config?.['game.doudizhu.entryMultiplier']?.value,
+      rakePercent: adminCfg.body?.data?.config?.['game.doudizhu.rakePercent']?.value,
       reliefAmount: adminCfg.body?.data?.config?.['currency.reliefAmount']?.value,
     };
     checks.eq(
@@ -1043,8 +1044,8 @@ export async function runSlice18(): Promise<Checks> {
 
     // 2026-10-04 用户裁决后**种子即 true** ⇒ 本 PUT 是「**确保期望态**」（自管理：dev 库
     // 可能带着旧库/上一轮留下的 false）—— 同时保留「管理面 → 客户端面生效」的链路断言。
-    const putOn = await adminPutConfig('room.goldRoomEnabled', true, admin);
-    checks.eq(putOn.body?.code, ErrCode.OK, 'A 管理面 PUT room.goldRoomEnabled=true（确保态）⇒ code 0');
+    const putOn = await adminPutConfig('game.doudizhu.goldRoomEnabled', true, admin);
+    checks.eq(putOn.body?.code, ErrCode.OK, 'A 管理面 PUT game.doudizhu.goldRoomEnabled=true（确保态）⇒ code 0');
     const cfgA2 = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     checks.eq(
       (cfgA2.body?.data as any)?.goldRoomEnabled,
@@ -1059,7 +1060,7 @@ export async function runSlice18(): Promise<Checks> {
     const userB = await registerUser(3);
     const clientB = await HarnessClient.connect('S18B', userB);
     try {
-      const offGold = await putConfigAndWaitEffect(admin, 'room.goldRoomEnabled', false, 'room-service');
+      const offGold = await putConfigAndWaitEffect(admin, 'game.doudizhu.goldRoomEnabled', false, 'room-service');
       checks.that(
         offGold.putCode === ErrCode.OK && offGold.refreshOk,
         `B PUT gold=false ⇒ 200 且 room-service 快照生效（version=${offGold.expected} 计数 ${offGold.baseline}→${offGold.observed}）`,
@@ -1069,7 +1070,7 @@ export async function runSlice18(): Promise<Checks> {
         goldOff.ok,
         `B gold 关 ⇒ room.match gold = 12010（该场次暂未开放）—— 实测 code=${goldOff.code}`,
       );
-      const onGold = await putConfigAndWaitEffect(admin, 'room.goldRoomEnabled', true, 'room-service');
+      const onGold = await putConfigAndWaitEffect(admin, 'game.doudizhu.goldRoomEnabled', true, 'room-service');
       checks.that(
         onGold.putCode === ErrCode.OK && onGold.refreshOk,
         `B PUT gold=true ⇒ 200 且 room-service 快照生效（version=${onGold.expected} 计数 ${onGold.baseline}→${onGold.observed}）`,
@@ -1079,7 +1080,7 @@ export async function runSlice18(): Promise<Checks> {
         goldOn.ok && goldOn.code !== ErrCode.ROOM_MODE_DISABLED,
         `B gold 开 ⇒ 不再 12010（实测 code=${goldOn.code} message=${JSON.stringify(goldOn.message)}；0 余额 ⇒ 落 14003 是门槛组的门）`,
       );
-      const offFree = await putConfigAndWaitEffect(admin, 'room.freeRoomEnabled', false, 'room-service');
+      const offFree = await putConfigAndWaitEffect(admin, 'game.doudizhu.freeRoomEnabled', false, 'room-service');
       checks.that(
         offFree.putCode === ErrCode.OK && offFree.refreshOk,
         `B PUT free=false ⇒ 200 且 room-service 快照生效（version=${offFree.expected} 计数 ${offFree.baseline}→${offFree.observed}）`,
@@ -1089,7 +1090,7 @@ export async function runSlice18(): Promise<Checks> {
         freeOff.ok,
         `B free 关 ⇒ room.match random = 12010 —— 实测 code=${freeOff.code}`,
       );
-      const onFree = await putConfigAndWaitEffect(admin, 'room.freeRoomEnabled', true, 'room-service');
+      const onFree = await putConfigAndWaitEffect(admin, 'game.doudizhu.freeRoomEnabled', true, 'room-service');
       checks.that(
         onFree.putCode === ErrCode.OK && onFree.refreshOk,
         `B PUT free=true ⇒ 200 且 room-service 快照生效（version=${onFree.expected} 计数 ${onFree.baseline}→${onFree.observed}）`,
@@ -1295,7 +1296,7 @@ export async function runSlice18(): Promise<Checks> {
     // 在快速机器上会贴边 30/5 分钟（机制复现：第 31 笔 ⇒ 429）⇒ F/G 两段换新令牌续跑。
     // ⚠️ 这不是放宽判据：换令牌后每段写量（≈12）仍受**同一条桶规则**约束。
     admin = await adminLogin();
-    const putRake = await putConfigAndWaitEffect(admin, 'currency.rakePercent', 10, 'room-service');
+    const putRake = await putConfigAndWaitEffect(admin, 'game.doudizhu.rakePercent', 10, 'room-service');
     checks.that(
       putRake.putCode === ErrCode.OK && putRake.refreshOk,
       `F PUT rakePercent=10 ⇒ 200 且 room-service 快照生效（version=${putRake.expected} 计数 ${putRake.baseline}→${putRake.observed}）`,
@@ -1319,7 +1320,7 @@ export async function runSlice18(): Promise<Checks> {
       -(recountF.rakeTotal + recountF.residue),
       `F entries 和（管理面读数：真人余额差 + 机器人 game_settle 流水）= −(抽水 ${recountF.rakeTotal} + 残差 ${recountF.residue})`,
     );
-    const putRakeOff = await putConfigAndWaitEffect(admin, 'currency.rakePercent', 0, 'room-service');
+    const putRakeOff = await putConfigAndWaitEffect(admin, 'game.doudizhu.rakePercent', 0, 'room-service');
     checks.that(
       putRakeOff.putCode === ErrCode.OK && putRakeOff.refreshOk,
       `F 复原 rakePercent=0 ⇒ 200 且 room-service 快照生效（version=${putRakeOff.expected}）`,
@@ -1642,15 +1643,15 @@ export async function runSlice18(): Promise<Checks> {
     // 收尾：配置复原 + 读数自证 + 队列零残留
     // ══════════════════════════════════════════════════════════════════════
     step('收尾：gold=true（裁决后的种子态）/ rake=0 / relief=false 复原 + 读数自证 + 队列零残留');
-    const finalOn = await putConfigAndWaitEffect(admin, 'room.goldRoomEnabled', true, 'room-service');
+    const finalOn = await putConfigAndWaitEffect(admin, 'game.doudizhu.goldRoomEnabled', true, 'room-service');
     checks.that(
       finalOn.putCode === ErrCode.OK && finalOn.refreshOk,
       `收尾 PUT gold=true ⇒ 200 且 room-service 快照生效（version=${finalOn.expected}）`,
     );
     const finalCfg = await adminGetConfig<AdminConfigData>(admin);
     const finalValues = {
-      gold: finalCfg.body?.data?.config?.['room.goldRoomEnabled']?.value,
-      rake: finalCfg.body?.data?.config?.['currency.rakePercent']?.value,
+      gold: finalCfg.body?.data?.config?.['game.doudizhu.goldRoomEnabled']?.value,
+      rake: finalCfg.body?.data?.config?.['game.doudizhu.rakePercent']?.value,
       relief: finalCfg.body?.data?.config?.['currency.reliefEnabled']?.value,
       reliefAmount: finalCfg.body?.data?.config?.['currency.reliefAmount']?.value,
     };
@@ -1672,8 +1673,8 @@ export async function runSlice18(): Promise<Checks> {
       for (const room of openRooms) for (const c of room.clients) c.close();
       await putInterval(admin, 'currency.reconcileIntervalMs', RECONCILE_INTERVAL_RESTORE, 'finally 兜底：还原基线');
       compose({}, 'up', '-d', '--no-deps', '--force-recreate', 'currency-service');
-      await adminPutConfig('room.goldRoomEnabled', true, admin);
-      await adminPutConfig('currency.rakePercent', 0, admin);
+      await adminPutConfig('game.doudizhu.goldRoomEnabled', true, admin);
+      await adminPutConfig('game.doudizhu.rakePercent', 0, admin);
       await adminPutConfig('currency.reliefEnabled', false, admin);
     } catch (err) {
       info(

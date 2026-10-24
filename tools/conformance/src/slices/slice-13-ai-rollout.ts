@@ -21,17 +21,17 @@
  *  4. J32  **补下的成功路径**（⚠️ **需要网**）：宿主预拷 8 个、只缺 `douzero_ADP/landlord_up.onnx`
  *     ⇒ 服务补下 + 加载 + `/health` 齐备。容器连不上 HF 时**只能** `checks.skip()` ——
  *     绝不许把「没验」写成 ok（`lib/assert.ts` 的 skip 纪律）。
- *  5. J22  真栈真打 `robot.availability`：ON（**常驻栈** ROBOT_RPC；配置中心 `robot.ruleFallback`
+ *  5. J22  真栈真打 `robot.availability`：ON（**常驻栈** ROBOT_RPC；配置中心 `game.doudizhu.robot.ruleFallback`
  *     默认 `true` = 规则兜底开着的旧世界 ⇒ 不探测、直接「能给」）⇒ `canProvide:true`。OFF（片⑦
  *     K11 重做：旧 `-e ROBOT_RULE_FALLBACK=false` 已随 env 退役失效）先经 admin PUT
- *     `robot.ruleFallback=false`，再起一只一次性容器（`-e DOUZERO_URL=http://127.0.0.1:9`
+ *     `game.doudizhu.robot.ruleFallback=false`，再起一只一次性容器（`-e DOUZERO_URL=http://127.0.0.1:9`
  *     `-e RPC_PORT=3199` + **显式发布** 3199 —— `docker compose run` 不发布 compose 里的 `ports`；
  *     但**自动入 compose 网络** ⇒ 容器启动时从 config-service 拉快照，拿到的就是关闭态）⇒
  *     `canProvide:false` + `reason:douzero-unreachable`。**用后还原 true**（PUT code 0 + 读回）。
  *     带「3199 未被占用」前提断言 + 后置残留断言。
  *  6. ~~J4（非法 env ⇒ 退出码 1 + logger.error 行）~~ —— **已删**（片⑦ K11）：`ROBOT_RULE_FALLBACK`
  *     的 env 解析随配置中心退役，junk-env 构造不再存在。语义继受 = `slice-14` 的 **C5半**（真栈
- *     2 例非法 PUT ⇒ 400 且值未变，其中一例就是 `robot.ruleFallback='yes'`）。判据减少（−4 条）
+ *     2 例非法 PUT ⇒ 400 且值未变，其中一例就是 `game.doudizhu.robot.ruleFallback='yes'`）。判据减少（−4 条）
  *     已在片⑦ T16 的提交信息显式登记。
  *
  * 一次性容器的纪律（**命名**先例 `slice-07.2-deploy:202/:461`、**纪律**先例 `slice-07.3-edge`）：
@@ -88,7 +88,7 @@ const J32_MISSING_LOG_NAME = J32_MISSING_REL.replace(/\.onnx$/, '');
 
 /**
  * J22 OFF 半的一次性探针（⚠️ 常驻 robot-service 已占 3105/3005 ⇒ 必须换空闲端口 + 显式发布）。
- * 关闭态 = admin PUT `robot.ruleFallback=false`（片⑦ K11 重做：旧 `-e ROBOT_RULE_FALLBACK=false`
+ * 关闭态 = admin PUT `game.doudizhu.robot.ruleFallback=false`（片⑦ K11 重做：旧 `-e ROBOT_RULE_FALLBACK=false`
  * 已随 env 退役失效）；容器经 `compose run` **自动入 compose 网络**（⛔ 勿加 `--network`）——
  * 启动时从 config-service 拉快照，才拿得到关闭态。
  */
@@ -390,15 +390,15 @@ function runHealthcheckInContainer(name: string, test: string[]): { status: numb
 }
 
 /**
- * `GET /api/admin/config` 读 `robot.ruleFallback` 的 `{value, version}`（缺行 ⇒ 抛，带原始载荷 ——
+ * `GET /api/admin/config` 读 `game.doudizhu.robot.ruleFallback` 的 `{value, version}`（缺行 ⇒ 抛，带原始载荷 ——
  * 不让缺行伪装成 undefined 比较）。形态同 `slice-14` 的 `adminFriendRoom`（那个钉友房键）。
  */
 async function adminRuleFallback(admin: string): Promise<{ value: unknown; version: number }> {
   const res = await adminGetConfig<{ config: Record<string, { value: unknown; version: number }> }>(admin);
-  const entry = res.body?.data?.config?.['robot.ruleFallback'];
+  const entry = res.body?.data?.config?.['game.doudizhu.robot.ruleFallback'];
   if (!entry) {
     throw new ConformanceError(
-      `GET /api/admin/config 缺 robot.ruleFallback —— 实际 ${JSON.stringify(res.body?.data?.config ?? res.body)}`,
+      `GET /api/admin/config 缺 game.doudizhu.robot.ruleFallback —— 实际 ${JSON.stringify(res.body?.data?.config ?? res.body)}`,
     );
   }
   return entry;
@@ -671,7 +671,7 @@ export async function runSlice13(): Promise<Checks> {
   }
 
   // ── 组⑤ J22：robot.availability —— ON（常驻栈）true / OFF（admin PUT 关开关 + 一次性容器）false ──
-  step(`组⑤ J22：真栈 robot.availability —— ON（常驻 ${ROBOT_RPC.host}:${ROBOT_RPC.port}）⇒ true；OFF（admin PUT robot.ruleFallback=false + 一次性 + 发布 ${J22_OFF_PORT}）⇒ false`);
+  step(`组⑤ J22：真栈 robot.availability —— ON（常驻 ${ROBOT_RPC.host}:${ROBOT_RPC.port}）⇒ true；OFF（admin PUT game.doudizhu.robot.ruleFallback=false + 一次性 + 发布 ${J22_OFF_PORT}）⇒ false`);
   removeContainer(J22_OFF_CONTAINER);
   checks.that(
     !(await portBusy(J22_OFF_PORT)),
@@ -688,16 +688,16 @@ export async function runSlice13(): Promise<Checks> {
         '     docker compose build robot-service && docker compose up -d --no-deps robot-service',
     );
   }
-  info(`ON（配置中心 robot.ruleFallback 默认 true ⇒ 不探测、直接能给）：${JSON.stringify(on)}`);
+  info(`ON（配置中心 game.doudizhu.robot.ruleFallback 默认 true ⇒ 不探测、直接能给）：${JSON.stringify(on)}`);
   checks.that(on.ok, `J22 ON：常驻栈必须回信封成功 —— 实际 ${JSON.stringify(on)}`);
   if (!on.ok) throw new ConformanceError(`J22 ON 前置失败：${JSON.stringify(on)}`);
   checks.that(
     on.data.canProvide === true,
-    `J22 ON：开关 ON（配置中心 robot.ruleFallback 默认 true）⇒ canProvide:true —— 实际 ${JSON.stringify(on.data)}`,
+    `J22 ON：开关 ON（配置中心 game.doudizhu.robot.ruleFallback 默认 true）⇒ canProvide:true —— 实际 ${JSON.stringify(on.data)}`,
   );
 
   // ── OFF 半（片⑦ K11 重做）：旧构造 `-e ROBOT_RULE_FALLBACK=false` 已随 env 退役失效 ——
-  //    关闭态改经 **admin PUT** `robot.ruleFallback=false`；一次性容器经 `compose run`
+  //    关闭态改经 **admin PUT** `game.doudizhu.robot.ruleFallback=false`；一次性容器经 `compose run`
   //    **自动入 compose 网络**（⛔ 勿加 `--network`），启动时从 config-service 拉快照（拿到 false）
   //    ⇒ 探测门禁放行 probe；DOUZERO_URL 指到容器**自己**的回环:9（无人 listen ⇒ 立刻
   //    ECONNREFUSED）⇒ canProvide:false / douzero-unreachable（确定性）。
@@ -710,10 +710,10 @@ export async function runSlice13(): Promise<Checks> {
   let j22RestoreValue: unknown = '<未读回>';     // 读回值；读回失败时保持占位
   let j22RestoreErr = '';                        // 还原路径异常原文（PUT 或读回）
   try {
-    const j22PutOff = await adminPutConfig('robot.ruleFallback', false, j22Admin);
-    checks.eq(j22PutOff.body?.code, ErrCode.OK, 'J22 OFF 前置①：admin PUT robot.ruleFallback=false ⇒ code 0（旧 env 构造已退役）');
+    const j22PutOff = await adminPutConfig('game.doudizhu.robot.ruleFallback', false, j22Admin);
+    checks.eq(j22PutOff.body?.code, ErrCode.OK, 'J22 OFF 前置①：admin PUT game.doudizhu.robot.ruleFallback=false ⇒ code 0（旧 env 构造已退役）');
     const j22OffEntry = await adminRuleFallback(j22Admin);
-    checks.eq(j22OffEntry.value, false, 'J22 OFF 前置②：读回 robot.ruleFallback=false（容器启动前，快照真源已是关闭态）');
+    checks.eq(j22OffEntry.value, false, 'J22 OFF 前置②：读回 game.doudizhu.robot.ruleFallback=false（容器启动前，快照真源已是关闭态）');
 
     startOneShot(J22_OFF_CONTAINER, [
       '-p',
@@ -750,7 +750,7 @@ export async function runSlice13(): Promise<Checks> {
     removeContainer(J22_OFF_CONTAINER);
     // 还原 true + 读回（记录式，断言在 finally 之外 —— 这里**不许**用异常顶掉原始结论）。
     try {
-      const restored = await adminPutConfig('robot.ruleFallback', true, j22Admin);
+      const restored = await adminPutConfig('game.doudizhu.robot.ruleFallback', true, j22Admin);
       j22RestoreCode = restored.body?.code ?? null;
       try {
         j22RestoreValue = (await adminRuleFallback(j22Admin)).value;
@@ -767,7 +767,7 @@ export async function runSlice13(): Promise<Checks> {
       `J22 OFF：60s 上界内 ${J22_OFF_PORT} 没有 RPC 应答 —— 末次错误：${offLastErr}；日志尾 ${offLogs.slice(-600)}`,
     );
   }
-  info(`OFF（robot.ruleFallback=false + DOUZERO_URL=http://127.0.0.1:9）：${JSON.stringify(off)}`);
+  info(`OFF（game.doudizhu.robot.ruleFallback=false + DOUZERO_URL=http://127.0.0.1:9）：${JSON.stringify(off)}`);
   checks.that(off.ok, `J22 OFF：一次性容器必须回信封成功 —— 实际 ${JSON.stringify(off)}`);
   if (!off.ok) throw new ConformanceError(`J22 OFF 前置失败：${JSON.stringify(off)}`);
   checks.that(
@@ -783,18 +783,18 @@ export async function runSlice13(): Promise<Checks> {
   checks.eq(j22Residual, '', 'J22：后置无残留（一次性容器已拆）');
   checks.that(
     j22RestoreCode === ErrCode.OK,
-    'J22 OFF 收尾①：用后还原 admin PUT robot.ruleFallback=true ⇒ code 0（成败皆然 —— 关闭态不许留过本轮）' +
+    'J22 OFF 收尾①：用后还原 admin PUT game.doudizhu.robot.ruleFallback=true ⇒ code 0（成败皆然 —— 关闭态不许留过本轮）' +
       ` —— 实际 code=${j22RestoreCode === null ? '（未执行）' : j22RestoreCode}${j22RestoreErr ? `；${j22RestoreErr}` : ''}`,
   );
   checks.that(
     j22RestoreValue === true,
-    `J22 OFF 收尾②：读回 robot.ruleFallback=true（还原真的落库）—— 实际 ${JSON.stringify(j22RestoreValue)}` +
+    `J22 OFF 收尾②：读回 game.doudizhu.robot.ruleFallback=true（还原真的落库）—— 实际 ${JSON.stringify(j22RestoreValue)}` +
       (j22RestoreErr ? `；${j22RestoreErr}` : ''),
   );
 
   // ── 原组⑥ J4（非法 env ⇒ fail-closed）**已删**（片⑦ K11）：`ROBOT_RULE_FALLBACK` 的 env 解析
   //    随配置中心退役，junk-env 构造不再存在。**语义继受 = `slice-14` 的 C5半**（真栈 2 例非法
-  //    PUT ⇒ 400 且值未变 —— 非法 `robot.ruleFallback='yes'` 就在那两例里）。判据减少（−4 条）
+  //    PUT ⇒ 400 且值未变 —— 非法 `game.doudizhu.robot.ruleFallback='yes'` 就在那两例里）。判据减少（−4 条）
   //    已在片⑦ T16 的提交信息显式登记（仓规：判据只增不减，删减必须显式）。
   return checks;
 }

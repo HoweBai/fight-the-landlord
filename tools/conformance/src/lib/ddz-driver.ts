@@ -130,7 +130,7 @@ export interface FreshRoom {
  *    ⇒ `room.matched` 会比三人成局晚 ~30–40s 到达（等待窗口随之上调，见 `matchWaitMs`）。
  */
 export interface FreshRoomOptions {
-  /** 撮合模式（默认 `'random'`）。`'gold'` 需要 `room.goldRoomEnabled` 已开且余额过门槛。 */
+  /** 撮合模式（默认 `'random'`）。`'gold'` 需要 `game.doudizhu.goldRoomEnabled` 已开且余额过门槛。 */
   mode?: 'random' | 'gold';
   /** 撮合底分（默认 `MATCH_BASE_SCORE`=15）。 */
   baseScore?: number;

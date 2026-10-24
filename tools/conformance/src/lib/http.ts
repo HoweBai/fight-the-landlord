@@ -336,7 +336,7 @@ export function adminAdChannelDelete(key: string, token: string): Promise<HttpRe
  */
 export async function setFriendRooms(enabled: boolean, playerToken: string): Promise<void> {
   const admin = await adminLogin();
-  const put = await adminPutConfig('room.friendRoomEnabled', enabled, admin);
+  const put = await adminPutConfig('game.doudizhu.friendRoomEnabled', enabled, admin);
   if (put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`置 friendRoomEnabled=${enabled} 失败：${JSON.stringify(put.body)}`);
   }

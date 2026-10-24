@@ -1190,7 +1190,7 @@ export async function runSlice22(): Promise<Checks> {
     expectHttp(checks, wOrder, 502, ErrCode.PAY_CHANNEL_ERROR, '⑨ 窗口步：下单必败 ⇒ 15001（冷 payment，无回落可借）');
     const wCfg = await adminGetConfig<{ config: Record<string, unknown> }>(adminToken);
     expectHttp(checks, wCfg, 200, ErrCode.OK, '⑨ 窗口：GET /api/admin/config ⇒ 200（其它面不受影响）');
-    checks.eq(Object.keys(wCfg.body?.data?.config ?? {}).length, 65, '⑨ 窗口：65 键面完整（懒校验，渠道块故障不外溢）');
+    checks.eq(Object.keys(wCfg.body?.data?.config ?? {}).length, CONFIG_KEYS.length, '⑨ 窗口：CONFIG_KEYS.length 键面完整（懒校验，渠道块故障不外溢）');
 
     // 恢复：用存下的钥重建两服务（payment 再冷一次）⇒ 复绿 = 新鲜拉取强证。
     const rec1 = compose({ PAY_CONFIG_ENC_KEY: encKeySaved, ADMIN_PASSWORD: adminPwSaved }, 'up', '-d', '--force-recreate', 'config-service');

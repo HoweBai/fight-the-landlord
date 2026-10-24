@@ -554,7 +554,7 @@ export async function runSlice072Hardening(): Promise<Checks> {
 
   // ── 片⑦ 前置（T14）：好友房开关必须**开** ────────────────────────
   // 本片第 10 步（N9）要经网关 `POST /api/rooms` 建房、并按房号读 Redis —— 片⑦ 起该
-  // 路由按 `room.friendRoomEnabled` 缓存值拦截（关 ⇒ 12006）。（第 5/6 步的
+  // 路由按 `game.doudizhu.friendRoomEnabled` 缓存值拦截（关 ⇒ 12006）。（第 5/6 步的
   // `ensureRoom` 走 `room.match`，匹配路径**不**受开关影响 —— 规格 C8 的正对照。）
   // ⚠️ 放在 `runs()` 的步骤选择**之外**、`try` 的清理范围**之前**：它是前置而不是某一步的
   //    判据（步骤选择器只**减步骤**、不弱化前置）；失败直接抛 ConformanceError 带因收场。

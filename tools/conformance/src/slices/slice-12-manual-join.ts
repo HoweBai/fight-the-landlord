@@ -129,7 +129,7 @@ export async function runSlice12(): Promise<Checks> {
 
   // ── 片⑦ 前置（T14）：好友房开关必须**开** ────────────────────────
   // 本片的手动路径全程在闸后：建房（`POST /api/rooms`）与占座（`POST /api/rooms/:code/join`）
-  // 片⑦ 起都按 `room.friendRoomEnabled` 缓存值拦（关 ⇒ 12006）。
+  // 片⑦ 起都按 `game.doudizhu.friendRoomEnabled` 缓存值拦（关 ⇒ 12006）。
   // ⚠️ 只开**不还原**（规格 §3 编排：开关的复原是 slice-14 收尾的职责）。
   await setFriendRooms(true, users[0]!.accessToken);
 

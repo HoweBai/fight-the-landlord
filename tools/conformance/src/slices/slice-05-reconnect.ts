@@ -93,7 +93,7 @@ interface RoomInfo {
 /**
  * 建房（§7.1 `POST /api/rooms`）—— **不入座**是这条路径的既定契约。
  *
- * ⚠️ 片⑦ 起 REST 建房在 `room.friendRoomEnabled` 缓存值闸后（关 ⇒ 12006）⇒
+ * ⚠️ 片⑦ 起 REST 建房在 `game.doudizhu.friendRoomEnabled` 缓存值闸后（关 ⇒ 12006）⇒
  * C3-C5 前置里先 `setFriendRooms(true)`（沿 slice-12 的 T14 手法；只开不还原，
  * 开关的复原是 slice-14 收尾的职责）。
  */
@@ -288,13 +288,13 @@ export async function runSlice05(): Promise<Checks> {
     // 峰值保持在限内。主线的 P1/P2 保持在线（它们是后续对照的活体）。
     cold2.close();
 
-    // ── C3-C5 前置：好友房开关必须**开**（REST 建房经 `room.friendRoomEnabled` 闸）──
+    // ── C3-C5 前置：好友房开关必须**开**（REST 建房经 `game.doudizhu.friendRoomEnabled` 闸）──
     // 沿 slice-12 的 T14 手法：admin PUT + 建房行为轮询至生效。
     // ⚠️ 只开**不还原**（与 slice-06/07.1/07.2-hardening/12 同纪律：开关的复原是
     // slice-14 收尾的职责）。
     step('C3-C5 前置：置好友房开关开（沿 slice-12 手法；只开不还原，收尾归 slice-14）');
     await setFriendRooms(true, users[0]!.accessToken);
-    checks.ok('room.friendRoomEnabled = true（建房探针已生效）');
+    checks.ok('game.doudizhu.friendRoomEnabled = true（建房探针已生效）');
 
     // ── C3（规格 §3）：从未 room.join + 票失效（直删）⇒ 建连被拉回（哈希源） ──
     //
