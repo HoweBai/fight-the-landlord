@@ -2,7 +2,7 @@
  * conformance 用例：**风控片（风控 T11）** —— `slice-20-risk-control`；规格 §6.2 的九组逐条对位。
  *
  * ─── 编排顺序与理由（为什么是这个序）────────────────────────────────────────
- *  ① 配置面：65 键在场 + 8 风险键种子逐值 + 非法写入 400 且不落库（最便宜的一环，先跑）；
+ *  ① 配置面：全量键在场 + 10 风控键种子逐值 + 非法写入 400 且不落库（最便宜的一环，先跑）；
  *  ② 谓词组：**开关对照**——`sameDevice` 开（同 deviceId 二人 + 第三人 ⇒ 30s 子集路径成局 +
  *     落单兜底；A/B 永不同房）→ 关（三人同 deviceId 正常成局 = 负对照）→ `sameIp` 开
  *     （**同主机天然同 IP**：三人两两互斥 ⇒ 各自落单补机器人、三房三号）→ 关（复原）；
@@ -122,17 +122,22 @@ const K_PRED_SAME_DEVICE = 'risk.predicate.sameDevice';
 const K_PRED_SAME_IP = 'risk.predicate.sameIp';
 const K_WIN_RATE = 'game.doudizhu.risk.winRateThreshold';
 const K_MIN_GAMES = 'game.doudizhu.risk.minGames';
+/** 2026-10-25 跑得快风控两键（与斗地主独立；有记录即纳入扫描）。 */
+const K_PDK_WIN_RATE = 'game.paodekuai.risk.winRateThreshold';
+const K_PDK_MIN_GAMES = 'game.paodekuai.risk.minGames';
 const K_DEVICE_LIMIT = 'risk.deviceLimit';
 const K_DEVICE_WINDOW_DAYS = 'risk.deviceWindowDays';
 const K_AUTO_THROTTLE = 'risk.autoThrottle';
 const K_DEVICE_RETENTION_DAYS = 'risk.deviceRetentionDays';
 
-/** 八风险键的**种子态**（① 组逐值断言 + 收尾复原值；规格 §2.1-3 表）。 */
+/** 十风控键的**种子态**（① 组逐值断言；规格 §2.1-3 表 + 2026-10-25 跑得快两键）。 */
 const RISK_SEED_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   [K_PRED_SAME_DEVICE, false],
   [K_PRED_SAME_IP, false],
   [K_WIN_RATE, 0.8],
   [K_MIN_GAMES, 100],
+  [K_PDK_WIN_RATE, 0.8],
+  [K_PDK_MIN_GAMES, 100],
   [K_DEVICE_LIMIT, 3],
   [K_DEVICE_WINDOW_DAYS, 30],
   [K_AUTO_THROTTLE, true],
@@ -715,31 +720,27 @@ export async function runSlice20(): Promise<Checks> {
     /* ════════════════════════════════════════════════════════════════════
      * ① 配置面（§6.2-1）
      * ════════════════════════════════════════════════════════════════════ */
-    step('① 配置面：65 键在场 + 8 风险键种子逐值 + 非法写入（0.785）⇒ 400 且不落库');
+    step(`① 配置面：${TOTAL_CONFIG_KEYS} 键在场 + 10 风控键种子逐值 + 非法写入（0.785）⇒ 400 且不落库`);
     const g1Cfg = await adminGetConfig<AdminConfigData>(s.adminToken);
     checks.eq(g1Cfg.body?.code, ErrCode.OK, '① GET /api/admin/config ⇒ code 0');
     const g1Keys = Object.keys(g1Cfg.body?.data?.config ?? {});
     checks.eq(g1Keys.length, TOTAL_CONFIG_KEYS, `① 管理面键总数 ${TOTAL_CONFIG_KEYS}（= protocol CONFIG_KEYS 长度，单一真源）`);
-    // 本片 ⚙️1 六节奏键有两键落在 `risk.` 命名空间（第 38/39 键）⇒ 8 种子 + 2 节奏 = 十；
-    // 其后两片又各加一键（均未同步本断言，2026-10-17 T9 全序抓出）：
-    //   `risk.withdrawReAuthEnabled`（第 48 键，ws-token-renew）· `risk.deviceBindingEnabled`（第 49 键，device-binding）
-    // ⇒ 现态恰十二。
-    // （计划 T13 未列此项：41 键现态下「恰八」必红 —— 实施期红跑实证，见报告偏差 D-1）。
-    const g1RiskKeys = g1Keys.filter((k) => k.startsWith('risk.')).sort();
+    // 风控键集与 CONFIG_KEYS 用**同一谓词**生成：平台 risk.*（含两个只读 legacy 键）+
+    // 两玩法 game.<type>.risk.*。这样加键自动跟随，也不会把 legacy 两键误判为多余。
+    const isRiskKey = (k: string): boolean =>
+      k.startsWith('risk.') ||
+      k.startsWith('game.doudizhu.risk.') ||
+      k.startsWith('game.paodekuai.risk.');
+    const g1RiskKeys = g1Keys.filter(isRiskKey).sort();
+    const expectedRiskKeys = CONFIG_KEYS.filter(isRiskKey).sort();
     checks.that(
-      fieldSetViolations(g1RiskKeys, [
-        ...RISK_SEED_VALUES.map(([k]) => k),
-        'risk.scanIntervalMs',
-        'risk.devicesCleanupIntervalMs',
-        'risk.withdrawReAuthEnabled',
-        'risk.deviceBindingEnabled',
-      ]).length === 0,
-      `① risk.* 键集恰十二（8 种子 + 2 节奏 + 2 后片键：withdrawReAuthEnabled/deviceBindingEnabled）—— 实际 ${JSON.stringify(g1RiskKeys)}`,
+      fieldSetViolations(g1RiskKeys, expectedRiskKeys).length === 0,
+      `① 风控键集 = CONFIG_KEYS 中 risk.* + 两玩法 risk.*（共 ${expectedRiskKeys.length}）—— 实际 ${JSON.stringify(g1RiskKeys)}`,
     );
     const g1SeedActual = RISK_SEED_VALUES.map(([k]) => [k, g1Cfg.body?.data?.config?.[k]?.value]);
     checks.that(
       JSON.stringify(g1SeedActual) === JSON.stringify(RISK_SEED_VALUES.map(([k, v]) => [k, v])),
-      `① 八风险键种子逐值（sameDevice/sameIp=false · winRate=0.8 · minGames=100 · deviceLimit=3 · windowDays=30 · autoThrottle=true · retention=365）—— 实际 ${JSON.stringify(g1SeedActual)}`,
+      `① 十风控键种子逐值（sameDevice/sameIp=false · ddzWinRate=0.8 · ddzMinGames=100 · pdkWinRate=0.8 · pdkMinGames=100 · deviceLimit=3 · windowDays=30 · autoThrottle=true · retention=365）—— 实际 ${JSON.stringify(g1SeedActual)}`,
     );
     // 非法写入（域外/三位小数都非法；0.785 是规格 §2.1-3 的点名样本）⇒ 400 且**不落库**。
     const g1Illegal = await adminPutConfig(K_WIN_RATE, 0.785, s.adminToken);
