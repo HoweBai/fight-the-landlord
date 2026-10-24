@@ -29,8 +29,8 @@
 - `export const LEGACY_CONFIG_KEYS`（16 键）；`export function isLegacyConfigKey(key: string): boolean`。
 - `ClientGameConfig` 增可选 `freeRoomEnabled` / `goldRoomEnabled` / `friendRoomEnabled` /
   `entryMultiplier`。
-- `ClientConfig` 增可选 `reliefThresholdCoins?: number`；`CLIENT_CONFIG_KEYS` 追加
-  `reliefThresholdCoins`。
+- `ClientConfig` 增 `reliefThresholdCoins?: number | null`；`CLIENT_CONFIG_KEYS` 追加
+  `reliefThresholdCoins`（新服务端恒下发合法值或 null，键集恒 21）。
 - `parseConfigValue`：
   - 新 boolean 键 → `parseStrictBoolean(key, value)`；
   - `game.doudizhu.rakePercent` / `game.paodekuai.rakePercent` → `parseRakePercent(value, key)`；
@@ -87,7 +87,7 @@
 - controller 内 `readKey(byKey, newKey, legacyKey, fallback)` / `readLevels(...)`。
 - 顶层派生：`baseScoreLevels`、`free/gold/friendRoomEnabled`、`entryMultiplier`、
   `cardCounter*`、`reliefThresholdCoins`（读侧复用 `parseReliefThresholdCoins`；
-  缺失/非法 ⇒ 不下发）。
+  **恒下发**合法值或 `null`，保持 21 键精确集）。
 - `games.doudizhu` 增场次/好友房/门槛/`cardCounter`；`games.paodekuai` 增场次/好友房/门槛。
 - `PlatformConfigService.set()` 首行：`if (isLegacyConfigKey(key)) throw new ProtocolError(...)`。
 
@@ -240,6 +240,8 @@
 - 客户端键集 20 → 21（+`reliefThresholdCoins`）。
 - 管理面键数用 `CONFIG_KEYS.length`（89）。
 - 旧键写入改新键：friend、场次、抽水、档位、记牌器、robot.ruleFallback、risk 两键。
+- 旧键**读断言/复原/needed 推导**同步改新键：slice-18 门槛推导与收尾自证、
+  slice-13 `robot.ruleFallback` 读回。
 - slice-14 的直接 SQL 演练改 `game.doudizhu.friendRoomEnabled`。
 - slice-19 的旧键 400 断言加废弃文案校验。
 - `pnpm -C tools/conformance lint`；提交。
