@@ -1,35 +1,37 @@
-# 玩法开放开关 Implementation Plan
+# 玩法开放开关 Implementation Plan（对抗审查修订）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 管理面每个玩法设置页顶部一个「开放该玩法」开关；斗地主新增真实服务端开关 `game.doudizhu.enabled`。
 
-**Architecture:** 新配置键经 protocol → config-service（迁移 + `/api/config` 折叠）→ room-service（`gameEnabled` 闸 + 关闭时暂停匹配扫描）→ 客户端大厅门控；管理面用 `CONFIG_IA.headerKeys` 渲染顶部卡，原生 `confirm()` 二次确认。
+**Architecture:** protocol 新键 → 管理面 IA/顶部卡（先做，保持静态闸绿）→ config-service 迁移与 `/api/config` → room-service 闸与匹配暂停 → 客户端大厅门控 → conformance → 全量验证。
 
-**Tech Stack:** TypeScript/NestJS、uni-app Vue3、零构建 admin（vanilla JS）、conformance 真栈、TypeORM 迁移。
+**Tech Stack:** TypeScript/NestJS、uni-app Vue3、零构建 admin、conformance 真栈、TypeORM。
 
 ## Global Constraints
 
-- spec：`docs/superpowers/specs/2026-10-24-game-mode-enabled-switch-design.md`（已过对抗审查）
-- 关闭语义：只拦新匹配/新建房（12012）；进行中对局、已有房间、已入队票不受影响；关闭时匹配扫描暂停（D11）
-- 键缺失默认：斗地主 `true`、跑得快 `false`
-- 每个改动一个 commit；提交信息末尾 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-- 所有测试先红后绿；交付前 `bash scripts/ci.sh` 七阶段全绿
+- spec：`docs/superpowers/specs/2026-10-24-game-mode-enabled-switch-design.md`
+- 关闭只拦新匹配/新建房（12012）；进行中对局、已有房间、已入队票不受影响；关闭时匹配扫描暂停
+- 缺键默认：斗地主 `true`、跑得快 `false`
+- 每任务结尾 commit；attribution 行照 CLAUDE.md
+- `ci.sh` 七阶段在每个任务后保持绿；conformance 的 4 个 65 键断言在 Task 5 统一改（权威轮在最后）
 
 ---
 
-### Task 1: protocol 键与校验
+### Task 1: protocol 键 + 管理面顶部开关 + 静态闸
 
 **Files:**
-- Modify: `packages/protocol/src/config.ts`（`CONFIG_KEYS` 末尾、`parseConfigValue`、头注释）
-- Test: `packages/protocol/src/config.test.ts`
+- Modify: `packages/protocol/src/config.ts`、`config.test.ts`
+- Modify: `admin/app.js`、`admin/style.css`
+- Modify: `scripts/verify-admin-static.mjs`
 
 **Interfaces:**
-- Produces: `ConfigKey` 含 `'game.doudizhu.enabled'`；`parseConfigValue` 对该键严格 boolean。
+- Produces: `ConfigKey` 含 `'game.doudizhu.enabled'`；`parseConfigValue` 严格 boolean；
+  管理面 `CONFIG_IA[].headerKeys`、`GAME_SWITCH_DEFAULTS`、`lastEnabledGameWarning()`。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: protocol 失败测试**
 
-在 `config.test.ts` 的两处逐字键数组（约 :56 与 :467）末尾追加 `'game.doudizhu.enabled'`，并加：
+`config.test.ts` 两处逐字数组（约 :56、:467）末尾追加 `'game.doudizhu.enabled'`；加：
 
 ```ts
 it('game.doudizhu.enabled：严格 boolean', () => {
@@ -41,65 +43,89 @@ it('game.doudizhu.enabled：严格 boolean', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+Run: `pnpm --filter @fight-the-landlord/protocol test` ⇒ FAIL
 
-Run: `pnpm --filter @fight-the-landlord/protocol test`
-Expected: FAIL（键不存在/数组不等）
+- [ ] **Step 2: protocol 实现**
 
-- [ ] **Step 3: 实现**
+`CONFIG_KEYS` 末尾加注释 + `'game.doudizhu.enabled'`；`parseConfigValue` 加
+`if (key === 'game.doudizhu.enabled') return parseStrictBoolean(key, value);`；头注释改「六十六键」。
 
-`CONFIG_KEYS` 末尾加：
+Run: `pnpm --filter @fight-the-landlord/protocol test` ⇒ PASS
 
-```ts
-/** 玩法开放开关（第 66 键）：斗地主总开关（严格 boolean、种子 true——保持现状；
- *  客户端不可见——折叠进 `games.doudizhu.enabled`）。关 ⇒ 新匹配/新建房 12012。 */
-'game.doudizhu.enabled',
+- [ ] **Step 3: 管理面 IA/键集/控件**
+
+- ddz 域加 `headerKeys: ['game.doudizhu.enabled']`；pdk 域加 `headerKeys: ['game.paodekuai.enabled']`，
+  从 pdk `switches` 页签删掉 `game.paodekuai.enabled`。
+- `IA_KEY_SET` 改为展平 `[...(d.headerKeys ?? []), ...d.tabs.flatMap((t) => t.keys)]`。
+- `domainSnapshotCount(domain)` 用
+  `new Set([...(domain.headerKeys ?? []), ...(domain.tabs ?? []).flatMap((t) => t.keys)])` 去重计数。
+- `CONFIG_CONTROLS` 加 `'game.doudizhu.enabled': { label: '斗地主总开关', type: 'bool' }`；
+  `CONFIG_NOTES` 给两个 header 键补 4 行。
+- 新增常量与纯函数（自包含）：
+
+```js
+const GAME_SWITCH_DEFAULTS = {
+  'game.doudizhu.enabled': true,
+  'game.paodekuai.enabled': false,
+};
+function lastEnabledGameWarning(currentConfig, targetKey, defaults, headerKeys) {
+  return headerKeys
+    .filter((k) => k !== targetKey)
+    .every((k) => (k in currentConfig ? currentConfig[k].value : defaults[k]) === false);
+}
 ```
 
-`parseConfigValue()` 加：`if (key === 'game.doudizhu.enabled') return parseStrictBoolean(key, value);`
-头注释「五十一键」→「六十六键」。
+- `renderConfigRows` 非搜索态先渲染 `buildGameHeader(domain)`，`rendered += 1`；
+  `buildGameHeader` 的 `dataset.key = headerKey`；运行时把**全局** `IA_DOMAINS` 的 `headerKeys`
+  传给 `lastEnabledGameWarning`（不是 `domain.headerKeys`）；缺键按 `GAME_SWITCH_DEFAULTS` 显示且禁用；
+  关闭走原生 `confirm()`（最后玩法追加提示）；成功后 `loadAll()`，失败回滚。
+- `admin/style.css` 补 `.game-switch-card` 必要样式（复用 `.row-card` 布局）。
 
-- [ ] **Step 4: 跑绿并提交**
+- [ ] **Step 4: 静态闸**
 
-Run: `pnpm --filter @fight-the-landlord/protocol test`
-Expected: PASS
+`verify-admin-static.mjs`：65→66（两处）、`entries.size` 60→61、`BOOL_KEYS` 28→29、合计 60→61
+（label 同步）；`BOOL_KEYS` 加新键；新增断言：
+- `IA_KEY_SET` 表达式含 `headerKeys`（防运行时漏改）；
+- `headerKeys + tabs[].keys` 无重复，且 pdk enabled 只在 headerKeys；
+- 两个 header 键都有 `CONFIG_NOTES`；
+- `GAME_SWITCH_DEFAULTS` 恰为 `{ddz:true, pdk:false}`；
+- `renderConfigRows` 函数体含 `buildGameHeader(`；
+- 用 balanced-brace 提取**完整函数签名**的 `lastEnabledGameWarning`，`vm` 执行三组合成输入。
+
+Run: `node scripts/verify-admin-static.mjs` ⇒ PASS
+
+- [ ] **Step 5: 提交**
 
 ```bash
-git add packages/protocol/src/config.ts packages/protocol/src/config.test.ts
-git commit -m "feat(protocol): 新增 game.doudizhu.enabled 配置键"
+git add packages/protocol/src/config.ts packages/protocol/src/config.test.ts admin scripts/verify-admin-static.mjs
+git commit -m "feat: 玩法开放开关（protocol 键 + 管理面顶部卡 + 静态闸）"
 ```
 
 ---
 
-### Task 2: config-service 迁移 + 客户端配置 + 键集夹具
+### Task 2: config-service 迁移与客户端配置
 
 **Files:**
 - Create: `packages/config-service/src/migrations/1796500000000-DdzEnabledSeed.ts`
 - Modify: `packages/config-service/src/config/client-config.controller.ts`
-- Test/Modify: `packages/config-service/test/{migration,client-config,platform-config.service,admin.controller,config.rpc}.test.ts`、`test/helpers/config-probe.ts`
-
-**Interfaces:**
-- Consumes: Task 1 的键与校验
-- Produces: 库中种子 `true`；`/api/config.data.games.doudizhu.enabled`。
+- Test/Modify: `packages/config-service/test/migration.test.ts`、`client-config.test.ts`、
+  `platform-config.service.test.ts`、`admin.controller.test.ts`、`config.rpc.test.ts`、`helpers/config-probe.ts`
 
 - [ ] **Step 1: 写失败测试**
 
-- `migration.test.ts`：在多种子键清单加 `'game.doudizhu.enabled'`，并断言迁移后值 `true`、version `1`。
-- `client-config.test.ts`：两条用例——
-  - `db.rows.set('game.doudizhu.enabled', { value: false, version: 2, updatedAt: 'admin', updatedBy: 'admin' })` ⇒ `data.games.doudizhu.enabled === false`；
-  - 缺行 ⇒ `true`（独立用例，不复用 SEED）。
-- `platform-config.service.test.ts`：SEED 加键；`toHaveLength(65)` → `66`；注释同步。
-- `admin.controller.test.ts`、`config.rpc.test.ts`：逐字键清单追加 `game.doudizhu.enabled`。
+- `migration.test.ts`：**不要动** `EXPECTED_SEED`（那是 PlatformConfig 九键）。新增 describe：
+  import `DdzEnabledSeed1796500000000`，断言 `up()` 后 `game.doudizhu.enabled` 值 `true`/version 1；
+  连续两次 `up()` 不报错（幂等）；`down()` 删键。照 `MultiGameConfigSeed` 现有测试（约 :1428-1497）形态。
+- `client-config.test.ts`：显式 false ⇒ `games.doudizhu.enabled===false`；缺行 ⇒ true（独立用例）。
+- `platform-config.service.test.ts`：SEED 加键；`toHaveLength(65)` → 66。
+- `admin.controller.test.ts` / `config.rpc.test.ts`：逐字清单加新键（已 `.sort()`）。
 - `helpers/config-probe.ts`：SEED 加 `['game.doudizhu.enabled', true]`。
 
-- [ ] **Step 2: 跑红**
+Run: `pnpm --filter @fight-the-landlord/config-service test` ⇒ FAIL
 
-Run: `pnpm --filter @fight-the-landlord/config-service test`
-Expected: FAIL（迁移缺键/夹具 65）
+- [ ] **Step 2: 实现**
 
-- [ ] **Step 3: 实现迁移**
-
-`1796500000000-DdzEnabledSeed.ts`：
+迁移：
 
 ```ts
 import type { MigrationInterface, QueryRunner } from 'typeorm';
@@ -118,53 +144,46 @@ export class DdzEnabledSeed1796500000000 implements MigrationInterface {
 }
 ```
 
-- [ ] **Step 4: 实现配置组装**
-
-`client-config.controller.ts` 在 pdk 两行旁加：
+`client-config.controller.ts`：
 
 ```ts
 const ddzEnabled = (byKey.get('game.doudizhu.enabled') ?? true) as boolean;
-// games.doudizhu 里：
-enabled: ddzEnabled,
+// games.doudizhu 的 enabled 改为 ddzEnabled
 ```
 
-- [ ] **Step 5: 跑绿并提交**
+Run: `pnpm --filter @fight-the-landlord/config-service test` ⇒ PASS
 
-Run: `pnpm --filter @fight-the-landlord/config-service test`
-Expected: PASS
+- [ ] **Step 3: 提交**
 
 ```bash
-git add packages/config-service/src/migrations/1796500000000-DdzEnabledSeed.ts \
-  packages/config-service/src/config/client-config.controller.ts packages/config-service/test
-git commit -m "feat(config): 斗地主总开关种子与客户端配置下发"
+git add packages/config-service/src packages/config-service/test
+git commit -m "feat(config): 斗地主总开关迁移与客户端配置下发"
 ```
 
 ---
 
-### Task 3: room-service 闸 + 关闭时暂停匹配
+### Task 3: room-service 闸 + 匹配暂停
 
 **Files:**
 - Modify: `packages/room-service/src/config/config-cache.service.ts`
-- Modify: `packages/room-service/src/match/match.service.ts`（`processQueue` 开头）
+- Modify: `packages/room-service/src/match/match.service.ts`（`processQueue` 顶部）
 - Modify: `packages/room-service/test/helpers/config-cache.stub.ts`
-- Test: `packages/room-service/test/config-cache.test.ts`、`match-switch-game.test.ts`（或同族）
-
-**Interfaces:**
-- Consumes: Task 1/2
-- Produces: `doudizhuEnabled(): boolean`；`gameEnabled()` 两玩法分派。
+- Test: `packages/room-service/test/config-cache.test.ts`、`match-queue-key.test.ts`、`match-switch-game.test.ts`（或同族）、`rooms.controller-switch.test.ts`（或 `rooms-meta.test.ts`）
 
 - [ ] **Step 1: 写失败测试**
 
-`config-cache.test.ts` 加三例：缺键 ⇒ `doudizhuEnabled()===true`；显式 false ⇒ false；显式 true ⇒ true。
-匹配测试：`gameEnabled.mockReturnValue(false)` 时 `processQueue` 不调用 `createGameRoom`、不抛错、票仍在；
-重开后可成组（沿用现有 match 测试夹具）。
+- `config-cache.test.ts`：缺键 ⇒ `doudizhuEnabled()===true`；显式 false ⇒ `gameEnabled('doudizhu')===false`；
+  显式 true ⇒ true。
+- `match-queue-key.test.ts:270-312` 两例前置 `configCache.paodekuaiEnabled.mockReturnValue(true)`
+  （否则新暂停闸让 `zrange`/`zrem` 不被调用）。
+- 匹配暂停：`gameEnabled.mockReturnValue(false)` ⇒ `processQueue` 不调 `createGameRoom`、不抛错、
+  `_zsets` 票还在；重开后成组。
+- 建房闸：用真实 `gameEnabled`（`doudizhuEnabled` 返回 false）⇒ `RoomsService.create` 抛
+  `12012`；`message.router` 同族用例。
 
-- [ ] **Step 2: 跑红**
+Run: `pnpm --filter @fight-the-landlord/room-service test` ⇒ FAIL
 
-Run: `pnpm --filter @fight-the-landlord/room-service test`
-Expected: FAIL
-
-- [ ] **Step 3: 实现**
+- [ ] **Step 2: 实现**
 
 `config-cache.service.ts`：
 
@@ -183,174 +202,116 @@ gameEnabled(gameType: GameType): boolean {
 }
 ```
 
-`match.service.ts` 的 `processQueue` 开头（取到 `queue` 后、任何匹配逻辑前）：
+`match.service.ts` 的 `processQueue` 顶部（`zrange` 之前）：
 
 ```ts
-if (!this.configCache.gameEnabled(queue.gameType)) return; // 关闭的玩法：暂停匹配，票保留（D11）
+if (!this.configCache.gameEnabled(queue.gameType)) return; // 关闭的玩法：暂停匹配，票保留
 ```
 
-`config-cache.stub.ts` 加 `doudizhuEnabled: vi.fn(() => true)`，`gameEnabled` 改为与生产同形 switch。
+`config-cache.stub.ts`：加 `doudizhuEnabled: vi.fn(() => true)`，`gameEnabled` 与生产同形 switch。
 
-- [ ] **Step 4: 跑绿并提交**
+Run: `pnpm --filter @fight-the-landlord/room-service test` ⇒ PASS
 
-Run: `pnpm --filter @fight-the-landlord/room-service test`
-Expected: PASS
+- [ ] **Step 3: 提交**
 
 ```bash
 git add packages/room-service/src packages/room-service/test
-git commit -m "feat(room): 斗地主总开关闸 + 关闭时暂停匹配扫描"
+git commit -m "feat(room): 斗地主总开关闸 + 关闭时暂停匹配"
 ```
 
 ---
 
-### Task 4: 客户端大厅空态与档位卡门控
+### Task 4: 客户端大厅
 
 **Files:**
-- Modify: `apps/client/src/pages/lobby/lobby.vue`（模板 + 样式）
+- Modify: `apps/client/src/pages/lobby/lobby.vue`
 - Test: `apps/client/test/lobby-modes.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写测试**
 
-新增/扩展现有用例：
-- `games.doudizhu.enabled=false` ⇒ 不渲染斗地主入口；
-- 两个玩法都 false ⇒ 出现「暂无开放的玩法」且 `.lobby__level` 数量为 0；
-- 缺 `games` ⇒ 斗地主入口可见。
+- 全关用例：两个 `games.*.enabled=false`，**保留非空 ddz 档位** ⇒ 出现「暂无开放的玩法」、
+  `.lobby__level` 为 0、`.lobby__levels-empty` **不存在**；
+- `ddz=false` 单个 ⇒ 不渲染入口（回归护栏；改造前本就绿）；
+- 缺 `games` ⇒ 斗地主可见。
 
-- [ ] **Step 2: 跑红**
+Run: `pnpm --filter @fight-the-landlord/client exec vitest run test/lobby-modes.test.ts` ⇒ 全关用例 FAIL
 
-Run: `pnpm --filter @fight-the-landlord/client exec vitest run test/lobby-modes.test.ts`
-Expected: FAIL
+- [ ] **Step 2: 实现**
 
-- [ ] **Step 3: 实现**
-
-模板：玩法列表加
+在 `.lobby__levels` 容器（约 :915）上加 `v-if="visibleModes.length > 0"`（**不要**改内部
+`:922` 的三态条件）；玩法列表加：
 
 ```html
 <text v-if="visibleModes.length === 0" class="lobby__modes-empty">暂无开放的玩法，请稍后再试</text>
 ```
 
-右侧档位区条件改为 `v-if="visibleModes.length > 0 && store.activeLevels.length > 0"`；
-样式区补 `.lobby__modes-empty`（复用现有空态字号/颜色）。
+样式区补 `.lobby__modes-empty`（复用现有空态）。
 
-- [ ] **Step 4: 跑绿并提交**
+Run: 同上 ⇒ PASS
 
-Run: `pnpm --filter @fight-the-landlord/client exec vitest run test/lobby-modes.test.ts`
-Expected: PASS
+- [ ] **Step 3: 提交**
 
 ```bash
 git add apps/client/src/pages/lobby/lobby.vue apps/client/test/lobby-modes.test.ts
-git commit -m "feat(client): 玩法全关时大厅空态且隐藏档位卡"
+git commit -m "feat(client): 玩法全关时大厅空态且隐藏档位区"
 ```
 
 ---
 
-### Task 5: 管理面顶部开关 + 静态闸
+### Task 5: conformance
 
 **Files:**
-- Modify: `admin/app.js`、`admin/style.css`
-- Modify: `scripts/verify-admin-static.mjs`
-
-- [ ] **Step 1: 实现 IA 与运行时键集**
-
-- ddz 域加 `headerKeys: ['game.doudizhu.enabled']`；pdk 域加 `headerKeys: ['game.paodekuai.enabled']`，并从 `switches` 页签删掉它。
-- `IA_KEY_SET` 改为展平 `headerKeys + tabs[].keys`。
-- `domainSnapshotCount` 用 `new Set([...headerKeys, ...tabKeys])` 去重。
-- `CONFIG_CONTROLS` 加 `'game.doudizhu.enabled': { label: '斗地主总开关', type: 'bool' }`；
-  `CONFIG_NOTES` 给两个 header 键各补 4 行。
-
-- [ ] **Step 2: 实现顶部卡**
-
-`renderConfigRows` 非搜索态先渲染 `buildGameHeader(domain)`；`rendered += 1`；卡片 `dataset.key = headerKey`。
-`buildGameHeader`：状态徽标 + `.switch`；`key in currentConfig` 为 false 时按默认值显示且禁用；
-关闭走原生 `confirm()`（含最后玩法提示）；成功后 `loadAll()`，失败回滚。
-
-纯函数（自包含）：
-
-```js
-function lastEnabledGameWarning(currentConfig, targetKey, defaults, headerKeys) {
-  const others = headerKeys.filter((k) => k !== targetKey);
-  return others.every((k) => {
-    const v = k in currentConfig ? currentConfig[k].value : defaults[k];
-    return v === false;
-  });
-}
-```
-
-- [ ] **Step 3: 改静态闸**
-
-`verify-admin-static.mjs`：65→66（两处）、60→61、28→29、分类合计 60→61（label 同步）；
-`BOOL_KEYS` 加新键；新增「headerKeys+tabs 无重复」「pdk enabled 只在 headerKeys」「两个 header 键有 CONFIG_NOTES」；
-用 `vm` 提取并执行 `lastEnabledGameWarning`，断言三组输入。
-
-- [ ] **Step 4: 跑闸并提交**
-
-Run: `node scripts/verify-admin-static.mjs`
-Expected: `admin static verify: ... passed`
-
-```bash
-git add admin/app.js admin/style.css scripts/verify-admin-static.mjs
-git commit -m "feat(admin): 玩法设置页顶部开放开关 + 静态闸"
-```
-
----
-
-### Task 6: conformance
-
-**Files:**
-- Modify: `tools/conformance/src/slices/{slice-14-config-center,slice-18-gold-room,slice-22-pay-channel,slice-23-notify-channel,slice-24-ads-relief}.ts`
-- Modify: `tools/conformance/baselines.json`（实测后）
+- Modify: `tools/conformance/src/slices/slice-14-config-center.ts`
+- Modify: `tools/conformance/src/slices/{slice-18-gold-room,slice-22-pay-channel,slice-23-notify-channel,slice-24-ads-relief}.ts`
+- Modify: `tools/conformance/baselines.json`（权威轮实测后）
 
 - [ ] **Step 1: 4 个切片 65 → `CONFIG_KEYS.length`**
 
-slice-18:1025、slice-22:1193、slice-23:735/:1283、slice-24:809；保留字符串 label 的数字同步。
+slice-18:1025、slice-22:1193、slice-23:735/:1283、slice-24:809；slice-18/23/24 补
+`import { CONFIG_KEYS } from '@fight-the-landlord/protocol'`；label 数字同步。
 
 - [ ] **Step 2: slice-14 新判据**
 
-插在 C20 之后、统一收尾前；`try/finally` 恢复 ddz true，外层 finally 也恢复：
+插在 C20（约 :607）之后、统一收尾（约 :612）之前；`try/finally` + 外层 finally 恢复 ddz true：
 
 1. `setFriendRooms(true, ...)`；
 2. PUT ddz=false；`/api/config` ⇒ false；
-3. 轮询建房直到 12012（≤70s，1s；成功探针换新账号）；
+3. 轮询建房直到 12012（≤70s、1s；成功探针换新账号）；
 4. PUT ddz=true；`/api/config` ⇒ true；
 5. 轮询建房直到 0（≤70s）。
 
-- [ ] **Step 3: 构建 + 静态验证**
+- [ ] **Step 3: 构建 + 提交**
 
-Run: `pnpm exec turbo run build --filter=@fight-the-landlord/conformance...`
-Expected: 成功
-
-- [ ] **Step 4: 提交**
+Run: `pnpm exec turbo run build --filter=@fight-the-landlord/conformance...` ⇒ PASS
 
 ```bash
-git add tools/conformance/src/slices tools/conformance/baselines.json
+git add tools/conformance/src/slices
 git commit -m "test(conformance): 玩法开放开关真栈判据 + 键数改用 CONFIG_KEYS.length"
 ```
 
-权威轮后把 `slice-14-config-center` 的 `full` 基线按实测回填（只增不减），单独提交。
+权威轮后按实测回填 `slice-14-config-center` 的 `full`（当前 75，只增不减），单独提交。
 
 ---
 
-### Task 7: 文档
+### Task 6: 文档
 
-**Files:**
-- Modify: `docs/design.md`（§7.5 表补 ddz 键、计数改「六十六键」；跑得快 14 键缺失注明另开任务）
-- Modify: `admin/app.js` 内过期「65 键」注释、`packages/protocol/src/config.ts` 头注释
-
-- [ ] **Step 1:** 改文档与注释；`grep -rnE '65|六十五|五十一'` 逐处核对。
-- [ ] **Step 2:** 提交 `docs: 同步玩法开关的配置键文档`。
+- `docs/design.md` §7.5：补 `game.doudizhu.enabled`、计数改「六十六键」；跑得快 14 键缺失注明另开任务。
+- `packages/protocol/src/config.ts` 头注释、`admin/app.js` 过期「65 键」注释同步。
+- `grep -rnE '65|六十五|五十一'` 逐处核对。
+- 提交 `docs: 同步玩法开关配置键文档`。
 
 ---
 
-### Task 8: 全量验证与发布
+### Task 7: 全量验证与发布
 
-- [ ] **Step 1:** `bash scripts/ci.sh` ⇒ 七阶段通过。
-- [ ] **Step 2:** `git checkout dev`（已在此）→ `git merge --ff-only origin/dev` 若落后；`git merge dev` 到 master 前先确认。
-- [ ] **Step 3:** 合并 dev → master，推送；盯权威轮（ci / images / conformance）。
-- [ ] **Step 4:** 按日志修失败；conformance 全绿后按实测回填 `slice-14` 基线并推送。
-- [ ] **Step 5:** 用 `deploy-dev.sh` 部署到服务器（若需要），验证管理面开关与客户端大厅。
+- [ ] `bash scripts/ci.sh` ⇒ 七阶段通过。
+- [ ] 合并 dev → master、推送；盯权威轮（ci / images / conformance）。
+- [ ] 按日志修失败；全绿后回填 slice-14 基线。
+- [ ] 需要时 `deploy-dev.sh` 部署并验证管理面开关与大厅。
 
 ## Self-Review
 
-- Spec 覆盖：D1–D13 均有任务（D11→Task3，D7→Task4，D9→Task5，D13→Task7，B2→Task6）。
-- 无占位符；所有生产代码已给出。
-- 类型/命名一致：`doudizhuEnabled`、`game.doudizhu.enabled`、`lastEnabledGameWarning` 全计划统一。
+- 计划评审 B1（match-queue-key 前置）、B2（迁移测试独立 describe）、H1（IA_KEY_SET 断言）、
+  H2（defaults 命名/全局 headerKeys/renderConfigRows 断言/签名提取）、H3（12012 单测）、
+  H4（`.lobby__levels` 外层门控 + 空态断言）、H5（任务顺序保持 ci.sh 绿）均已修入。
+- D1–D13 全部有任务；无占位符；命名统一。
