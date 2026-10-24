@@ -261,6 +261,8 @@ interface SessionSeat {
 
 interface SessionWire {
   version: number;
+  /** 下一回合的权威截止时刻（`turnDeadlineAt - Date.now()` = 真实剩余时长）。 */
+  turnDeadlineAt?: number;
   players: SessionSeat[];
 }
 
@@ -802,11 +804,24 @@ export async function runSlice27(): Promise<Checks> {
         .send(restoreAct.type, restoreAct.payload, restoreOwn.view.version);
     }
     checks.eq(restoreAck.code, ErrCode.OK, `收尾 还原后动作仍可推进：seat ${restoreOwn.view.seat} ${restoreAct.label}`);
-    const restoreView = await timedAdvance(observer, restoreOwn.view.version, STEP_TIMEOUT_MS, '收尾 还原后转移');
-    const restoreReading = deadlineReading(restoreView);
+    /**
+     * ⚠️ 读数**不能**再用 `turnDeadlineAt - 收到时刻`：重建后的推送可能被缓冲/重放，
+     * 收到时刻晚于 deadline 写入时刻 ⇒ 把传输延迟算进读数（2026-10-24 CI 实测 1996ms，
+     * 但 env 已空、容器已重建）。动作 ack 后**立即**读 Redis 会话的权威 deadline；
+     * 轮询只等 version 前进（写路径同步），不等推送。
+     */
+    let restoreReading = 0;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const s = readSession(room.roomCode);
+      if (s.version > restoreOwn.view.version && typeof s.turnDeadlineAt === 'number') {
+        restoreReading = s.turnDeadlineAt - Date.now();
+        break;
+      }
+      await sleep(250);
+    }
     checks.that(
       restoreReading >= 25_000 && restoreReading <= 33_000,
-      `收尾 还原后下一回合读 ≈ 30000（= ${restoreReading}ms ∈ [25000,33000]；默认档行为面恢复，C36）`,
+      `收尾 还原后下一回合读 ≈ 30000（= ${restoreReading}ms ∈ [25000,33000]；默认档行为面恢复，C36；读 Redis 会话权威 deadline）`,
     );
 
     return checks;
