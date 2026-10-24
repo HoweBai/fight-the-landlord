@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIENT_CONFIG_KEYS,
   CONFIG_KEYS,
+  LEGACY_CONFIG_KEYS,
   entryFeeOf,
   entryFeeOfLevel,
   entryFeePercentsFromLevels,
+  isLegacyConfigKey,
   parseConfigValue,
 } from './config';
 import { ProtocolError } from './validate';
@@ -66,6 +68,31 @@ describe('完整键清单与客户端子集', () => {
       'game.paodekuai.springMultiplierEnabled',
       'game.paodekuai.multiplierCap',
       'game.paodekuai.baobenEnabled',
+      // 配置平行化（2026-10-24）：24 新键
+      'game.doudizhu.freeRoomEnabled',
+      'game.doudizhu.goldRoomEnabled',
+      'game.doudizhu.friendRoomEnabled',
+      'game.doudizhu.freeBotFillEnabled',
+      'game.doudizhu.goldBotFillEnabled',
+      'game.doudizhu.rakePercent',
+      'game.doudizhu.entryMultiplier',
+      'game.levels.doudizhu',
+      'game.doudizhu.cardCounterEnabled',
+      'game.doudizhu.cardCounterPricePerGameCoins',
+      'game.doudizhu.cardCounterPricePerHourCoins',
+      'game.doudizhu.robot.skillDistribution',
+      'game.doudizhu.robot.ruleFallback',
+      'game.doudizhu.robot.modelBySkill',
+      'game.doudizhu.risk.winRateThreshold',
+      'game.doudizhu.risk.minGames',
+      'game.paodekuai.freeRoomEnabled',
+      'game.paodekuai.goldRoomEnabled',
+      'game.paodekuai.friendRoomEnabled',
+      'game.paodekuai.freeBotFillEnabled',
+      'game.paodekuai.goldBotFillEnabled',
+      'game.paodekuai.rakePercent',
+      'game.paodekuai.entryMultiplier',
+      'currency.reliefThresholdCoins',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
       'baseScoreLevels', 'friendRoomEnabled', 'freeRoomEnabled', 'goldRoomEnabled',
@@ -82,8 +109,37 @@ describe('完整键清单与客户端子集', () => {
       'cardCounterPricePerHourCoins',
       // 多玩法（Task 5.1）：按玩法配置（新客户端据此渲染玩法卡/档位；旧客户端忽略）
       'games',
+      'reliefThresholdCoins',
       'version',
     ]);
+  });
+
+  it('平行化：旧键恰 16 个、均仍在 CONFIG_KEYS；isLegacyConfigKey 只认旧键', () => {
+    expect(LEGACY_CONFIG_KEYS).toEqual([
+      'room.freeRoomEnabled',
+      'room.goldRoomEnabled',
+      'room.friendRoomEnabled',
+      'room.freeBotFillEnabled',
+      'room.goldBotFillEnabled',
+      'currency.rakePercent',
+      'currency.entryMultiplier',
+      'game.baseScoreLevels',
+      'game.cardCounterEnabled',
+      'game.cardCounterPricePerGameCoins',
+      'game.cardCounterPricePerHourCoins',
+      'robot.skillDistribution',
+      'robot.ruleFallback',
+      'robot.modelBySkill',
+      'risk.winRateThreshold',
+      'risk.minGames',
+    ]);
+    for (const key of LEGACY_CONFIG_KEYS) {
+      expect(CONFIG_KEYS).toContain(key);
+      expect(isLegacyConfigKey(key)).toBe(true);
+    }
+    expect(isLegacyConfigKey('game.doudizhu.freeRoomEnabled')).toBe(false);
+    expect(isLegacyConfigKey('game.paodekuai.freeRoomEnabled')).toBe(false);
+    expect(isLegacyConfigKey('unknown.key')).toBe(false);
   });
 });
 
@@ -504,5 +560,100 @@ describe('跑得快配置键（多玩法片）', () => {
         ProtocolError,
       );
     }
+  });
+});
+
+describe('配置平行化（2026-10-24）：新键校验与旧键兼容', () => {
+  const GAME_BOOLS = [
+    'game.doudizhu.freeRoomEnabled',
+    'game.doudizhu.goldRoomEnabled',
+    'game.doudizhu.friendRoomEnabled',
+    'game.doudizhu.freeBotFillEnabled',
+    'game.doudizhu.goldBotFillEnabled',
+    'game.doudizhu.cardCounterEnabled',
+    'game.doudizhu.robot.ruleFallback',
+    'game.paodekuai.freeRoomEnabled',
+    'game.paodekuai.goldRoomEnabled',
+    'game.paodekuai.friendRoomEnabled',
+    'game.paodekuai.freeBotFillEnabled',
+    'game.paodekuai.goldBotFillEnabled',
+  ] as const;
+
+  it('玩法级 boolean：严格 true/false', () => {
+    for (const key of GAME_BOOLS) {
+      expect(parseConfigValue(key, true), key).toBe(true);
+      expect(parseConfigValue(key, false), key).toBe(false);
+      for (const bad of ['true', 0, 1, null, undefined]) {
+        expect(() => parseConfigValue(key, bad), `${key} <- ${String(bad)}`).toThrow(ProtocolError);
+      }
+    }
+  });
+
+  it('玩法级抽水/门槛：各自范围；错误消息带新键名', () => {
+    for (const key of ['game.doudizhu.rakePercent', 'game.paodekuai.rakePercent'] as const) {
+      expect(parseConfigValue(key, 0), key).toBe(0);
+      expect(parseConfigValue(key, 50), key).toBe(50);
+      expect(() => parseConfigValue(key, 51), key).toThrow(new RegExp(key.replaceAll('.', '\.')));
+    }
+    for (const key of [
+      'game.doudizhu.entryMultiplier',
+      'game.paodekuai.entryMultiplier',
+    ] as const) {
+      expect(parseConfigValue(key, 1), key).toBe(1);
+      expect(parseConfigValue(key, 100), key).toBe(100);
+      expect(() => parseConfigValue(key, 0), key).toThrow(new RegExp(key.replaceAll('.', '\.')));
+    }
+  });
+
+  it('game.levels.doudizhu：与旧档位表同 parser', () => {
+    const levels = [{ name: '休闲场', baseScore: 15, entryFeePercent: 10 }];
+    expect(parseConfigValue('game.levels.doudizhu', levels)).toEqual(levels);
+    expect(() => parseConfigValue('game.levels.doudizhu', [])).toThrow(/非空/);
+  });
+
+  it('斗地主记牌器价格、机器人 AI、风控两键', () => {
+    expect(parseConfigValue('game.doudizhu.cardCounterPricePerGameCoins', 10)).toBe(10);
+    expect(parseConfigValue('game.doudizhu.cardCounterPricePerHourCoins', 100)).toBe(100);
+    expect(
+      parseConfigValue('game.doudizhu.robot.skillDistribution', {
+        beginner: 15,
+        intermediate: 35,
+        advanced: 50,
+      }),
+    ).toEqual({ beginner: 0.15, intermediate: 0.35, advanced: 0.5 });
+    expect(
+      parseConfigValue('game.doudizhu.robot.modelBySkill', {
+        beginner: 'sl',
+        intermediate: 'douzero_WP',
+        advanced: 'douzero_ADP',
+      }),
+    ).toEqual({ beginner: 'sl', intermediate: 'douzero_WP', advanced: 'douzero_ADP' });
+    expect(parseConfigValue('game.doudizhu.risk.winRateThreshold', 0.8)).toBe(0.8);
+    expect(parseConfigValue('game.doudizhu.risk.minGames', 100)).toBe(100);
+    expect(() => parseConfigValue('game.doudizhu.risk.winRateThreshold', 0.785)).toThrow(
+      /game\.doudizhu\.risk\.winRateThreshold/,
+    );
+  });
+
+  it('currency.reliefThresholdCoins：整数 1..1,000,000', () => {
+    expect(parseConfigValue('currency.reliefThresholdCoins', 150)).toBe(150);
+    expect(parseConfigValue('currency.reliefThresholdCoins', 1)).toBe(1);
+    expect(parseConfigValue('currency.reliefThresholdCoins', 1_000_000)).toBe(1_000_000);
+    for (const bad of [0, 1_000_001, 1.5, '150', null]) {
+      expect(() => parseConfigValue('currency.reliefThresholdCoins', bad), String(bad)).toThrow(
+        ProtocolError,
+      );
+    }
+  });
+
+  it('旧键仍可解析（快照读取/回滚回填），但 isLegacyConfigKey 为真', () => {
+    expect(parseConfigValue('room.freeRoomEnabled', true)).toBe(true);
+    expect(parseConfigValue('currency.entryMultiplier', 10)).toBe(10);
+    expect(parseConfigValue('game.baseScoreLevels', [{ name: 'X', baseScore: 15 }])).toEqual([
+      { name: 'X', baseScore: 15 },
+    ]);
+    expect(parseConfigValue('robot.ruleFallback', true)).toBe(true);
+    expect(parseConfigValue('risk.winRateThreshold', 0.8)).toBe(0.8);
+    expect(isLegacyConfigKey('room.freeRoomEnabled')).toBe(true);
   });
 });

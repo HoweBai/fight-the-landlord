@@ -129,8 +129,68 @@ export const CONFIG_KEYS = [
   'game.paodekuai.springMultiplierEnabled',
   'game.paodekuai.multiplierCap',
   'game.paodekuai.baobenEnabled',
+  /**
+   * 多玩法配置平行化（2026-10-24）：以下 24 键把原平台级/斗地主专属键迁到
+   * `game.<玩法>.*`，并新增平台救助门槛。旧键保留在清单尾部（只读回退）。
+   */
+  'game.doudizhu.freeRoomEnabled',
+  'game.doudizhu.goldRoomEnabled',
+  'game.doudizhu.friendRoomEnabled',
+  'game.doudizhu.freeBotFillEnabled',
+  'game.doudizhu.goldBotFillEnabled',
+  'game.doudizhu.rakePercent',
+  'game.doudizhu.entryMultiplier',
+  'game.levels.doudizhu',
+  'game.doudizhu.cardCounterEnabled',
+  'game.doudizhu.cardCounterPricePerGameCoins',
+  'game.doudizhu.cardCounterPricePerHourCoins',
+  'game.doudizhu.robot.skillDistribution',
+  'game.doudizhu.robot.ruleFallback',
+  'game.doudizhu.robot.modelBySkill',
+  'game.doudizhu.risk.winRateThreshold',
+  'game.doudizhu.risk.minGames',
+  'game.paodekuai.freeRoomEnabled',
+  'game.paodekuai.goldRoomEnabled',
+  'game.paodekuai.friendRoomEnabled',
+  'game.paodekuai.freeBotFillEnabled',
+  'game.paodekuai.goldBotFillEnabled',
+  'game.paodekuai.rakePercent',
+  'game.paodekuai.entryMultiplier',
+  /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
+  'currency.reliefThresholdCoins',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
+
+/**
+ * 平行化迁移后**只读**的旧键（2026-10-24）。
+ *
+ * - 仍在 `CONFIG_KEYS` 中：快照类型、读取回退、回滚回填都要认识它们；
+ * - 管理面写入一律拒绝（`PlatformConfigService.set` 用 `isLegacyConfigKey` 拦截）；
+ * - 读取顺序：新键 → 旧键（仅斗地主）→ 代码默认。
+ */
+export const LEGACY_CONFIG_KEYS = [
+  'room.freeRoomEnabled',
+  'room.goldRoomEnabled',
+  'room.friendRoomEnabled',
+  'room.freeBotFillEnabled',
+  'room.goldBotFillEnabled',
+  'currency.rakePercent',
+  'currency.entryMultiplier',
+  'game.baseScoreLevels',
+  'game.cardCounterEnabled',
+  'game.cardCounterPricePerGameCoins',
+  'game.cardCounterPricePerHourCoins',
+  'robot.skillDistribution',
+  'robot.ruleFallback',
+  'robot.modelBySkill',
+  'risk.winRateThreshold',
+  'risk.minGames',
+] as const satisfies readonly ConfigKey[];
+
+const LEGACY_CONFIG_KEY_SET = new Set<string>(LEGACY_CONFIG_KEYS);
+export function isLegacyConfigKey(key: string): boolean {
+  return LEGACY_CONFIG_KEY_SET.has(key);
+}
 
 export const CLIENT_CONFIG_KEYS = [
   'baseScoreLevels',
@@ -157,6 +217,8 @@ export const CLIENT_CONFIG_KEYS = [
   'cardCounterPricePerHourCoins',
   /** 多玩法（Task 5.1）：按玩法配置（新客户端渲染玩法卡/档位；旧客户端忽略）。 */
   'games',
+  /** 多玩法配置平行化：平台级救助绝对门槛（合法值或 null）。 */
+  'reliefThresholdCoins',
   'version',
 ] as const;
 
@@ -194,6 +256,11 @@ export interface ClientGameConfig {
   supportedPlayerCounts: number[];
   defaultPlayerCount: number;
   baseScoreLevels: BaseScoreLevel[];
+  /** 平行化（2026-10-24）：玩法级场次/好友房/门槛；旧服务端缺失 ⇒ 客户端回退顶层值。 */
+  freeRoomEnabled?: boolean;
+  goldRoomEnabled?: boolean;
+  friendRoomEnabled?: boolean;
+  entryMultiplier?: number;
 }
 export interface ClientConfig {
   baseScoreLevels: BaseScoreLevel[];
@@ -221,6 +288,8 @@ export interface ClientConfig {
   cardCounterPricePerHourCoins: number;
   /** 多玩法片：按玩法配置（旧客户端忽略；新客户端据此渲染玩法卡/档位）。 */
   games?: Partial<Record<GameType, ClientGameConfig>>;
+  /** 平行化：平台级救助绝对门槛；旧服务端缺失 / 新服务端坏值 ⇒ null（客户端回退旧算法）。 */
+  reliefThresholdCoins?: number | null;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -285,6 +354,35 @@ const PDK_BOOLEAN_KEYS: readonly ConfigKey[] = [
   'game.paodekuai.baobenEnabled',
 ];
 
+/** 平行化（2026-10-24）：玩法级场次/好友房/补位/记牌器开关（严格 boolean）。 */
+const GAME_BOOLEAN_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.freeRoomEnabled',
+  'game.doudizhu.goldRoomEnabled',
+  'game.doudizhu.friendRoomEnabled',
+  'game.doudizhu.freeBotFillEnabled',
+  'game.doudizhu.goldBotFillEnabled',
+  'game.doudizhu.cardCounterEnabled',
+  'game.doudizhu.robot.ruleFallback',
+  'game.paodekuai.freeRoomEnabled',
+  'game.paodekuai.goldRoomEnabled',
+  'game.paodekuai.friendRoomEnabled',
+  'game.paodekuai.freeBotFillEnabled',
+  'game.paodekuai.goldBotFillEnabled',
+];
+
+const GAME_RAKE_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.rakePercent',
+  'game.paodekuai.rakePercent',
+];
+const GAME_ENTRY_MULTIPLIER_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.entryMultiplier',
+  'game.paodekuai.entryMultiplier',
+];
+const GAME_CARD_COUNTER_PRICE_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.cardCounterPricePerGameCoins',
+  'game.doudizhu.cardCounterPricePerHourCoins',
+];
+
 /**
  * 写入校验（管理面）——非法 ⇒ 抛 `ProtocolError`（中文原因）；合法 ⇒ 返回**归一化后**的值
  * （目前仅 `robot.skillDistribution` 有归一化：原始份额 ⇒ 占比）。
@@ -338,6 +436,21 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (PDK_BOOLEAN_KEYS.includes(key)) return parseStrictBoolean(key, value);
   if (key === 'game.paodekuai.airplaneWings') return parseAirplaneWings(value);
   if (key === 'game.paodekuai.multiplierCap') return parseMultiplierCap(value);
+  // ── 平行化（2026-10-24）────────────────────────────────────────────────
+  if (key === 'game.levels.doudizhu') return parseBaseScoreLevels(value);
+  if (GAME_BOOLEAN_KEYS.includes(key)) return parseStrictBoolean(key, value);
+  if (GAME_RAKE_KEYS.includes(key)) return parseRakePercent(value, key);
+  if (GAME_ENTRY_MULTIPLIER_KEYS.includes(key)) return parseEntryMultiplier(value, key);
+  if (GAME_CARD_COUNTER_PRICE_KEYS.includes(key)) return parseCardCounterPrice(key, value);
+  if (key === 'game.doudizhu.robot.skillDistribution') {
+    return parseSkillDistribution(value, key);
+  }
+  if (key === 'game.doudizhu.robot.modelBySkill') return parseModelBySkill(value, key);
+  if (key === 'game.doudizhu.risk.winRateThreshold') {
+    return parseWinRateThreshold(value, key);
+  }
+  if (key === 'game.doudizhu.risk.minGames') return parseMinGames(value, key);
+  if (key === 'currency.reliefThresholdCoins') return parseReliefThresholdCoins(value);
   throw new ProtocolError(`未知配置键：${String(key)}`);
 }
 
@@ -460,23 +573,23 @@ function parseSignupGrant(value: unknown): number {
 }
 
 /** 入场门槛倍率（② 金币场 §1.1）：int 且 `1 ≤ n ≤ 100`（种子 10；客户端可见——门槛提示要用）。 */
-function parseEntryMultiplier(value: unknown): number {
+function parseEntryMultiplier(value: unknown, key = 'currency.entryMultiplier'): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new ProtocolError('currency.entryMultiplier 必须是整数');
+    throw new ProtocolError(`${key} 必须是整数`);
   }
   if (value < 1 || value > 100) {
-    throw new ProtocolError('currency.entryMultiplier 必须在 1 ≤ n ≤ 100 范围内');
+    throw new ProtocolError(`${key} 必须在 1 ≤ n ≤ 100 范围内`);
   }
   return value;
 }
 
 /** 抽水百分比（② 金币场 §1.1）：int 且 `0 ≤ n ≤ 50`（种子 0；客户端不可见）。 */
-function parseRakePercent(value: unknown): number {
+function parseRakePercent(value: unknown, key = 'currency.rakePercent'): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new ProtocolError('currency.rakePercent 必须是整数');
+    throw new ProtocolError(`${key} 必须是整数`);
   }
   if (value < 0 || value > 50) {
-    throw new ProtocolError('currency.rakePercent 必须在 0 ≤ n ≤ 50 范围内');
+    throw new ProtocolError(`${key} 必须在 0 ≤ n ≤ 50 范围内`);
   }
   return value;
 }
@@ -494,28 +607,41 @@ function parseReliefAmount(value: unknown): number {
   return value;
 }
 
+/** 每日救助绝对门槛（平行化）：int 且 `1 ≤ n ≤ 1,000,000`。 */
+function parseReliefThresholdCoins(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new ProtocolError('currency.reliefThresholdCoins 必须是整数金币');
+  }
+  if (value < 1 || value > 1_000_000) {
+    throw new ProtocolError(
+      'currency.reliefThresholdCoins 必须在 1 ≤ n ≤ 1000000 范围内',
+    );
+  }
+  return value;
+}
+
 /** 胜率阈值（风控片 T1 第 20 键）：number 且 `0.5 ≤ n ≤ 1.0` 且**最多两位小数**（种子 0.8）。 */
-function parseWinRateThreshold(value: unknown): number {
+function parseWinRateThreshold(value: unknown, key = 'risk.winRateThreshold'): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new ProtocolError('risk.winRateThreshold 必须是 number');
+    throw new ProtocolError(`${key} 必须是 number`);
   }
   if (value < 0.5 || value > 1) {
-    throw new ProtocolError('risk.winRateThreshold 必须在 0.5 ≤ n ≤ 1.0 范围内');
+    throw new ProtocolError(`${key} 必须在 0.5 ≤ n ≤ 1.0 范围内`);
   }
   // 两位小数口径：`Math.round` 往返相等才算（0.785 ⇒ 0.79 ≠ 0.785 ⇒ 拒）。
   if (Math.round(value * 100) / 100 !== value) {
-    throw new ProtocolError('risk.winRateThreshold 最多两位小数');
+    throw new ProtocolError(`${key} 最多两位小数`);
   }
   return value;
 }
 
 /** 扫描最少局数（风控片 T1 第 21 键）：int 且 `1 ≤ n ≤ 100000`（种子 100）。 */
-function parseMinGames(value: unknown): number {
+function parseMinGames(value: unknown, key = 'risk.minGames'): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new ProtocolError('risk.minGames 必须是整数');
+    throw new ProtocolError(`${key} 必须是整数`);
   }
   if (value < 1 || value > 100_000) {
-    throw new ProtocolError('risk.minGames 必须在 1 ≤ n ≤ 100000 范围内');
+    throw new ProtocolError(`${key} 必须在 1 ≤ n ≤ 100000 范围内`);
   }
   return value;
 }
@@ -601,47 +727,53 @@ function parsePayMinutes(key: ConfigKey, value: unknown): number {
 }
 
 /** 技能分布：三键齐全、各值 ≥ 0、合计 > 0 ⇒ **归一化成占比**（15/35/50 ⇒ 0.15/0.35/0.5）。 */
-function parseSkillDistribution(value: unknown): Record<(typeof SKILLS)[number], number> {
-  if (!isObj(value)) throw new ProtocolError('robot.skillDistribution 必须是对象');
+function parseSkillDistribution(
+  value: unknown,
+  key = 'robot.skillDistribution',
+): Record<(typeof SKILLS)[number], number> {
+  if (!isObj(value)) throw new ProtocolError(`${key} 必须是对象`);
   for (const skill of SKILLS) {
     if (!(skill in value)) {
-      throw new ProtocolError(`robot.skillDistribution 必须三键齐全（缺 ${skill}）`);
+      throw new ProtocolError(`${key} 必须三键齐全（缺 ${skill}）`);
     }
   }
-  const beginner = readShare(value.beginner, 'beginner');
-  const intermediate = readShare(value.intermediate, 'intermediate');
-  const advanced = readShare(value.advanced, 'advanced');
+  const beginner = readShare(value.beginner, 'beginner', key);
+  const intermediate = readShare(value.intermediate, 'intermediate', key);
+  const advanced = readShare(value.advanced, 'advanced', key);
   const sum = beginner + intermediate + advanced;
-  if (sum <= 0) throw new ProtocolError('robot.skillDistribution 合计必须 > 0');
+  if (sum <= 0) throw new ProtocolError(`${key} 合计必须 > 0`);
   return { beginner: beginner / sum, intermediate: intermediate / sum, advanced: advanced / sum };
 }
 
-function readShare(v: unknown, skill: string): number {
+function readShare(v: unknown, skill: string, key: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
-    throw new ProtocolError(`robot.skillDistribution.${skill} 必须是 ≥ 0 的数（非负）`);
+    throw new ProtocolError(`${key}.${skill} 必须是 ≥ 0 的数（非负）`);
   }
   return v;
 }
 
 /** 三档模型装配：三键齐全、值 ∈ 三档模型名（`robot-service/models.ts` 的同一集合）。 */
-function parseModelBySkill(value: unknown): Record<(typeof SKILLS)[number], string> {
-  if (!isObj(value)) throw new ProtocolError('robot.modelBySkill 必须是对象');
+function parseModelBySkill(
+  value: unknown,
+  key = 'robot.modelBySkill',
+): Record<(typeof SKILLS)[number], string> {
+  if (!isObj(value)) throw new ProtocolError(`${key} 必须是对象`);
   for (const skill of SKILLS) {
     if (!(skill in value)) {
-      throw new ProtocolError(`robot.modelBySkill 必须三键齐全（缺 ${skill}）`);
+      throw new ProtocolError(`${key} 必须三键齐全（缺 ${skill}）`);
     }
   }
   return {
-    beginner: readModelName(value.beginner, 'beginner'),
-    intermediate: readModelName(value.intermediate, 'intermediate'),
-    advanced: readModelName(value.advanced, 'advanced'),
+    beginner: readModelName(value.beginner, 'beginner', key),
+    intermediate: readModelName(value.intermediate, 'intermediate', key),
+    advanced: readModelName(value.advanced, 'advanced', key),
   };
 }
 
-function readModelName(v: unknown, skill: string): string {
+function readModelName(v: unknown, skill: string, key: string): string {
   if (typeof v !== 'string' || !(MODEL_NAMES as readonly string[]).includes(v)) {
     throw new ProtocolError(
-      `robot.modelBySkill.${skill} 不是可用模型名（只允许 ${MODEL_NAMES.join(' / ')}）`,
+      `${key}.${skill} 不是可用模型名（只允许 ${MODEL_NAMES.join(' / ')}）`,
     );
   }
   return v;
