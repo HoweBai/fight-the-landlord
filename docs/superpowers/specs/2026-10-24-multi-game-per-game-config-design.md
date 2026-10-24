@@ -64,6 +64,9 @@
 | D14 | 记牌器三键迁到斗地主命名空间；跑得快继续由 `GAME_META` 能力位拦截 | 跑得快无记牌器 |
 | D15 | 不新增 `game.doudizhu.enabled` | 斗地主恒开；避免新的全局停服面 |
 | D16 | 推翻旧 D8：`game.baseScoreLevels` 迁到 `game.levels.doudizhu`，旧键只读回退 | 用户裁决“彻底迁移到平行键” |
+| D17 | `room.match` 的 `practice` 分支也按 `friendRoomEnabled(gameType)` 执法，关 ⇒ `12006` | 防改包客户端绕过好友房开关 |
+| D18 | 回滚回填**以斗地主为权威源**；跑得快专有值在回滚时丢弃并公告 | 旧镜像只有一套共享键，无法同时保留两个玩法 |
+| D19 | 升级窗口内**不得修改新键**（尤其记牌器价格）；全部消费者升级完成后再改 | 避免新旧服务读不同键导致价格/扣费错位 |
 
 ## 4. 键清单
 
@@ -100,9 +103,32 @@
 
 ### 4.3 默认值
 
-- 斗地主 16 个新键：迁移时**复制旧键当前值**，不改变玩家可见行为。
-- 跑得快 7 个新键：D4 的保守灰度值。
-- `currency.reliefThresholdCoins` = `150`（= 当前最低档 15 × 门槛 10）。
+**斗地主 16 个新键**（迁移时复制旧键当前值；旧行缺失时用下表兜底，与旧种子逐字同值）：
+
+| 新键 | 兜底默认 |
+|---|---|
+| `game.doudizhu.freeRoomEnabled` | `true` |
+| `game.doudizhu.goldRoomEnabled` | `true` |
+| `game.doudizhu.friendRoomEnabled` | `false` |
+| `game.doudizhu.freeBotFillEnabled` | `true` |
+| `game.doudizhu.goldBotFillEnabled` | `true` |
+| `game.doudizhu.rakePercent` | `0` |
+| `game.doudizhu.entryMultiplier` | `10` |
+| `game.levels.doudizhu` | 四档 `休闲场 15 / 标准场 80 / 竞技场 480 / 豪侠场 1200`（无 `entryFeePercent` 字段 = 0） |
+| `game.doudizhu.cardCounterEnabled` | `true` |
+| `game.doudizhu.cardCounterPricePerGameCoins` | `10` |
+| `game.doudizhu.cardCounterPricePerHourCoins` | `100` |
+| `game.doudizhu.robot.skillDistribution` | `{"beginner":0.15,"intermediate":0.35,"advanced":0.5}` |
+| `game.doudizhu.robot.ruleFallback` | `true` |
+| `game.doudizhu.robot.modelBySkill` | `{"beginner":"sl","intermediate":"douzero_WP","advanced":"douzero_ADP"}` |
+| `game.doudizhu.risk.winRateThreshold` | `0.8` |
+| `game.doudizhu.risk.minGames` | `100` |
+
+**跑得快 7 个新键**：免费场 `true`、金币场 `false`、好友房 `false`、免费补位 `true`、
+金币补位 `true`、抽水 `0`、门槛 `10`。
+
+**`currency.reliefThresholdCoins`**：迁移时**现算** = `MIN(斗地主档位 baseScore) × 斗地主
+entryMultiplier`（正常种子 = 15 × 10 = 150；运营改过档位/倍率的库不会凭空回到 150）。
 
 ### 4.4 旧键保留
 
@@ -129,9 +155,9 @@
   - `game.doudizhu.risk.*` → 复用 `parseWinRateThreshold` / `parseMinGames`；
   - `currency.reliefThresholdCoins` → 新 `parseReliefThresholdCoins`（int `1..1,000,000`）。
 - `ClientGameConfig` 增加可选字段（旧服务端缺失 ⇒ 客户端回退顶层值）：
-  `freeRoomEnabled?`、`goldRoomEnabled?`、`friendRoomEnabled?`、`entryMultiplier?`、
-  `cardCounter?: { enabled; pricePerGameCoins; pricePerHourCoins }`。
+  `freeRoomEnabled?`、`goldRoomEnabled?`、`friendRoomEnabled?`、`entryMultiplier?`。
 - `ClientConfig` 增加可选 `reliefThresholdCoins?: number`（旧服务端缺失 ⇒ 旧算法）。
+- 记牌器仍是顶层裸名（派生自斗地主新键）；跑得快无此能力，不需要按玩法嵌套。
 - `CLIENT_CONFIG_KEYS` 增加 `reliefThresholdCoins`；其余顶层字段不变。
 
 ### 5.2 config-service
@@ -144,8 +170,9 @@
   - `freeRoomEnabled` / `goldRoomEnabled` / `friendRoomEnabled` ← 斗地主新键；
   - `entryMultiplier` ← `game.doudizhu.entryMultiplier`；
   - `cardCounter*` ← `game.doudizhu.cardCounter*`；
-  - `reliefThresholdCoins` ← 平台新键（缺失 ⇒ `150`）。
-- `games.doudizhu`：`enabled:true`、人数/档位 + 上述场次/好友房/门槛/记牌器字段。
+  - `reliefThresholdCoins` ← 平台新键；读侧复用 `parseReliefThresholdCoins`，
+    **缺失/非法 ⇒ 不下发该字段**（客户端回退旧算法）。
+- `games.doudizhu`：`enabled:true`、人数/档位 + 上述场次/好友房/门槛字段。
 - `games.paodekuai`：`enabled` / 人数 / 档位 + 跑得快场次/好友房/门槛。
 - 顶层 `baseScoreLevels` 与 `games.doudizhu.baseScoreLevels` 同源。
 
@@ -157,13 +184,18 @@
 
 #### 迁移（`1796500000000-SplitGameConfig.ts`）
 
-- 对 15 个旧键（除 `game.baseScoreLevels` 映射到 `game.levels.doudizhu` 外逐字同名）：
-  `INSERT IGNORE INTO platform_config (...) SELECT '<新键>', value, version, NOW(3), 'seed' FROM platform_config WHERE key='<旧键>'`。
-- 对每个新键再补一条 `INSERT IGNORE ... VALUES (<默认值>)`，保证旧行缺失时也有种子。
+- **JS 驱动复制**（不用 `INSERT ... SELECT`，便于测试与真值计算）：
+  1. `SELECT key, value, version FROM platform_config WHERE key IN (<16 个旧键>)`；
+  2. 逐键 `INSERT IGNORE INTO platform_config (...) VALUES (?, ?, ?, NOW(3), 'seed')`，
+     新键/旧值/旧版本参数化写入；
+  3. 旧行缺失的键用 §4.3 的兜底默认值补种；
+  4. `currency.reliefThresholdCoins` 现算：解析旧 `game.baseScoreLevels` 的
+     `MIN(baseScore) × 旧 currency.entryMultiplier`（旧键缺失时回落 15 × 10 = 150）。
 - 跑得快 7 键直接 `INSERT IGNORE` 种子（D4）。
-- `currency.reliefThresholdCoins` 种子 `150`。
-- `down()` 删除本次新增的新键（旧键**不删**）；回滚到旧镜像不需要跑 down，按 runbook 回填后直接回滚。
+- `down()` 删除本次新增的新键（旧键**不删**）。
 - 时间戳 `1796500000000`，全仓唯一；`INSERT IGNORE` 可重跑。
+- 真库冒烟：迁移后在真 MySQL 上 `SELECT COUNT(*)`（应含 89 行）并抽查 16 个新键值；
+  该步骤进全量验证，不依赖假库。
 
 ### 5.3 room-service
 
@@ -189,6 +221,8 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - `rakePercent(gameType = 'doudizhu')`
 - `baseScoreLevels(gameType)`：斗地主读 `game.levels.doudizhu`，缺失回退 `game.baseScoreLevels`；
   跑得快读 `game.levels.paodekuai`；坏值仍 fail-closed（10007）。
+- `entryFeePercents(gameType)`：**必须与 `baseScoreLevels` 同一条新→旧回退**；
+  滚动窗口/迁移未跑时旧键仍能收费，绝不因新键缺失静默变成 0（fail-open 收入面）。
 - `cardCounterEnabled()` / `cardCounterPrices()`：只读斗地主新键（回退旧键）；
   调用方仍由 `GAME_META[gameType].capabilities.cardCounter` 闸住。
 - `entryFeePercents(gameType)` 继续由档位表派生，天然按玩法。
@@ -197,7 +231,11 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 
 - `message.router.ts`：`modeEnabled(deps, gameType, mode)`；
   random → `freeRoomEnabled(gameType)`，gold → `goldRoomEnabled(gameType)`；
-  关闭 ⇒ `12010`。`handleMatch` 在 `gameEnabled` / 人数校验之后调用。
+  关闭 ⇒ `12010`。
+- **`practice` 分支也执法**（D17）：`room.match {mode:'practice'}` 仍需
+  `friendRoomEnabled(gameType)` 为真，否则 `12006` —— 防改包客户端绕过 REST 好友房闸。
+- `match.service.ts`：`botFillEnabled(mode, gameType)` 读的是 `queue.gameType`
+  （队列对象已携带），跑得快的补位开关才真正生效；`practice` 仍恒补。
 - `rooms.controller.ts`：
   - `GET /api/rooms?gameType=`：`friendRoomEnabled(gameType)` 关 ⇒ 返回空数组（既有语义）；
   - `POST /api/rooms`：`friendRoomEnabled(dto.gameType ?? 'doudizhu')` 关 ⇒ `12006`；
@@ -220,13 +258,13 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 ### 5.4 currency-service
 
 - `config-cache.service.ts`：
-  - 新增 `reliefThresholdCoins()`：平台新键；缺失/非法 ⇒ `150`。
-  - 删除/保留 `entryMultiplier()` 与 `baseScoreLevels()`？**保留读取但在救助端点不再使用**；
-    其他消费面（记牌器价格）改为斗地主新键。
+  - 新增 `reliefThresholdCoins(): number | null`：平台新键；缺失/非法 ⇒ **null**；
+  - **删除** `entryMultiplier()` 与 `minBaseScoreLevel()`：救助改用绝对门槛后无其他消费者
+    （避免留下第二真源/误导性读取）；对应测试同步删除；
   - `cardCounterEnabled()` / `cardCounterPrices()` 改读 `game.doudizhu.cardCounter*`（回退旧键）。
-- `wallet.controller.ts`：救助门槛直接用 `reliefThresholdCoins()`；
-  错误文案不再提“档位表最低档 × 倍率”。
-- `ads/ad-callback.service.ts`：同样改用 `reliefThresholdCoins()`。
+- `wallet.controller.ts`：救助门槛用 `reliefThresholdCoins()`；null ⇒ 503/10007
+  （与“档位表不可用”同族：钱路径 fail-closed，不按 150 猜）。
+- `ads/ad-callback.service.ts`：同样改用 `reliefThresholdCoins()`；null ⇒ 瞬态（不落 done）。
 - `config.client.ts` 注释与消费键同步。
 
 ### 5.5 user-service（风控）
@@ -288,15 +326,35 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
   `record.*`、`risk.predicate.*` / `device*` / `scan*`、`currency.signupGrant` /
   `reliefEnabled` / `reliefAmount` / `reliefThresholdCoins` / `reconcileIntervalMs`、
   `pay.*`、`client.*`、`ad.*`。
-- 旧键不出现在任何 IA 列表中；`KEY_META` / 结构化键清单同步。
+- 旧键不出现在任何 IA 列表中；`CONFIG_NOTES` / `KEY_META` / 结构化键清单同步：
+  - 每个新键至少一条运营口吻备注（可复用旧键文案并改键名/玩法限定）；
+  - “未分组域”的差集计算**排除** `LEGACY_CONFIG_KEYS`；搜索遍历也排除旧键
+    （旧键不出现在任何可保存控件里；如需展示，只做只读卡片）；
+  - `STRUCT_KEYS` 增加 `game.levels.doudizhu`；`buildStructCard` 的编辑器分派必须补
+    `game.levels.doudizhu` 与 `game.levels.paodekuai` 两个 `buildLevelsEditor` 分支
+    （现状只认旧 `game.baseScoreLevels`，漏了 pdk）；
+  - `scripts/verify-admin-static.mjs` 的键集断言从“IA = CONFIG_KEYS”改为
+    “IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS”，并更新键总数与 pdk 页签断言
+    （规则/计分/开关/场次开关/金币场经济）；补一条“结构化编辑器分派覆盖 levels 两键”的断言。
 
-### 5.9 文档
+### 5.9 文档与 conformance
 
 - `docs/games/paodekuai.md` §7.1：补充场次/好友房/补位/抽水/门槛键与默认值；
   注明旧键只读。
 - `docs/client-protocol.md`：`ClientGameConfig` / `ClientConfig` 新字段。
+- `docs/design.md`：§7.5 配置表相关行改为新键；消费者清单同步。
+- `docs/ops/first-deploy.md`：配置表相关行改为新键，并注明旧键只读。
 - `docs/superpowers/plans/2026-10-24-multi-game-rollback-runbook.md`：
   增加“回滚前回填”一节与逐键 SQL。
+- `tools/conformance/src`：
+  - 客户端键集字面量 20 → 21（新增 `reliefThresholdCoins`）：slice-14/17/18/21/24；
+  - 管理面键总数改为 `CONFIG_KEYS.length`（slice-18/20/22/23），不再写字面 65；
+  - 写旧键的用例全部改新键：slice-18（场次/抽水）、slice-25（档位）、slice-28（记牌器）、
+    slice-13（robot.ruleFallback）、slice-20（风控胜率/最少局数）、`lib/http.ts`（好友房）；
+  - slice-14 的**直接 SQL 演练**（绕过管理 API 改 `room.friendRoomEnabled`）也改
+    `game.doudizhu.friendRoomEnabled`，否则新代码不读该键 ⇒ 演练假绿；
+  - slice-19 的“旧键任意 400”断言改为“旧键 400 + 废弃文案”，防止“任意 400”蒙混；
+  - slice-29 的跑得快开关不动（`game.paodekuai.enabled` 未迁移）。
 - 本 spec 的「审查记录」。
 
 ## 6. 错误处理与边界
@@ -308,10 +366,11 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 | 旧键写入 | 400 `BAD_PARAM`，消息提示使用新键 |
 | 玩法关闭 | 匹配/建房/进房按既有码：`12012` |
 | 场次关闭 | `room.match` ⇒ `12010` |
-| 好友房关闭 | 列表返回空；建房/进房 ⇒ `12006` |
+| 好友房关闭 | 列表返回空；建房/进房 ⇒ `12006`；`room.match {mode:'practice'}` 同样 ⇒ `12006` |
+| 新键缺失时的台费 | `entryFeePercents` 回退旧档位表，**不静默变 0**；两表都不可用才空表（不收） |
 | 玩法三入口全关 | 大厅隐藏玩法卡；当前选中被隐藏 ⇒ 回落第一个可玩玩法 |
 | 只开好友房 | 玩法卡可见；开始按钮不显示；好友房可用 |
-| 救助门槛缺失/非法 | 代码默认 `150`（fail-safe 与种子一致） |
+| 救助门槛缺失/非法 | currency-service **fail-closed**（503 / 瞬态，不按 150 猜）；`/api/config` 不下发该字段（客户端回退旧算法） |
 | 机器人水位不可推导 | 沿用既有：ensure 抛、afterSettle fail-open |
 
 ## 7. 测试判据
@@ -325,27 +384,31 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 
 ### 7.2 config-service
 
-- 迁移：逐键复制旧值到斗地主新键；跑得快 7 键种子；`reliefThresholdCoins=150`；
-  `INSERT IGNORE` 幂等；`down` 只删新键。
+- 迁移：内存假库执行 `up()` 两次（幂等）；16 个旧值逐键复制；旧行缺失走 §4.3 兜底；
+  `reliefThresholdCoins = MIN(档位) × 倍率`；`down` 只删新键。另加真 MySQL 冒烟
+  （迁移后 89 行 + 抽查新键值），不依赖假库。
 - `/api/config`：
   - 新键优先、旧键回退（删除新行后断言回退）；
   - 顶层字段与 `games.doudizhu` 同源；
   - 跑得快保守默认值；
-  - `reliefThresholdCoins` 下发；
+  - `reliefThresholdCoins` 下发；坏值 ⇒ 不下发；
   - 坏新键不回退旧键（档位表空表 / 默认值）。
-- 管理面：写新键成功；写旧键 400 且不落库；`GET /api/admin/config` 仍能读到旧键行。
+- 管理面：写新键成功；写旧键 400 + 废弃文案且不落库；`GET /api/admin/config` 仍能读到旧键行。
 
 ### 7.3 room-service
 
-- 匹配：斗地主/跑得快 × 免费场/金币场开关矩阵，关 ⇒ `12010`。
+- 匹配：斗地主/跑得快 × 免费场/金币场开关矩阵，关 ⇒ `12010`；`practice` 关 ⇒ `12006`。
 - 好友房：列表按玩法返回空；建房/进房按房间玩法 ⇒ `12006`；占座前拒绝。
-- 经济：`rakePercent(gameType)`、`entryMultiplier(gameType)`、`entryFeePercents(gameType)`。
+- 经济：`rakePercent(gameType)`、`entryMultiplier(gameType)`、`entryFeePercents(gameType)`；
+  **新档位键缺失仍按旧键收台费**。
+- 机器人补位：`botFillEnabled(mode, queue.gameType)` 两玩法矩阵；
+  跑得快关补位 ⇒ 不补机器人。
 - 机器人水位：两玩法不同档位/倍率 ⇒ top 不同；`afterSettle` 带玩法。
 - 记牌器：跑得快不扣费/不下发（既有能力位测试保持）。
 
 ### 7.4 currency-service
 
-- 救助端点/广告回调用 `reliefThresholdCoins`；缺失 ⇒ 150。
+- 救助端点/广告回调用 `reliefThresholdCoins`；缺失/非法 ⇒ 503/瞬态（不发放）。
 - 记牌器价格读斗地主新键并回退旧键。
 
 ### 7.5 user-service / robot-service
@@ -362,8 +425,10 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 
 ### 7.7 admin / conformance
 
-- `pnpm verify:admin`：IA 含新键、不含旧键。
-- conformance 键集/文档同步断言更新。
+- `pnpm verify:admin`：IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS；旧键不出现在未分组/搜索；
+  `game.levels.doudizhu` / `game.levels.paodekuai` 均有结构化编辑器分派。
+- conformance 键集/文档同步断言更新；写旧键的 slice 全改新键；
+  slice-14 直接 SQL 演练改新键；slice-19 旧键 400 断言校验废弃文案。
 
 ## 8. 风险
 
@@ -371,10 +436,13 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 |---|---|
 | 旧后台在新代码上线后写旧键无效 | 后台与代码同批部署；旧键写入直接 400 |
 | 回滚后旧镜像读到冻结值 | runbook 回填脚本；回滚前强制执行 |
+| 滚动升级中旧服务读旧键、新服务读新键 | D19：全部消费者升级完成前**不得改新键**（尤其记牌器价格）；runbook 写升级顺序 |
+| 回滚时两个玩法共用旧键 | D18：斗地主为权威源；跑得快专有值回滚即丢弃并在 runbook 公告 |
+| 10-23 已发多玩法客户端不认识 per-game 开关 | 跑得快金币场默认关 ⇒ 旧客户端仍显示金币场页签、点击 12010；登记为已知窗口，PDK 开放前先更新客户端 |
 | 键数量增长导致清单/测试漏项 | 单一键清单（protocol）+ 迁移测试逐键断言 |
 | 新键坏值静默回退造成“改了不生效” | D3：坏值 fail-closed/代码默认，不回退旧键；写入口校验 |
 | 机器人水位用错玩法档位 | `computeTop(gameType)` 双玩法单测 |
-| 客户端旧版本读到新 `games` 字段 | 字段可选；旧客户端只读顶层旧字段 |
+| 台费在新键缺失窗口静默变 0 | `entryFeePercents` 与 `baseScoreLevels` 同走新→旧回退 + 单测 |
 | 迁移时间戳撞车 | 1796500000000，全仓唯一；迁移测试断言 |
 
 ## 9. 涉及文件
@@ -384,7 +452,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - `packages/config-service/src/migrations/1796500000000-SplitGameConfig.ts`
 - `packages/config-service/test/*`
 - `packages/room-service/src/config/config-cache.service.ts`
-- `packages/room-service/src/gateway/message.router.ts`
+- `packages/room-service/src/gateway/message.router.ts`、`match/match.service.ts`
 - `packages/room-service/src/rooms/rooms.controller.ts`、`rooms.service.ts`、`rooms.start.ts`
 - `packages/room-service/src/currency/settle.service.ts`、`robot-funding.ts`
 - `packages/currency-service/src/config/config-cache.service.ts`、`wallet/wallet.controller.ts`、
@@ -393,9 +461,33 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - `packages/robot-service/src/config/config-cache.service.ts`、`robot/config.ts`
 - `apps/client/src/net/rest.ts`（类型）、`composables/useClientConfig.ts`、`stores/game.ts`、
   `pages/lobby/lobby.vue`、`pages/game/game.vue`
-- `admin/app.js`
-- `docs/games/paodekuai.md`、`docs/client-protocol.md`、rollback runbook
+- `admin/app.js`、`scripts/verify-admin-static.mjs`
+- `tools/conformance/src/lib/http.ts`、`slices/slice-13/14/17/18/19/20/21/22/23/24/25/28`
+- `docs/games/paodekuai.md`、`docs/client-protocol.md`、`docs/design.md`、
+  `docs/ops/first-deploy.md`、rollback runbook
 
 ## 10. 审查记录
 
-（待对抗审查后填写）
+### 10.1 第一轮独立对抗审查（2026-10-24）
+
+审查者：独立子代理（sonnet），只报发现。共 15 条：1 阻断 / 6 高 / 5 中 / 3 低。
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | 阻断 | `match.service.ts` 的 `botFillEnabled(mode)` 不读 `gameType`，跑得快补位开关成死键 | **已修**：§5.3 明确 `botFillEnabled(mode, queue.gameType)`，§9 补 `match.service.ts`，§7.3 加补位矩阵 |
+| 2 | 高 | conformance 大量写旧键；slice-14 直接 SQL 绕过 400；slice-19 断言过宽 | **已修**：§5.9 逐片列明；slice-14 改新键；slice-19 校验废弃文案 |
+| 3 | 高 | `verify-admin-static` 的“IA = CONFIG_KEYS”在 89 vs 73 时必红 | **已修**：§5.8/§7.7 改为“IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS”，并给计数 |
+| 4 | 高 | admin 未分组/搜索仍渲染旧键可保存控件 | **已修**：§5.8 要求差集与搜索排除旧键，只读或不展示；§7.7 加断言 |
+| 5 | 高 | `buildStructCard` 缺 `game.levels.doudizhu` / `game.levels.paodekuai` 分支 | **已修**：§5.8 明确补两个 `buildLevelsEditor` 分支；§7.7 加断言 |
+| 6 | 高 | 回滚回填未定“两个玩法共用旧键”的取值源 | **已修**：D18 斗地主为权威源，跑得快专有值回滚即丢弃；runbook 写逐键 SQL |
+| 7 | 高 | `room.match {mode:'practice'}` 绕过好友房闸 | **已修**：D17/§5.3 `practice` 也查 `friendRoomEnabled(gameType)` ⇒ 12006 |
+| 8 | 高 | `entryFeePercents` 无旧键回退，窗口内静默变 0 | **已修**：§5.3/§6/§7.3 要求与 `baseScoreLevels` 同回退并加用例 |
+| 9 | 中 | 滚动升级中旧 currency-service 读旧记牌器价格 | **已修**：D19/§8 升级完成前不得改新键；runbook 写顺序 |
+| 10 | 中 | `/api/config` 对 `reliefThresholdCoins` 非法值未定义 | **已修**：§5.2 读侧复用 parser，缺失/非法不下发；§5.4 服务端 null ⇒ fail-closed |
+| 11 | 中 | 10-23 多玩法客户端仍显示跑得快金币场页签 | **已登记**：§8 已知窗口；PDK 开放前先更新客户端 |
+| 12 | 中 | 假 QueryRunner 无法验证 `INSERT ... SELECT` 幂等/真值 | **已修**：§5.2 改 JS 驱动复制 + 内存假库幂等测试 + 真 MySQL 冒烟 |
+| 13 | 中 | 斗地主 16 个新键兜底默认值未列全 | **已修**：§4.3 逐键列表 |
+| 14 | 低 | design.md §7.5 权威文档未在清单 | **已修**：§5.9/§9 已列 `docs/design.md`（§7.5 键表与消费者清单） |
+| 15 | 低 | 救助门槛硬编码 150，运营改过档位时不符 | **已修**：§4.3/§5.2 迁移现算 `MIN(档位) × 倍率` |
+
+> 第二轮：修复差异复核（只审上表处置是否落实），见 §10.2。
