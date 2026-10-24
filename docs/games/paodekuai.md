@@ -139,7 +139,18 @@
 |---|---|---|
 | `game.paodekuai.enabled` | `false` | 玩法总开关（默认暗上线） |
 | `game.paodekuai.nonThreePlayerEnabled` | `false` | 是否开放 2/4 人 |
-| `game.levels.paodekuai` | 休闲 15 / 标准 80 / 竞技 480 / 豪侠 1200 | 底分档位表（台费默认 0） |
+| `game.levels.paodekuai` | 休闲 15 / 标准 80 / 竞技 480 / 豪侠 1200 | 底分档位表（台费 = 各档 `entryFeePercent`，默认 0） |
+| `game.paodekuai.freeRoomEnabled` | `true` | 跑得快免费场开关（保守灰度：先开免费场） |
+| `game.paodekuai.goldRoomEnabled` | `false` | 跑得快金币场开关（保守灰度：先不碰真钱） |
+| `game.paodekuai.friendRoomEnabled` | `false` | 跑得快好友房开关 |
+| `game.paodekuai.freeBotFillEnabled` | `true` | 免费场缺人是否补机器人 |
+| `game.paodekuai.goldBotFillEnabled` | `true` | 金币场缺人是否补机器人 |
+| `game.paodekuai.rakePercent` | `0` | 金币场结算抽水（0–50%） |
+| `game.paodekuai.entryMultiplier` | `10` | 金币场入场门槛倍率（入场需余额 ≥ 底分 × 本值） |
+
+> 2026-10-24 起跑得快的场次/好友房/补位/抽水/门槛与斗地主**平行独立**；
+> 旧平台键（`room.*` / `currency.rakePercent` / `currency.entryMultiplier` 等）
+> 只读保留，供回滚回填，不再由管理面写入。
 
 ## 8. 超时与托管
 
