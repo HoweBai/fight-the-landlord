@@ -38,7 +38,13 @@ function readInt(
   fallback: number,
 ): number {
   const value = pickRaw(byKey, key, legacyKey);
-  return typeof value === 'number' && Number.isInteger(value) ? value : fallback;
+  if (value === undefined) return fallback;
+  try {
+    // 范围校验复用写入口 parser（唯一校验点）；非法 ⇒ 代码默认，不回退旧键。
+    return parseConfigValue(key as never, value) as number;
+  } catch {
+    return fallback;
+  }
 }
 
 function readLevels(byKey: ConfigByKey, key: string, legacyKey?: string): BaseScoreLevel[] {

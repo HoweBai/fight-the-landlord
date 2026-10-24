@@ -409,4 +409,29 @@ describe('GET /api/config（C7 半边）', () => {
       await probe.close();
     }
   });
+
+  it('新 int 键存在但越界 ⇒ 代码默认，不回退旧键（门槛/价格同口径）', async () => {
+    const { svc, db } = makeService(seedDb());
+    db.rows.set('game.doudizhu.entryMultiplier', {
+      value: 0,
+      version: 2,
+      updatedAt: 'admin',
+      updatedBy: 'admin',
+    });
+    db.rows.set('game.doudizhu.cardCounterPricePerGameCoins', {
+      value: -1,
+      version: 2,
+      updatedAt: 'admin',
+      updatedBy: 'admin',
+    });
+    const probe = await startHttpProbe(svc);
+    try {
+      const { body } = await probe.get('/api/config');
+      expect(body.data.entryMultiplier).toBe(10);
+      expect(body.data.games.doudizhu.entryMultiplier).toBe(10);
+      expect(body.data.cardCounterPricePerGameCoins).toBe(10);
+    } finally {
+      await probe.close();
+    }
+  });
 });
