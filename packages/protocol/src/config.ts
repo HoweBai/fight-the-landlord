@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （五十一键清单、校验函数、客户端子集）。
+ * （六十六键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -129,6 +129,9 @@ export const CONFIG_KEYS = [
   'game.paodekuai.springMultiplierEnabled',
   'game.paodekuai.multiplierCap',
   'game.paodekuai.baobenEnabled',
+  /** 玩法开放开关（第 66 键）：斗地主总开关（严格 boolean、种子 true——保持现状；
+   *  客户端不可见——折叠进 `games.doudizhu.enabled`）。关 ⇒ 新匹配/新建房 12012。 */
+  'game.doudizhu.enabled',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
@@ -335,6 +338,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
     return parseCardCounterPrice(key, value);
   }
   if (key === 'game.levels.paodekuai') return parseBaseScoreLevels(value);
+  if (key === 'game.doudizhu.enabled') return parseStrictBoolean(key, value);
   if (PDK_BOOLEAN_KEYS.includes(key)) return parseStrictBoolean(key, value);
   if (key === 'game.paodekuai.airplaneWings') return parseAirplaneWings(value);
   if (key === 'game.paodekuai.multiplierCap') return parseMultiplierCap(value);

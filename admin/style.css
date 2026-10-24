@@ -808,6 +808,9 @@ input[type="datetime-local"]:focus {
 }
 .row-card.dirty { border-color: var(--accent); }
 .row-card.saving { opacity: 0.6; }
+/* 玩法域顶部开关卡（2026-10-24）：复用行卡片布局，仅强调边界与说明文字。 */
+.game-switch-card { border-color: var(--accent); margin-bottom: 14px; }
+.game-switch-card .row-state { color: var(--dim); }
 
 .row-main { min-width: 0; }
 .row-title { font-size: 14px; font-weight: 600; }

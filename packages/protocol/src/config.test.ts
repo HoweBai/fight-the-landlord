@@ -66,6 +66,7 @@ describe('完整键清单与客户端子集', () => {
       'game.paodekuai.springMultiplierEnabled',
       'game.paodekuai.multiplierCap',
       'game.paodekuai.baobenEnabled',
+      'game.doudizhu.enabled',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
       'baseScoreLevels', 'friendRoomEnabled', 'freeRoomEnabled', 'goldRoomEnabled',
@@ -462,7 +463,7 @@ describe('跑得快配置键（多玩法片）', () => {
     ).toThrow(ProtocolError);
   });
 
-  it('11 个 boolean 键严格 boolean', () => {
+  it('12 个 boolean 键严格 boolean', () => {
     for (const key of [
       'game.paodekuai.enabled',
       'game.paodekuai.nonThreePlayerEnabled',
@@ -475,6 +476,7 @@ describe('跑得快配置键（多玩法片）', () => {
       'game.paodekuai.guanMultiplierEnabled',
       'game.paodekuai.springMultiplierEnabled',
       'game.paodekuai.baobenEnabled',
+      'game.doudizhu.enabled',
     ] as const) {
       expect(parseConfigValue(key, true)).toBe(true);
       expect(parseConfigValue(key, false)).toBe(false);
