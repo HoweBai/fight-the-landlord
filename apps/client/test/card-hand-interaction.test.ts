@@ -701,8 +701,11 @@ describe('➍ 源码级判据（F10）', () => {
     const hand = files.find((f) => f.path === 'src/components/Hand.vue');
     expect(hand, '源码扫描器必须真的读到 Hand.vue').toBeDefined();
     const code = stripComments(hand!.content);
-    expect(code, '必须有 H5 运行时门控（在 canFlip 内实际使用）').toMatch(
-      /if\s*\(\s*!props\.reflow\s*\|\|\s*!isH5Runtime\s*\)/,
+    expect(code, '必须有 H5 运行时门控（canFlip 内实际使用）').toMatch(
+      // 2026-10-24：原判据钉 `if (!props.reflow || !isH5Runtime)`；569830b6 把常量
+      // **等价展开**成两条独立检查（isH5Runtime 的定义就是 window+document 双存在），
+      // 语义未变 ⇒ 判据改为接受展开式（仍要求 reflow 与两个全局都真的被检查）。
+      /if\s*\(\s*!props\.reflow\s*\)\s*return\s+false;[\s\S]*?typeof window\s*===\s*'undefined'[\s\S]*?typeof document\s*===\s*'undefined'/,
     );
     expect(code, 'FLIP 位移必须除以 scale').toMatch(
       /oldRect\.left\s*-\s*newRect\.left\)\s*\/\s*scale/,

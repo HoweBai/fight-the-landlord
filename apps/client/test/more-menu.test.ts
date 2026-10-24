@@ -100,15 +100,20 @@ describe('顶栏瘦身 + 二级弹层（D16）', () => {
     // 连同弹层整棵子树都不在（不是「挂载了但空着」）
     expect(wrapper.find('.table__more-mask').exists()).toBe(false);
 
-    // ② 返回大厅按钮（纯 ← 图标）仍在顶栏左侧
-    expect(wrapper.find('.table__bar .table__lobby-back').exists()).toBe(true);
-    expect(wrapper.find('.table__bar .table__lobby-back').text()).toBe('←');
-    // ③ 顶栏按钮集合：左「←」+ 右「托管 · 更多」—— 弹层里的入口一个都不在栏里。
+    // ② 返回大厅按钮（纯图标按钮，2026-10-23 起图标 = back_arrow.png）仍在顶栏左侧
+    const back = wrapper.find('.table__bar .table__lobby-back');
+    expect(back.exists()).toBe(true);
+    expect(back.attributes('aria-label')).toBe('返回大厅');
+    expect(back.find('image').attributes('src'), '返回按钮必须是 back_arrow.png 图标').toBe(
+      '/static/ui/back_arrow.png',
+    );
+    // ③ 顶栏按钮集合：左「返回」+ 右「托管 · 更多」—— 弹层里的入口一个都不在栏里。
     //    ⚠️ 托管按钮（挂机治理 C27）自 2026-10-18 用户裁决起**本来就在顶栏**（更多左边）。
+    //    ⚠️ 返回按钮自 2026-10-23 起是**纯图标**（文本为空）⇒ 按 aria-label 兜底取标签。
     expect(
-      wrapper.findAll('.table__bar .btn').map((b) => b.text()),
-      '顶栏瘦身：弹层入口不在栏里；栏里是「←」+ 顶栏托管 + 「更多」',
-    ).toEqual(['←', '托管', '更多']);
+      wrapper.findAll('.table__bar .btn').map((b) => b.attributes('aria-label') ?? b.text()),
+      '顶栏瘦身：弹层入口不在栏里；栏里是「返回」+ 顶栏托管 + 「更多」',
+    ).toEqual(['返回大厅', '托管', '更多']);
     // ④ 中段（底牌 + 倍数徽章）与右段的入口都还在 —— 且**都在 `.table__bar` 之内**（三段是本条的性质）
     // ⚠️ 同 ⑤：选择器**必须带 `.table__bar` 前缀**，否则「把中段挪出顶栏」照样绿（变异 M9 自证）。
     expect(wrapper.find('.table__bar .table__bar-center').exists()).toBe(true);
