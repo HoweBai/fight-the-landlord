@@ -298,10 +298,40 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.springMultiplierEnabled', true],
   ['game.paodekuai.multiplierCap', 64],
   ['game.paodekuai.baobenEnabled', true],
+  // 配置平行化（2026-10-24；来自 `SplitGameConfig1796500000000`）
+  ['game.doudizhu.freeRoomEnabled', true],
+  ['game.doudizhu.goldRoomEnabled', true],
+  ['game.doudizhu.friendRoomEnabled', false],
+  ['game.doudizhu.freeBotFillEnabled', true],
+  ['game.doudizhu.goldBotFillEnabled', true],
+  ['game.doudizhu.rakePercent', 0],
+  ['game.doudizhu.entryMultiplier', 10],
+  ['game.levels.doudizhu', [
+    { name: '休闲场', baseScore: 15 },
+    { name: '标准场', baseScore: 80 },
+    { name: '竞技场', baseScore: 480 },
+    { name: '豪侠场', baseScore: 1200 },
+  ]],
+  ['game.doudizhu.cardCounterEnabled', true],
+  ['game.doudizhu.cardCounterPricePerGameCoins', 10],
+  ['game.doudizhu.cardCounterPricePerHourCoins', 100],
+  ['game.doudizhu.robot.skillDistribution', { beginner: 0.15, intermediate: 0.35, advanced: 0.5 }],
+  ['game.doudizhu.robot.ruleFallback', true],
+  ['game.doudizhu.robot.modelBySkill', { beginner: 'sl', intermediate: 'douzero_WP', advanced: 'douzero_ADP' }],
+  ['game.doudizhu.risk.winRateThreshold', 0.8],
+  ['game.doudizhu.risk.minGames', 100],
+  ['game.paodekuai.freeRoomEnabled', true],
+  ['game.paodekuai.goldRoomEnabled', false],
+  ['game.paodekuai.friendRoomEnabled', false],
+  ['game.paodekuai.freeBotFillEnabled', true],
+  ['game.paodekuai.goldBotFillEnabled', true],
+  ['game.paodekuai.rakePercent', 0],
+  ['game.paodekuai.entryMultiplier', 10],
+  ['currency.reliefThresholdCoins', 150],
 
 ];
 
-const FRIEND_KEY = 'room.friendRoomEnabled';
+const FRIEND_KEY = 'game.doudizhu.friendRoomEnabled';
 
 function seed(db: FakeDb): void {
   for (const [key, value] of SEED) {
@@ -346,7 +376,7 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
 
     const rows = await svc.list();
 
-    expect(rows).toHaveLength(65);
+    expect(rows).toHaveLength(89);
     // 断言的是「本测试种下的键」而非 CONFIG_KEYS 全集：多玩法片新增的 pdk 键由
     // Task 5.1 的迁移种子接入，届时 SEED 会随之扩展。
     expect(rows.map((r) => r.key).sort()).toEqual(SEED.map(([key]) => key).sort());
@@ -603,12 +633,12 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
     const { svc, db } = makeService(new FakeDb());
 
     await svc.set(
-      'robot.skillDistribution',
+      'game.doudizhu.robot.skillDistribution',
       { beginner: 15, intermediate: 35, advanced: 50 },
       'admin:a',
     );
 
-    expect(db.rows.get('robot.skillDistribution')!.value).toEqual({
+    expect(db.rows.get('game.doudizhu.robot.skillDistribution')!.value).toEqual({
       beginner: 0.15,
       intermediate: 0.35,
       advanced: 0.5,
@@ -677,7 +707,7 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
     // 刻意用「重复 baseScore」：若守卫在 parse 之后，会先报「唯一」而不是 entryFeePercent
     await expect(
       svc.set(
-        'game.baseScoreLevels',
+        'game.levels.doudizhu',
         [
           { name: 'A', baseScore: 15 },
           { name: 'B', baseScore: 15 },
@@ -700,11 +730,33 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
       { name: 'B', baseScore: 80 },
     ];
 
-    await expect(svc.set('game.baseScoreLevels', levels, 'admin:a')).resolves.toMatchObject({
+    await expect(svc.set('game.levels.doudizhu', levels, 'admin:a')).resolves.toMatchObject({
       version: 2,
     });
-    const got = await svc.get('game.baseScoreLevels');
+    const got = await svc.get('game.levels.doudizhu');
     // 严格相等：缺字段条目不得多出 `entryFeePercent: undefined` 自有属性
     expect(got?.value).toStrictEqual(levels);
+  });
+
+  it('配置平行化：旧平台键写入一律 ProtocolError（已废弃）且零库操作', async () => {
+    const { svc, db, redis } = makeService(new FakeDb());
+    seed(db);
+
+    for (const key of [
+      'room.friendRoomEnabled',
+      'room.freeRoomEnabled',
+      'currency.entryMultiplier',
+      'game.baseScoreLevels',
+      'robot.skillDistribution',
+      'risk.winRateThreshold',
+    ] as const) {
+      await expect(svc.set(key, true, 'admin:a'), key).rejects.toThrow(/已废弃/);
+    }
+
+    expect(db.ops).toEqual([]);
+    expect(db.updateCalls).toBe(0);
+    expect(db.insertCalls).toBe(0);
+    expect(db.changes).toEqual([]);
+    expect(redis.publish).not.toHaveBeenCalled();
   });
 });

@@ -65,21 +65,21 @@ describe('X-Admin fail-closed（真 guard）', () => {
   });
 
   it('无 X-Admin 的 PUT 被拦在 handler 之前：401 且值**逐字未变**（连 version 都不动）', async () => {
-    const before = { ...row(db, 'room.friendRoomEnabled') };
+    const before = { ...row(db, 'game.doudizhu.friendRoomEnabled') };
 
-    const res = await probe.putJson('/api/admin/config/room.friendRoomEnabled', { value: true });
+    const res = await probe.putJson('/api/admin/config/game.doudizhu.friendRoomEnabled', { value: true });
 
     expect(res.status).toBe(401);
-    expect(row(db, 'room.friendRoomEnabled')).toEqual(before);
+    expect(row(db, 'game.doudizhu.friendRoomEnabled')).toEqual(before);
   });
 
   it('X-Admin: 1 ⇒ 放行（GET 200 / PUT 200）—— 判别力：401 不是「恒红」', async () => {
     const get = await probe.get('/api/admin/config', AUTH);
     expect(get.status).toBe(200);
 
-    const put = await probe.putJson('/api/admin/config/room.friendRoomEnabled', { value: false }, AUTH);
+    const put = await probe.putJson('/api/admin/config/game.doudizhu.friendRoomEnabled', { value: false }, AUTH);
     expect(put.status).toBe(200);
-    expect(row(db, 'room.friendRoomEnabled').value).toBe(false);
+    expect(row(db, 'game.doudizhu.friendRoomEnabled').value).toBe(false);
   });
 
   it('豁免**恰好一条**：豁免表 = [POST /api/admin/login]（结构钉死），行为与表一致', async () => {
@@ -89,7 +89,7 @@ describe('X-Admin fail-closed（真 guard）', () => {
     expect(isAdminExemptRoute('GET', '/api/admin/login')).toBe(false);
     expect(isAdminExemptRoute('POST', '/api/admin/login/extra')).toBe(false);
     expect(isAdminExemptRoute('POST', '/api/admin/config')).toBe(false);
-    expect(isAdminExemptRoute('PUT', '/api/admin/config/room.friendRoomEnabled')).toBe(false);
+    expect(isAdminExemptRoute('PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled')).toBe(false);
 
     // 行为面：login 不带 X-Admin 也能**到达 handler**（错口令 ⇒ 401 来自 login 自身——
     // 文案是 handler 的「用户名或口令错误」，不是 guard 的 'admin header required'）
@@ -115,11 +115,11 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
   });
 
   it('非法值 ⇒ 400 + 原因（parseConfigValue 的中文消息）且**不落库**（值 + version 都未变）', async () => {
-    const before = { ...row(db, 'room.friendRoomEnabled') };
+    const before = { ...row(db, 'game.doudizhu.friendRoomEnabled') };
     publish.mockClear();
 
     const res = await probe.putJson(
-      '/api/admin/config/room.friendRoomEnabled',
+      '/api/admin/config/game.doudizhu.friendRoomEnabled',
       { value: 'true' }, // 严格 boolean：字符串不算
       AUTH,
     );
@@ -127,7 +127,7 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe(ErrCode.BAD_PARAM);
     expect(res.body.message).toContain('boolean'); // 「400 + 原因」的「原因」不是泛化文案
-    expect(row(db, 'room.friendRoomEnabled')).toEqual(before);
+    expect(row(db, 'game.doudizhu.friendRoomEnabled')).toEqual(before);
     expect(publish).not.toHaveBeenCalled(); // 校验在**任何**库操作之前（含广播）
   });
 
@@ -139,19 +139,19 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
   });
 
   it('成功 ⇒ `{saved:true, announced:true, version:v0+1}`；值已落库、广播已发', async () => {
-    const v0 = row(db, 'room.friendRoomEnabled').version;
+    const v0 = row(db, 'game.doudizhu.friendRoomEnabled').version;
 
-    const res = await probe.putJson('/api/admin/config/room.friendRoomEnabled', { value: true }, AUTH);
+    const res = await probe.putJson('/api/admin/config/game.doudizhu.friendRoomEnabled', { value: true }, AUTH);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       code: ErrCode.OK,
       data: { saved: true, announced: true, version: v0 + 1 },
     });
-    expect(row(db, 'room.friendRoomEnabled')).toMatchObject({ value: true, version: v0 + 1 });
+    expect(row(db, 'game.doudizhu.friendRoomEnabled')).toMatchObject({ value: true, version: v0 + 1 });
     expect(publish).toHaveBeenCalledWith(
       'config:changed',
-      JSON.stringify({ keys: ['room.friendRoomEnabled'] }),
+      JSON.stringify({ keys: ['game.doudizhu.friendRoomEnabled'] }),
     );
   });
 
@@ -166,91 +166,13 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
     expect(row(db, 'room.reapIntervalMs')).toMatchObject({ value: 61000, version: v0 + 1 });
   });
 
-  it('GET /api/admin/config：全量六十五键、每键 {value, version}、全局 version = MAX', async () => {
+  it('GET /api/admin/config：全量 89 键、每键 {value, version}、全局 version = MAX', async () => {
     const res = await probe.get('/api/admin/config', AUTH);
 
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(ErrCode.OK);
     const config = res.body.data.config as Record<string, { value: unknown; version: number }>;
-    expect(Object.keys(config).sort()).toEqual(
-      [
-        // 广告片 T2（第 41 键）
-        'ad.reliefAdpid',
-        // 客户端接入片 T2（第 43/44 键）
-        'client.appEnabled',
-        'client.h5Enabled',
-        'currency.entryMultiplier',
-        'currency.rakePercent',
-        'currency.reliefAmount',
-        'currency.reliefEnabled',
-        'currency.signupGrant',
-        'game.baseScoreLevels',
-        // 记牌器片（第 50 键）
-        'game.cardCounterEnabled',
-        // 记牌器收费片（第 51/52 键）
-        'game.cardCounterPricePerGameCoins',
-        'game.cardCounterPricePerHourCoins',
-        // 多玩法（Task 5.1）：跑得快 14 键
-        'game.levels.paodekuai',
-        'game.paodekuai.airplaneWings',
-        'game.paodekuai.baobenEnabled',
-        'game.paodekuai.bareAirplaneEnabled',
-        'game.paodekuai.bareTrioEnabled',
-        'game.paodekuai.bombMultiplierEnabled',
-        'game.paodekuai.enabled',
-        'game.paodekuai.fourWithTwoEnabled',
-        'game.paodekuai.fourWithTwoPairKickerAllowed',
-        'game.paodekuai.guanMultiplierEnabled',
-        'game.paodekuai.multiplierCap',
-        'game.paodekuai.nonThreePlayerEnabled',
-        'game.paodekuai.springMultiplierEnabled',
-        'game.paodekuai.trioWithPairEnabled',
-        // 支付片 T5（第 26–34 键）
-        'pay.coinPerYuan',
-        'pay.orderExpireMinutes',
-        'pay.rechargeEnabled',
-        'pay.rechargePackages',
-        'pay.withdrawDailyMaxCoins',
-        'pay.withdrawEnabled',
-        'pay.withdrawMaxCoinsPerOrder',
-        'pay.withdrawMinCoins',
-        'pay.withdrawTimeoutMinutes',
-        'record.retentionDays',
-        // 风控片 T1（第 18–25 键）
-        'risk.autoThrottle',
-        // 设备绑定（第 43 键；服务端私有，仍出现在管理后台全量清单里）
-        'risk.deviceBindingEnabled',
-        'risk.deviceLimit',
-        'risk.deviceRetentionDays',
-        'risk.deviceWindowDays',
-        'risk.minGames',
-        'risk.predicate.sameDevice',
-        'risk.predicate.sameIp',
-        'risk.winRateThreshold',
-        // 提现再认证片（第 48 键）
-        'risk.withdrawReAuthEnabled',
-        'robot.modelBySkill',
-        'robot.reclaimIntervalMs',
-        'robot.ruleFallback',
-        'robot.skillDistribution',
-        'room.autostartIntervalMs',
-        'room.freeBotFillEnabled',
-        'room.freeRoomEnabled',
-        'room.friendRoomEnabled',
-        'room.goldBotFillEnabled',
-        'room.goldRoomEnabled',
-        'room.matchNoBotMaxWaitMs',
-        'room.matchScanIntervalMs',
-        'room.reapIntervalMs',
-        // 节奏/清理片 T2（第 35–40 键）
-        'pay.scanIntervalMs',
-        'pay.reconcileIntervalMs',
-        'currency.reconcileIntervalMs',
-        'risk.scanIntervalMs',
-        'risk.devicesCleanupIntervalMs',
-        'record.cleanupIntervalMs',
-      ].sort(),
-    );
+    expect(Object.keys(config).sort()).toEqual([...db.rows.keys()].sort());
     for (const [key, cell] of Object.entries(config)) {
       expect(Object.keys(cell).sort(), key).toEqual(['value', 'version']);
       expect(typeof cell.version, key).toBe('number');
@@ -276,7 +198,7 @@ describe('PUT actor（§2.6）：fail-closed + 留痕接线', () => {
   });
 
   it('actor 头缺失/非法 ⇒ 401 + 10002「管理身份缺失」（不回退），值逐字未变、无留痕、未广播', async () => {
-    const key = 'room.friendRoomEnabled';
+    const key = 'game.doudizhu.friendRoomEnabled';
     const before = { ...row(db, key) };
 
     const missing = await probe.putJson(
@@ -304,7 +226,7 @@ describe('PUT actor（§2.6）：fail-closed + 留痕接线', () => {
   });
 
   it('成功 PUT ⇒ 留痕行 {key, oldValue=旧值, newValue=归一后值, actor}，且 updated_by = actor（同一次状态变化）', async () => {
-    const key = 'room.friendRoomEnabled';
+    const key = 'game.doudizhu.friendRoomEnabled';
 
     const res = await probe.putJson(
       `/api/admin/config/${key}`,

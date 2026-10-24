@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Redis } from 'ioredis';
 import { EntityManager, Repository, type QueryDeepPartialEntity } from 'typeorm';
-import { parseConfigValue, ProtocolError, type ConfigKey, type ConfigSnapshot } from '@fight-the-landlord/protocol';
+import { parseConfigValue, ProtocolError, isLegacyConfigKey, type ConfigKey, type ConfigSnapshot } from '@fight-the-landlord/protocol';
 import { PlatformConfig } from './platform-config.entity';
 import { REDIS } from '../redis/redis.module';
 import { CONFIG_CHANGES_INSERT_SQL, CONFIG_LOCK_SQL } from '../admin/admin-changes.service';
@@ -109,6 +109,13 @@ export class PlatformConfigService {
     value: unknown,
     actor: string,
   ): Promise<{ version: number; announced: boolean }> {
+    // 配置平行化（2026-10-24）：旧平台键只读。写入一律 400（在任何库操作之前）。
+    if (isLegacyConfigKey(key)) {
+      throw new ProtocolError(
+        `配置键 ${key} 已废弃（只读回退），请改用 game.doudizhu.* / game.paodekuai.* 对应键`,
+      );
+    }
+
     // 2026-10-21（台费并入档位表）：
     // D13 旧形态档位表（全部条目缺 entryFeePercent）拒绝；守卫在 parseConfigValue **之前**：
     // 收到的是「请硬刷新」而非泛化校验错。旧费率键已在阶段 2 从 CONFIG_KEYS 删除（未知键自然 400）。
@@ -118,7 +125,7 @@ export class PlatformConfigService {
       value.every(
         (item) => item !== null && typeof item === 'object' && !('entryFeePercent' in item),
       );
-    if (key === 'game.baseScoreLevels' && isLegacyLevelsShape) {
+    if (key === 'game.levels.doudizhu' && isLegacyLevelsShape) {
       throw new ProtocolError(
         '档位表写入缺少 entryFeePercent（管理页面已更新，请硬刷新后重试；API 写入请显式给 0–100）',
       );

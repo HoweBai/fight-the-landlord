@@ -45,26 +45,26 @@ describe('C5：非法写入 ⇒ 400 + 原因、全库逐字未变（真管线）
   const cases: Array<{ name: string; key: string; value: unknown; reason: RegExp }> = [
     {
       name: '比例缺档',
-      key: 'robot.skillDistribution',
+      key: 'game.doudizhu.robot.skillDistribution',
       value: { beginner: 1, intermediate: 1 },
       reason: /三键齐全/,
     },
     {
       name: '比例为负',
-      key: 'robot.skillDistribution',
+      key: 'game.doudizhu.robot.skillDistribution',
       value: { beginner: -1, intermediate: 1, advanced: 1 },
       reason: /非负/,
     },
     {
       name: '比例合计 = 0',
-      key: 'robot.skillDistribution',
+      key: 'game.doudizhu.robot.skillDistribution',
       value: { beginner: 0, intermediate: 0, advanced: 0 },
       reason: /合计/,
     },
-    { name: '档位表空', key: 'game.baseScoreLevels', value: [], reason: /非空数组/ },
+    { name: '档位表空', key: 'game.levels.doudizhu', value: [], reason: /非空数组/ },
     {
       name: '档位重复',
-      key: 'game.baseScoreLevels',
+      key: 'game.levels.doudizhu',
       value: [
         { name: '休闲场', baseScore: 15, entryFeePercent: 0 },
         { name: '又一场', baseScore: 15, entryFeePercent: 0 },
@@ -73,13 +73,13 @@ describe('C5：非法写入 ⇒ 400 + 原因、全库逐字未变（真管线）
     },
     {
       name: '档位非正',
-      key: 'game.baseScoreLevels',
+      key: 'game.levels.doudizhu',
       value: [{ name: '零分场', baseScore: 0, entryFeePercent: 0 }],
       reason: /正整数/,
     },
     {
       name: 'D13：档位表旧形态（全部缺 entryFeePercent）⇒ 400 + 请硬刷新',
-      key: 'game.baseScoreLevels',
+      key: 'game.levels.doudizhu',
       value: [{ name: '学习场', baseScore: 15 }],
       reason: /请硬刷新[\s\S]*0–100/,
     },
@@ -91,7 +91,7 @@ describe('C5：非法写入 ⇒ 400 + 原因、全库逐字未变（真管线）
     },
     {
       name: '未知模型名',
-      key: 'robot.modelBySkill',
+      key: 'game.doudizhu.robot.modelBySkill',
       value: { beginner: 'gpt-5', intermediate: 'sl', advanced: 'sl' },
       reason: /可用模型名/,
     },
@@ -100,10 +100,13 @@ describe('C5：非法写入 ⇒ 400 + 原因、全库逐字未变（真管线）
     { name: '周期非整数', key: 'room.matchScanIntervalMs', value: 1.5, reason: /整数毫秒/ },
     {
       name: '开关非严格 boolean（字符串不算）',
-      key: 'room.friendRoomEnabled',
+      key: 'game.doudizhu.friendRoomEnabled',
       value: 'true',
       reason: /boolean/,
     },
+    { name: '旧键只读（room.friendRoomEnabled）', key: 'room.friendRoomEnabled', value: true, reason: /已废弃/ },
+    { name: '旧键只读（game.baseScoreLevels）', key: 'game.baseScoreLevels', value: [{ name: 'X', baseScore: 15, entryFeePercent: 0 }], reason: /已废弃/ },
+    { name: '旧键只读（robot.ruleFallback）', key: 'robot.ruleFallback', value: true, reason: /已废弃/ },
     { name: '未知键', key: 'nope.key', value: 1, reason: /未知配置键/ },
   ];
 
@@ -136,10 +139,10 @@ describe('C5 正半边 + C18 正半边：合法写入 ⇒ 200 且**归一化后*
   });
 
   it('🔴 归一化落库：PUT {15,35,50} ⇒ 200，GET /api/admin/config 里存 0.15/0.35/0.5', async () => {
-    const v0 = db.rows.get('robot.skillDistribution')!.version;
+    const v0 = db.rows.get('game.doudizhu.robot.skillDistribution')!.version;
 
     const put = await probe.putJson(
-      '/api/admin/config/robot.skillDistribution',
+      '/api/admin/config/game.doudizhu.robot.skillDistribution',
       { value: { beginner: 15, intermediate: 35, advanced: 50 } },
       AUTH,
     );
@@ -148,7 +151,7 @@ describe('C5 正半边 + C18 正半边：合法写入 ⇒ 200 且**归一化后*
     expect(put.body.data).toEqual({ saved: true, announced: true, version: v0 + 1 });
     // 经管理读复核（不是直接看入参对象 —— 断言的是**落库形态**）
     const get = await probe.get('/api/admin/config', AUTH);
-    expect(get.body.data.config['robot.skillDistribution']).toEqual({
+    expect(get.body.data.config['game.doudizhu.robot.skillDistribution']).toEqual({
       value: { beginner: 0.15, intermediate: 0.35, advanced: 0.5 },
       version: v0 + 1,
     });
@@ -156,14 +159,14 @@ describe('C5 正半边 + C18 正半边：合法写入 ⇒ 200 且**归一化后*
 
   it('归一化不是「原样存」：换一组份额（1/1/2）⇒ 存 0.25/0.25/0.5', async () => {
     const put = await probe.putJson(
-      '/api/admin/config/robot.skillDistribution',
+      '/api/admin/config/game.doudizhu.robot.skillDistribution',
       { value: { beginner: 1, intermediate: 1, advanced: 2 } },
       AUTH,
     );
 
     expect(put.status).toBe(200);
     const get = await probe.get('/api/admin/config', AUTH);
-    expect(get.body.data.config['robot.skillDistribution'].value).toEqual({
+    expect(get.body.data.config['game.doudizhu.robot.skillDistribution'].value).toEqual({
       beginner: 0.25,
       intermediate: 0.25,
       advanced: 0.5,
@@ -176,10 +179,10 @@ describe('C5 正半边 + C18 正半边：合法写入 ⇒ 200 且**归一化后*
       { name: '高手场', baseScore: 2000, entryFeePercent: 0 },
     ];
 
-    const put = await probe.putJson('/api/admin/config/game.baseScoreLevels', { value: levels }, AUTH);
+    const put = await probe.putJson('/api/admin/config/game.levels.doudizhu', { value: levels }, AUTH);
 
     expect(put.status).toBe(200);
     const get = await probe.get('/api/admin/config', AUTH);
-    expect(get.body.data.config['game.baseScoreLevels'].value).toEqual(levels);
+    expect(get.body.data.config['game.levels.doudizhu'].value).toEqual(levels);
   });
 });

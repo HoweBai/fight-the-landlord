@@ -15,7 +15,7 @@ import { makeService, seedDb, startHttpProbe } from './helpers/config-probe';
  */
 
 describe('GET /api/config（C7 半边）', () => {
-  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十键）；200 + code 0', async () => {
+  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十一键）；200 + code 0', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const res = await probe.get('/api/config');
@@ -38,6 +38,7 @@ describe('GET /api/config（C7 半边）', () => {
         'rechargePackages',
         'reliefAdpid',
         'reliefEnabled',
+        'reliefThresholdCoins',
         'version',
         'withdrawDailyMaxCoins',
         'withdrawEnabled',
@@ -61,6 +62,10 @@ describe('GET /api/config（C7 半边）', () => {
           supportedPlayerCounts: [3],
           defaultPlayerCount: 3,
           baseScoreLevels: body.data.baseScoreLevels,
+          freeRoomEnabled: true,
+          goldRoomEnabled: true,
+          friendRoomEnabled: false,
+          entryMultiplier: 10,
         },
         paodekuai: {
           enabled: false,
@@ -72,6 +77,10 @@ describe('GET /api/config（C7 半边）', () => {
             { name: '竞技场', baseScore: 480, entryFeePercent: 0 },
             { name: '豪侠场', baseScore: 1200, entryFeePercent: 0 },
           ],
+          freeRoomEnabled: true,
+          goldRoomEnabled: false,
+          friendRoomEnabled: false,
+          entryMultiplier: 10,
         },
       });
 
@@ -93,9 +102,9 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('缺行兜底：game.cardCounterEnabled 行缺失 ⇒ 仍下发 true（与种子一致）', async () => {
+  it('缺行兜底：新记牌器键缺失 ⇒ 回退旧键 true', async () => {
     const { svc, db } = makeService(seedDb());
-    db.rows.delete('game.cardCounterEnabled');
+    db.rows.delete('game.doudizhu.cardCounterEnabled');
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
@@ -105,10 +114,10 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('缺行兜底：两价格键行缺失 ⇒ 仍下发 10/100（与种子一致）', async () => {
+  it('缺行兜底：新价格键缺失 ⇒ 回退旧键 10/100', async () => {
     const { svc, db } = makeService(seedDb());
-    db.rows.delete('game.cardCounterPricePerGameCoins');
-    db.rows.delete('game.cardCounterPricePerHourCoins');
+    db.rows.delete('game.doudizhu.cardCounterPricePerGameCoins');
+    db.rows.delete('game.doudizhu.cardCounterPricePerHourCoins');
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
@@ -154,6 +163,7 @@ describe('GET /api/config（C7 半边）', () => {
       expect(body.data.cardCounterPricePerGameCoins).toBe(10); // 记牌器收费片：首发单局价
       expect(body.data.cardCounterPricePerHourCoins).toBe(100); // 记牌器收费片：首发包时价
       expect(body.data.reliefEnabled).toBe(false); // 救助默认关
+      expect(body.data.reliefThresholdCoins).toBe(150); // 平台级绝对门槛
       expect(body.data.entryMultiplier).toBe(10); // 门槛 = 底分 × 10
       // 支付七键：种子逐字（支付片 §2.5 第 26–32 键；⚙️11 裸名）
       expect(body.data.rechargeEnabled).toBe(false); // 暗上线
@@ -171,7 +181,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('🔴 残留旧键行不泄漏：库里仍有旧键 ⇒ /api/config 仍二十键、无 entryFeePercents', async () => {
+  it('🔴 残留旧键行不泄漏：库里仍有旧键 ⇒ /api/config 仍二十一键、无 entryFeePercents', async () => {
     const { svc, db } = makeService(seedDb());
     db.rows.set('currency.entryFeePercents', {
       value: [{ baseScore: 15, percent: 10 }],
@@ -182,7 +192,7 @@ describe('GET /api/config（C7 半边）', () => {
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
-      expect(Object.keys(body.data)).toHaveLength(20);
+      expect(Object.keys(body.data)).toHaveLength(21);
       expect('entryFeePercents' in body.data).toBe(false);
       // 档位表照常下发（残留旧键不影响玩家面）。
       expect(body.data.baseScoreLevels).toHaveLength(4);
@@ -194,7 +204,7 @@ describe('GET /api/config（C7 半边）', () => {
   it('🔴 坏档位表（非数组/坏元素）⇒ baseScoreLevels []，且仍是 200（不 500）', async () => {
     for (const value of [{}, 'x', [{ name: 'X', baseScore: '15' }]]) {
       const { svc, db } = makeService(seedDb());
-      db.rows.set('game.baseScoreLevels', {
+      db.rows.set('game.levels.doudizhu', {
         value,
         version: 2,
         updatedAt: 'admin',
@@ -214,7 +224,7 @@ describe('GET /api/config（C7 半边）', () => {
   it('version = **全局** MAX（非子集键的 version 也要算进来 —— 判别「只对子集取 MAX」的错实现）', async () => {
     const { svc, db } = makeService(seedDb());
     db.rows.get('robot.reclaimIntervalMs')!.version = 9; // 非子集键，最高
-    db.rows.get('game.baseScoreLevels')!.version = 2;
+    db.rows.get('game.levels.doudizhu')!.version = 2;
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
@@ -225,7 +235,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何六十五键键名（外层的恰好二十键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何内部键键名（外层的恰好二十键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);
@@ -273,14 +283,19 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('缺行兜底 = 形状恒二十键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
+  it('缺行兜底 = 形状恒二十一键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
     const { svc, db } = makeService(seedDb());
+    db.rows.delete('game.levels.doudizhu');
     db.rows.delete('game.baseScoreLevels');
+    db.rows.delete('game.doudizhu.friendRoomEnabled');
     db.rows.delete('room.friendRoomEnabled');
     // 金币场六键全删 ⇒ 兜底方向逐键（§2.4 缺键语义落到服务端兜底）
+    db.rows.delete('game.doudizhu.freeRoomEnabled');
+    db.rows.delete('game.doudizhu.goldRoomEnabled');
     db.rows.delete('room.freeRoomEnabled');
     db.rows.delete('room.goldRoomEnabled');
     db.rows.delete('currency.reliefEnabled');
+    db.rows.delete('game.doudizhu.entryMultiplier');
     db.rows.delete('currency.entryMultiplier');
     // 支付七键全删 ⇒ 兜底方向逐键（钱面 fail-safe：开关说不清就不开、档位不凭空造）
     db.rows.delete('pay.rechargeEnabled');
@@ -312,6 +327,84 @@ describe('GET /api/config（C7 半边）', () => {
       expect(body.data.withdrawMaxCoinsPerOrder).toBe(50000); // 与种子一致
       expect(body.data.withdrawDailyMaxCoins).toBe(100000); // 与种子一致
       expect(body.data.reliefAdpid).toBe(''); // fail 方向空串（未配置 ⇒ 救助入口不渲染）
+    } finally {
+      await probe.close();
+    }
+  });
+
+  it('平行化回退：斗地主新键缺失 ⇒ 顶层与 games 读旧键；档位也回退旧表', async () => {
+    const { svc, db } = makeService(seedDb());
+    for (const key of [
+      'game.doudizhu.freeRoomEnabled',
+      'game.doudizhu.goldRoomEnabled',
+      'game.doudizhu.friendRoomEnabled',
+      'game.doudizhu.entryMultiplier',
+      'game.levels.doudizhu',
+    ]) {
+      db.rows.delete(key);
+    }
+    const probe = await startHttpProbe(svc);
+    try {
+      const { body } = await probe.get('/api/config');
+      expect(body.data.freeRoomEnabled).toBe(true);
+      expect(body.data.goldRoomEnabled).toBe(true);
+      expect(body.data.friendRoomEnabled).toBe(false);
+      expect(body.data.entryMultiplier).toBe(10);
+      expect(body.data.baseScoreLevels).toHaveLength(4);
+      expect(body.data.games.doudizhu.freeRoomEnabled).toBe(true);
+      expect(body.data.games.doudizhu.goldRoomEnabled).toBe(true);
+      expect(body.data.games.doudizhu.friendRoomEnabled).toBe(false);
+      expect(body.data.games.doudizhu.entryMultiplier).toBe(10);
+      expect(body.data.games.doudizhu.baseScoreLevels).toHaveLength(4);
+    } finally {
+      await probe.close();
+    }
+  });
+
+  it('平行化回退：跑得快新键缺失 ⇒ 保守默认（免费开、金币关、好友房关、门槛 10）', async () => {
+    const { svc, db } = makeService(seedDb());
+    for (const key of [
+      'game.paodekuai.freeRoomEnabled',
+      'game.paodekuai.goldRoomEnabled',
+      'game.paodekuai.friendRoomEnabled',
+      'game.paodekuai.entryMultiplier',
+    ]) {
+      db.rows.delete(key);
+    }
+    const probe = await startHttpProbe(svc);
+    try {
+      const { body } = await probe.get('/api/config');
+      expect(body.data.games.paodekuai.freeRoomEnabled).toBe(true);
+      expect(body.data.games.paodekuai.goldRoomEnabled).toBe(false);
+      expect(body.data.games.paodekuai.friendRoomEnabled).toBe(false);
+      expect(body.data.games.paodekuai.entryMultiplier).toBe(10);
+    } finally {
+      await probe.close();
+    }
+  });
+
+  it('reliefThresholdCoins：坏值 ⇒ null（恒下发），合法值 ⇒ number', async () => {
+    const { svc, db } = makeService(seedDb());
+    db.rows.set('currency.reliefThresholdCoins', {
+      value: '300',
+      version: 2,
+      updatedAt: 'admin',
+      updatedBy: 'admin',
+    });
+    const probe = await startHttpProbe(svc);
+    try {
+      const bad = await probe.get('/api/config');
+      expect('reliefThresholdCoins' in bad.body.data).toBe(true);
+      expect(bad.body.data.reliefThresholdCoins).toBeNull();
+
+      db.rows.set('currency.reliefThresholdCoins', {
+        value: 300,
+        version: 3,
+        updatedAt: 'admin',
+        updatedBy: 'admin',
+      });
+      const good = await probe.get('/api/config');
+      expect(good.body.data.reliefThresholdCoins).toBe(300);
     } finally {
       await probe.close();
     }
