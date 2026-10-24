@@ -631,3 +631,102 @@ describe('风控键平行化（2026-10-24）：新键优先、缺失回退旧键
     cache.onApplicationShutdown();
   });
 });
+
+describe('跑得快风控键（2026-10-25）：新键 → 斗地主 → 默认', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const pdkWin = (cache: ConfigCacheService) => cache.riskPaodekuaiWinRateThreshold();
+  const pdkMin = (cache: ConfigCacheService) => cache.riskPaodekuaiMinGames();
+
+  it('新键合法逐值生效（含两端）', async () => {
+    for (const value of [0.5, 0.79, 0.8, 1]) {
+      const cache = await cachedWith({ 'game.paodekuai.risk.winRateThreshold': value });
+      expect(pdkWin(cache), `pdk winRate=${value}`).toBe(value);
+      cache.onApplicationShutdown();
+    }
+    for (const value of [1, 100, 100_000]) {
+      const cache = await cachedWith({ 'game.paodekuai.risk.minGames': value });
+      expect(pdkMin(cache), `pdk minGames=${value}`).toBe(value);
+      cache.onApplicationShutdown();
+    }
+  });
+
+  it('新键缺失 ⇒ 斗地主新键 ⇒ 旧键 ⇒ 默认', async () => {
+    const ddzNew = await cachedWith({
+      'game.doudizhu.risk.winRateThreshold': 0.9,
+      'game.doudizhu.risk.minGames': 50,
+    });
+    expect(pdkWin(ddzNew)).toBe(0.9);
+    expect(pdkMin(ddzNew)).toBe(50);
+    ddzNew.onApplicationShutdown();
+
+    const legacy = await cachedWith({
+      'risk.winRateThreshold': 0.7,
+      'risk.minGames': 10,
+    });
+    expect(pdkWin(legacy)).toBe(0.7);
+    expect(pdkMin(legacy)).toBe(10);
+    legacy.onApplicationShutdown();
+
+    const missing = await cachedWith({});
+    expect(pdkWin(missing)).toBe(RISK_WIN_RATE_THRESHOLD_DEFAULT);
+    expect(pdkMin(missing)).toBe(RISK_MIN_GAMES_DEFAULT);
+    missing.onApplicationShutdown();
+  });
+
+  it('新键存在但非法 ⇒ 代码默认，不回退斗地主键（null 也算存在）', async () => {
+    const winCases: unknown[] = [0.785, null, '0.8', 0.49, 1.01, true];
+    for (const bad of winCases) {
+      const cache = await cachedWith({
+        'game.paodekuai.risk.winRateThreshold': bad,
+        'game.doudizhu.risk.winRateThreshold': 0.7,
+      });
+      expect(pdkWin(cache), `pdk winRate=${JSON.stringify(bad)}`).toBe(
+        RISK_WIN_RATE_THRESHOLD_DEFAULT,
+      );
+      cache.onApplicationShutdown();
+    }
+    const minCases: unknown[] = [0, 100_001, 3.5, '100', null, true];
+    for (const bad of minCases) {
+      const cache = await cachedWith({
+        'game.paodekuai.risk.minGames': bad,
+        'game.doudizhu.risk.minGames': 50,
+      });
+      expect(pdkMin(cache), `pdk minGames=${JSON.stringify(bad)}`).toBe(RISK_MIN_GAMES_DEFAULT);
+      cache.onApplicationShutdown();
+    }
+  });
+
+  it('快照为 null（config-service 不可达）⇒ 默认且不抛', async () => {
+    const { client, snapshot } = makeClient();
+    snapshot.mockRejectedValue(transportDown());
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+
+    expect(pdkWin(cache)).toBe(RISK_WIN_RATE_THRESHOLD_DEFAULT);
+    expect(pdkMin(cache)).toBe(RISK_MIN_GAMES_DEFAULT);
+
+    cache.onApplicationShutdown();
+  });
+
+  it('斗地主回归：新键非法不回退旧键（共享 normalize 重构的判别面）', async () => {
+    const win = await cachedWith({
+      'game.doudizhu.risk.winRateThreshold': 0.785,
+      'risk.winRateThreshold': 0.7,
+    });
+    expect(win.riskWinRateThreshold()).toBe(RISK_WIN_RATE_THRESHOLD_DEFAULT);
+    win.onApplicationShutdown();
+
+    const min = await cachedWith({
+      'game.doudizhu.risk.minGames': 0,
+      'risk.minGames': 50,
+    });
+    expect(min.riskMinGames()).toBe(RISK_MIN_GAMES_DEFAULT);
+    min.onApplicationShutdown();
+  });
+});

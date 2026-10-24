@@ -241,23 +241,18 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   // （= 种子值）——绝不把坏值透传进判定/清理面。消费方在**每轮/每次用时**重读本组方法
   // ⇒「改了下一轮生效」（当前一轮按旧值跑完）。范围与 `parseConfigValue` 逐值同口径。
 
-  /** 平行化（2026-10-24）：新键存在性优先，缺失回退旧键。 */
-  private readWithLegacy(newKey: string, legacyKey: string): unknown {
-    if (this.snapshot !== null && Object.hasOwn(this.snapshot, newKey)) {
-      return this.snapshot[newKey as ConfigKey]?.value;
-    }
-    return this.snapshot?.[legacyKey as ConfigKey]?.value;
+  /** 平行化（2026-10-24）：新键存在性优先，缺失回退旧键（null-safe）。 */
+  private hasSnapshotKey(key: ConfigKey): boolean {
+    return this.snapshot !== null && Object.hasOwn(this.snapshot, key);
   }
 
-  /**
-   * 胜率扫描阈值（第 20 键，种子 0.8；`0.5 ≤ n ≤ 1.0`、≤2 位小数 —— 两位小数口径与
-   * `parseWinRateThreshold` 同式：`Math.round(n*100)/100 === n`）。消费方 = T5 扫描 hit1。
-   */
-  riskWinRateThreshold(): number {
-    const value = this.readWithLegacy(
-      'game.doudizhu.risk.winRateThreshold',
-      'risk.winRateThreshold',
-    );
+  private readWithLegacy(newKey: ConfigKey, legacyKey: ConfigKey): unknown {
+    if (this.hasSnapshotKey(newKey)) return this.snapshot![newKey]?.value;
+    return this.snapshot?.[legacyKey]?.value;
+  }
+
+  /** 胜率阈值归一（`parseWinRateThreshold` 同口径）；非法 ⇒ 代码默认。 */
+  private normalizeWinRate(value: unknown): number {
     return typeof value === 'number' &&
       Number.isFinite(value) &&
       value >= RISK_WIN_RATE_THRESHOLD_MIN &&
@@ -267,15 +262,57 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
       : RISK_WIN_RATE_THRESHOLD_DEFAULT;
   }
 
-  /** 扫描最少局数（第 21 键，种子 100；int、`1 ≤ n ≤ 100000`）。命中口径 = `games > minGames`（T5）。 */
-  riskMinGames(): number {
-    const value = this.readWithLegacy('game.doudizhu.risk.minGames', 'risk.minGames');
+  /** 最少局数归一（`parseMinGames` 同口径）；非法 ⇒ 代码默认。 */
+  private normalizeMinGames(value: unknown): number {
     return typeof value === 'number' &&
       Number.isInteger(value) &&
       value >= RISK_MIN_GAMES_MIN &&
       value <= RISK_MIN_GAMES_MAX
       ? value
       : RISK_MIN_GAMES_DEFAULT;
+  }
+
+  /**
+   * 胜率扫描阈值（第 20 键，种子 0.8；`0.5 ≤ n ≤ 1.0`、≤2 位小数 —— 两位小数口径与
+   * `parseWinRateThreshold` 同式：`Math.round(n*100)/100 === n`）。消费方 = T5 扫描 hit1。
+   */
+  riskWinRateThreshold(): number {
+    return this.normalizeWinRate(
+      this.readWithLegacy(
+        'game.doudizhu.risk.winRateThreshold',
+        'risk.winRateThreshold',
+      ),
+    );
+  }
+
+  /** 扫描最少局数（第 21 键，种子 100；int、`1 ≤ n ≤ 100000`）。命中口径 = `games > minGames`（T5）。 */
+  riskMinGames(): number {
+    return this.normalizeMinGames(
+      this.readWithLegacy('game.doudizhu.risk.minGames', 'risk.minGames'),
+    );
+  }
+
+  /**
+   * 跑得快胜率阈值（2026-10-25，种子 0.8）。
+   * 读顺序：`game.paodekuai.risk.winRateThreshold` **存在** ⇒ 校验后使用；
+   * 存在但非法 ⇒ 代码默认（**不回退斗地主**）；缺失 ⇒ 斗地主 getter（新键 → 旧键 → 默认）。
+   */
+  riskPaodekuaiWinRateThreshold(): number {
+    const key = 'game.paodekuai.risk.winRateThreshold';
+    return this.hasSnapshotKey(key)
+      ? this.normalizeWinRate(this.snapshot![key]?.value)
+      : this.riskWinRateThreshold();
+  }
+
+  /**
+   * 跑得快扫描最少局数（2026-10-25，种子 100）。回退语义同
+   * `riskPaodekuaiWinRateThreshold()`；存在但非法 ⇒ 代码默认。
+   */
+  riskPaodekuaiMinGames(): number {
+    const key = 'game.paodekuai.risk.minGames';
+    return this.hasSnapshotKey(key)
+      ? this.normalizeMinGames(this.snapshot![key]?.value)
+      : this.riskMinGames();
   }
 
   /** 单设备关联账号上限（第 22 键，种子 3；int、`2 ≤ n ≤ 100`）。消费方 = T5 扫描 hit2。 */
