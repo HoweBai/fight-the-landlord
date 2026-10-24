@@ -56,6 +56,13 @@ import { RiskDeviceBindingSeed1795600000000 } from '../src/migrations/1795600000
 import { CardCounterSeed1795700000000 } from '../src/migrations/1795700000000-CardCounterSeed';
 import { CardCounterPrices1795800000000 } from '../src/migrations/CardCounterPrices1795800000000';
 import { MultiGameConfigSeed1796400000000 } from '../src/migrations/1796400000000-MultiGameConfigSeed';
+import {
+  SplitGameConfig1796500000000,
+  RELIEF_THRESHOLD_KEY,
+  SPLIT_CONFIG_PAIRS,
+  SPLIT_PDK_SEEDS,
+  computeReliefThreshold,
+} from '../src/migrations/1796500000000-SplitGameConfig';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -1493,5 +1500,160 @@ describe('MultiGameConfigSeed1796400000000：跑得快 14 键种子', () => {
       }
     }
     expect(hits).toEqual(['config-service/MultiGameConfigSeed1796400000000']);
+  });
+});
+
+/**
+ * 配置平行化（2026-10-24 / spec §5.2）：JS 驱动复制 + 跑得快种子 + 救助门槛现算。
+ * 用内存假库真正执行 `up()` 语义（INSERT IGNORE 幂等），不是只记 SQL 字符串。
+ */
+describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
+  class SplitFakeRunner {
+    readonly rows = new Map<string, { value: unknown; version: number }>();
+    readonly sqls: string[] = [];
+
+    async query(sql: string, params: unknown[] = []): Promise<unknown> {
+      this.sqls.push(sql);
+      if (sql.startsWith('SELECT')) {
+        const keys = params as string[];
+        return [...this.rows.entries()]
+          .filter(([key]) => keys.includes(key))
+          .map(([key, row]) => ({ key, value: row.value, version: row.version }));
+      }
+      if (sql.startsWith('INSERT IGNORE')) {
+        const [key, valueJson, version] = params as [string, string, number];
+        if (this.rows.has(key)) return undefined;
+        this.rows.set(key, { value: JSON.parse(valueJson), version });
+        return undefined;
+      }
+      if (sql.startsWith('DELETE')) {
+        for (const key of params as string[]) this.rows.delete(key);
+        return undefined;
+      }
+      throw new Error(`unexpected SQL: ${sql}`);
+    }
+  }
+
+  const asRunner = (db: SplitFakeRunner): QueryRunner =>
+    db as unknown as QueryRunner;
+
+  function seeded(): SplitFakeRunner {
+    const db = new SplitFakeRunner();
+    // 故意全部用「非默认值」，证明复制而不是重新种子。
+    db.rows.set('room.freeRoomEnabled', { value: false, version: 7 });
+    db.rows.set('room.goldRoomEnabled', { value: false, version: 7 });
+    db.rows.set('room.friendRoomEnabled', { value: true, version: 7 });
+    db.rows.set('room.freeBotFillEnabled', { value: false, version: 7 });
+    db.rows.set('room.goldBotFillEnabled', { value: false, version: 7 });
+    db.rows.set('currency.rakePercent', { value: 7, version: 7 });
+    db.rows.set('currency.entryMultiplier', { value: 20, version: 7 });
+    db.rows.set('game.baseScoreLevels', {
+      value: [
+        { name: '小', baseScore: 1 },
+        { name: '大', baseScore: 80 },
+      ],
+      version: 7,
+    });
+    db.rows.set('game.cardCounterEnabled', { value: false, version: 7 });
+    db.rows.set('game.cardCounterPricePerGameCoins', { value: 5, version: 7 });
+    db.rows.set('game.cardCounterPricePerHourCoins', { value: 50, version: 7 });
+    db.rows.set('robot.skillDistribution', {
+      value: { beginner: 0.5, intermediate: 0.5, advanced: 0 },
+      version: 7,
+    });
+    db.rows.set('robot.ruleFallback', { value: false, version: 7 });
+    db.rows.set('robot.modelBySkill', {
+      value: { beginner: 'douzero_ADP', intermediate: 'sl', advanced: 'sl' },
+      version: 7,
+    });
+    db.rows.set('risk.winRateThreshold', { value: 0.9, version: 7 });
+    db.rows.set('risk.minGames', { value: 50, version: 7 });
+    return db;
+  }
+
+  it('up()：16 个旧值/版本逐字复制；旧行不动；PDK 跑保守种子；救助门槛现算', async () => {
+    const db = seeded();
+    await new SplitGameConfig1796500000000().up(asRunner(db));
+
+    for (const [oldKey, newKey] of SPLIT_CONFIG_PAIRS) {
+      expect(db.rows.get(newKey), newKey).toEqual(db.rows.get(oldKey));
+      expect(db.rows.get(oldKey), oldKey).toEqual(seeded().rows.get(oldKey));
+    }
+    for (const [key, value] of SPLIT_PDK_SEEDS) {
+      expect(db.rows.get(key), key).toEqual({ value, version: 1 });
+    }
+    // 1 × 20 = 20（不是硬编码 150）
+    expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 20, version: 1 });
+  });
+
+  it('up() 幂等：第二次执行不改任何新键', async () => {
+    const db = seeded();
+    const migration = new SplitGameConfig1796500000000();
+    await migration.up(asRunner(db));
+    const snapshot = new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]));
+    await migration.up(asRunner(db));
+    expect(new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]))).toEqual(snapshot);
+  });
+
+  it('旧行缺失：新键用 spec §4.3 兜底默认；不因缺失而漏种', async () => {
+    const db = new SplitFakeRunner();
+    await new SplitGameConfig1796500000000().up(asRunner(db));
+    expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: true, version: 1 });
+    expect(db.rows.get('game.doudizhu.friendRoomEnabled')).toEqual({ value: false, version: 1 });
+    expect(db.rows.get('game.levels.doudizhu')?.value).toEqual([
+      { name: '休闲场', baseScore: 15 },
+      { name: '标准场', baseScore: 80 },
+      { name: '竞技场', baseScore: 480 },
+      { name: '豪侠场', baseScore: 1200 },
+    ]);
+    expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 150, version: 1 });
+  });
+
+  it('down()：删除本迁移新增的 24 键，旧键全部保留', async () => {
+    const db = seeded();
+    const before = new Map(db.rows);
+    const migration = new SplitGameConfig1796500000000();
+    await migration.up(asRunner(db));
+    await migration.down(asRunner(db));
+
+    expect(SPLIT_CONFIG_PAIRS.length + SPLIT_PDK_SEEDS.length + 1).toBe(24);
+    for (const [oldKey] of SPLIT_CONFIG_PAIRS) {
+      expect(db.rows.get(oldKey), oldKey).toEqual(before.get(oldKey));
+    }
+    for (const [, newKey] of SPLIT_CONFIG_PAIRS) expect(db.rows.has(newKey), newKey).toBe(false);
+    for (const [key] of SPLIT_PDK_SEEDS) expect(db.rows.has(key), key).toBe(false);
+    expect(db.rows.has(RELIEF_THRESHOLD_KEY)).toBe(false);
+  });
+
+  it('computeReliefThreshold：MIN × 倍率；缺/坏值回落 15 × 10', () => {
+    expect(
+      computeReliefThreshold([{ name: 'A', baseScore: 80 }, { name: 'B', baseScore: 1 }], 20),
+    ).toBe(20);
+    expect(computeReliefThreshold(undefined, undefined)).toBe(150);
+    expect(computeReliefThreshold([], 20)).toBe(300);
+    expect(computeReliefThreshold([{ name: 'A', baseScore: 15 }], '20')).toBe(150);
+  });
+
+  it('形状（name/up/down）；迁移号 1796500000000 晚于多玩法种子且全仓唯一', () => {
+    const migration = new SplitGameConfig1796500000000();
+    expect(migration.name).toBe('SplitGameConfig1796500000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new MultiGameConfigSeed1796400000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796500000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/SplitGameConfig1796500000000']);
   });
 });
