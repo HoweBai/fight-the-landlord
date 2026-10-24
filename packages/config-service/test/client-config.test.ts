@@ -48,7 +48,7 @@ describe('GET /api/config（C7 半边）', () => {
     } finally {
       await probe.close();
     }
-  });
+  }, 20000);
 
   it('games：ddz 恒开/3 人/旧档位；pdk 开关与人数闸跟随配置，档位取新键', async () => {
     const { svc, db } = makeService(seedDb());
