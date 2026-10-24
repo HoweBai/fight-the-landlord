@@ -79,11 +79,33 @@ function createRateLimitRedis() {
   return api;
 }
 
-/** 连一条客户端，记录**事件序列**（顺序即因果：`connect_error` 之前有没有 `connect`）。 */
-function probe(baseUrl: string): Promise<Probe> {
+/**
+ * 连一条客户端，记录**事件序列**（顺序即因果：`connect_error` 之前有没有 `connect`）。
+ *
+ * ⚠️ 结算**不能钉墙钟**（2026-10-24 CI 首跑实测）：原先固定 400ms 后一律结算，
+ * 慢 runner 上 5 条并发握手只完成 2 条 ⇒ 正对照假红（`expected 2 to be 5`）。
+ * 现在按**期望的终态事件**结算：等 `connect` 或 `connect_error` 真的发生；
+ * 只有两者在 `deadlineMs` 内都没出现时才按现状结算（由断言报出事件序列）。
+ * 结算后留一个很短的观察窗（grace），只用于把紧随其后的事件收进 `events`。
+ */
+type ProbeExpectation = 'connect' | 'connect_error';
+
+function probe(
+  baseUrl: string,
+  expect: ProbeExpectation = 'connect',
+  deadlineMs = 4000,
+): Promise<Probe> {
   return new Promise((resolve) => {
     const events: string[] = [];
     const record: Probe = { socket: null as unknown as ClientSocket, events, connected: false };
+    let settled = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (graceMs: number): void => {
+      if (settled) return;
+      settled = true;
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      setTimeout(() => resolve(record), graceMs);
+    };
     const socket = connectSocket(`${baseUrl}/ws/ddz`, {
       path: '/socket.io/',
       transports: ['websocket'],
@@ -95,22 +117,32 @@ function probe(baseUrl: string): Promise<Probe> {
     socket.on('connect', () => {
       events.push('connect');
       record.connected = true;
+      settle(expect === 'connect' ? 50 : 0);
     });
     socket.on('connect_error', (err: Error) => {
       events.push('connect_error');
       record.connectError = err;
+      settle(expect === 'connect_error' ? 50 : 0);
     });
     socket.on('disconnect', (reason: string) => events.push(`disconnect:${reason}`));
     socket.on('system.error', () => events.push('system.error'));
-    setTimeout(() => resolve(record), 400);
+    deadlineTimer = setTimeout(() => settle(0), deadlineMs);
   });
 }
 
 /** 同上，但用 polling 传输（它能拿到 engine.io 的 **403 错误体** ⇒ 可断言拒绝原因）。 */
-function probePolling(baseUrl: string): Promise<Probe> {
+function probePolling(baseUrl: string, deadlineMs = 4000): Promise<Probe> {
   return new Promise((resolve) => {
     const events: string[] = [];
     const record: Probe = { socket: null as unknown as ClientSocket, events, connected: false };
+    let settled = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (graceMs: number): void => {
+      if (settled) return;
+      settled = true;
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      setTimeout(() => resolve(record), graceMs);
+    };
     const socket = connectSocket(`${baseUrl}/ws/ddz`, {
       path: '/socket.io/',
       transports: ['polling'],
@@ -119,10 +151,14 @@ function probePolling(baseUrl: string): Promise<Probe> {
       timeout: 1500,
     });
     record.socket = socket;
-    socket.on('connect', () => { events.push('connect'); record.connected = true; });
-    socket.on('connect_error', (err: Error) => { events.push('connect_error'); record.connectError = err; });
+    socket.on('connect', () => { events.push('connect'); record.connected = true; settle(0); });
+    socket.on('connect_error', (err: Error) => {
+      events.push('connect_error');
+      record.connectError = err;
+      settle(50);
+    });
     socket.on('system.error', () => events.push('system.error'));
-    setTimeout(() => resolve(record), 400);
+    deadlineTimer = setTimeout(() => settle(0), deadlineMs);
   });
 }
 
@@ -209,7 +245,7 @@ describe('N15/R246：WS 连接限额在 engine.io allowRequest（端到端，真
     ).toBe(5);
     expect(slots(), '前 5 条必须各占一个名额').toBe(5);
 
-    const sixth = await probe(baseUrl);
+    const sixth = await probe(baseUrl, 'connect_error');
     open.push(sixth);
 
     expect(sixth.connected, '第 6 条不得进入 connected —— 否则还是「连上即被踢」').toBe(false);
@@ -244,7 +280,7 @@ describe('N15/R246：WS 连接限额在 engine.io allowRequest（端到端，真
 
     // 前 5 条不受影响（仍 connected）
     expect(first.filter((p) => p.socket.connected).length).toBe(5);
-  });
+  }, 20000);
 
   it('④ 名额在 disconnect 后**释放**（关掉一条 ⇒ 新连接能进来）', async () => {
     // 承接上一条留下的 5 条连接：关掉一条并等名额落地（异步释放）
@@ -259,5 +295,5 @@ describe('N15/R246：WS 连接限额在 engine.io allowRequest（端到端，真
       replacement.connected,
       `释放后的新连接必须能连上。events=${JSON.stringify(replacement.events)}`,
     ).toBe(true);
-  });
+  }, 20000);
 });
