@@ -1245,10 +1245,11 @@ socket.emit(type, { version: number, payload: unknown });
 | `currency.signupGrant`（**货币核心第 11 键**） | 整数 · `0 ≤ n ≤ 1,000,000` | `0`（**默认不赠送**） | user-service（注册赠送链路读取——注册那一刻快照；缺失/坏值回落 0；**客户端不可见**，§2.8 货币核心规格） |
 | `game.doudizhu.freeRoomEnabled`（**金币场第 12 键**） | 严格 boolean | **`true`**（保持现状） | room-service + 客户端 |
 | `game.doudizhu.goldRoomEnabled`（**金币场第 13 键**） | 严格 boolean | **`true`**（**默认开** —— 2026-10-04 用户裁决，原默认关/暗上线） | room-service + 客户端 |
-| `game.doudizhu.entryMultiplier`（**金币场第 14 键**） | 整数 · `1 ≤ n ≤ 100` | `10` | room-service（入场门槛 = 底分 × 本值）+ currency-service（救助判定倍率）+ 客户端（门槛提示） |
+| `game.doudizhu.entryMultiplier`（**金币场第 14 键**） | 整数 · `1 ≤ n ≤ 100` | `10` | room-service（入场门槛 = 底分 × 本值）+ 客户端（门槛提示）；跑得快对应 `game.paodekuai.entryMultiplier` |
 | `game.doudizhu.rakePercent`（**金币场第 15 键**） | 整数 · `0 ≤ n ≤ 50` | `0`（**默认不抽水**） | room-service（结算抽水；**客户端不可见**） |
 | `currency.reliefEnabled`（**金币场第 16 键**） | 严格 boolean | **`false`**（**默认关**） | currency-service（救助端点裁决）+ 客户端 |
 | `currency.reliefAmount`（**金币场第 17 键**） | 整数 · `1 ≤ n ≤ 1,000,000` | `200` | currency-service（救助发放；**客户端不可见**） |
+| `currency.reliefThresholdCoins`（**平行化新增**） | 整数金币 · `1 ≤ n ≤ 1,000,000` | `150`（迁移按旧档位最低档 × 旧倍率现算） | currency-service（救助门槛；缺失/坏值 ⇒ 503 fail-closed）+ 客户端（门槛提示） |
 | `risk.predicate.sameDevice`（**风控第 18 键**） | 严格 `true`/`false` | **`false`**（**默认关**，D4 暗上线） | room-service（§8.3 同设备谓词；开启手顺见 `first-deploy.md`） |
 | `risk.predicate.sameIp`（**风控第 19 键**） | 严格 `true`/`false` | **`false`**（**默认关**） | room-service（§8.3 同 IP 谓词；CGNAT 误伤面大 ⇒ 评估后再开） |
 | `game.doudizhu.risk.winRateThreshold`（**风控第 20 键**） | number · `0.5 ≤ n ≤ 1.0` · ≤2 位小数 | `0.8` | user-service（扫描胜率阈值；命中 = `winRate >` 本值） |
