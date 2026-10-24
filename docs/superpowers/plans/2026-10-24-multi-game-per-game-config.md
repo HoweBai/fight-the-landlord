@@ -72,7 +72,7 @@
 2. 实现到绿；`pnpm -C packages/config-service test`。
    ⚠️ T1 已改 `CLIENT_CONFIG_KEYS`，T2 时全量 config-service 会因 `/api/config` 仍是 20 键而红；
    T2 先用 `vitest run test/migration.test.ts` 验绿并登记红窗口，T3 关闭该窗口后再跑全量。
-3. 真 MySQL 冒烟：迁移后 `SELECT COUNT(*)`（89 行）+ 抽查 16 个新键值（放入 T13）。
+3. 真 MySQL 冒烟：迁移后 `SELECT COUNT(*)`（90 行）+ 抽查 16 个新键值（放入 T13）。
 4. 提交。
 
 ### T3 config-service：`/api/config` 与旧键写拒绝
@@ -234,14 +234,14 @@
 
 **Interfaces**：
 - `CONFIG_IA`：ddz 用新键；pdk 增「场次开关」「金币场经济」；平台组收纳节奏/记录/机器人回收。
-- `CONFIG_CONTROLS` 68 简单键；`STRUCT_KEYS` 5；`CONFIG_NOTES` **59 条**
+- `CONFIG_CONTROLS` 69 简单键；`STRUCT_KEYS` 5；`CONFIG_NOTES` **60 条**
   （实际基线 51 条：跑得快 14 键从未有备注；本次改名 16 + 新增 24）。
 - app.js 内新增 `LEGACY_CONFIG_KEYS` 字面量 + `LEGACY_KEY_SET`（静态页无法 import protocol）；
   未分组差集**与搜索遍历**都排除该集合（旧键不进入可保存控件）。
 - `buildStructCard` 的编辑器分派补 `game.levels.doudizhu` 与 `game.levels.paodekuai` 两个
   `buildLevelsEditor` 分支。
-- verifier：`protoSet − legacySet = iaKeySet = 73`；**`admin legacySet === protocol legacySet`**；
-  控件分类 33 bool + 2 text + 33 number = 68；pdk 五页签；档位表 anchors 改新键；
+- verifier：`protoSet − legacySet = iaKeySet = 74`；**`admin legacySet === protocol legacySet`**；
+  控件分类 34 bool + 2 text + 33 number = 69；pdk 五页签；档位表 anchors 改新键；
   结构化编辑器分派断言。
 
 **TDD**：先改 verifier 断言（红）→ 改 admin → `pnpm verify:admin` 绿；提交。
@@ -253,7 +253,7 @@
 
 **变更**：
 - 客户端键集 20 → 21（+`reliefThresholdCoins`）。
-- 管理面键数用 `CONFIG_KEYS.length`（89）。
+- 管理面键数用 `CONFIG_KEYS.length`（90）。
 - 旧键写入改新键：friend、场次、抽水、档位、记牌器、robot.ruleFallback、risk 两键。
 - 旧键**读断言/复原/needed 推导**同步改新键：slice-18 门槛推导与收尾自证、
   slice-13 `robot.ruleFallback` 读回。
@@ -280,7 +280,7 @@
 2. `pnpm test`（或 `pnpm exec turbo run test lint --force`）。
 3. `pnpm verify:admin`。
 4. `pnpm -C tools/conformance lint`。
-5. 真 MySQL 迁移冒烟：起 config-service 依赖的 MySQL，跑迁移，`SELECT COUNT(*)` = 89，
+5. 真 MySQL 迁移冒烟：起 config-service 依赖的 MySQL，跑迁移，`SELECT COUNT(*)` = 90，
    抽查 16 个新键值与 `reliefThresholdCoins`。
 6. 独立 reviewer 审 `BASE..HEAD`；Critical/Important 修复并复跑。
 7. 工作区干净；交付报告。
@@ -313,7 +313,7 @@ pnpm -C tools/conformance lint
 | 2 | 阻断 | T2 时全量 config-service 因 21 键断言必红 | **已登记**：T2 用 `migration.test.ts` 定向验绿，T3 关闭红窗口 |
 | 3 | 高 | 缺“新键存在但非法 ⇒ 不回退旧键”用例；`readLevels` 易写成“值不可用就回退” | **已修**：spec/T4 明确按“键存在性”回退；坏新键 10007/空收费表 |
 | 4 | 高 | admin 静态页无法 import protocol 旧键清单 | **已修**：T10 加 app.js 字面量 + verifier 等式 |
-| 5 | 高 | CONFIG_NOTES 实际基线 51 条，计划写 73 条 | **已修**：改为 59 条 |
+| 5 | 高 | CONFIG_NOTES 实际基线 51 条，计划写 73 条 | **已修**：改为 60 条 |
 | 6 | 高 | T4 未写“删除 controller join 全局好友房检查” | **已修**：T4 明确删除 + 加 ddz 关/pdk 开用例 |
 | 7 | 高 | slice-19 P4 旧键 400 失去“网关放行”证据 | **已修**：新键非法值做放行探针，旧键另测废弃文案 |
 | 8 | 高 | 客户端 games 夹具缺 per-game 字段，新路径假绿 | **已修**：T8/T9 扩夹具 + 正反判别用例 |
@@ -345,11 +345,11 @@ pnpm -C tools/conformance lint
 
 ## 验证记录（2026-10-24）
 
-- `pnpm exec turbo run test --force`：29/29 任务通过（client 1484 passed / 2 skipped；room 891；config 468；currency 387；其余包通过）。
+- `pnpm exec turbo run test --force`：29/29 任务通过（client 1485 passed / 2 skipped；room 891；config/currency 等其余包通过）。
 - `pnpm exec turbo run lint --force`：18/18 任务通过。
 - `pnpm verify:admin`：345 checks passed。
 - `pnpm -C tools/conformance lint`：通过。
 - 并发全量首跑曾出现一次 `currency-service#test` 退出 1（单跑与重跑均 29/29 通过）——按已知端口/负载假红处理，未改代码。
 - **真 MySQL 迁移冒烟未执行**：本机 Docker Desktop 处于手动暂停态（`docker desktop status` = paused，CLI 无 unpause 命令），本机无 MySQL。恢复 Docker 后执行：
   `docker compose up -d mysql && pnpm -C packages/config-service test`（或起 config-service 触发 `migrationsRun`），
-  然后 `SELECT COUNT(*) FROM platform_config` 应为 89，并抽查 `game.levels.doudizhu` 与 `reliefThresholdCoins`。
+  然后 `SELECT COUNT(*) FROM platform_config` 应为 90，并抽查 `game.levels.doudizhu` 与 `reliefThresholdCoins`。

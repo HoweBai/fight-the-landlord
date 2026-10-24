@@ -42,7 +42,7 @@
 - 不把匹配节奏 / 无机器人等待上限玩法化。
 - 不为跑得快新增机器人 AI / 风控键（当前没有对应能力）。
 - 不把钱包救助金额、注册赠送、支付、端准入等平台级配置玩法化。
-- 不新增斗地主总开关（斗地主恒开）。
+- 保留并行片已引入的斗地主总开关 `game.doudizhu.enabled`；本片让客户端 `games.doudizhu.enabled` 与服务端闸读取它。
 
 ## 3. 决策表
 
@@ -62,7 +62,7 @@
 | D12 | 匹配节奏、`room.matchNoBotMaxWaitMs`、`record.*`、`risk.predicate.*`、支付、端准入、广告位保持平台级 | 与玩法无关 |
 | D13 | 机器人 AI 三键、风控胜率两键迁到斗地主命名空间 | 用户裁决“只和斗地主相关的都迁” |
 | D14 | 记牌器三键迁到斗地主命名空间；跑得快继续由 `GAME_META` 能力位拦截 | 跑得快无记牌器 |
-| D15 | 不新增 `game.doudizhu.enabled` | 斗地主恒开；避免新的全局停服面 |
+| D15 | 保留并行片（2026-10-24）引入的 `game.doudizhu.enabled` | 两玩法都有总开关；本片不重复引入、只接入读取面 |
 | D16 | 推翻旧 D8：`game.baseScoreLevels` 迁到 `game.levels.doudizhu`，旧键只读回退 | 用户裁决“彻底迁移到平行键” |
 | D17 | `room.match` 的 `practice` 分支也按 `friendRoomEnabled(gameType)` 执法，关 ⇒ `12006` | 防改包客户端绕过好友房开关 |
 | D18 | 回滚回填**以斗地主为权威源**；跑得快专有值在回滚时丢弃并公告 | 旧镜像只有一套共享键，无法同时保留两个玩法 |
@@ -100,6 +100,9 @@
 | 键 | 类型/范围 | 种子 |
 |---|---|---|
 | `currency.reliefThresholdCoins` | int `1..1,000,000` | `150`（正常库的值；迁移时按旧档位 `MIN(baseScore) × 旧 entryMultiplier` 现算，不硬编码） |
+
+> 并行片另已种下 `game.doudizhu.enabled`（默认 `true`）；本片不重复种，`games.doudizhu.enabled`
+> 与 room-service 的玩法闸直接读它（缺键 ⇒ `true`，旧库/旧快照兼容）。
 
 ### 4.3 默认值
 
@@ -198,7 +201,7 @@ entryMultiplier`（正常种子 = 15 × 10 = 150；运营改过档位/倍率的�
 - 跑得快 7 键直接 `INSERT IGNORE` 种子（D4）。
 - `down()` 删除本次新增的新键（旧键**不删**）。
 - 时间戳 `1796500000000`，全仓唯一；`INSERT IGNORE` 可重跑。
-- 真库冒烟：迁移后在真 MySQL 上 `SELECT COUNT(*)`（应含 89 行）并抽查 16 个新键值；
+- 真库冒烟：迁移后在真 MySQL 上 `SELECT COUNT(*)`（应含 90 行）并抽查 16 个新键值；
   该步骤进全量验证，不依赖假库。
 
 ### 5.3 room-service
@@ -337,7 +340,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
   - `LEGACY_CONFIG_KEYS` 在 admin 里是一份字面量副本（静态页无法 import protocol）；
     verifier 必须断言 `admin legacySet === protocol legacySet`，防止漂移；
   - `CONFIG_NOTES` 实际基线是 51 条（跑得快 14 键从未有备注）；本次改名 16 条 + 新增 24 条
-    ⇒ **59 条**。不强行补跑得快 14 条备注；`STRUCT_META` 已覆盖档位表标题；
+    ⇒ **60 条**。不强行补跑得快 14 条备注；`STRUCT_META` 已覆盖档位表标题；
   - `STRUCT_KEYS` 增加 `game.levels.doudizhu`；`buildStructCard` 的编辑器分派必须补
     `game.levels.doudizhu` 与 `game.levels.paodekuai` 两个 `buildLevelsEditor` 分支
     （现状只认旧 `game.baseScoreLevels`，漏了 pdk）；
@@ -399,7 +402,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - 迁移：内存假库执行 `up()` 两次（幂等）；**预置一个与旧值不同的新键 ⇒ `up()` 后保留**
   （证明不是覆盖写）；16 个旧值逐键复制；旧行缺失走 §4.3 兜底；
   `reliefThresholdCoins = MIN(档位) × 倍率`；`down` 只删新键。另加真 MySQL 冒烟
-  （迁移后 89 行 + 抽查新键值），不依赖假库。
+  （迁移后 90 行 + 抽查新键值），不依赖假库。
 - `/api/config`：
   - 新键优先、旧键回退（删除新行后断言回退）；
   - 顶层字段与 `games.doudizhu` 同源；
@@ -495,7 +498,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 |---|---|---|---|
 | 1 | 阻断 | `match.service.ts` 的 `botFillEnabled(mode)` 不读 `gameType`，跑得快补位开关成死键 | **已修**：§5.3 明确 `botFillEnabled(mode, queue.gameType)`，§9 补 `match.service.ts`，§7.3 加补位矩阵 |
 | 2 | 高 | conformance 大量写旧键；slice-14 直接 SQL 绕过 400；slice-19 断言过宽 | **已修**：§5.9 逐片列明；slice-14 改新键；slice-19 校验废弃文案 |
-| 3 | 高 | `verify-admin-static` 的“IA = CONFIG_KEYS”在 89 vs 73 时必红 | **已修**：§5.8/§7.7 改为“IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS”，并给计数 |
+| 3 | 高 | `verify-admin-static` 的“IA = CONFIG_KEYS”在 90 vs 74 时必红 | **已修**：§5.8/§7.7 改为“IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS”，并给计数 |
 | 4 | 高 | admin 未分组/搜索仍渲染旧键可保存控件 | **已修**：§5.8 要求差集与搜索排除旧键，只读或不展示；§7.7 加断言 |
 | 5 | 高 | `buildStructCard` 缺 `game.levels.doudizhu` / `game.levels.paodekuai` 分支 | **已修**：§5.8 明确补两个 `buildLevelsEditor` 分支；§7.7 加断言 |
 | 6 | 高 | 回滚回填未定“两个玩法共用旧键”的取值源 | **已修**：D18 斗地主为权威源，跑得快专有值回滚即丢弃；runbook 写逐键 SQL |
