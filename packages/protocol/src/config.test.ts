@@ -12,7 +12,7 @@ import {
 import { ProtocolError } from './validate';
 
 describe('完整键清单与客户端子集', () => {
-  it('既有键 + 16 个跑得快键；客户端子集暂不变', () => {
+  it('既有键 + 跑得快风控两键；客户端子集暂不变', () => {
     expect(CONFIG_KEYS).toEqual([
       'robot.skillDistribution', 'robot.ruleFallback', 'robot.modelBySkill',
       'robot.reclaimIntervalMs', 'room.matchScanIntervalMs',

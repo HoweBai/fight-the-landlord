@@ -964,6 +964,20 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(callsByUser()['u-pdk-zero']).toEqual({ score: 0, reasons: [] });
     });
 
+    it('跑得快边界：games === pdkMinGames / winRate === pdkWinRateThreshold ⇒ 不命中（严格大于）', async () => {
+      db.pdkWinRows = [
+        { user_id: 'u-pdk-eq-games', games: 100, wins: 100 }, // 恰 = minGames ⇒ 不 >
+        { user_id: 'u-pdk-eq-rate', games: 125, wins: 100 }, // winRate 恰 = 0.8 ⇒ 不 >
+      ];
+
+      const result = await mkSvc().runScanOnce(T0);
+
+      expect(result).toEqual({ skipped: false, users: 2, flagged: 0 });
+      for (const id of ['u-pdk-eq-games', 'u-pdk-eq-rate']) {
+        expect(callsByUser()[id], id).toEqual({ score: 0, reasons: [] });
+      }
+    });
+
     it('按玩法阈值：pdk 用自己的 minGames/winRate（0.95 反例不命中）', async () => {
       db.pdkWinRows = [{ user_id: 'u-pdk', games: 51, wins: 46 }];
 

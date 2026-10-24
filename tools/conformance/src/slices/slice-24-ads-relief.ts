@@ -807,7 +807,7 @@ export async function runSlice24(): Promise<Checks> {
     );
     const adminCfg = await adminGetConfig<{ config: Record<string, { value: unknown; version: number }> }>(adminToken);
     expectHttp(checks, adminCfg as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/admin/config（管理面）');
-    checks.eq(Object.keys(adminCfg.body?.data?.config ?? {}).length, CONFIG_KEYS.length, '② 管理面键总数 = CONFIG_KEYS.length（含跑得快 14 键与斗地主总开关）');
+    checks.eq(Object.keys(adminCfg.body?.data?.config ?? {}).length, CONFIG_KEYS.length, '② 管理面键总数 = CONFIG_KEYS.length（含跑得快/斗地主玩法键与斗地主总开关）');
     checks.eq(adminCfg.body?.data?.config?.[AD_KEY_CONFIG]?.value, '', '② 管理面 ad.reliefAdpid 值 = 空串（string 种子首例的 JSON 字面量落地）');
 
     // adpid 非空 ⇒ 客户端面生效（每次查库；组内还原）。

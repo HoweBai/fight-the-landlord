@@ -257,6 +257,8 @@ ok(
     /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock),
   'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
 );
+const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
+ok(noteKeys.length === 63, `CONFIG_NOTES 恰 63 条（实测 ${noteKeys.length}）`);
 const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', '}');
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
@@ -421,7 +423,11 @@ ok(
 /* ── 5b. 风控详情：总战绩 + 分玩法（块内断言，防备注假绿）────────── */
 const renderRiskDetailBlock = functionBody(app, 'function renderRiskDetail');
 ok(renderRiskDetailBlock !== '', '找到 renderRiskDetail 函数体');
-ok(renderRiskDetailBlock.includes('分玩法'), '风控详情渲染分玩法战绩');
+ok(
+  renderRiskDetailBlock.includes('byGame.textContent =') &&
+    renderRiskDetailBlock.includes('分玩法：斗地主'),
+  '风控详情渲染分玩法战绩（赋值与文案，防注释假绿）',
+);
 ok(
   /d\.stats\?\.byGame\?\.doudizhu\?\.games\s*\?\?/.test(renderRiskDetailBlock) &&
     /d\.stats\?\.byGame\?\.paodekuai\?\.games\s*\?\?/.test(renderRiskDetailBlock),

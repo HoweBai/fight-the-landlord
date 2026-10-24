@@ -381,8 +381,7 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
     const rows = await svc.list();
 
     expect(rows).toHaveLength(92);
-    // 断言的是「本测试种下的键」而非 CONFIG_KEYS 全集：多玩法片新增的 pdk 键由
-    // Task 5.1 的迁移种子接入，届时 SEED 会随之扩展。
+    // SEED 与 CONFIG_KEYS 同步为 92 键（含跑得快风控两键）。
     expect(rows.map((r) => r.key).sort()).toEqual(SEED.map(([key]) => key).sort());
     for (const r of rows) {
       expect(r.version).toBe(1);

@@ -1795,6 +1795,9 @@ describe('PdkRiskConfigSeed1796700000000：跑得快风控种子', () => {
     expect(db.statements[insertAt]).toContain(
       'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
     );
+    expect(db.statements[insertAt]).toContain(
+      'VALUES (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?)',
+    );
     expect(db.statements.filter((s) => s.startsWith('INSERT IGNORE'))).toHaveLength(1);
     expect(db.params[insertAt]).toEqual([
       KEY_WIN,

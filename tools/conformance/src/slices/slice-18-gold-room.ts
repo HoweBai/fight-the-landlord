@@ -1023,7 +1023,7 @@ export async function runSlice18(): Promise<Checks> {
     }
     const adminCfg = await adminGetConfig<AdminConfigData>(admin);
     const adminKeys = Object.keys(adminCfg.body?.data?.config ?? {});
-    checks.eq(adminKeys.length, CONFIG_KEYS.length, 'A 管理面键总数 = CONFIG_KEYS.length（含跑得快 14 键与斗地主总开关）');
+    checks.eq(adminKeys.length, CONFIG_KEYS.length, 'A 管理面键总数 = CONFIG_KEYS.length（含跑得快/斗地主玩法键与斗地主总开关）');
     const missingNewKeys = NEW_KEYS.filter((k) => !adminKeys.includes(k));
     checks.that(
       missingNewKeys.length === 0,
