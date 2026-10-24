@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Redis } from 'ioredis';
-import { parseConfigValue, type BaseScoreLevel, type ConfigSnapshot } from '@fight-the-landlord/protocol';
+import type { ConfigKey, ConfigSnapshot } from '@fight-the-landlord/protocol';
 import { runWithTrace } from '@fight-the-landlord/shared';
 import { ConfigClient } from './config.client';
 
@@ -34,20 +34,8 @@ const RELIEF_AMOUNT_MIN = 1;
 const RELIEF_AMOUNT_MAX = 1_000_000;
 
 /**
- * `currency.entryMultiplier` 的**代码默认值**（= 种子 = ② 规格 §1 第 14 键：`10`）。
- * 与 room-service 的同名常量**各持一份**（服务之间不互相 import；消费方永远拿到可用的数）。
+ * `currency.reconcileIntervalMs` 的合法上界（照 `parseIntervalMs`：1 ≤ n ≤ 36000000）。
  */
-export const ENTRY_MULTIPLIER_DEFAULT = 10;
-
-/** `currency.entryMultiplier` 的合法范围（② 规格 §1 的写死校验：int、`1 ≤ n ≤ 100`）。 */
-const ENTRY_MULTIPLIER_MIN = 1;
-const ENTRY_MULTIPLIER_MAX = 100;
-
-// ─── 节奏键的 currency 侧常数（本片 T4；第 37 键；默认值 = 种子 ⚙️1）─────────────────
-// 合法界照 `protocol/src/config.ts` 的 `parseIntervalMs`：int 毫秒、`1 ≤ n ≤ 10× 默认`。
-// ⚠️ 本文件是此常数的**唯一真源**（旧处 = `reconcile/reconcile.service.ts`；T8 改 re-export 保引用名）。
-
-/** `currency.reconcileIntervalMs` 的合法上界（照 `parseIntervalMs`：1 ≤ n ≤ 36000000）。 */
 const CURRENCY_RECONCILE_INTERVAL_MIN = 1;
 const CURRENCY_RECONCILE_INTERVAL_MAX = 36_000_000;
 /** `currency.reconcileIntervalMs` 的**代码默认值**（= 种子 = 第 37 键：1h；缺失/坏值 ⇒ 取此值）。 */
@@ -194,50 +182,35 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * 入场门槛倍率（② 规格 §1 第 14 键；范围照 `parseEntryMultiplier`：int、`1 ≤ n ≤ 100`）。
-   * relief 端点用它算门槛 `档位表最低档 × entryMultiplier`（§9）。缺失/非整数/越界 ⇒ 代码默认 **10**
-   * —— 消费方拿到的必须是**可用的数字**（0/负数/小数会算歪门槛）。
+   * 每日救助绝对门槛（平行化 2026-10-24）：平台级金币数，`1..1,000,000`。
+   * 缺失/非法 ⇒ **null**（钱路径 fail-closed；调用方按瞬态处理，绝不按 150 猜）。
    */
-  entryMultiplier(): number {
-    const value = this.snapshot?.['currency.entryMultiplier']?.value;
+  reliefThresholdCoins(): number | null {
+    const value = this.snapshot?.['currency.reliefThresholdCoins']?.value;
     return typeof value === 'number' &&
       Number.isInteger(value) &&
-      value >= ENTRY_MULTIPLIER_MIN &&
-      value <= ENTRY_MULTIPLIER_MAX
+      value >= 1 &&
+      value <= 1_000_000
       ? value
-      : ENTRY_MULTIPLIER_DEFAULT;
+      : null;
   }
 
   /**
-   * 档位表最低档（2026-10-21：救助门槛的底分锚点，取代旧的代码常量）。
-   *
-   * 读侧复用写入口的 `parseConfigValue`（唯一校验点纪律）；**fail 方向 = null**：
-   * 键缺失 / 非数组 / 空表 / 元素坏值 ⇒ null，调用方（钱包/广告回调）必须按
-   * 「配置不可用」处置——钱路径 fail-closed，绝不回退到 15 或任何代码常量。
-   */
-  minBaseScoreLevel(): number | null {
-    const value = this.snapshot?.['game.baseScoreLevels']?.value;
-    if (value === undefined) return null;
-    try {
-      const levels = parseConfigValue('game.baseScoreLevels', value) as BaseScoreLevel[];
-      return levels.length === 0 ? null : Math.min(...levels.map((l) => l.baseScore));
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 记牌器总开关（第 50 键）。缺失/坏值 ⇒ **false**（与客户端 fail-safe 同向：说不清 = 不开放）。
-   * 消费方 = 购买端点（effect 内；关 ⇒ 14008）。
+   * 记牌器总开关（斗地主新键，旧键回退）。缺失/坏值 ⇒ **false**（与客户端 fail-safe 同向：
+   * 说不清 = 不开放）。消费方 = 购买端点（effect 内；关 ⇒ 14008）。
    */
   cardCounterEnabled(): boolean {
-    const value = this.snapshot?.['game.cardCounterEnabled']?.value;
+    const value = this.readWithLegacy(
+      'game.doudizhu.cardCounterEnabled',
+      'game.cardCounterEnabled',
+    );
     return typeof value === 'boolean' ? value : false;
   }
 
   /**
-   * 记牌器两价格（第 51/52 键）。缺失/坏值/越界 ⇒ **10/100**（= 种子；消费方拿到的必须是可用数字）。
-   * 消费方 = 购买端点（effect 内与服务端当前价比对；区间 `0..1,000,000`）。
+   * 记牌器两价格（斗地主新键，旧键回退）。缺失/坏值/越界 ⇒ **10/100**（= 种子；
+   * 消费方拿到的必须是可用数字）。消费方 = 购买端点（effect 内与服务端当前价比对；
+   * 区间 `0..1,000,000`）。
    */
   cardCounterPrices(): { perGame: number; perHour: number } {
     const pick = (value: unknown, fallback: number): number =>
@@ -248,9 +221,29 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
         ? value
         : fallback;
     return {
-      perGame: pick(this.snapshot?.['game.cardCounterPricePerGameCoins']?.value, 10),
-      perHour: pick(this.snapshot?.['game.cardCounterPricePerHourCoins']?.value, 100),
+      perGame: pick(
+        this.readWithLegacy(
+          'game.doudizhu.cardCounterPricePerGameCoins',
+          'game.cardCounterPricePerGameCoins',
+        ),
+        10,
+      ),
+      perHour: pick(
+        this.readWithLegacy(
+          'game.doudizhu.cardCounterPricePerHourCoins',
+          'game.cardCounterPricePerHourCoins',
+        ),
+        100,
+      ),
     };
+  }
+
+  /** 新键存在性优先，缺失回退旧键（仅斗地主专属键）。 */
+  private readWithLegacy(newKey: string, legacyKey: string): unknown {
+    if (this.snapshot !== null && Object.hasOwn(this.snapshot, newKey)) {
+      return this.snapshot[newKey as ConfigKey]?.value;
+    }
+    return this.snapshot?.[legacyKey as ConfigKey]?.value;
   }
 
   // ─── 节奏键（本片 T4；规格 ⚙️4；第 37 键）────────────────────────────────────

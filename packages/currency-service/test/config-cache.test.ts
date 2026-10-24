@@ -1,7 +1,7 @@
 /**
  * `ConfigCacheService`（currency-service）的行为面 —— ② 金币场规格 §9：
  * currency-service 的**第一条出站 RPC 边**（消费 config-service 的三键：
- * `currency.reliefEnabled` / `currency.reliefAmount` / `currency.entryMultiplier`）。
+ * `currency.reliefEnabled` / `currency.reliefAmount` / `currency.reliefThresholdCoins`）。
  *
  * 克隆自 user-service / robot-service 的同名测试（记录片 T7 / 片⑦ T8 成例），保留其覆盖
  * 骨架：三件套行为（启动退避拉取 / 专用连接订阅 `config:changed` / 60s 安全网）+ 失败语义
@@ -36,7 +36,6 @@ import { ConfigModule } from '../src/config/config.module';
 import {
   CONFIG_CHANGED_CHANNEL,
   CURRENCY_RECONCILE_DEFAULT_INTERVAL_MS,
-  ENTRY_MULTIPLIER_DEFAULT,
   RELIEF_AMOUNT_DEFAULT,
   RELIEF_ENABLED_DEFAULT,
   SNAPSHOT_BOOT_WAIT_MS,
@@ -148,10 +147,9 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
     // 缺省 = 种子（§1 第 16/17 键 + 第 14 键）：开关说不清 ⇒ 不开；金额/倍率拿可用数字。
     expect(RELIEF_ENABLED_DEFAULT).toBe(false);
     expect(RELIEF_AMOUNT_DEFAULT).toBe(200);
-    expect(ENTRY_MULTIPLIER_DEFAULT).toBe(10);
     expect(cache.reliefEnabled()).toBe(false);
     expect(cache.reliefAmount()).toBe(200);
-    expect(cache.entryMultiplier()).toBe(10);
+    expect(cache.reliefThresholdCoins()).toBeNull();
     // 🔴 「拿不到」= hasSnapshot false —— relief 端点据此 503/10007（不默认放行，§9）。
     expect(cache.hasSnapshot()).toBe(false);
 
@@ -188,9 +186,9 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
       expect(cache.reliefAmount(), `值 ${value} 必须原样生效`).toBe(value);
       cache.onApplicationShutdown();
     }
-    for (const value of [1, 10, 100]) {
-      const cache = await cachedWith({ 'currency.entryMultiplier': value });
-      expect(cache.entryMultiplier(), `值 ${value} 必须原样生效`).toBe(value);
+    for (const value of [1, 150, 1_000_000]) {
+      const cache = await cachedWith({ 'currency.reliefThresholdCoins': value });
+      expect(cache.reliefThresholdCoins(), `值 ${value} 必须原样生效`).toBe(value);
       cache.onApplicationShutdown();
     }
   });
@@ -199,7 +197,7 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
     const missing = await cachedWith({}); // 三键全缺失
     expect(missing.reliefEnabled()).toBe(false);
     expect(missing.reliefAmount()).toBe(200);
-    expect(missing.entryMultiplier()).toBe(10);
+    expect(missing.reliefThresholdCoins()).toBeNull();
     missing.onApplicationShutdown();
 
     for (const value of ['true', 1, 0, null, undefined]) {
@@ -213,44 +211,29 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
       expect(cache.reliefAmount(), `金额值 ${JSON.stringify(value)} 必须回落 200`).toBe(200);
       cache.onApplicationShutdown();
     }
-    for (const value of ['10', 0, 101, 2.5, true, null, undefined]) {
-      const cache = await cachedWith({ 'currency.entryMultiplier': value });
-      expect(cache.entryMultiplier(), `倍率值 ${JSON.stringify(value)} 必须回落 10`).toBe(10);
+    for (const value of ['150', 0, 1_000_001, 2.5, true, null, undefined]) {
+      const cache = await cachedWith({ 'currency.reliefThresholdCoins': value });
+      expect(cache.reliefThresholdCoins(), `门槛值 ${JSON.stringify(value)} 必须 null`).toBeNull();
       cache.onApplicationShutdown();
     }
   });
 
   /**
-   * 2026-10-21：救助门槛改为「档位表最低档 × entryMultiplier」。
-   * 读侧复用 `parseConfigValue`（唯一校验点纪律）；fail 方向 = null（钱路径 fail-closed）。
-   *
-   * 🔴 判别力：表**首项不是最小值**（80 在前、5 在后）—— 用 `levels[0]` 的实现会红。
+   * 2026-10-24 平行化：救助门槛改为平台级绝对金币 `currency.reliefThresholdCoins`。
+   * 缺失/非法 ⇒ null（钱路径 fail-closed）；正常值逐字生效。
    */
-  it('minBaseScoreLevel()：取数值最小档（首项非最小也正确）；缺键 / 坏值 / 空表 ⇒ null', async () => {
-    const normal = await cachedWith({
-      'game.baseScoreLevels': [
-        { name: '大场', baseScore: 80, entryFeePercent: 100 }, // 上限 100 在读侧合法（本服务只取最小档）
-        { name: '小场', baseScore: 5 },
-        { name: '中场', baseScore: 15 },
-      ],
-    });
-    expect(normal.minBaseScoreLevel()).toBe(5);
+  it('reliefThresholdCoins()：正常值生效；缺键 / 坏值 / 越界 ⇒ null', async () => {
+    const normal = await cachedWith({ 'currency.reliefThresholdCoins': 150 });
+    expect(normal.reliefThresholdCoins()).toBe(150);
     normal.onApplicationShutdown();
 
     const missing = await cachedWith({});
-    expect(missing.minBaseScoreLevel()).toBeNull();
+    expect(missing.reliefThresholdCoins()).toBeNull();
     missing.onApplicationShutdown();
 
-    for (const value of [
-      [],
-      'x',
-      {},
-      [{ name: 'X', baseScore: 0 }],
-      [{ name: 'X', baseScore: 1.5 }],
-      [{ name: 'X' }],
-    ]) {
-      const cache = await cachedWith({ 'game.baseScoreLevels': value });
-      expect(cache.minBaseScoreLevel(), `值 ${JSON.stringify(value)} 必须 null`).toBeNull();
+    for (const value of [0, -1, 1_000_001, 1.5, '150', true, null, undefined]) {
+      const cache = await cachedWith({ 'currency.reliefThresholdCoins': value });
+      expect(cache.reliefThresholdCoins(), `值 ${JSON.stringify(value)} 必须 null`).toBeNull();
       cache.onApplicationShutdown();
     }
   });
@@ -262,31 +245,31 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
     missing.onApplicationShutdown();
 
     for (const value of ['true', 1, 0, null, undefined]) {
-      const cache = await cachedWith({ 'game.cardCounterEnabled': value });
+      const cache = await cachedWith({ 'game.doudizhu.cardCounterEnabled': value });
       expect(cache.cardCounterEnabled(), `开关值 ${JSON.stringify(value)} 必须回落 false`).toBe(false);
       cache.onApplicationShutdown();
     }
 
     const good = await cachedWith({
-      'game.cardCounterEnabled': true,
-      'game.cardCounterPricePerGameCoins': 10,
-      'game.cardCounterPricePerHourCoins': 100,
+      'game.doudizhu.cardCounterEnabled': true,
+      'game.doudizhu.cardCounterPricePerGameCoins': 10,
+      'game.doudizhu.cardCounterPricePerHourCoins': 100,
     });
     expect(good.cardCounterEnabled()).toBe(true);
     expect(good.cardCounterPrices()).toEqual({ perGame: 10, perHour: 100 });
     good.onApplicationShutdown();
 
     const zero = await cachedWith({
-      'game.cardCounterPricePerGameCoins': 0,
-      'game.cardCounterPricePerHourCoins': 0,
+      'game.doudizhu.cardCounterPricePerGameCoins': 0,
+      'game.doudizhu.cardCounterPricePerHourCoins': 0,
     });
     expect(zero.cardCounterPrices()).toEqual({ perGame: 0, perHour: 0 });
     zero.onApplicationShutdown();
 
     for (const value of ['10', -1, 1_000_001, 1.5, true, null, undefined]) {
       const cache = await cachedWith({
-        'game.cardCounterPricePerGameCoins': value,
-        'game.cardCounterPricePerHourCoins': value,
+        'game.doudizhu.cardCounterPricePerGameCoins': value,
+        'game.doudizhu.cardCounterPricePerHourCoins': value,
       });
       expect(cache.cardCounterPrices(), `价格值 ${JSON.stringify(value)} 必须回落 10/100`).toEqual({
         perGame: 10,
@@ -294,6 +277,17 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
       });
       cache.onApplicationShutdown();
     }
+  });
+
+  it('记牌器新键缺失 ⇒ 回退旧键', async () => {
+    const cache = await cachedWith({
+      'game.cardCounterEnabled': true,
+      'game.cardCounterPricePerGameCoins': 20,
+      'game.cardCounterPricePerHourCoins': 200,
+    });
+    expect(cache.cardCounterEnabled()).toBe(true);
+    expect(cache.cardCounterPrices()).toEqual({ perGame: 20, perHour: 200 });
+    cache.onApplicationShutdown();
   });
 
   // ─── 节奏键（本片 T4；规格 ⚙️4；第 37 键 `currency.reconcileIntervalMs`）──────────

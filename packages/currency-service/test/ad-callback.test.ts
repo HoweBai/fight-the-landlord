@@ -229,7 +229,7 @@ interface Harness {
   ledger: LedgerDb;
   verifier: VerifierStub;
   claims: ClaimService;
-  config: { available: boolean; enabled: boolean; amount: number; multiplier: number; minLevel: number | null };
+  config: { available: boolean; enabled: boolean; amount: number; threshold: number | null };
 }
 
 function buildHarness(verifier: VerifierStub = makeVerifier()): Harness {
@@ -240,13 +240,12 @@ function buildHarness(verifier: VerifierStub = makeVerifier()): Harness {
   const apply = new ApplyService(ds, redis as unknown as Redis);
   const get = new GetService(ds, redis as unknown as Redis);
   const claims = new ClaimService(redis as unknown as Redis);
-  const config = { available: true, enabled: true, amount: 200, multiplier: 10, minLevel: 15 };
+  const config = { available: true, enabled: true, amount: 200, threshold: 150 };
   const configStub = {
     hasSnapshot: () => config.available,
     reliefEnabled: () => config.enabled,
     reliefAmount: () => config.amount,
-    entryMultiplier: () => config.multiplier,
-    minBaseScoreLevel: () => config.minLevel,
+    reliefThresholdCoins: () => config.threshold,
   } as unknown as ConfigCacheService;
   const svc = new AdCallbackService(verifier, claims, configStub, get, apply, ds);
   return { svc, apply, db, redis, ledger, verifier, claims, config };
@@ -617,13 +616,13 @@ describe('T14 回调业务链（账本先行 / 落序 / 计数六路径）', () 
   });
 
   /**
-   * 2026-10-21：救助门槛 = 档位表最低档 × entryMultiplier。
-   * 🔴 判别力：最低档 5 ⇒ 50/49（仍读常量 15、或内联 max/首项的实现都会红）。
+   * 2026-10-24：救助门槛 = 平台级绝对金币 `currency.reliefThresholdCoins`。
+   * 🔴 判别力：门槛 50 ⇒ 50/49（仍硬编码 150 的实现会红）。
    * 档位表不可用 ⇒ 瞬态（不落 done、等平台重投）——与「从未拉到快照」同族。
    */
-  it('🔴 门槛跟随档位表最低档：最低档 5 ⇒ 50 拒 / 49 放行；不可用 ⇒ 瞬态不落 done', async () => {
+  it('🔴 门槛跟随平台级配置：门槛 50 ⇒ 50 拒 / 49 放行；不可用 ⇒ 瞬态不落 done', async () => {
     const h = buildHarness();
-    h.config.minLevel = 5;
+    h.config.threshold = 50;
 
     seedClaim(h, 'n-min5-suff', { userId: 'u-min5-suff', date: '2026-10-05' });
     h.db.seedAccount('u-min5-suff', 'user', 50);
@@ -643,7 +642,7 @@ describe('T14 回调业务链（账本先行 / 落序 / 计数六路径）', () 
 
     seedClaim(h, 'n-min5-down', { userId: 'u-min5-down', date: '2026-10-05' });
     h.db.seedAccount('u-min5-down', 'user', 0);
-    h.config.minLevel = null;
+    h.config.threshold = null;
     const before = await snapshot();
     expect(await notify(h, 'n-min5-down')).toBe('transient');
     expect(delta(before, await snapshot())).toEqual({ ...ZERO, cbError: 1 });
@@ -717,7 +716,7 @@ describe('T14 回调业务链（账本先行 / 落序 / 计数六路径）', () 
       {
         hasSnapshot: () => true,
         reliefEnabled: () => true,
-        minBaseScoreLevel: () => 15,
+        reliefThresholdCoins: () => 150,
       } as unknown as ConfigCacheService,
       new GetService(ds, redis as unknown as Redis),
       new ApplyService(ds, redis as unknown as Redis),

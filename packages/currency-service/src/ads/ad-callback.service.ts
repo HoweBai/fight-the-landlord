@@ -193,13 +193,11 @@ export class AdCallbackService {
       return 'success-terminal';
     }
     const amount = this.configCache.reliefAmount();
-    // 2026-10-21：门槛 = 档位表最低档 × 倍率（无代码常量）。档位表不可用 ⇒ 瞬态
-    // （与 no-snapshot 同族：不落 done、等平台重投；绝不按「15」猜一个门槛）。
-    const lowest = this.configCache.minBaseScoreLevel();
-    if (lowest === null) {
-      throw new Error('底分档位表不可用（瞬态：不落 done）');
+    // 2026-10-24 平行化：平台级绝对门槛；缺失/非法 ⇒ 瞬态（不落 done、等平台重投）。
+    const threshold = this.configCache.reliefThresholdCoins();
+    if (threshold === null) {
+      throw new Error('平台救助门槛不可用（瞬态：不落 done）');
     }
-    const threshold = lowest * this.configCache.entryMultiplier();
     const got = await this.getService.get({ ownerIds: [record.userId] });
     if (!got.ok) {
       throw new Error(`currency.get 拒绝（瞬态）：code=${got.code} ${got.message}`);

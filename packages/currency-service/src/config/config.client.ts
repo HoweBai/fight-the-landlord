@@ -14,9 +14,9 @@ import { metaFromTrace } from '@fight-the-landlord/shared';
  * **首条出站 RPC 边**（广告片起另有**第二条**出站边 `config.adChannel.get` —— 见
  * `src/ads/ad-channel.config.service.ts`，与快照边各自一条 TCP：3s / 1000ms）——
  * 此前 currency-service 只做他人 RPC 的接收侧；经
- * `config.snapshot` 一次拉**全量**，消费面四键：`currency.reliefEnabled` /
- * `currency.reliefAmount` / `currency.entryMultiplier` / `game.baseScoreLevels`
- * （前三键有代码默认值；档位表无默认值，缺失/坏值按 fail-closed 处置）。
+ * `config.snapshot` 一次拉**全量**，消费面：`currency.reliefEnabled` /
+ * `currency.reliefAmount` / `currency.reliefThresholdCoins`（前三键有代码默认值/可空语义）
+ * 与 `game.doudizhu.cardCounter*`（记牌器价格；旧键回退）。
  *
  * 形态照 user-service 的 `config/config.client.ts`（`ClientProxy` + 超时 + `RpcResult`
  * 解包 + 传输故障 ⇒ `10007`）——错误类、固定文案、token 与 options 都收在本文件里。

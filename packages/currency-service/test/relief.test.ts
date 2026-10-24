@@ -12,7 +12,7 @@
  *  - **判定次序（无 claim，逐字）**：①快照不可用 ⇒ 503/10007 · ②**今日已发**（账本当日
  *    `actionId` = `reliefActionId(userId, 现在)` 存在）⇒ `{grantedToday:true, reason:
  *    '今天已经领过了'}`（**先于开关与余额闸**——余额回升后的已领用户不得看到「余额充足」）·
- *    ③开关关 ⇒ '救助暂未开放' · ④余额 ≥ `档位表最低档 × entryMultiplier` ⇒ '余额充足，无需救助' ·
+ *    ③开关关 ⇒ '救助暂未开放' · ④余额 ≥ 平台级绝对门槛 ⇒ '余额充足，无需救助' ·
  *    ⑤eligible ⇒ 调 T12 `findOrCreate`（签发/复用 + 续期）随响应返回。
  *  - **携 claim（轮询只读，不签发不续期）**：①记录 `userId` ≠ JWT 本人 ⇒ 按「不存在」处理 ·
  *    ②账本（JWT 本人 + **时钟当日** actionId）已真 ⇒ 成功面（**先于记录态**——Redis 丢失/
@@ -67,9 +67,8 @@ interface ConfigState {
   available: boolean;
   enabled: boolean;
   amount: number;
-  multiplier: number;
-  /** 2026-10-21：档位表最低档（null = 档位表不可用 ⇒ 钱路径 fail-closed）。 */
-  minLevel: number | null;
+  /** 2026-10-24：平台级绝对门槛（null = 不可用 ⇒ 钱路径 fail-closed）。 */
+  threshold: number | null;
 }
 
 /**
@@ -105,7 +104,7 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
 
   /** 每个用例开头复位配置面（顺序执行的共享替身 —— 别让上一个用例的状态漏进来）。 */
   const setConfig = (over: Partial<ConfigState> = {}): void => {
-    Object.assign(config.state, { available: true, enabled: true, amount: 200, multiplier: 10, minLevel: 15 }, over);
+    Object.assign(config.state, { available: true, enabled: true, amount: 200, threshold: 150 }, over);
   };
 
   const get = (userId: string | null, query = '') =>
@@ -146,13 +145,12 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
     const dataSource = db.dataSource as unknown as DataSource;
     const getSvc = new GetService(dataSource, redis as unknown as Redis);
     claims = new ClaimService(redis as unknown as Redis);
-    const state: ConfigState = { available: true, enabled: true, amount: 200, multiplier: 10, minLevel: 15 };
+    const state: ConfigState = { available: true, enabled: true, amount: 200, threshold: 150 };
     const svc = {
       hasSnapshot: () => state.available,
       reliefEnabled: () => state.enabled,
       reliefAmount: () => state.amount,
-      entryMultiplier: () => state.multiplier,
-      minBaseScoreLevel: () => state.minLevel,
+      reliefThresholdCoins: () => state.threshold,
     } as unknown as ConfigCacheService;
     config = { state, svc };
     probe = await startWalletProbe(getSvc, svc, claims, ledger.dataSource as unknown as DataSource);
@@ -331,7 +329,7 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
   });
 
   it('④ 余额 ≥ 门槛 ⇒「余额充足，无需救助」；门槛边界 150/149 与倍率读数面双向可判；不签凭证', async () => {
-    setConfig(); // multiplier=10 ⇒ 门槛 = 15 × 10 = 150
+    setConfig(); // threshold = 150
     db.seedAccount('u-relief-suff', 'user', 150); // 恰 150 ⇒ 拒
     db.seedAccount('u-relief-edge', 'user', 149); // 149 ⇒ 放行（签发，不发放）
     db.seedAccount('u-relief-m20', 'user', 299); // 倍率改 20 ⇒ 门槛 300 ⇒ 299（<300）反而放行
@@ -354,7 +352,7 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
     expect(redis.store.size).toBe(keysBefore + 2); // 仅 edge 一例签发（rec + idx）
 
     // 倍率真的被读（299@m20 放行 = 判别格：照死 150 的实现会错拒）；缩放后的边界另一侧：
-    setConfig({ multiplier: 20 });
+    setConfig({ threshold: 300 });
     const m20 = await get('u-relief-m20'); // 299 < 300 ⇒ 放行
     expect(m20.body.data).toMatchObject({ eligible: true });
     const m20b = await get('u-relief-m20b'); // 300 ≥ 300 ⇒ 拒
@@ -363,11 +361,11 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
   });
 
   /**
-   * 2026-10-21：门槛 = 档位表最低档 × entryMultiplier（不再有代码常量 15）。
-   * 🔴 判别力：最低档 5 ⇒ 50/49（若实现仍读常量 15 或用了 max/首项，边界会落在 150/800 上）。
+   * 2026-10-24：门槛 = 平台级绝对金币 `currency.reliefThresholdCoins`。
+   * 🔴 判别力：门槛 50 ⇒ 50/49（若实现仍硬编码 150，边界会错）。
    */
-  it('④′ 门槛跟随档位表最低档：最低档 5 ⇒ 50 拒 / 49 放行；档位表不可用 ⇒ 503/10007', async () => {
-    setConfig({ minLevel: 5 });
+  it('④′ 门槛跟随平台级配置：门槛 50 ⇒ 50 拒 / 49 放行；门槛不可用 ⇒ 503/10007', async () => {
+    setConfig({ threshold: 50 });
     db.seedAccount('u-min5-suff', 'user', 50);
     db.seedAccount('u-min5-edge', 'user', 49);
     seedBalanceCache('u-min5-suff', 50);
@@ -382,7 +380,7 @@ describe('GET /api/wallet/relief（T15；规格 §2.5 逐字）', () => {
     expect(edge.body.data).toMatchObject({ eligible: true });
 
     // 档位表不可用（键缺失/坏值）：钱路径 fail-closed，不签发。
-    setConfig({ minLevel: null });
+    setConfig({ threshold: null });
     const keysBefore = redis.store.size;
     const down = await get('u-min5-edge');
     expect(down.status).toBe(503);

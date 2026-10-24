@@ -163,13 +163,12 @@ export class WalletController {
       return this.reliefOk({ eligible: false, grantedToday: false, amount, balance, reason: '救助暂未开放' });
     }
 
-    // ④ 余额 ≥ 门槛（档位表最低档 × entryMultiplier）⇒ 14004 文案
-    //    2026-10-21：底分锚点来自配置（无代码常量）；档位表不可用 ⇒ 钱路径 fail-closed。
-    const lowest = this.configCache.minBaseScoreLevel();
-    if (lowest === null) {
+    // ④ 余额 ≥ 平台级绝对门槛 ⇒ 14004 文案
+    //    2026-10-24 平行化：门槛不再随玩法档位/倍率变化；缺失/非法 ⇒ 钱路径 fail-closed。
+    const threshold = this.configCache.reliefThresholdCoins();
+    if (threshold === null) {
       throw httpException(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
     }
-    const threshold = lowest * this.configCache.entryMultiplier();
     if (balance >= threshold) {
       return this.reliefOk({ eligible: false, grantedToday: false, amount, balance, reason: '余额充足，无需救助' });
     }
