@@ -62,7 +62,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { ErrCode, RPC_PATTERNS } from '@fight-the-landlord/protocol';
+import { CONFIG_KEYS, ErrCode, RPC_PATTERNS } from '@fight-the-landlord/protocol';
 import { Checks, ConformanceError, info, sleep, step } from '../lib/assert';
 import {
   GATEWAY_URL,
@@ -732,7 +732,7 @@ export async function runSlice23(): Promise<Checks> {
     const snap = await rpcCall<{ config: Record<string, unknown>; version: number }>(CONFIG_RPC, RPC_PATTERNS.configSnapshot, {}, 3_000);
     const snapSer = JSON.stringify(snap);
     checks.that(snap.ok === true && !snapSer.includes('notify.'), `② config.snapshot ok:true 且响应串**无** notify. 子串 —— ok=${snap.ok}`);
-    checks.eq(Object.keys(snap.ok ? snap.data.config : {}).length, 65, '② snapshot 恰 65 键（负断言非空转：快照真实在场且完整）');
+    checks.eq(Object.keys(snap.ok ? snap.data.config : {}).length, CONFIG_KEYS.length, `② snapshot 恰 ${CONFIG_KEYS.length} 键（负断言非空转：快照真实在场且完整）`);
 
     const uCfg = await registerUser(51);
     const cfg15 = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
@@ -1280,7 +1280,7 @@ export async function runSlice23(): Promise<Checks> {
     checks.eq(sha256Hex(readAmYml() ?? ''), ymlHash8c, '⑨ 窗口：renderer 卷 yml hash 与 ⑧c 读数相同（其「保持」由 ⑧a/c 承接）');
     const wCfg = await adminGetConfig<{ config: Record<string, unknown> }>(adminToken);
     expectHttp(checks, wCfg as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑨ 窗口：GET /api/admin/config ⇒ 200（其它面不受影响）');
-    checks.eq(Object.keys(wCfg.body?.data?.config ?? {}).length, 65, '⑨ 窗口：65 键面完整（通知块故障不外溢）');
+    checks.eq(Object.keys(wCfg.body?.data?.config ?? {}).length, CONFIG_KEYS.length, `⑨ 窗口：${CONFIG_KEYS.length} 键面完整（通知块故障不外溢）`);
 
     const rec9 = compose({ PAY_CONFIG_ENC_KEY: encKeySaved, ADMIN_PASSWORD: adminPwSaved }, 'up', '-d', '--force-recreate', 'config-service');
     checks.eq(rec9.code, 0, `⑨ 恢复：以存钥重建 config-service —— 输出尾部：${tailOut(rec9.out)}`);
