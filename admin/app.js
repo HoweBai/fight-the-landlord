@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：六十六键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：九十二键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -131,7 +131,7 @@ const ROLE_KEY = 'ftl-admin-role';
 const PAGE_LIMIT = 20;
 
 /**
- * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；跑得快 14 键暂走控件标签 + 服务端校验（无备注条目时展示通用说明）。
+ * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；跑得快 16 键中 14 键暂走控件标签 + 服务端校验（无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
@@ -149,7 +149,8 @@ const PAGE_LIMIT = 20;
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
- *    **60 条备注 / 74 个 active 键**（16 个旧键只读、无备注）。
+ *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键后
+ *    **63 条备注 / 76 个 active 键**（16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
   'game.doudizhu.robot.skillDistribution': [
@@ -351,7 +352,8 @@ const CONFIG_NOTES = {
   // 45–47 键（game.doudizhu.freeBotFillEnabled / game.doudizhu.goldBotFillEnabled / room.matchNoBotMaxWaitMs）后 47 条对 47 键；
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
-  // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 60 条备注 / 74 个 active 键。
+  // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
+  // 2026-10-25 跑得快风控两键后 63 条备注 / 76 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -524,6 +526,18 @@ const CONFIG_NOTES = {
     ['生效', '保存后 room-service 秒级生效；玩家端进大厅时取新值。'],
     ['注意', '同时影响跑得快机器人水位（该玩法最高档 × 本值）；与斗地主门槛独立。'],
   ],
+  'game.paodekuai.risk.winRateThreshold': [
+    ['作用', '跑得快胜率阈值 —— 跑得快对局局数超过「扫描最少局数」且胜率严格高于本值的账号进 / 更新风控审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数（如 0.8）。默认 0.8。'],
+    ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。当前一轮扫描按旧值跑完，下一轮起用新值。'],
+    ['注意', '与斗地主阈值各自独立；两个玩法同时命中只记一项胜率分（25），不叠加；跑得快没有对局记录时不参与判定。2/4 人局胜率期望与 3 人不同，可按实际调整。'],
+  ],
+  'game.paodekuai.risk.minGames': [
+    ['作用', '跑得快扫描最少局数 —— 跑得快对局局数必须「大于」本值才参与胜率命中判定（防小样本误判）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。下一轮扫描起用新值。'],
+    ['注意', '判定是严格「大于」（恰 100 局不算）；与跑得快胜率阈值同属一条命中项，两个条件同时满足才记分；与斗地主最少局数独立。'],
+  ],
   'currency.reliefThresholdCoins': [
     ['作用', '每日广告救助的平台级绝对门槛：余额低于该金币数才能领取。'],
     ['取值', '整数金币，1 ≤ n ≤ 1,000,000。默认 150（迁移时按旧档位最低档 × 旧门槛倍率现算）。'],
@@ -537,13 +551,10 @@ const CONFIG_NOTES = {
  * 配置中心 IA 归属表（1a 纯展示映射；键集合真源仍是 GET /api/admin/config 快照与
  * protocol CONFIG_KEYS，本表不参与校验/保存，只决定键出现在哪个域/页签）。
  * 归属原则：跟「怎么组局/打什么牌/对手是谁」绑定的归玩法；跟「钱/安全/留存/商业化」
- * 绑定的归通用设置。当前游戏规则全在 shared/ddz、机器人硬编码 ddz + DouZero，
- * 故 room.* 场次/节奏与 robot.* 事实只服务斗地主。第二个玩法上线时只改本表。
- * 2026-10-15 配置审查（IA 归位）：**金币场经济两键**（currency.entryMultiplier / rakePercent——
- * 均以斗地主「底分」为轴；台费已在 2026-10-21 并入档位表第三列）与**两族数据面键**（risk.winRateThreshold /
- * minGames——跑在 ddz 对局胜负数据上；record.retentionDays / cleanupIntervalMs——当前只作用于
- * ddz 对局记录表）判定为 ddz 专属 ⇒ 已从「通用设置」归入本域。第二玩法上线时按真实形态复核
- * 上述两族的数据面归属（若新玩法记录进同表/共用胜负面则可反向复用）。
+ * 绑定的归通用设置。2026-10-24 配置平行化后，场次/好友房/补位/金币经济/风控胜率
+ * 均已按玩法分域（斗地主、跑得快各读各的键）；旧平台键只读、不出现在本表。
+ * 2026-10-25：跑得快风控两键（`game.paodekuai.risk.*`）进入 pdk 域「风控检测」页签。
+ * `record.retentionDays` / `cleanupIntervalMs` 同时作用于两玩法记录表，保留在通用设置。
  * 快照中存在但本表未收录的键 ⇒ 自动落入「未分组」桶（见 ungroupedKeys）。
  */
 const LEGACY_CONFIG_KEYS = [
@@ -666,6 +677,14 @@ const CONFIG_IA = [
             id: 'goldEconomy',
             name: '金币场经济',
             keys: ['game.paodekuai.entryMultiplier', 'game.paodekuai.rakePercent'],
+          },
+          {
+            id: 'risk',
+            name: '风控检测',
+            keys: [
+              'game.paodekuai.risk.winRateThreshold',
+              'game.paodekuai.risk.minGames',
+            ],
           },
         ],
       },
@@ -849,7 +868,7 @@ const CFG_NAV = [
 ];
 
 /**
- * v2.1 简单键控件定稿表（47 键；其余 4 键由结构化编辑器承接，见 STRUCT_KEYS）。
+ * v2.1 简单键控件定稿表（71 键；其余 5 键由结构化编辑器承接，见 STRUCT_KEYS）。
  * type：'bool' 开关 | 'number' 数字行 | 'text' 文本行；suffix 仅当 CONFIG_NOTES
  * 「取值」原文有量词时出现（无量词不给后缀，范围由详情行展示，勿臆造）。
  * label = 行卡片中文短名（效果图评审基线，改名须同步改方案与探针）。
@@ -869,7 +888,7 @@ const CONFIG_CONTROLS = {
   'game.doudizhu.cardCounterPricePerHourCoins': { label: '记牌器包时价', type: 'number', suffix: '金币/小时' },
   'game.doudizhu.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
   'game.doudizhu.risk.minGames': { label: '扫描最少局数', type: 'number' },
-  // 跑得快（20 简单键；档位表是结构化键）
+  // 跑得快（22 简单键；档位表是结构化键）
   'game.paodekuai.freeRoomEnabled': { label: '免费场', type: 'bool' },
   'game.paodekuai.goldRoomEnabled': { label: '金币场', type: 'bool' },
   'game.paodekuai.friendRoomEnabled': { label: '好友房', type: 'bool' },
@@ -877,6 +896,8 @@ const CONFIG_CONTROLS = {
   'game.paodekuai.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
   'game.paodekuai.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
   'game.paodekuai.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
+  'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.minGames': { label: '扫描最少局数', type: 'number' },
   'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
   'game.paodekuai.nonThreePlayerEnabled': { label: '开放 2/4 人', type: 'bool' },
   'game.paodekuai.bareTrioEnabled': { label: '裸三张', type: 'bool' },
@@ -1227,7 +1248,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量六十六键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量九十二键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
@@ -4045,9 +4066,29 @@ function renderRiskDetail(td, row, d) {
   stats.className = 'hint';
   const winRate = typeof d.stats?.winRate === 'number' ? d.stats.winRate.toFixed(3) : '—';
   stats.textContent =
-    `战绩：${d.stats?.games ?? 0} 局 / ${d.stats?.wins ?? 0} 胜 · 胜率 ${winRate} · ` +
+    `总战绩：${d.stats?.games ?? 0} 局 / ${d.stats?.wins ?? 0} 胜 · 胜率 ${winRate} · ` +
     `窗口内设备 ${d.stats?.deviceCount ?? 0}`;
   td.append(stats);
+
+  // 分玩法战绩（2026-10-25）：顶层是两玩法合计；旧 user-service 无 byGame 时按 0/— 渲染。
+  const byGame = document.createElement('p');
+  byGame.className = 'hint';
+  const ddzGames = d.stats?.byGame?.doudizhu?.games ?? 0;
+  const ddzWins = d.stats?.byGame?.doudizhu?.wins ?? 0;
+  const ddzRate =
+    typeof d.stats?.byGame?.doudizhu?.winRate === 'number' && ddzGames > 0
+      ? d.stats.byGame.doudizhu.winRate.toFixed(3)
+      : '—';
+  const pdkGames = d.stats?.byGame?.paodekuai?.games ?? 0;
+  const pdkWins = d.stats?.byGame?.paodekuai?.wins ?? 0;
+  const pdkRate =
+    typeof d.stats?.byGame?.paodekuai?.winRate === 'number' && pdkGames > 0
+      ? d.stats.byGame.paodekuai.winRate.toFixed(3)
+      : '—';
+  byGame.textContent =
+    `分玩法：斗地主 ${ddzGames} 局 / ${ddzWins} 胜 · 胜率 ${ddzRate}；` +
+    `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}`;
+  td.append(byGame);
 
   const hits = document.createElement('p');
   hits.className = 'hint';
@@ -5339,7 +5380,7 @@ async function showPlayerDetail(row) {
   line(`用户ID：${p.userId ?? row.userId}`);
   line(`手机号：${p.phone ?? row.phone}　昵称：${p.nickname ?? '—'}`);
   line(`状态：${p.status ?? row.status}　在线：${(p.online ?? row.online) ? '是' : '否'}　注册：${fmtTime(p.createdAt)}`);
-  line(`最后活跃：${fmtTime(row.lastActiveAt)}　设备数（窗口）：${d.stats?.deviceCount ?? row.deviceCount}　对局/胜场：${d.stats?.games ?? row.games} / ${d.stats?.wins ?? row.wins}`);
+  line(`最后活跃：${fmtTime(row.lastActiveAt)}　设备数（窗口）：${d.stats?.deviceCount ?? row.deviceCount}　对局/胜场（两玩法合计）：${d.stats?.games ?? row.games} / ${d.stats?.wins ?? row.wins}`);
 
   section('余额与充值');
   const recharge = playersState.recharges.get(row.userId);

@@ -10,8 +10,9 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 66 键（61+5）。
- *  3. 控件定稿表：47 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 76 个 active 键
+ *     （71 简单 + 5 结构化）。
+ *  3. 控件定稿表：71 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
  */
@@ -208,9 +209,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 90, `protocol CONFIG_KEYS 恰 90 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 74, `active = CONFIG_KEYS − LEGACY 恰 74 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 74, `CONFIG_IA 覆盖 74 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 92, `protocol CONFIG_KEYS 恰 92 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 76, `active = CONFIG_KEYS − LEGACY 恰 76 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 76, `CONFIG_IA 覆盖 76 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -230,10 +231,15 @@ const pdkDomainBlock =
   pdkStart >= 0 ? iaBlock.slice(pdkStart, pdkEnd >= 0 ? pdkEnd : undefined) : '';
 ok(pdkDomainBlock !== '', '找到 pdk 域块');
 ok(
-  ['rules', 'scoring', 'switches', 'rooms', 'goldEconomy'].every((id) =>
+  ['rules', 'scoring', 'switches', 'rooms', 'goldEconomy', 'risk'].every((id) =>
     pdkDomainBlock.includes(`id: '${id}'`),
   ),
-  'pdk 域含 规则/计分/开关/场次开关/金币场经济 五页签',
+  'pdk 域含 规则/计分/开关/场次开关/金币场经济/风控检测 六页签',
+);
+ok(
+  pdkDomainBlock.includes("'game.paodekuai.risk.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.minGames'"),
+  'pdk 风控两键位于 pdk 域内',
 );
 ok(pdkDomainBlock.includes("'game.levels.paodekuai'"), 'pdk 档位表在 pdk 域');
 ok(iaBlock.includes("'game.levels.doudizhu'"), 'ddz 档位表用新键 game.levels.doudizhu');
@@ -246,6 +252,11 @@ ok((pdkDomainBlock.match(/'game\.paodekuai\.enabled'/g) ?? []).length === 1, 'pd
 const notesBlock = balancedBlock(app, 'const CONFIG_NOTES = {', '{', '}');
 ok(notesBlock.includes("'game.doudizhu.enabled'"), 'CONFIG_NOTES 含斗地主总开关');
 ok(notesBlock.includes("'game.paodekuai.enabled'"), 'CONFIG_NOTES 含跑得快总开关');
+ok(
+  /'game\.paodekuai\.risk\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock),
+  'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
+);
 const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', '}');
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
@@ -278,7 +289,7 @@ ok(
 );
 ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnabledGameWarning：缺键按默认值判定');
 
-/* ── 5. CONFIG_CONTROLS：47 简单键 + 4 结构化键 = 51；定稿表 ─── */
+/* ── 5. CONFIG_CONTROLS：71 简单键 + 5 结构化键 = 76；定稿表 ─── */
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
@@ -356,6 +367,8 @@ const NUMBER_SUFFIX = {
   'pay.coinPerYuan': '金币/元',
   'game.doudizhu.risk.winRateThreshold': '',
   'game.doudizhu.risk.minGames': '',
+  'game.paodekuai.risk.winRateThreshold': '',
+  'game.paodekuai.risk.minGames': '',
   'risk.deviceLimit': '',
   'game.doudizhu.cardCounterPricePerGameCoins': '金币/局',
   'game.doudizhu.cardCounterPricePerHourCoins': '金币/小时',
@@ -372,15 +385,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 69, `CONFIG_CONTROLS 恰 69 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 71, `CONFIG_CONTROLS 恰 71 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '74 键 = 69 简单 ∪ 5 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '17 布尔键清单全部入表');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '76 键 = 71 简单 ∪ 5 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '34 布尔键清单全部入表');
 ok(BOOL_KEYS.length === 34 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '34 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 33, `数字键定论表 33 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 35, `数字键定论表 35 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);
@@ -391,18 +404,31 @@ for (const k of numberKeys) {
 }
 ok(!/suffix/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''), '胜率阈值不带后缀（0.50–1.00 比率）');
 ok(/step:\s*0\.01/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''), '胜率阈值 step=0.01');
+ok(!/suffix/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值不带后缀');
+ok(/step:\s*0\.01/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值 step=0.01');
+ok(!/suffix/.test(entries.get('game.paodekuai.risk.minGames') ?? ''), '跑得快最少局数不带后缀');
 // 每条目必须有非空中文 label。
 for (const [k, body] of entries) {
   const labelM = /label:\s*'([^']+)'/.exec(body);
   ok(!!labelM && labelM[1].trim() !== '', `${k} 有非空 label`);
 }
-// 简单/布尔/文本/数字分类合计 = 61（防清单漂移）。
+// 简单/布尔/文本/数字分类合计 = 71（防清单漂移）。
 ok(
-  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === 69,
-  `控件分类合计 34+2+33=69（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
+  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === 71,
+  `控件分类合计 34+2+35=71（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
 );
 
-/* ── 5b. 旧键只读：未分组/搜索都必须排除 LEGACY_KEY_SET ─────────── */
+/* ── 5b. 风控详情：总战绩 + 分玩法（块内断言，防备注假绿）────────── */
+const renderRiskDetailBlock = functionBody(app, 'function renderRiskDetail');
+ok(renderRiskDetailBlock !== '', '找到 renderRiskDetail 函数体');
+ok(renderRiskDetailBlock.includes('分玩法'), '风控详情渲染分玩法战绩');
+ok(
+  /d\.stats\?\.byGame\?\.doudizhu\?\.games\s*\?\?/.test(renderRiskDetailBlock) &&
+    /d\.stats\?\.byGame\?\.paodekuai\?\.games\s*\?\?/.test(renderRiskDetailBlock),
+  '风控详情 byGame 用可选链（新 admin + 旧 user-service 窗口不崩）',
+);
+
+/* ── 5c. 旧键只读：未分组/搜索都必须排除 LEGACY_KEY_SET ─────────── */
 const ungroupedFn = balancedBlock(app, 'function ungroupedKeys', '{', '}');
 ok(ungroupedFn !== '' && ungroupedFn.includes('LEGACY_KEY_SET'), '未分组差集排除 LEGACY_KEY_SET');
 ok(app.includes('!LEGACY_KEY_SET.has(k) &&'), '搜索遍历排除 LEGACY_KEY_SET');
