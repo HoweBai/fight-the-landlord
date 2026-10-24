@@ -646,7 +646,9 @@ export function securityJobViolations(inp: SecurityInputs): string[] {
   let exemptions: any[] = [];
   try { exemptions = JSON.parse(inp.exceptionsJson); } catch { v.push('豁免文件不是合法 JSON（C4）'); }
   // pin 条目/顺序照实况文件；T18 全序真红修复：+`1241259 @vue/server-renderer`（源 = 支付片 59105ef 遗留——增豁免 #3 时未同轮同步本 pin；.superpowers/sdd/task-18-report.md 异议 1）
-  const wantEx = [{ id: 1241259, module: '@vue/server-renderer' }, { id: 1123525, module: 'vite' }, { id: 1240992, module: 'braces' }];
+  // 2026-10-24 公开迁移轮：删陈腐条目 `1240992 braces`（advisory 已不再报出，门脚本判红）；
+  // +`1242658 vite`（同一 vite5 pin 面，GHSA-587h-7wmj-h5pm，只在 dev server 生效）。
+  const wantEx = [{ id: 1241259, module: '@vue/server-renderer' }, { id: 1123525, module: 'vite' }, { id: 1242658, module: 'vite' }];
   if (exemptions.length !== wantEx.length || exemptions.some((e) => typeof e.id !== 'number' || !e.module || !e.reason || !e.reviewTrigger)) {
     v.push(`豁免条目必须恰 ${wantEx.length} 条且四字段非空、id 为 number（C4）`);
   }

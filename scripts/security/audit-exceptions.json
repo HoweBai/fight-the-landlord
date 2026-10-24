@@ -14,10 +14,10 @@
     "ghsa": "GHSA-fx2h-pf6j-xcff"
   },
   {
-    "id": 1240992,
-    "module": "braces",
-    "reason": "上游**无修补版本**（advisory patched=<0.0.0；npm 上 braces 最新即 3.0.3 = vulnerable，无更高版本可升）；命中链 = apps/client 的 uni 构建工具链（uni-cli-shared > chokidar > braces），构建期依赖、玩家/生产不可达；形态 = 深嵌套模式导致栈耗尽的 DoS（输入来自构建机自身）。2026-10-03 由门脚本按 advisory DB 漂移首报（M0.1 收口后新增通告）。",
-    "reviewTrigger": "上游发布修复版（braces > 3.0.3）或 uni 工具链换用不含 braces 的链 ⇒ 复审本豁免。",
-    "ghsa": "GHSA-vfj7-8cjw-p6xm"
+    "id": 1242658,
+    "module": "vite",
+    "reason": "修补只在 vite≥6.4.4；uni 构建栈整体锁在 vite5（@dcloudio/vite-plugin-uni 精确 peer vite=5.2.8，根 overrides 亦钉 5.4.21）；影响面 = launch-editor 的 fs.existsSync 存在性检查在 Windows 上可被绕过 —— 该路径只在 vite dev server 生效，生产 H5 为 CSR 静态产物、App/mp 为 uni 编译器产物，玩家/生产不可达。2026-10-24 由门脚本按 advisory DB 漂移首报（与 id=1123525 同族）。",
+    "reviewTrigger": "uni 工具链支持 vite 6（或 vite-plugin-uni 的 peer 放宽到含 6）⇒ 一并重审本豁免与 id=1123525，升级 vite 并移除 override。",
+    "ghsa": "GHSA-587h-7wmj-h5pm"
   }
 ]

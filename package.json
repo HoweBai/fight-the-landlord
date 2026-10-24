@@ -51,7 +51,11 @@
       "@intlify/core-base": "9.1.11",
       "@intlify/message-resolver": "9.1.11",
       "vite": "5.4.21",
-      "source-map-js": "^1.2.2"
+      "source-map-js": "^1.2.2",
+      "body-parser@1": "1.20.9",
+      "body-parser@2": "2.4.0",
+      "multer": "2.5.0",
+      "undici@6": "6.29.1"
     }
   }
 }
