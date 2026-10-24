@@ -166,6 +166,7 @@ entryMultiplier`（正常种子 = 15 × 10 = 150；运营改过档位/倍率的�
 #### `/api/config`（`client-config.controller.ts`）
 
 - 读取辅助：`readGameKey(byKey, gameType, suffix, legacyKey, fallback)`；新键缺失才回退旧键。
+  **int 类新键复用 `parseConfigValue` 做范围校验**（非法 ⇒ 代码默认），不得只判 `Number.isInteger`。
 - 顶层字段派生：
   - `baseScoreLevels` ← `game.levels.doudizhu`（缺失回退 `game.baseScoreLevels`）；
   - `freeRoomEnabled` / `goldRoomEnabled` / `friendRoomEnabled` ← 斗地主新键；
@@ -221,12 +222,12 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - `botFillEnabled(mode, gameType)`
 - `entryMultiplier(gameType = 'doudizhu')`
 - `rakePercent(gameType = 'doudizhu')`
-- `baseScoreLevels(gameType)`：斗地主读 `game.levels.doudizhu`，缺失回退 `game.baseScoreLevels`；
-  跑得快读 `game.levels.paodekuai`；坏值仍 fail-closed（10007）。
-- `entryFeePercents(gameType)`：**必须与 `baseScoreLevels` 同一条新→旧回退**；
-  滚动窗口/迁移未跑时旧键仍能收费，绝不因新键缺失静默变成 0（fail-open 收入面）。
-- `cardCounterEnabled()` / `cardCounterPrices()`：只读斗地主新键（回退旧键）；
-  调用方仍由 `GAME_META[gameType].capabilities.cardCounter` 闸住。
+- `baseScoreLevels(gameType)`：斗地主读 `game.levels.doudizhu`，**键存在但值非法 ⇒ fail-closed
+  （10007），不回退旧键**；键缺失才回退 `game.baseScoreLevels`。跑得快读 `game.levels.paodekuai`。
+- `entryFeePercents(gameType)`：**必须与 `baseScoreLevels` 同一条“键存在性”回退**；
+  新键存在但非法 ⇒ 空表（不收），不回退旧键；新键缺失 ⇒ 旧键；绝不因新键缺失静默变成 0。
+- `cardCounterEnabled()` / `cardCounterPrices()`：读 `game.doudizhu.cardCounter*`（新键存在性优先、
+  缺失回退旧键）；调用方仍由 `GAME_META[gameType].capabilities.cardCounter` 闸住。
 - `entryFeePercents(gameType)` 继续由档位表派生，天然按玩法。
 
 #### 匹配与好友房
@@ -330,8 +331,12 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
   `pay.*`、`client.*`、`ad.*`。
 - 旧键不出现在任何 IA 列表中；`CONFIG_NOTES` / `KEY_META` / 结构化键清单同步：
   - 每个新键至少一条运营口吻备注（可复用旧键文案并改键名/玩法限定）；
-  - “未分组域”的差集计算**排除** `LEGACY_CONFIG_KEYS`；搜索遍历也排除旧键
+  - “未分组域”的差集计算**排除** app.js 内的 `LEGACY_CONFIG_KEYS` 字面量；搜索遍历也排除旧键
     （旧键不出现在任何可保存控件里；如需展示，只做只读卡片）；
+  - `LEGACY_CONFIG_KEYS` 在 admin 里是一份字面量副本（静态页无法 import protocol）；
+    verifier 必须断言 `admin legacySet === protocol legacySet`，防止漂移；
+  - `CONFIG_NOTES` 实际基线是 51 条（跑得快 14 键从未有备注）；本次改名 16 条 + 新增 24 条
+    ⇒ **59 条**。不强行补跑得快 14 条备注；`STRUCT_META` 已覆盖档位表标题；
   - `STRUCT_KEYS` 增加 `game.levels.doudizhu`；`buildStructCard` 的编辑器分派必须补
     `game.levels.doudizhu` 与 `game.levels.paodekuai` 两个 `buildLevelsEditor` 分支
     （现状只认旧 `game.baseScoreLevels`，漏了 pdk）；
@@ -358,7 +363,8 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
     `robot.ruleFallback` —— 否则读的是迁移时冻结的旧值，收尾“自证”恒对冻结值（假绿）；
   - slice-14 的**直接 SQL 演练**（绕过管理 API 改 `room.friendRoomEnabled`）也改
     `game.doudizhu.friendRoomEnabled`，否则新代码不读该键 ⇒ 演练假绿；
-  - slice-19 的“旧键任意 400”断言改为“旧键 400 + 废弃文案”，防止“任意 400”蒙混；
+  - slice-19 的 G5 P4 放行探针改为“新键 + 非法值 ⇒ 400”，另加“旧键 ⇒ 400 + 废弃文案”
+    用例；不得让“任意 400”同时证明 RBAC 放行与旧键拒绝；
   - slice-29 的跑得快开关不动（`game.paodekuai.enabled` 未迁移）。
 - 本 spec 的「审查记录」。
 
@@ -389,7 +395,8 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 
 ### 7.2 config-service
 
-- 迁移：内存假库执行 `up()` 两次（幂等）；16 个旧值逐键复制；旧行缺失走 §4.3 兜底；
+- 迁移：内存假库执行 `up()` 两次（幂等）；**预置一个与旧值不同的新键 ⇒ `up()` 后保留**
+  （证明不是覆盖写）；16 个旧值逐键复制；旧行缺失走 §4.3 兜底；
   `reliefThresholdCoins = MIN(档位) × 倍率`；`down` 只删新键。另加真 MySQL 冒烟
   （迁移后 89 行 + 抽查新键值），不依赖假库。
 - `/api/config`：
@@ -405,11 +412,14 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - 匹配：斗地主/跑得快 × 免费场/金币场开关矩阵，关 ⇒ `12010`；`practice` 关 ⇒ `12006`。
 - 好友房：列表按玩法返回空；建房/进房按房间玩法 ⇒ `12006`；占座前拒绝。
 - 经济：`rakePercent(gameType)`、`entryMultiplier(gameType)`、`entryFeePercents(gameType)`；
-  **新档位键缺失仍按旧键收台费**。
+  **新键缺失 ⇒ 旧键收费；新键存在但非法 ⇒ 不回退旧键（档位 10007 / 收费表空表）**。
+- 好友房：`RoomsController.join` 的**全局**检查必须删除（否则 ddz 关 + pdk 开仍被拒）；
+  列表按玩法返回空；建房/进房按房间玩法 ⇒ `12006`；占座前拒绝。
 - 机器人补位：`botFillEnabled(mode, queue.gameType)` 两玩法矩阵；
   跑得快关补位 ⇒ 不补机器人。
 - 机器人水位：两玩法不同档位/倍率 ⇒ top 不同；`afterSettle` 带玩法。
-- 记牌器：跑得快不扣费/不下发（既有能力位测试保持）。
+- 记牌器：`cardCounterEnabled()` / `cardCounterPrices()` 新键优先、缺失回退旧键；
+  跑得快不扣费/不下发（既有能力位测试保持）。
 
 ### 7.4 currency-service
 
@@ -423,6 +433,8 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 ### 7.6 客户端
 
 - 玩法卡可见性矩阵（enabled × 三入口）。
+- **客户端 `games` 夹具必须补齐 4 个 per-game 字段**，并加判别用例
+  “per-game=false + 顶层=true”与反向；只用旧夹具（缺字段）会让新路径永远走顶层回退而假绿。
 - 场次页签/好友房入口按当前玩法过滤。
 - 选中玩法不可玩 ⇒ 回落；场次/底分修正。
 - 旧服务端（无 `games` / 新字段缺失）⇒ 顶层回退。
@@ -431,6 +443,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 ### 7.7 admin / conformance
 
 - `pnpm verify:admin`：IA = CONFIG_KEYS − LEGACY_CONFIG_KEYS；旧键不出现在未分组/搜索；
+  **admin 的 `LEGACY_CONFIG_KEYS` 字面量与 protocol 完全相等**；
   `game.levels.doudizhu` / `game.levels.paodekuai` 均有结构化编辑器分派。
 - conformance 键集/文档同步断言更新；写旧键的 slice 全改新键；
   slice-14 直接 SQL 演练改新键；slice-19 旧键 400 断言校验废弃文案。

@@ -66,9 +66,12 @@
 - `down()` 删除本迁移新增的 24 键；旧键不删。
 
 **TDD**：
-1. 内存假库：先种旧 16 键 → `up()` → 断言新键值/版本逐字复制；`up()` 再跑一次幂等；
-   删一条旧行 → 断言兜底默认；断言 `reliefThresholdCoins` 现算。
+1. 内存假库：先种旧 16 键 → `up()` → 断言新键值/版本逐字复制；**预置一个与旧值不同的新键
+   ⇒ `up()` 后保留**（证明不是覆盖写）；`up()` 再跑一次幂等；删一条旧行 → 断言兜底默认；
+   断言 `reliefThresholdCoins` 现算。
 2. 实现到绿；`pnpm -C packages/config-service test`。
+   ⚠️ T1 已改 `CLIENT_CONFIG_KEYS`，T2 时全量 config-service 会因 `/api/config` 仍是 20 键而红；
+   T2 先用 `vitest run test/migration.test.ts` 验绿并登记红窗口，T3 关闭该窗口后再跑全量。
 3. 真 MySQL 冒烟：迁移后 `SELECT COUNT(*)`（89 行）+ 抽查 16 个新键值（放入 T13）。
 4. 提交。
 
@@ -84,7 +87,8 @@
 `packages/config-service/test/helpers/config-probe.ts`
 
 **Interfaces**：
-- controller 内 `readKey(byKey, newKey, legacyKey, fallback)` / `readLevels(...)`。
+- controller 内 `readKey(byKey, newKey, legacyKey, fallback)` / `readLevels(...)`；
+  **int 新键复用 `parseConfigValue` 做范围校验**（非法 ⇒ 代码默认），不只手写 `Number.isInteger`。
 - 顶层派生：`baseScoreLevels`、`free/gold/friendRoomEnabled`、`entryMultiplier`、
   `cardCounter*`、`reliefThresholdCoins`（读侧复用 `parseReliefThresholdCoins`；
   **恒下发**合法值或 `null`，保持 21 键精确集）。
@@ -113,19 +117,25 @@
 - `freeRoomEnabled(gameType?)`、`goldRoomEnabled(gameType?)`、`friendRoomEnabled(gameType?)`、
   `freeBotFillEnabled(gameType?)`、`goldBotFillEnabled(gameType?)`、`botFillEnabled(mode, gameType)`。
 - `levelsKeyOf(gameType)`：ddz → `game.levels.doudizhu`（回退旧键）；pdk → `game.levels.paodekuai`。
+- **键存在性决定回退**：新键存在但值非法 ⇒ 不回退旧键；`baseScoreLevels` fail-closed（10007）、
+  `entryFeePercents` 空表（不收）；新键缺失才回退旧键。
 - `entryFeePercents(gameType)` 复用 `baseScoreLevels(gameType)` 的新→旧回退，**不得**直接读单一键。
+- `cardCounterEnabled()` / `cardCounterPrices()` 改读 `game.doudizhu.cardCounter*`（新键优先、
+  缺失回退旧键）；否则急停/改价对 room-service 失效。
 - `modeEnabled(deps, gameType, mode)`；random/gold 关 ⇒ 12010；practice 关 ⇒ 12006。
 - `MatchService.botFillEnabled(mode, queue.gameType)`（`queue` 已携带 gameType）。
-- `RoomsService.join` 读到房间后按房间 `gameType` 查 `friendRoomEnabled` ⇒ 12006。
+- **删除 `rooms.controller.ts` join 的全局 `friendRoomEnabled()` 检查**；由
+  `RoomsService.join` 按房间 `gameType` 检查 ⇒ 12006。
 - controller 的 `GET /api/rooms` / `POST /api/rooms` 按 `gameType` 查好友房开关。
 
 **TDD**：
 1. 两玩法 × 两场次开关矩阵（12010）；practice 关 ⇒ 12006。
-2. 好友房列表空/建房 12006/进房 12006（占座前）。
-3. `baseScoreLevels` 新键/旧键回退；`entryFeePercents` 删新键仍按旧键收台费；
-   跑得快档位不变。
+2. 好友房列表空/建房 12006/进房 12006（占座前）；**ddz 关 + pdk 开 ⇒ pdk 进房成功**。
+3. `baseScoreLevels` 新键/旧键回退；**新键存在但非法 ⇒ 10007，不回退旧键**；
+   `entryFeePercents` 删新键仍按旧键收台费、新键坏值 ⇒ 空表。
 4. `botFillEnabled(mode, gameType)` 矩阵；跑得快关补位 ⇒ 不补机器人。
-5. `pnpm -C packages/room-service test`；提交。
+5. 记牌器两 getter：新键优先、缺失回退旧键、坏新值不回退。
+6. `pnpm -C packages/room-service test`；提交。
 
 ### T5 room-service：抽水、门槛、机器人水位
 
@@ -199,6 +209,8 @@
 - `goldThreshold` 用 `activeEntryMultiplier`。
 
 **TDD**：新字段归一/回退；场次修复；救助新旧两态；
+**把 `gamesConfig` 夹具扩成含 4 个 per-game 字段**，并加判别用例
+“per-game=false + 顶层=true”与反向（否则新路径永远走顶层回退而假绿）；
 `pnpm -C apps/client test`；提交。
 
 ### T9 客户端：大厅/开始游戏页
@@ -222,12 +234,15 @@
 
 **Interfaces**：
 - `CONFIG_IA`：ddz 用新键；pdk 增「场次开关」「金币场经济」；平台组收纳节奏/记录/机器人回收。
-- `CONFIG_CONTROLS` 68 简单键；`STRUCT_KEYS` 5；`CONFIG_NOTES` 73 条（旧 65 − 16 + 24）。
-- 未分组差集**与搜索遍历**都排除 `LEGACY_CONFIG_KEYS`（旧键不进入可保存控件）。
+- `CONFIG_CONTROLS` 68 简单键；`STRUCT_KEYS` 5；`CONFIG_NOTES` **59 条**
+  （实际基线 51 条：跑得快 14 键从未有备注；本次改名 16 + 新增 24）。
+- app.js 内新增 `LEGACY_CONFIG_KEYS` 字面量 + `LEGACY_KEY_SET`（静态页无法 import protocol）；
+  未分组差集**与搜索遍历**都排除该集合（旧键不进入可保存控件）。
 - `buildStructCard` 的编辑器分派补 `game.levels.doudizhu` 与 `game.levels.paodekuai` 两个
   `buildLevelsEditor` 分支。
-- verifier：`protoSet − legacySet = iaKeySet = 73`；控件分类 33 bool + 2 text + 33 number = 68；
-  pdk 五页签；档位表 anchors 改新键；结构化编辑器分派断言。
+- verifier：`protoSet − legacySet = iaKeySet = 73`；**`admin legacySet === protocol legacySet`**；
+  控件分类 33 bool + 2 text + 33 number = 68；pdk 五页签；档位表 anchors 改新键；
+  结构化编辑器分派断言。
 
 **TDD**：先改 verifier 断言（红）→ 改 admin → `pnpm verify:admin` 绿；提交。
 
@@ -243,7 +258,7 @@
 - 旧键**读断言/复原/needed 推导**同步改新键：slice-18 门槛推导与收尾自证、
   slice-13 `robot.ruleFallback` 读回。
 - slice-14 的直接 SQL 演练改 `game.doudizhu.friendRoomEnabled`。
-- slice-19 的旧键 400 断言加废弃文案校验。
+- slice-19 的 G5 P4 放行探针改“新键 + 非法值 ⇒ 400”；另加旧键 400 + 废弃文案。
 - `pnpm -C tools/conformance lint`；提交。
 
 ### T12 文档 + 回滚 runbook
@@ -288,4 +303,20 @@ pnpm -C tools/conformance lint
 
 ## 计划审查记录
 
-（待对抗审查后填写）
+### 第一轮独立对抗审查（2026-10-24）
+
+审查者：独立子代理（sonnet），只报发现。共 11 条：2 阻断 / 7 高 / 2 低。
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | 阻断 | T4 漏 room-service 记牌器两 getter 改新键 | **已修**：T4 interfaces/TDD 加两 getter 与坏新值用例 |
+| 2 | 阻断 | T2 时全量 config-service 因 21 键断言必红 | **已登记**：T2 用 `migration.test.ts` 定向验绿，T3 关闭红窗口 |
+| 3 | 高 | 缺“新键存在但非法 ⇒ 不回退旧键”用例；`readLevels` 易写成“值不可用就回退” | **已修**：spec/T4 明确按“键存在性”回退；坏新键 10007/空收费表 |
+| 4 | 高 | admin 静态页无法 import protocol 旧键清单 | **已修**：T10 加 app.js 字面量 + verifier 等式 |
+| 5 | 高 | CONFIG_NOTES 实际基线 51 条，计划写 73 条 | **已修**：改为 59 条 |
+| 6 | 高 | T4 未写“删除 controller join 全局好友房检查” | **已修**：T4 明确删除 + 加 ddz 关/pdk 开用例 |
+| 7 | 高 | slice-19 P4 旧键 400 失去“网关放行”证据 | **已修**：新键非法值做放行探针，旧键另测废弃文案 |
+| 8 | 高 | 客户端 games 夹具缺 per-game 字段，新路径假绿 | **已修**：T8/T9 扩夹具 + 正反判别用例 |
+| 9 | 高 | 迁移幂等假绿，未证明不覆盖预置新键 | **已修**：T2 预置不同值新键并断言保留 |
+| 10 | 低 | `/api/config` 新 int 键未做范围校验 | **已修**：T3 复用 `parseConfigValue` |
+| 11 | 低 | `ClientConfigState.reliefThresholdCoins` 必填会破现有夹具 | **已修**：T8 设为可选，getter 缺省 null |
