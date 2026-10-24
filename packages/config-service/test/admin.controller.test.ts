@@ -194,6 +194,7 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
         'game.levels.paodekuai',
         'game.paodekuai.airplaneWings',
         'game.paodekuai.baobenEnabled',
+        'game.doudizhu.enabled',
         'game.paodekuai.bareAirplaneEnabled',
         'game.paodekuai.bareTrioEnabled',
         'game.paodekuai.bombMultiplierEnabled',

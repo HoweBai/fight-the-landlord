@@ -84,9 +84,11 @@ export class ClientConfigController {
     }
     const pdkEnabled = (byKey.get('game.paodekuai.enabled') ?? false) as boolean;
     const pdkNonThree = (byKey.get('game.paodekuai.nonThreePlayerEnabled') ?? false) as boolean;
+    // 玩法开放开关（2026-10-24）：斗地主总开关；缺键 ⇒ true（旧库/旧快照保持现状）。
+    const ddzEnabled = (byKey.get('game.doudizhu.enabled') ?? true) as boolean;
     const games: Record<'doudizhu' | 'paodekuai', ClientGameConfig> = {
       doudizhu: {
-        enabled: true,
+        enabled: ddzEnabled,
         supportedPlayerCounts: [...GAME_META.doudizhu.supportedPlayerCounts],
         defaultPlayerCount: GAME_META.doudizhu.defaultPlayerCount,
         baseScoreLevels: levels,

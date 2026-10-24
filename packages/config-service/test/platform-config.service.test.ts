@@ -298,6 +298,7 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.springMultiplierEnabled', true],
   ['game.paodekuai.multiplierCap', 64],
   ['game.paodekuai.baobenEnabled', true],
+  ['game.doudizhu.enabled', true],
 
 ];
 
@@ -346,7 +347,7 @@ describe('PlatformConfigService（规格 §2.1 / A6）', () => {
 
     const rows = await svc.list();
 
-    expect(rows).toHaveLength(65);
+    expect(rows).toHaveLength(66);
     // 断言的是「本测试种下的键」而非 CONFIG_KEYS 全集：多玩法片新增的 pdk 键由
     // Task 5.1 的迁移种子接入，届时 SEED 会随之扩展。
     expect(rows.map((r) => r.key).sort()).toEqual(SEED.map(([key]) => key).sort());

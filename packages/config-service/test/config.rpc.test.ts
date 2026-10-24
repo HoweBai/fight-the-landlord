@@ -160,6 +160,7 @@ describe('ConfigRpcController（规格 §2.3 / R220）', () => {
         'game.levels.paodekuai',
         'game.paodekuai.airplaneWings',
         'game.paodekuai.baobenEnabled',
+        'game.doudizhu.enabled',
         'game.paodekuai.bareAirplaneEnabled',
         'game.paodekuai.bareTrioEnabled',
         'game.paodekuai.bombMultiplierEnabled',

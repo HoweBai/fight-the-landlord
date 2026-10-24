@@ -243,6 +243,7 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.springMultiplierEnabled', true],
   ['game.paodekuai.multiplierCap', 64],
   ['game.paodekuai.baobenEnabled', true],
+  ['game.doudizhu.enabled', true],
 ];
 
 export function seedDb(): FakePlatformDb {

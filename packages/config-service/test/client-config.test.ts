@@ -88,6 +88,19 @@ describe('GET /api/config（C7 半边）', () => {
       expect(after.data.games.paodekuai.supportedPlayerCounts).toEqual([2, 3, 4]);
       // 旧字段仍是斗地主档位（不迁移、不双写）
       expect(after.data.baseScoreLevels).toEqual(body.data.baseScoreLevels);
+
+      // 斗地主开关：显式 false ⇒ 隐藏；缺键 ⇒ 默认 true（旧库兼容）
+      db.rows.set('game.doudizhu.enabled', {
+        value: false,
+        version: 2,
+        updatedAt: 'admin',
+        updatedBy: 'admin',
+      });
+      const { body: ddzOff } = await probe.get('/api/config');
+      expect(ddzOff.data.games.doudizhu.enabled).toBe(false);
+      db.rows.delete('game.doudizhu.enabled');
+      const { body: ddzMissing } = await probe.get('/api/config');
+      expect(ddzMissing.data.games.doudizhu.enabled).toBe(true);
     } finally {
       await probe.close();
     }

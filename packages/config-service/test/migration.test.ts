@@ -56,6 +56,7 @@ import { RiskDeviceBindingSeed1795600000000 } from '../src/migrations/1795600000
 import { CardCounterSeed1795700000000 } from '../src/migrations/1795700000000-CardCounterSeed';
 import { CardCounterPrices1795800000000 } from '../src/migrations/CardCounterPrices1795800000000';
 import { MultiGameConfigSeed1796400000000 } from '../src/migrations/1796400000000-MultiGameConfigSeed';
+import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -1493,5 +1494,62 @@ describe('MultiGameConfigSeed1796400000000：跑得快 14 键种子', () => {
       }
     }
     expect(hits).toEqual(['config-service/MultiGameConfigSeed1796400000000']);
+  });
+});
+
+describe('DdzEnabledSeed1796500000000：斗地主总开关种子', () => {
+  it('up()：恰一条 INSERT IGNORE、种子 true、version=1、updated_by=seed', async () => {
+    const statements: string[] = [];
+    await new DdzEnabledSeed1796500000000().up(fakeRunner(statements));
+    const sql = flatten(statements.join('\n'));
+
+    expect(sql).toContain(
+      'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
+    );
+    expect(sql.match(/INSERT IGNORE INTO `platform_config`/g)).toHaveLength(1);
+    expect(sql).toContain("('game.doudizhu.enabled', 'true', 1, NOW(3), 'seed')");
+    expect(statements).toHaveLength(1);
+  });
+
+  it('down()：只删该键（不碰跑得快键）', async () => {
+    const statements: string[] = [];
+    await new DdzEnabledSeed1796500000000().down(fakeRunner(statements));
+    const sql = flatten(statements.join('\n'));
+
+    expect(sql.match(/DELETE FROM/g)).toHaveLength(1);
+    expect(sql).toContain("'game.doudizhu.enabled'");
+    expect(sql).not.toContain("'game.paodekuai.enabled'");
+    expect(statements).toHaveLength(1);
+  });
+
+  it('幂等：重放 up() 两次都走 INSERT IGNORE、不抛错', async () => {
+    const statements: string[] = [];
+    const migration = new DdzEnabledSeed1796500000000();
+    await migration.up(fakeRunner(statements));
+    await migration.up(fakeRunner(statements));
+    expect(statements.filter((s) => s.includes('INSERT IGNORE'))).toHaveLength(2);
+  });
+
+  it('形状；迁移号 1796500000000 晚于 1796400000000 且全仓唯一', () => {
+    const migration = new DdzEnabledSeed1796500000000();
+    expect(migration.name).toBe('DdzEnabledSeed1796500000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new MultiGameConfigSeed1796400000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796500000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/DdzEnabledSeed1796500000000']);
   });
 });
