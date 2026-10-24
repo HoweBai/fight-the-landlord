@@ -60,7 +60,7 @@
  *   （不是 RST，R229 同族）⇒ 连接**挂住**、窗口内零事件（实测 2.5s 无任何事件 = 空测）。
  *
  * ⚠️ **N9 的在线判据（第 10 步 / R249）**：§10.1 要求 `room:{code}` 是 **Hash**（字段集**恰好**
- *   7 个：`code`/`mode`/`baseScore`/`status`/`maxPlayers`/`createdAt`/`timeoutAt`）+ TTL 3600s。
+ *   8 个：`code`/`mode`/`gameType`/`baseScore`/`status`/`maxPlayers`/`createdAt`/`timeoutAt`）+ TTL 3600s。
  *   房号取自一条**真实的** `POST /api/rooms`（经网关）—— **不自己 `SET` 造键**：自造的键只能证明
  *   「我们把键写成了 hash」，证明不了**产品**写的是 hash。反向判据：`GET room:<code>` 必须报
  *   `WRONGTYPE`（证明确实不是 String）。修前（master 实测）：`TYPE` = **string**、`HKEYS` 报
@@ -157,10 +157,11 @@ const REPO_ROOT = resolve(__dirname, '../../../..');
  */
 const repoRel = (abs: string): string => relative(REPO_ROOT, abs).split('\\').join('/');
 
-/** §10.1 逐字的 7 个字段（`room:{code}` 是 Hash）。 */
+/** §10.1 逐字的 8 个字段（`room:{code}` 是 Hash；`gameType` 为多玩法新增，旧房缺省读 doudizhu）。 */
 const ROOM_META_FIELDS = [
   'code',
   'mode',
+  'gameType',
   'baseScore',
   'status',
   'maxPlayers',
@@ -1182,7 +1183,7 @@ export async function runSlice072Hardening(): Promise<Checks> {
         `TYPE ${roomKey}（§10.1 逐字：**Hash**；修前是 string）`,
       );
 
-      // ② 字段集：**恰好** §10.1 的 7 个（多一个/少一个都红 —— 防悄悄多/少，R249）
+      // ② 字段集：**恰好** §10.1 的 8 个（多一个/少一个都红 —— 防悄悄多/少，R249）
       const fieldViolations = fieldSetViolations(fields, ROOM_META_FIELDS);
       checks.that(
         fieldViolations.length === 0,

@@ -16,6 +16,7 @@ import {
   getJson,
   postJson,
   registerUser,
+  setFriendRooms,
   type HarnessUser,
 } from '../lib/http';
 import { playPdkToEnd, startPdkRoom } from '../lib/pdk-driver';
@@ -25,6 +26,13 @@ const PDK_ENABLED_KEY = 'game.paodekuai.enabled';
 /** 等待开关在 room-service 的配置缓存里生效（观测点 = 建房行为）。 */
 async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
   const admin = await adminLogin();
+  // ⚠️ REST 建房有**两道闸**，顺序固定：controller 入口先查 `room.friendRoomEnabled`
+  //    （关 ⇒ 12006），之后 service 才看玩法开关。只开 paodekuai 不开好友房 ⇒
+  //    探针永远读 12006（2026-10-24 CI 实测：slice-14 收尾把好友房还原 false）。
+  //    `setFriendRooms` 自带建房轮询（≤30s），且它的探针会占掉 opener 的等待房 ⇒
+  //    下面的 paodekuai 探针必须用**另一个**账号（复用会先撞 12011）。
+  const opener = await registerUser(88);
+  await setFriendRooms(true, opener.accessToken);
   const put = await adminPutConfig(PDK_ENABLED_KEY, true, admin);
   if (put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(
@@ -53,10 +61,14 @@ async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
       if (off.body?.code !== ErrCode.OK) {
         throw new ConformanceError(`还原跑得快开关失败：${JSON.stringify(off.body)}`);
       }
-      // 配置变更走广播失效（秒级）；留 2s 让 room-service 缓存重新拉取。
-      // ⚠️ 不用「建房探测」验关闭：探测账号已占着一间等待房 ⇒ 再建房会先撞 12011，读不出 12012。
+      // 好友房开关一并还原（本片是当前最后一片；残留会污染手工复跑/后续增片）。
+      // ⚠️ 关闭探针必须用**全新账号**：opener/probeUser 都已有等待房，复用会先撞 12011。
+      // ⚠️ 先留 2s 让广播失效落地：`setFriendRooms(false)` 的首探若撞上**陈旧缓存**
+      //    会真的建出一间房，此后同账号只能读到 12011、永远等不到 12006。
       await sleep(2000);
-      info('跑得快开关已还原为 false（game.paodekuai.enabled）');
+      const closer = await registerUser(91);
+      await setFriendRooms(false, closer.accessToken);
+      info('跑得快开关与好友房开关已还原为 false');
     },
   };
 }
