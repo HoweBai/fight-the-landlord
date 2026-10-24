@@ -55,6 +55,14 @@ export const RISK_WIN_RATE_SQL =
   "SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins FROM game_record_players p JOIN game_records r ON r.id=p.record_id JOIN users u ON u.id = p.user_id AND u.status='active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL GROUP BY p.user_id";
 
 /**
+ * 跑得快胜率统计（2026-10-25 **SQL1b**，spec §5.4 逐字）：独立两表 +
+ * `p.seat = r.winner_seat` 判胜；过滤练习房、机器人行与已封禁账号，与斗地主同口径。
+ * 行形状与 `RISK_WIN_RATE_SQL` 相同：`{ user_id, games, wins }`。
+ */
+export const RISK_WIN_RATE_PDK_SQL =
+  "SELECT p.user_id, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 GROUP BY p.user_id";
+
+/**
  * 设备数统计（规格 §2.5-2 **SQL2 逐字**；`? = now − risk.deviceWindowDays 天`）。
  * ⚠️ F1 修：**同样带 users 过滤**，防 banned 用户经此单边进入轮次。
  */
@@ -76,11 +84,23 @@ const DAY_MS = 86_400_000;
 /** 单命中项分值（规格 §2.5-2：命中项数 × 25 ⇒ score ∈ {0,25,50}）。 */
 const SINGLE_HIT_SCORE = 25;
 
+/** 单玩法胜率统计（SQL1 / SQL1b 的同形行，已 `Number()` 归一）。 */
+interface GameWinStat {
+  games: number;
+  wins: number;
+}
+
+/** 并集内一个用户的统计：按玩法分开，设备数平台级。 */
+interface MergedRiskStat {
+  byGame: { doudizhu?: GameWinStat; paodekuai?: GameWinStat };
+  devices: number;
+}
+
 /** 一轮的读数（日志之外的机械回执；测试与运维用）。 */
 export interface RiskScanRoundResult {
   /** true = 锁没抢到、本轮整轮跳过（不统计、不写旗、不记 runs 指标）。 */
   skipped: boolean;
-  /** 并集用户数（SQL1 ∪ SQL2）。 */
+  /** 并集用户数（SQL1 ∪ SQL1b ∪ SQL2）。 */
   users: number;
   /** 本轮 score ≥ 25 的命中用户数。 */
   flagged: number;
@@ -108,11 +128,11 @@ export interface RiskScanRoundResult {
  *  1. **抢锁**：`SET risk:scan:lock <实例id> NX EX 600`（⚙️3：拿不到 ⇒ debug 日志 +
  *     整轮跳过）；轮末 **compare-and-delete**（⚙️24：GET 值 == 本实例 id 才 DEL；
  *     EX 只是持有者崩溃兜底）。
- *  2. **统计**：SQL1（胜率）+ SQL2（设备数）→ 内存并集（SQL2 有 SQL1 无 ⇒ games=0、
- *     hit1=false）；阈值每轮现读配置（见下）。
- *  3. **判定**：`hit1 = games > risk.minGames && winRate > risk.winRateThreshold`
- *     （**严格大于**：恰 100 局不算）；`hit2 = devices > risk.deviceLimit`；
- *     `score = 命中项数 × 25`；reasons 只含命中项（数值快照）。
+ *  2. **统计**：SQL1（斗地主胜率）+ SQL1b（跑得快胜率）+ SQL2（设备数）→ 按玩法分组的内存并集
+ *     （设备-only 用户 ⇒ 两玩法均无、hit1=false）；阈值/窗口每轮现读配置（见下）。
+ *  3. **判定**：每个玩法独立 `games > 该玩法 minGames && winRate > 该玩法阈值`；
+ *     `hit1 = 任一玩法命中`（两玩法同时命中**不叠分**）；`hit2 = devices > risk.deviceLimit`；
+ *     `score = 命中项数 × 25`；reasons 每个命中玩法各一条（带 `gameType`），设备 reason 不变。
  *  4. **upsert**：并集**每个**用户都进 `ReviewsService.applyScanResult`（含 score=0 的
  *     用户 —— 规格 §2.5-2 括号：「score=0 ⇒ 本轮结束（**但**仍参与 … auto 旗回落
  *     判定）」；回落（throttled(auto) 的解限）只有让低分用户进状态机才触达）。
@@ -272,13 +292,21 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
   private async runScanWork(now: number): Promise<RiskScanRoundResult> {
     const startedAtMs = Date.now();
     // 阈值/窗口每轮现读（热生效：改配置 ⇒ 下一轮生效；当前一轮按旧值跑完）。
+    // 跑得快两键缺失时 getter 内部回退斗地主（新键 → 旧键 → 默认）。
     const minGames = this.configCache.riskMinGames();
     const winRateThreshold = this.configCache.riskWinRateThreshold();
+    const pdkMinGames = this.configCache.riskPaodekuaiMinGames();
+    const pdkWinRateThreshold = this.configCache.riskPaodekuaiWinRateThreshold();
     const deviceLimit = this.configCache.riskDeviceLimit();
     const deviceWindowDays = this.configCache.riskDeviceWindowDays();
 
-    // ── 统计（SQL1 + SQL2；驱动对 COUNT/SUM 可能回字符串 ⇒ Number() 归一）────────
+    // ── 统计（SQL1 + SQL1b + SQL2；驱动对 COUNT/SUM 可能回字符串 ⇒ Number() 归一）────
     const winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as Array<{
+      user_id: string;
+      games: number | string;
+      wins: number | string;
+    }>;
+    const pdkWinRows = (await this.dataSource.query(RISK_WIN_RATE_PDK_SQL)) as Array<{
       user_id: string;
       games: number | string;
       wins: number | string;
@@ -287,35 +315,69 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       new Date(now - deviceWindowDays * DAY_MS),
     ])) as Array<{ user_id: string; devices: number | string }>;
 
-    // ── 并集合并：SQL2 有 SQL1 无 ⇒ games=0、hit1=false ─────────────────────────
-    const merged = new Map<string, { games: number; wins: number; devices: number }>();
+    // ── 并集合并：设备-only ⇒ 两玩法均无、hit1=false；玩法间不合并样本 ─────────────
+    const merged = new Map<string, MergedRiskStat>();
+    const ensure = (userId: string): MergedRiskStat => {
+      const existing = merged.get(userId);
+      if (existing !== undefined) return existing;
+      const created: MergedRiskStat = { byGame: {}, devices: 0 };
+      merged.set(userId, created);
+      return created;
+    };
     for (const row of winRows) {
-      merged.set(String(row.user_id), {
+      ensure(String(row.user_id)).byGame.doudizhu = {
         games: Number(row.games),
         wins: Number(row.wins),
-        devices: 0,
-      });
+      };
+    }
+    for (const row of pdkWinRows) {
+      ensure(String(row.user_id)).byGame.paodekuai = {
+        games: Number(row.games),
+        wins: Number(row.wins),
+      };
     }
     for (const row of deviceRows) {
-      const userId = String(row.user_id);
-      const stats = merged.get(userId) ?? { games: 0, wins: 0, devices: 0 };
-      stats.devices = Number(row.devices);
-      merged.set(userId, stats);
+      ensure(String(row.user_id)).devices = Number(row.devices);
     }
 
     // ── 判定 + 逐用户 upsert（score=0 也进 —— 自动旗回落判定，规格 §2.5-2 括号）──
     let flagged = 0;
     let userFailures = 0;
     for (const [userId, stats] of merged) {
-      const hit1 = stats.games > minGames && stats.wins / stats.games > winRateThreshold;
+      const ddz = stats.byGame.doudizhu;
+      const pdk = stats.byGame.paodekuai;
+      const ddzHit =
+        ddz !== undefined && ddz.games > minGames && ddz.wins / ddz.games > winRateThreshold;
+      const pdkHit =
+        pdk !== undefined &&
+        pdk.games > pdkMinGames &&
+        pdk.wins / pdk.games > pdkWinRateThreshold;
+      // 两玩法同时命中只算“胜率命中项”一项（不叠分）。
+      const hit1 = ddzHit || pdkHit;
       const hit2 = stats.devices > deviceLimit;
       const score = (hit1 ? SINGLE_HIT_SCORE : 0) + (hit2 ? SINGLE_HIT_SCORE : 0);
       if (score >= SINGLE_HIT_SCORE) flagged += 1;
       const reasons: ScanReason[] = [];
-      if (hit1) {
+      if (ddzHit && ddz !== undefined) {
         reasons.push({
           check: 'winRate',
-          detail: { games: stats.games, wins: stats.wins, winRate: stats.wins / stats.games },
+          detail: {
+            gameType: 'doudizhu',
+            games: ddz.games,
+            wins: ddz.wins,
+            winRate: ddz.wins / ddz.games,
+          },
+        });
+      }
+      if (pdkHit && pdk !== undefined) {
+        reasons.push({
+          check: 'winRate',
+          detail: {
+            gameType: 'paodekuai',
+            games: pdk.games,
+            wins: pdk.wins,
+            winRate: pdk.wins / pdk.games,
+          },
         });
       }
       if (hit2) reasons.push({ check: 'devices', detail: { devices: stats.devices } });

@@ -119,7 +119,13 @@ const AUTO_THROTTLE_SCORE = 50;
 /** 自动解除的审计 reason（规格 §2.5-3 逐字；`<25 ⇒ dismissed` 分支的语义标签）。 */
 const AUTO_THROTTLE_RELEASE_REASON = '指标回落，自动解除';
 
-/** 扫描产出的命中快照元素（`risk_reviews.reasons` 的 JSON 形状；规格 §2.2 注释）。 */
+/**
+ * 扫描产出的命中快照元素（`risk_reviews.reasons` 的 JSON 形状；规格 §2.2 注释）。
+ *
+ * 2026-10-25 起 `check:'winRate'` 的 `detail` 恒带 `gameType:'doudizhu'|'paodekuai'`
+ * （每个命中玩法一条）。**旧行缺 `gameType` 时按 `doudizhu` 解释**——当前没有消费方
+ * 解析 `reasons`（admin 原样展示 JSON），此规则是给未来消费方的兼容契约。
+ */
 export interface ScanReason {
   check: 'winRate' | 'devices' | 'revived';
   detail: Record<string, unknown>;
