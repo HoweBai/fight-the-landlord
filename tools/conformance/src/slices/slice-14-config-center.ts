@@ -607,6 +607,43 @@ export async function runSlice14(): Promise<Checks> {
       `C20② 响应含管理页标志串「FTL 管理面」—— 实际前 120 字：${c20B.body.slice(0, 120)}`);
 
     // ══════════════════════════════════════════════════════════════════════
+    // C21（2026-10-24）：玩法开放开关 —— 斗地主关闭 ⇒ /api/config=false + 建房 12012；
+    // 恢复 true 后建房成功。关闭只拦新建房/新匹配，不影响进行中对局（本片无在局，不构造）。
+    // ══════════════════════════════════════════════════════════════════════
+    step('C21：玩法开放开关（斗地主）—— 关闭 ⇒ 12012；恢复 ⇒ 可用');
+    const ddzKey = 'game.doudizhu.enabled';
+    const ddzRoomsBefore = await registerUser(95);
+    try {
+      // 前置：POST /api/rooms 的第一道闸是 friendRoomEnabled（关 ⇒ 12006，会遮住 12012）。
+      await setFriendRooms(true, ddzRoomsBefore.accessToken);
+      const putOff = await adminPutConfig(ddzKey, false, admin);
+      checks.eq(putOff.body?.code, ErrCode.OK, `C21① admin PUT ${ddzKey}=false ⇒ code 0`);
+      const cfgOff = await getJson<{ games?: { doudizhu?: { enabled?: boolean } } }>(
+        '/api/config',
+        ddzRoomsBefore.accessToken,
+      );
+      checks.eq(cfgOff.body?.data?.games?.doudizhu?.enabled, false,
+        'C21② /api/config 立即读到 games.doudizhu.enabled=false（该端点每次查库）');
+      const offProbe = await registerUser(96);
+      const off = await pollCreateCode(ErrCode.GAME_UNAVAILABLE, 70_000, offProbe.accessToken);
+      checks.eq(off.last, ErrCode.GAME_UNAVAILABLE,
+        `C21③ 关闭后建房 ⇒ 12012（≤70s，最后 ${JSON.stringify(off.last)}）`);
+
+      const putOn = await adminPutConfig(ddzKey, true, admin);
+      checks.eq(putOn.body?.code, ErrCode.OK, `C21④ admin PUT ${ddzKey}=true ⇒ code 0`);
+      const cfgOn = await getJson<{ games?: { doudizhu?: { enabled?: boolean } } }>(
+        '/api/config',
+        ddzRoomsBefore.accessToken,
+      );
+      checks.eq(cfgOn.body?.data?.games?.doudizhu?.enabled, true, 'C21⑤ /api/config 恢复 true');
+      const onProbe = await registerUser(97);
+      const on = await pollCreateCode(ErrCode.OK, 70_000, onProbe.accessToken);
+      checks.eq(on.last, ErrCode.OK, `C21⑥ 恢复后建房 ⇒ 0（≤70s，最后 ${JSON.stringify(on.last)}）`);
+    } finally {
+      await adminPutConfig(ddzKey, true, admin).catch(() => undefined);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // 编排第 7 段：统一收尾（规格 §3 末：复原生产默认；C11 只管 fresh——此收尾是卫生，不承担判据）
     // ══════════════════════════════════════════════════════════════════════
     step('统一收尾：setFriendRooms(false)');
@@ -623,6 +660,7 @@ export async function runSlice14(): Promise<Checks> {
       compose({ ADMIN_PASSWORD }, 'up', '-d', '--no-deps', 'config-service');
       compose({}, 'start', 'config-service');
       await setFriendRooms(false, user.accessToken);
+      await adminPutConfig('game.doudizhu.enabled', true, admin);
     } catch (err) {
       info(`兜底复原失败（不影响原始结论，手动检查 room/config 的注入态）：${err instanceof Error ? err.message : String(err)}`);
     }

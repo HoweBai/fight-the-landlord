@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：六十五键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：六十六键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -147,7 +147,9 @@ const PAGE_LIMIT = 20;
  *    **34 条对 34 键**；节奏/清理旋钮管理化片 T16 加六键（35–40）后 **40 条对 40 键**；
  *    广告片 T9 加第 41 键（`ad.reliefAdpid`）后 **41 条对 41 键**；
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
- *    客户端接入片 T3 加第 43/44 键（`client.appEnabled` / `client.h5Enabled`）、机器人补位开关片加第 45–47 键后 **47 条对 47 键**；提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 **48 条对 48 键**；设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 **49 条对 49 键**；记牌器片加第 50 键（game.cardCounterEnabled，归「斗地主 → 对局辅助」）后 **50 条对 50 键**；记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 **52 条对 52 键**；阶段 2 删除旧费率键后 65 条；2026-10-24 配置平行化后 **59 条备注 / 73 个 active 键**（16 个旧键只读、无备注）。
+ *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
+ *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
+ *    **60 条备注 / 74 个 active 键**（16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
   'game.doudizhu.robot.skillDistribution': [
@@ -349,8 +351,7 @@ const CONFIG_NOTES = {
   // 45–47 键（game.doudizhu.freeBotFillEnabled / game.doudizhu.goldBotFillEnabled / room.matchNoBotMaxWaitMs）后 47 条对 47 键；
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
-  // 记牌器片加第 50 键（game.doudizhu.cardCounterEnabled，归「斗地主 → 对局辅助」）后 50 条对 50 键
-  // 记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 52 条对 52 键；阶段 2 删旧费率键后 65 条对 65 键
+  // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 60 条备注 / 74 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -469,6 +470,18 @@ const CONFIG_NOTES = {
     ['生效', '保存后 api-gateway 秒级生效（推送正常时）；最晚 ≤60s（安全网兜底）。'],
     ['注意', '软开关（非安全边界）：未带端标识的请求永远放行 —— 缓存/未刷新的旧 H5 页面（旧 bundle 无标识头）不受控 ⇒ 验证「关 h5 生效」须硬刷新或新开页。'],
   ],
+  'game.doudizhu.enabled': [
+    ['作用', '斗地主总开关 —— 关 ⇒ 新的匹配入队 / 新建房被拒（12012）；进行中的对局与已有房间不受影响。'],
+    ['取值', '严格 true / false。默认 true（保持现状）。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
+    ['注意', '两个玩法都关闭时大厅没有可选玩法；关闭期间已入队的票保留，重新开放后继续匹配。'],
+  ],
+  'game.paodekuai.enabled': [
+    ['作用', '跑得快总开关 —— 关 ⇒ 新的匹配入队 / 新建房被拒（12012）；进行中的对局与已有房间不受影响。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
+    ['注意', '两个玩法都关闭时大厅没有可选玩法；关闭期间已入队的票保留，重新开放后继续匹配。'],
+  ],
   'game.paodekuai.freeRoomEnabled': [
     ['作用', '跑得快免费场开关。开 ⇒ 大厅的跑得快玩法显示「免费场」、可匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（保守灰度：先开放免费场）。'],
@@ -560,6 +573,7 @@ const CONFIG_IA = [
       {
         id: 'ddz',
         name: '斗地主',
+        headerKeys: ['game.doudizhu.enabled'],
         tabs: [
           { id: 'rules', name: '玩法规则', keys: ['game.levels.doudizhu'] },
           {
@@ -606,6 +620,7 @@ const CONFIG_IA = [
       {
         id: 'pdk',
         name: '跑得快',
+        headerKeys: ['game.paodekuai.enabled'],
         tabs: [
           {
             id: 'rules',
@@ -634,7 +649,7 @@ const CONFIG_IA = [
           {
             id: 'switches',
             name: '开关',
-            keys: ['game.paodekuai.enabled', 'game.paodekuai.nonThreePlayerEnabled'],
+            keys: ['game.paodekuai.nonThreePlayerEnabled'],
           },
           {
             id: 'rooms',
@@ -787,8 +802,33 @@ const CONFIG_IA = [
 
 /** 展平后的域列表（带 group 名）。 */
 const IA_DOMAINS = CONFIG_IA.flatMap((g) => g.domains.map((d) => ({ ...d, group: g.group })));
-/** IA 表收录的全部键（用于求未分组差集）。 */
-const IA_KEY_SET = new Set(IA_DOMAINS.flatMap((d) => d.tabs.flatMap((t) => t.keys)));
+
+/**
+ * 玩法开关键的**默认值**（缺键/未加载时按它显示；键集合必须与 IA 的 headerKeys 一致）。
+ * 只此一份 —— 不要在 buildGameHeader 里另写三元表达式。
+ */
+const GAME_SWITCH_DEFAULTS = {
+  'game.doudizhu.enabled': true,
+  'game.paodekuai.enabled': false,
+};
+
+/** IA 中所有玩法域的 headerKeys（顶部开关键的全局清单）。 */
+const GAME_SWITCH_KEYS = IA_DOMAINS.flatMap((d) => d.headerKeys ?? []);
+
+/**
+ * 关闭一个玩法后，是否已经**没有任何**开放玩法（用于确认文案的加强提示）。
+ * 纯函数（全部输入走参数）—— 静态闸用 vm 执行它做行为自证。
+ */
+function lastEnabledGameWarning(currentConfig, targetKey, defaults, headerKeys) {
+  return headerKeys
+    .filter((k) => k !== targetKey)
+    .every((k) => (k in currentConfig ? currentConfig[k].value : defaults[k]) === false);
+}
+
+/** IA 表收录的全部键（用于求未分组差集；含玩法域的顶部开关键）。 */
+const IA_KEY_SET = new Set(
+  IA_DOMAINS.flatMap((d) => [...(d.headerKeys ?? []), ...d.tabs.flatMap((t) => t.keys)]),
+);
 /** 快照表外键的虚拟域（计数 0 时不渲染）。 */
 const UNGROUPED_DOMAIN_ID = '__ungrouped';
 const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '' });
@@ -886,6 +926,7 @@ const CONFIG_CONTROLS = {
   'ad.reliefAdpid': { label: '救助广告位 ID', type: 'text' },
   'client.appEnabled': { label: 'App 端', type: 'bool' },
   'client.h5Enabled': { label: 'H5 端', type: 'bool' },
+  'game.doudizhu.enabled': { label: '斗地主总开关', type: 'bool' },
 };
 
 /** 5 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
@@ -1186,7 +1227,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量六十五键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量六十六键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
@@ -1213,7 +1254,11 @@ function ungroupedKeys() {
 
 /** 某域在当前快照中的键数（= 其各页签已下发键的并集计数）。 */
 function domainSnapshotCount(domain) {
-  return domain.tabs.flatMap((t) => t.keys).filter((k) => k in currentConfig).length;
+  const keys = new Set([
+    ...(domain.headerKeys ?? []),
+    ...(domain.tabs ?? []).flatMap((t) => t.keys),
+  ]);
+  return [...keys].filter((k) => k in currentConfig).length;
 }
 
 /** 搜索匹配面：键名 + 该键 CONFIG_NOTES 备注全文（不区分大小写；无备注键只匹配键名）。 */
@@ -1306,6 +1351,7 @@ function renderConfigRows({ preserve = false } = {}) {
   host.textContent = '';
   const q = cfgUI.query.trim().toLowerCase();
   let sections;
+  let headerDomain = null;
   if (q) {
     const keys = snapshotKeys().filter(
       (k) =>
@@ -1316,6 +1362,7 @@ function renderConfigRows({ preserve = false } = {}) {
   } else {
     normalizeCfgDomain();
     const domain = domainById(cfgUI.domainId);
+    headerDomain = domain;
     sections = domain
       ? domain.tabs
           .map((t) => ({
@@ -1327,6 +1374,11 @@ function renderConfigRows({ preserve = false } = {}) {
   }
 
   let rendered = 0;
+  // 玩法域顶部开关卡（搜索态不渲染；搜索态里该键作为普通布尔行走 buildKeyCard）。
+  for (const key of headerDomain?.headerKeys ?? []) {
+    host.append(buildGameHeader(headerDomain, key));
+    rendered += 1;
+  }
   for (const sec of sections) {
     if (sec.keys.length === 0) continue;
     const title = document.createElement('h3');
@@ -1415,6 +1467,81 @@ function buildEffectAndDetail(card, key) {
     detail.append(p);
   }
   return { effect, detail };
+}
+
+/**
+ * 玩法域顶部「开放该玩法」卡：立即 PUT（关闭前 confirm）；缺键/未加载按默认值显示并禁用。
+ * 复用行卡片/开关样式；`data-key` 供渲染后的焦点恢复。
+ */
+function buildGameHeader(domain, key) {
+  const loaded = key in currentConfig;
+  const enabled = loaded
+    ? currentConfig[key].value === true
+    : GAME_SWITCH_DEFAULTS[key] === true;
+  const card = el('div', 'row-card game-switch-card');
+  card.dataset.key = key;
+
+  const main = el('div', 'row-main');
+  const titleLine = el('div');
+  titleLine.append(
+    el('span', 'row-title', `开放「${domain.name}」`),
+    el('span', 'row-key', key),
+    el('span', 'row-ver', loaded ? `v${currentConfig[key]?.version ?? '?'}` : '未加载'),
+  );
+  main.append(
+    titleLine,
+    el(
+      'div',
+      'row-effect',
+      '关闭后：新的匹配/建房会被拒绝（12012），进行中的对局与已有房间不受影响。配置通常秒级生效，最坏 ≤60s。',
+    ),
+  );
+
+  const ctl = el('div', 'row-ctl');
+  const label = el('label', 'switch');
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = enabled;
+  input.disabled = !loaded;
+  const track = el('span', 'switch-track');
+  const val = el('span', 'switch-val', enabled ? '已开放' : '已关闭');
+  label.append(input, track, val);
+  ctl.append(label);
+  card.append(main, ctl);
+  if (!loaded) {
+    card.append(el('div', 'row-state', '配置未加载：按默认值显示，暂不可修改。'));
+  }
+
+  input.addEventListener('change', async () => {
+    const next = input.checked;
+    if (!next) {
+      const last = lastEnabledGameWarning(
+        currentConfig,
+        key,
+        GAME_SWITCH_DEFAULTS,
+        GAME_SWITCH_KEYS,
+      );
+      const tail = last ? '\n这是最后一个开放的玩法，关闭后大厅将没有可选玩法。' : '';
+      if (
+        !confirm(
+          `关闭「${domain.name}」？\n新的匹配/建房将被拒绝（12012），进行中的对局与已有房间不受影响。${tail}`,
+        )
+      ) {
+        input.checked = !next;
+        return;
+      }
+    }
+    input.disabled = true;
+    const res = await putConfigKey(key, next);
+    if (res.ok) {
+      await loadAll();
+    } else {
+      input.checked = !next;
+      input.disabled = false;
+      val.textContent = input.checked ? '已开放' : '已关闭';
+    }
+  });
+  return card;
 }
 
 /** 47 简单键行：标题/作用在左、控件在右、脏状态出保存/还原；草稿跨重渲染保留。 */

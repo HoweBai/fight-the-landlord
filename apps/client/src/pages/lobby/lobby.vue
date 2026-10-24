@@ -892,13 +892,16 @@ onUnmounted(() => stopBgm());
               </view>
             </button>
           </view>
+          <text v-if="visibleModes.length === 0" class="lobby__modes-empty"
+            >暂无开放的玩法，请稍后再试</text
+          >
         </view>
 
         <!--
           右：**场次切换 + 底分档位横滚**（规格 §3 + ② §14）。数据全部来自服务端（协议①）。
           🔴 点卡 = **进开始游戏页**（裁决一）。拿不到档位表 ⇒ 一张卡都不渲染（不猜底分）。
         -->
-        <view class="lobby__levels">
+        <view v-if="visibleModes.length > 0" class="lobby__levels">
           <text class="lobby__levels-title">选择底分</text>
           <!--
             ⚠️ **三段互斥**（`v-if` / `v-else-if` / `v-else`），不是「把加载中文案塞进 error 行」：
@@ -1426,6 +1429,10 @@ onUnmounted(() => stopBgm());
   gap: $ftl-space-4;
   min-height: 0;
   overflow-y: auto;
+}
+.lobby__modes-empty {
+  color: $ftl-color-text-secondary;
+  font-size: $ftl-font-sm;
 }
 /** 底分档位：**横滚**（规格 §3）。 */
 .lobby__level-list {

@@ -113,6 +113,14 @@ describe('RoomMeta / RoomInfo 多玩法字段（Task 2.2）', () => {
       .catch((e: unknown) => e);
     expect(ddzFour).toMatchObject({ code: ErrCode.GAME_UNAVAILABLE });
     expect(redis.hashes.has('room:DDZX01')).toBe(false);
+
+    cache.doudizhuEnabled.mockReturnValue(false);
+    const ddzOff = await service
+      .create({ mode: 'random', roomCode: 'DDZX02' })
+      .catch((e: unknown) => e);
+    expect(ddzOff).toMatchObject({ code: ErrCode.GAME_UNAVAILABLE });
+    expect(redis.hashes.has('room:DDZX02')).toBe(false);
+    cache.doudizhuEnabled.mockReturnValue(true);
   });
 
   it('deleteRoom 删除集包含 room:{code}:start_attempts（开局重试预算键）', async () => {

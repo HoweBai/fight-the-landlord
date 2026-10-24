@@ -243,7 +243,8 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.springMultiplierEnabled', true],
   ['game.paodekuai.multiplierCap', 64],
   ['game.paodekuai.baobenEnabled', true],
-  // 配置平行化（2026-10-24；来自 `SplitGameConfig1796500000000`）
+  ['game.doudizhu.enabled', true],
+  // 配置平行化（2026-10-24；来自 `SplitGameConfig1796600000000`）
   ['game.doudizhu.freeRoomEnabled', true],
   ['game.doudizhu.goldRoomEnabled', true],
   ['game.doudizhu.friendRoomEnabled', false],

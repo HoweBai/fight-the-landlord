@@ -204,6 +204,21 @@ describe('room.match 的玩法/人数闸（Task 2.2）', () => {
     expect(match.addToQueue).not.toHaveBeenCalled();
   });
 
+  it('斗地主关闭（game.doudizhu.enabled=false）⇒ 12012，不入队', async () => {
+    const { deps, match, configCache } = makeDeps();
+    configCache.doudizhuEnabled.mockReturnValue(false);
+
+    const ack = await route(
+      deps,
+      makeSocket('alice'),
+      C('room.match', { mode: 'random', baseScore: 15 }),
+    );
+
+    expect(ack.code).toBe(ErrCode.GAME_UNAVAILABLE);
+    expect(ack.message).toBe('该玩法暂未开放');
+    expect(match.addToQueue).not.toHaveBeenCalled();
+  });
+
   it('跑得快已开放但 nonThree 关：3 人放行、4 人 12012', async () => {
     const { deps, match, configCache } = makeDeps();
     configCache.paodekuaiEnabled.mockReturnValue(true);

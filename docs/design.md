@@ -140,7 +140,7 @@
 | edge（门口） | **80 / 443**（**唯一对外入口**；宿主侧由 `EDGE_HTTP_PORT` / `EDGE_HTTPS_PORT` 参数化，容器内监听 = `SITE_ADDRESS` 的端口 + 固定的 `:80` 跳转） | — | Caddy 2（TLS 终止 + H5 静态站 + 反代） | — |
 | api-gateway | **3000**（**网内**：不发布到宿主机，`expose: 3000`） | — | NestJS + Express | **Redis（限流计数）** |
 | user-service | **3001** | **3101**（记录片重挂，§4.2/§7.6） | NestJS + TypeORM + bcrypt | MySQL + **Redis（令牌白名单）** |
-| config-service | **3006** | **3106** | NestJS + TypeORM | MySQL（`platform_config` = 89 键配置（73 active + 16 只读旧键）的**持久真源**）+ Redis（失效广播 `config:changed`） |
+ | **3006** | **3106** | NestJS + TypeORM | MySQL（`platform_config` = 90 键配置（74 active + 16 只读旧键）的**持久真源**）+ Redis（失效广播 `config:changed`） |
 | room-service | **3002** | — | NestJS + ioredis | Redis |
 | game-service | **3003** | **3103** | NestJS + ioredis | Redis |
 | robot-service | **3005** | **3105** | NestJS | **Redis（机器人池）** |
@@ -424,7 +424,7 @@ interface MatchTicket {
 | room-service → robot-service | **TCP RPC** | 申请机器人补位 |
 | **room-service → user-service** | **TCP RPC** | **对局记录写入**（`record.write`，§4.2/§7.6）—— 记录片重挂 3101 后的**唯一一条边** |
 | **user-service → currency-service** | **TCP RPC** | **注册赠送入账**（`currency.apply` —— 货币片的**唯一写边**，§4.2/§4.4；金额为 0 时**完全绕开**，J5 快照语义） |
-| **room-service / robot-service / user-service / currency-service / payment-service / api-gateway → config-service** | **TCP RPC** | **读配置快照**（`config.snapshot`，§4.2/§7.5）—— 89 键配置（73 active + 16 只读旧键）（底分档位 / 好友房开关 / 免费与金币场开关 / 免费与金币场机器人补位开关 / 无机器人匹配总等待上限 / 比例 / 周期 / 模型映射 / 保留期 / 注册赠送 / 门槛倍率 / 抽水 / 救助 / 风控〔两谓词开关 · 胜率阈值与最少局数 · 设备阈值与窗口 · 自动限流 · 设备保留期〕/ 支付〔充值提现两开关 · 比率 · 档位表 · 三项限额 · 两周期〕/ 广告〔救助广告位 adpid〕/ 客户端接入〔App/H5 两开关〕/ 记牌器〔总开关 + 两价格〕）的读路径；原 room→user 的 `config.baseScoreLevels` 已随收编退役（user-service 为记录片新增消费方，§7.6；currency-service 为金币场救助与门槛新增消费方；user-service 为风控片新增 `risk.*` 六键消费方；payment-service 为支付片新增 `pay.*` 九键消费方；api-gateway 为客户端接入片新增消费方——两端闸值）；room-service/currency-service 自记牌器收费片起再消费记牌器三键（状态块/购买端点） |
+ / robot-service / user-service / currency-service / payment-service / api-gateway → config-service** | **TCP RPC** | **读配置快照**（`config.snapshot`，§4.2/§7.5）—— 90 键配置（74 active + 16 只读旧键）（底分档位 / 好友房开关 / 免费与金币场开关 / 免费与金币场机器人补位开关 / 无机器人匹配总等待上限 / 比例 / 周期 / 模型映射 / 保留期 / 注册赠送 / 门槛倍率 / 抽水 / 救助 / 风控〔两谓词开关 · 胜率阈值与最少局数 · 设备阈值与窗口 · 自动限流 · 设备保留期〕/ 支付〔充值提现两开关 · 比率 · 档位表 · 三项限额 · 两周期〕/ 广告〔救助广告位 adpid〕/ 客户端接入〔App/H5 两开关〕/ 记牌器〔总开关 + 两价格〕）的读路径；原 room→user 的 `config.baseScoreLevels` 已随收编退役（user-service 为记录片新增消费方，§7.6；currency-service 为金币场救助与门槛新增消费方；user-service 为风控片新增 `risk.*` 六键消费方；payment-service 为支付片新增 `pay.*` 九键消费方；api-gateway 为客户端接入片新增消费方——两端闸值）；room-service/currency-service 自记牌器收费片起再消费记牌器三键（状态块/购买端点） |
 | gateway → config-service | HTTP/REST | `/api/config`（玩家可见子集）· `/api/admin/*` 的 **config-service 分片**（管理面：登录 + 账号 CRUD + 三审计读口〔`config/changes` · `login-events` · `accounts/changes`〕+ 配置读/写；其余管理路由分派见 §7.1/§7.5）—— 经网关反代（§7.1/§7.5） |
 | **config-service → Redis** | **Redis pub/sub** | **写后广播失效通知**（频道 `config:changed`，§10.1）—— 消费侧收到即重拉快照（这就是「推送失效」） |
 | **game-service → robot-service** | **TCP RPC** | **机器人回合决策（§9.4）** |
@@ -530,14 +530,14 @@ interface RobotFeatures {
 interface RobotDecideResponse { kind: 'play' | 'pass'; cards?: number[]; source: 'rule' | 'douzero' }
 
 // room-service / robot-service / user-service / currency-service / payment-service / api-gateway → config-service（片⑦ 收编：取代原 room→user 的 config.baseScoreLevels；user 为记录片新增消费方；currency 为金币场救助/门槛新增消费方；payment 为支付片新增消费方；api-gateway 为客户端接入片新增消费方）
-/** 读**全部 89 键配置（73 active + 16 只读旧键）**的快照（§7.5）。失败语义**分层**（§4.3 表）：热项用缓存或代码默认值；
+ 89 键配置（73 active + 16 只读旧键）**的快照（§7.5）。失败语义**分层**（§4.3 表）：热项用缓存或代码默认值；
  *  **底分档位保持 fail-closed**（缓存为空且拿不到 ⇒ `10007`、建房/入队失败）——
  *  **绝不**把「读不到」当成「没有档位」（那会让非法 `baseScore` 绕过校验）。 */
 @MessagePattern('config.snapshot')  getSnapshot(dto: ConfigSnapshotRequest): ConfigSnapshotResponse
 
 interface ConfigSnapshotRequest { meta?: RpcMeta }
 interface ConfigSnapshotResponse {
-  /** 全部89 键配置（73 active + 16 只读旧键）：`key → { value, version }`（version = 每键单调计数器，§7.5）。 */
+（73 active + 16 只读旧键）：`key → { value, version }`（version = 每键单调计数器，§7.5）。 */
   config: Record<string, { value: unknown; version: number }>;
   version: number;                     // MAX(每键)
 }
@@ -1222,7 +1222,7 @@ socket.emit(type, { version: number, payload: unknown });
 `version` = **每键单调计数器**（写事务内 +1；重启不倒退），快照与两种读都携带**每键 version**，全局 `version = MAX(每键)`
 （客户端 `GET /api/config` 的 `version` 即它）。`migrationsTableName` **独立**（`migrations_config` —— 防与 user-service 共写同名 `migrations` 表）。
 
-**89 键配置（73 active + 16 只读旧键）**（默认 = 种子 = 代码默认值；写入侧校验：非法 ⇒ **400 不落库**）：
+（73 active + 16 只读旧键）**（默认 = 种子 = 代码默认值；写入侧校验：非法 ⇒ **400 不落库**）：
 
 > **2026-10-24 配置平行化**：场次/好友房/补位/金币经济/底分/记牌器/机器人 AI/风控胜率已迁到
 > `game.doudizhu.*` 与 `game.paodekuai.*`；旧平台键（`room.*` / `currency.rakePercent` /
@@ -1284,6 +1284,7 @@ socket.emit(type, { version: number, payload: unknown });
 | `game.doudizhu.cardCounterEnabled`（**记牌器第 50 键**） | 严格 boolean | **`true`**（保持现状） | room-service（开局状态块读总开关）+ 客户端（左上角入口/横条门控；**客户端可见**——裸名 `cardCounterEnabled`，第 17 个可见键） |
 | `game.doudizhu.cardCounterPricePerGameCoins`（**记牌器收费第 51 键**） | 整数金币 · `0 ≤ n ≤ 1,000,000`（0 = 该商品隐藏） | **`10`** | currency-service（购买端点 effect 内校验当前价）+ room-service（状态块判断收费态）+ 客户端（购买面板；**客户端可见**——裸名 `cardCounterPricePerGameCoins`，第 18 个可见键） |
 | `game.doudizhu.cardCounterPricePerHourCoins`（**记牌器收费第 52 键**） | 整数金币 · `0 ≤ n ≤ 1,000,000`（0 = 该商品隐藏） | **`100`** | 同第 51 键（**客户端可见**——裸名 `cardCounterPricePerHourCoins`，第 19 个可见键） |
+| `game.doudizhu.enabled`（**玩法开放第 66 键**） | 严格 boolean | **`true`**（保持现状） | room-service（新匹配/新建房闸：关 ⇒ 12012；**客户端不可见**——折叠进 `games.doudizhu.enabled`） |
 
 **2026-10-24 平行化新增键**：`game.doudizhu.*` 16 键（场次/好友房/补位/金币经济/档位/记牌器/机器人 AI/风控胜率）、`game.paodekuai.*` 7 键（场次/好友房/补位/金币经济）、平台级 `currency.reliefThresholdCoins`。斗地主与跑得快各读各的键；旧键只读回退。
 
@@ -1522,7 +1523,7 @@ type MatchPredicate = (a: MatchTicket, b: MatchTicket) => boolean; // true = 允
 
 **可用性门禁（片②）**：补位**之前**先问一次 `robot.availability`（room → robot；超时 / 不重试 / fail-open 见 §4.3 表）。只在需要机器人的那一支生效（不足 3 人且 30s 窗口到点；人已够 3 个时**不参与**）：
 
-- 开关 `game.doudizhu.robot.ruleFallback`（配置中心 89 键之一，§7.5；默认 `true`）**ON** ⇒ 恒「能给」（**不探测** DouZero）；
+（配置中心 90 键之一，§7.5；默认 `true`）**ON** ⇒ 恒「能给」（**不探测** DouZero）；
 - 开关 **OFF** ⇒ robot-service 探 DouZero 的 `GET /health`（**1s 超时 / 缓存 5s**）并读模型清单：三档模型齐备才算「能给」；非 200 / 连接被拒 / **超时** / 缺任一档 ⇒ 「不能给」；
 - 「不能给」⇒ 对「自己 30s 窗口已到点」的等待者判失败 ⇒ `12007`「当前无匹配的玩家」（§8.4 的 ③）；
 - 🔴 **fail-open**：问不到（RPC 错 / 超时 / 缺字段 / 旧版不认识这个 pattern）**一律按「能给」**—— 只有明确的 `canProvide:false` 才触发失败路径；
@@ -1680,7 +1681,7 @@ MVP 不实现货币；机器人不计分，仅记录对局。虚拟经济隔离�
 ### 10.3 MySQL
 
 - `users` 表（user-service，§7.2）。
-- `platform_config` 表（config-service，§7.5）：**89 键配置（73 active + 16 只读旧键）**的**持久真源**（含每键 `version` 单调列）；迁移表名独立（`migrations_config`，防与 user-service 共写同名 `migrations`）。
+- `platform_config` 表（config-service，§7.5）：**90 键配置（74 active + 16 只读旧键）**的**持久真源**（含每键 `version` 单调列）；迁移表名独立（`migrations_config`，防与 user-service 共写同名 `migrations`）。
 - `pay_channel_config` 表（config-service，§7.5「渠道凭据第二键空间」）：支付渠道**六项凭据**的**加密存储**（`key` 主键 / **`value_enc` = AES-256-GCM 密文**（`v1:` 前缀）/ `fingerprint` = 明文规范化值的 `sha256[:12]` / `updated_at` / `updated_by`；迁移 `1792000000000-PayChannelConfig.ts`）。**独立于** `platform_config` —— 结构上不进广播快照；密文列只有 config-service 的主钥能解（§7.5）。
 - `notify_channel_config` 表（config-service，§7.5「通知通道键空间」）：通知**九键**（邮件五 + IM 四）的**加密存储**（形状逐字同 `pay_channel_config`：`key` 主键 / **`value_enc` = AES-256-GCM 密文**（`v1:` 前缀）/ `fingerprint` = 明文规范化值的 `sha256[:12]` / `updated_at` / `updated_by`；迁移 `1793000000000-NotifyChannelConfig.ts`）。**独立于** `platform_config` —— 结构上不进广播快照；密文列由 config-service 的主钥（复用 `PAY_CONFIG_ENC_KEY`）解密（§7.5）。
 - `game_records` / `game_record_players` 表（user-service，§7.6）：对局记录（迁移 `1789400000000-GameRecords.ts`；唯一键 `(room_code, game_version)`；保留期 = `record.retentionDays`，清理任务见 §7.6）。
@@ -2161,7 +2162,7 @@ docker compose up -d && docker compose ps                     # 开发形态 11 
 
 ### 15.2 配置
 
-- **部署形态**配置全部来自环境变量（§2.3），**禁止硬编码端口与地址**；**运行期可调**参数（89 键配置（73 active + 16 只读旧键）：开关 / 比例 / 周期 / 模型映射 / 底分档位 / 好友房开关 / 免费与金币场开关 / 免费与金币场机器人补位开关 / 无机器人匹配总等待上限 / 保留期 / 注册赠送 / 门槛倍率 / 抽水 / 救助 / 风控〔谓词开关 · 检测阈值 · 设备窗口与保留 · 自动限流〕/ 支付〔充值提现两开关 · 比率 · 档位表 · 三项限额 · 两周期〕/ 广告〔救助广告位 adpid〕/ 客户端接入〔App/H5 两开关〕/ 记牌器〔总开关 + 两价格〕）来自**配置中心**（§7.5）—— 改它走 `/admin` 管理页，**不走 env**（基础设施类 env 不进配置中心，§7 同族裁决）。
+- **部署形态**配置全部来自环境变量（§2.3），**禁止硬编码端口与地址**；**运行期可调**参数（90 键配置（74 active + 16 只读旧键）：开关 / 比例 / 周期 / 模型映射 / 底分档位 / 好友房开关 / 免费与金币场开关 / 免费与金币场机器人补位开关 / 无机器人匹配总等待上限 / 保留期 / 注册赠送 / 门槛倍率 / 抽水 / 救助 / 风控〔谓词开关 · 检测阈值 · 设备窗口与保留 · 自动限流〕/ 支付〔充值提现两开关 · 比率 · 档位表 · 三项限额 · 两周期〕/ 广告〔救助广告位 adpid〕/ 客户端接入〔App/H5 两开关〕/ 记牌器〔总开关 + 两价格〕）来自**配置中心**（§7.5）—— 改它走 `/admin` 管理页，**不走 env**（基础设施类 env 不进配置中心，§7 同族裁决）。
 - 密钥不写入仓库；`JWT_SECRET` 在 `docker-compose.yml` 中仅有开发默认值。
 
 ### 15.3 日志与追踪

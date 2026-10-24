@@ -86,7 +86,7 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
  *  - 每次请求都查库（`list()` 不缓存）—— 缓存会把「后台改了要生效」变成「改了要重启」。
  *
  * ⚠️ 缺行的兜底（**只在这里**，RPC 快照不兜）：子集形状恒二十一键、缺行取**与种子一致的默认**
- * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；六十五键齐全由迁移
+ * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；90 键齐全由迁移
  * 种子保证，缺行只可能是建库事故 —— 此时「空档位 + 入口按种子」的既有客户端 fail-safe
  * 语义（§2.8）比 500 更稳。值的**合法性**由写入口的 `parseConfigValue` 保证；档位表在读取时
  * 复用同一个 parser 复核（坏值 ⇒ 空表，不 500）。
@@ -131,6 +131,8 @@ export class ClientConfigController {
       undefined,
       false,
     );
+    // 玩法开放开关（2026-10-24）：斗地主总开关；缺键 ⇒ true（旧库/旧快照保持现状）。
+    const ddzEnabled = readBoolean(byKey, 'game.doudizhu.enabled', undefined, true);
 
     // 斗地主（旧键回退）与跑得快（代码默认）的场次/好友房/门槛。
     const ddzFree = readBoolean(
@@ -161,10 +163,9 @@ export class ClientConfigController {
     const pdkGold = readBoolean(byKey, 'game.paodekuai.goldRoomEnabled', undefined, false);
     const pdkFriend = readBoolean(byKey, 'game.paodekuai.friendRoomEnabled', undefined, false);
     const pdkEntryMultiplier = readInt(byKey, 'game.paodekuai.entryMultiplier', undefined, 10);
-
     const games: Record<'doudizhu' | 'paodekuai', ClientGameConfig> = {
       doudizhu: {
-        enabled: true,
+        enabled: ddzEnabled,
         supportedPlayerCounts: [...GAME_META.doudizhu.supportedPlayerCounts],
         defaultPlayerCount: GAME_META.doudizhu.defaultPlayerCount,
         baseScoreLevels: levels,

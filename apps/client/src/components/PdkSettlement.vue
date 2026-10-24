@@ -47,7 +47,6 @@ const rows = computed(() =>
   [...props.settlement.scoreChanges].sort((a, b) => a.seat - b.seat),
 );
 const winners = computed(() => new Set(props.settlement.winnerSeats));
-const baoben = computed(() => new Set(props.settlement.baobenSeats));
 
 function nameOf(seat: number): string {
   if (seat === store.mySeat) return '我';
@@ -73,30 +72,29 @@ function isMe(seat: number): boolean {
       </view>
     </view>
 
-    <view class="pdk-settlement__table">
-      <view
-        v-for="row in rows"
-        :key="row.seat"
-        class="pdk-settlement__row"
-        :class="{
-          'pdk-settlement__row--me': isMe(row.seat),
-          'pdk-settlement__row--winner': winners.has(row.seat),
-        }"
-      >
-        <text class="pdk-settlement__row-name">{{ nameOf(row.seat) }}</text>
-        <text class="pdk-settlement__row-rank">{{
-          winners.has(row.seat) ? "第 1 名" : ""
-        }}</text>
-        <text class="pdk-settlement__row-remaining">
-          剩余 {{ settlement.remaining[row.seat] ?? 0 }} 张
-        </text>
-        <text v-if="baoben.has(row.seat)" class="pdk-settlement__row-baoben">保本</text>
-        <text class="pdk-settlement__delta">{{
-          row.delta > 0 ? `+${row.delta}` : String(row.delta)
-        }}</text>
-        <text v-if="showGold" class="pdk-settlement__gold">{{ goldCell(row.seat) }}</text>
-      </view>
-    </view>
+    <table class="pdk-settlement__table">
+      <tbody>
+        <tr
+          v-for="row in rows"
+          :key="row.seat"
+          class="pdk-settlement__row"
+          :class="{
+            'pdk-settlement__row--me': isMe(row.seat),
+            'pdk-settlement__row--winner': winners.has(row.seat),
+          }"
+        >
+          <td class="pdk-settlement__row-name" width="140">{{ nameOf(row.seat) }}</td>
+          <td class="pdk-settlement__row-rank" width="100">{{
+            winners.has(row.seat) ? "第 1 名" : ""
+          }}</td>
+          <td class="pdk-settlement__row-remaining" width="140">剩余 {{ settlement.remaining[row.seat] ?? 0 }} 张</td>
+          <td class="pdk-settlement__delta" width="80">{{
+            row.delta > 0 ? `+${row.delta}` : String(row.delta)
+          }}</td>
+          <td v-if="showGold" class="pdk-settlement__gold" width="100">{{ goldCell(row.seat) }}</td>
+        </tr>
+      </tbody>
+    </table>
 
     <view class="pdk-settlement__actions">
       <button type="button" class="btn btn--primary pdk-settlement__again" @click="emit('again')">
@@ -112,17 +110,31 @@ function isMe(seat: number): boolean {
 <style scoped lang="scss">
 @import "../styles/animations.scss";
 
+/**
+ * 结算面板居中浮层（仿 Settlement.vue 的正确写法）。
+ *
+ * ⚠️ 不能用 `top:50% + left:50% + transform:translate(-50%,-50%)` ——
+ * `anim-settlement-in` 带 `animation-fill-mode: both`，动画会**一直持有最终的 transform**，
+ * 覆盖掉 translate(-50%,-50%)，面板就跑到右下角去了。
+ * ⇒ 用**不依赖 transform** 的居中法：`inset:0` + `margin:auto` + 确定宽度。
+ */
 .pdk-settlement {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: $ftl-space-4;
-  min-width: 520px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: $ftl-settlement-w;
+  max-width: calc(100% - #{$ftl-space-6});
+  height: fit-content;
+  max-height: calc(100% - #{$ftl-space-6});
+  margin: auto;
   padding: $ftl-space-6;
-  transform: translate(-50%, -50%);
+  overflow-y: auto;
 }
 .pdk-settlement__head {
   display: flex;
@@ -131,12 +143,13 @@ function isMe(seat: number): boolean {
   align-items: center;
 }
 .pdk-settlement__title {
-  font-size: $ftl-font-lg;
+  font-size: $ftl-font-xl;
   color: $ftl-color-gold-light;
+  font-weight: 700;
 }
 .pdk-settlement__sub,
 .pdk-settlement__tags {
-  font-size: $ftl-font-sm;
+  font-size: $ftl-font-md;
   color: $ftl-color-text-secondary;
 }
 .pdk-settlement__tags {
@@ -144,41 +157,50 @@ function isMe(seat: number): boolean {
   gap: $ftl-space-3;
 }
 .pdk-settlement__table {
-  display: flex;
-  flex-direction: column;
-  gap: $ftl-space-2;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 $ftl-space-2;
 }
+/**
+ * 结算行：原生 HTML <table> + <td width> 绝对可靠。
+ *
+ * uni-app H5 的 <uni-view>/<uni-text> custom element 对 flex-basis、
+ * grid-template-columns、inline style width 全部不可靠（computed 正确
+ * 但布局引擎忽略）。HTML 原生 <table> 布局是浏览器级别的，任何框架无法过滤。
+ */
 .pdk-settlement__row {
-  display: flex;
-  align-items: center;
-  gap: $ftl-space-4;
-  padding: $ftl-space-2 $ftl-space-3;
-  border-radius: $ftl-radius-md;
+  font-size: $ftl-font-md;
 }
-.pdk-settlement__row--me {
+.pdk-settlement__row td {
+  padding: $ftl-space-3 $ftl-space-2;
+  border-radius: $ftl-radius-sm;
+  white-space: nowrap;
+}
+.pdk-settlement__row--me td {
   background: rgb(255 255 255 / 8%);
 }
 .pdk-settlement__row--winner .pdk-settlement__row-name {
   color: $ftl-color-gold-light;
 }
 .pdk-settlement__row-name {
-  min-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pdk-settlement__row-rank {
-  min-width: 64px;
   color: $ftl-color-gold-light;
+  font-weight: 700;
 }
-.pdk-settlement__row-remaining,
-.pdk-settlement__row-baoben {
+.pdk-settlement__row-remaining {
+  text-align: center;
   font-size: $ftl-font-sm;
   color: $ftl-color-text-secondary;
 }
 .pdk-settlement__delta {
-  margin-left: auto;
+  text-align: right;
   font-weight: 700;
 }
 .pdk-settlement__gold {
-  min-width: 96px;
   text-align: right;
 }
 .pdk-settlement__actions {
@@ -188,10 +210,47 @@ function isMe(seat: number): boolean {
 }
 .btn {
   @include ftl-btn;
+  /* 次按钮：冷灰玻璃底 + 弱化白字（同 Settlement.vue）。
+     ⚠️ ftl-btn 默认 color: $ftl-color-text（深黑）在深蓝面板上对比度为 0 ——
+        必须覆盖成弱化白字 + 冷灰玻璃底，才能在深色面板上看清。 */
+  border-color: rgba(160, 170, 190, 0.5);
+  border-radius: $ftl-radius-md;
+  background: linear-gradient(180deg, rgba(120, 130, 150, 0.35), rgba(80, 90, 110, 0.5));
+  color: rgba($ftl-color-on-primary, 0.7);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  transition: transform 0.1s, box-shadow 0.1s, border-color 0.15s;
+  background-image: none;
+  &:hover {
+    border-color: rgba(180, 190, 210, 0.7);
+    color: rgba($ftl-color-on-primary, 0.85);
+  }
+  &:active {
+    transform: translateY(2px);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
 }
 .btn--primary {
   border-color: $ftl-color-gold-deep;
   background: $ftl-color-gold;
   color: $ftl-color-on-primary;
+  border-radius: $ftl-radius-md;
+  box-shadow:
+    0 6px 0 $ftl-color-gold-deep,
+    0 8px 20px rgb(255 152 0 / 0.45),
+    inset 0 2px 0 rgb(255 255 255 / 0.6),
+    inset 0 -2px 0 rgb(0 0 0 / 0.1);
+  transition: transform 0.1s, box-shadow 0.1s;
+  background-image: none;
+  &:hover {
+    transform: translateY(-2px);
+  }
+  &:active {
+    transform: translateY(4px);
+    box-shadow:
+      0 2px 0 $ftl-color-gold-deep,
+      0 4px 8px rgb(255 152 0 / 0.35),
+      inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
 }
 </style>

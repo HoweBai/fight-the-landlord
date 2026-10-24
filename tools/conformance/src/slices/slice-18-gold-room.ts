@@ -5,7 +5,7 @@
  *  ⓪ 起手自证 + 清源：五个容器 healthy（room/user/currency/gateway/config）+ **金币队列清源**
  *     （`match:queue:gold:*` 与 gold 票的 `match:meta:*`——E 组的补位谓词是「队里恰好这两个
  *     真人」，任何上一轮崩溃留下的陈旧票都会把第三个座位吃掉）；
- *  A 配置：`/api/config` 恰 21 键 + 内部键零泄漏 + 管理面 65 键种子 + 改金开关后生效；
+ *  A 配置：`/api/config` 恰 21 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
  *  B 开关：gold 关 ⇒ 12010、开 ⇒ 不再 12010；free 关 ⇒ random 12010、恢复；
  *  C 门槛：0 余额 ⇒ 14003（含所需金额）→ 管理面补足 ⇒ 入队成功；
  *  D 取消排队（C21）：入队 → 探针（ZSCORE/meta 指纹，`slice-12:438-473` 先例）→ unmatch →
@@ -1023,7 +1023,7 @@ export async function runSlice18(): Promise<Checks> {
     }
     const adminCfg = await adminGetConfig<AdminConfigData>(admin);
     const adminKeys = Object.keys(adminCfg.body?.data?.config ?? {});
-    checks.eq(adminKeys.length, CONFIG_KEYS.length, 'A 管理面键总数 = protocol CONFIG_KEYS.length');
+    checks.eq(adminKeys.length, CONFIG_KEYS.length, 'A 管理面键总数 = CONFIG_KEYS.length（含跑得快 14 键与斗地主总开关）');
     const missingNewKeys = NEW_KEYS.filter((k) => !adminKeys.includes(k));
     checks.that(
       missingNewKeys.length === 0,

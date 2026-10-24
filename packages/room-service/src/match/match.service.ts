@@ -825,6 +825,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     /** 片② D5/J20 + 风控 ⚙️8：**这一轮**的持有对象（`scanAndMatchInner` 建在 for 之上、按引用透传）。 */
     round: MatchRound,
   ): Promise<void> {
+    // 关闭的玩法：暂停匹配（票保留、不建组、不逐 tick 抛 12012）——重新开放后按原逻辑继续。
+    if (!this.configCache.gameEnabled(queue.gameType)) return;
     const { mode, playerCount, baseScore, region } = queue;
     const raw = await this.redis.zrange(queue.key, 0, -1, 'WITHSCORES');
     if (raw.length === 0) return;

@@ -309,9 +309,24 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return typeof value === 'boolean' ? value : false;
   }
 
-  /** 玩法是否开放（斗地主恒真；跑得快读运营开关）。 */
+  /** 玩法开放开关（2026-10-24）：斗地主总开关；缺键 ⇒ true（旧库/旧快照保持现状）。 */
+  doudizhuEnabled(): boolean {
+    const value = this.snapshot?.['game.doudizhu.enabled']?.value;
+    return typeof value === 'boolean' ? value : true;
+  }
+
+  /** 玩法是否开放（两个玩法都读运营开关）。 */
   gameEnabled(gameType: GameType): boolean {
-    return gameType === 'paodekuai' ? this.paodekuaiEnabled() : true;
+    switch (gameType) {
+      case 'doudizhu':
+        return this.doudizhuEnabled();
+      case 'paodekuai':
+        return this.paodekuaiEnabled();
+      default: {
+        const exhaustive: never = gameType; // 新增玩法时这里编译失败，防漏接
+        return exhaustive;
+      }
+    }
   }
 
   /**

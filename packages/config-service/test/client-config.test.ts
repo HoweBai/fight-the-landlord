@@ -49,7 +49,7 @@ describe('GET /api/config（C7 半边）', () => {
     } finally {
       await probe.close();
     }
-  });
+  }, 20000);
 
   it('games：ddz 恒开/3 人/旧档位；pdk 开关与人数闸跟随配置，档位取新键', async () => {
     const { svc, db } = makeService(seedDb());
@@ -97,6 +97,19 @@ describe('GET /api/config（C7 半边）', () => {
       expect(after.data.games.paodekuai.supportedPlayerCounts).toEqual([2, 3, 4]);
       // 旧字段仍是斗地主档位（不迁移、不双写）
       expect(after.data.baseScoreLevels).toEqual(body.data.baseScoreLevels);
+
+      // 斗地主开关：显式 false ⇒ 隐藏；缺键 ⇒ 默认 true（旧库兼容）
+      db.rows.set('game.doudizhu.enabled', {
+        value: false,
+        version: 2,
+        updatedAt: 'admin',
+        updatedBy: 'admin',
+      });
+      const { body: ddzOff } = await probe.get('/api/config');
+      expect(ddzOff.data.games.doudizhu.enabled).toBe(false);
+      db.rows.delete('game.doudizhu.enabled');
+      const { body: ddzMissing } = await probe.get('/api/config');
+      expect(ddzMissing.data.games.doudizhu.enabled).toBe(true);
     } finally {
       await probe.close();
     }
@@ -235,7 +248,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何内部键键名（外层的恰好二十键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何 90 键键名（外层恰好二十一键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);

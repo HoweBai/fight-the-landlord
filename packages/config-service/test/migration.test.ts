@@ -57,12 +57,13 @@ import { CardCounterSeed1795700000000 } from '../src/migrations/1795700000000-Ca
 import { CardCounterPrices1795800000000 } from '../src/migrations/CardCounterPrices1795800000000';
 import { MultiGameConfigSeed1796400000000 } from '../src/migrations/1796400000000-MultiGameConfigSeed';
 import {
-  SplitGameConfig1796500000000,
+  SplitGameConfig1796600000000,
   RELIEF_THRESHOLD_KEY,
   SPLIT_CONFIG_PAIRS,
   SPLIT_PDK_SEEDS,
   computeReliefThreshold,
-} from '../src/migrations/1796500000000-SplitGameConfig';
+} from '../src/migrations/1796600000000-SplitGameConfig';
+import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -1507,7 +1508,7 @@ describe('MultiGameConfigSeed1796400000000：跑得快 14 键种子', () => {
  * 配置平行化（2026-10-24 / spec §5.2）：JS 驱动复制 + 跑得快种子 + 救助门槛现算。
  * 用内存假库真正执行 `up()` 语义（INSERT IGNORE 幂等），不是只记 SQL 字符串。
  */
-describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
+describe('SplitGameConfig1796600000000：配置平行化迁移', () => {
   class SplitFakeRunner {
     readonly rows = new Map<string, { value: unknown; version: number }>();
     readonly sqls: string[] = [];
@@ -1576,7 +1577,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
 
   it('up()：16 个旧值/版本逐字复制；旧行不动；PDK 跑保守种子；救助门槛现算', async () => {
     const db = seeded();
-    await new SplitGameConfig1796500000000().up(asRunner(db));
+    await new SplitGameConfig1796600000000().up(asRunner(db));
 
     for (const [oldKey, newKey] of SPLIT_CONFIG_PAIRS) {
       expect(db.rows.get(newKey), newKey).toEqual(db.rows.get(oldKey));
@@ -1591,7 +1592,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
 
   it('up() 幂等：第二次执行不改任何新键', async () => {
     const db = seeded();
-    const migration = new SplitGameConfig1796500000000();
+    const migration = new SplitGameConfig1796600000000();
     await migration.up(asRunner(db));
     const snapshot = new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]));
     await migration.up(asRunner(db));
@@ -1601,7 +1602,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
   it('预置新键（值与旧值不同）⇒ up() 保留，不覆盖运营已改的值', async () => {
     const db = seeded();
     db.rows.set('game.doudizhu.friendRoomEnabled', { value: true, version: 9 });
-    await new SplitGameConfig1796500000000().up(asRunner(db));
+    await new SplitGameConfig1796600000000().up(asRunner(db));
     expect(db.rows.get('game.doudizhu.friendRoomEnabled')).toEqual({ value: true, version: 9 });
     // 未预置的新键仍按旧值复制
     expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: false, version: 9 });
@@ -1609,7 +1610,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
 
   it('旧行缺失：新键用 spec §4.3 兜底默认；不因缺失而漏种', async () => {
     const db = new SplitFakeRunner();
-    await new SplitGameConfig1796500000000().up(asRunner(db));
+    await new SplitGameConfig1796600000000().up(asRunner(db));
     expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: true, version: 1 });
     expect(db.rows.get('game.doudizhu.friendRoomEnabled')).toEqual({ value: false, version: 1 });
     expect(db.rows.get('game.levels.doudizhu')?.value).toEqual([
@@ -1624,7 +1625,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
   it('down()：删除本迁移新增的 24 键，旧键全部保留', async () => {
     const db = seeded();
     const before = new Map(db.rows);
-    const migration = new SplitGameConfig1796500000000();
+    const migration = new SplitGameConfig1796600000000();
     await migration.up(asRunner(db));
     await migration.down(asRunner(db));
 
@@ -1644,7 +1645,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
       version: 3,
     });
     db.rows.set('currency.entryMultiplier', { value: '20', version: 3 });
-    await new SplitGameConfig1796500000000().up(asRunner(db));
+    await new SplitGameConfig1796600000000().up(asRunner(db));
     expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 100, version: 3 });
   });
 
@@ -1657,9 +1658,66 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
     expect(computeReliefThreshold([{ name: 'A', baseScore: 15 }], '20')).toBe(150);
   });
 
-  it('形状（name/up/down）；迁移号 1796500000000 晚于多玩法种子且全仓唯一', () => {
-    const migration = new SplitGameConfig1796500000000();
-    expect(migration.name).toBe('SplitGameConfig1796500000000');
+  it('形状（name/up/down）；迁移号 1796600000000 晚于多玩法种子且全仓唯一', () => {
+    const migration = new SplitGameConfig1796600000000();
+    expect(migration.name).toBe('SplitGameConfig1796600000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new MultiGameConfigSeed1796400000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796600000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/SplitGameConfig1796600000000']);
+  });
+});
+
+describe('DdzEnabledSeed1796500000000：斗地主总开关种子', () => {
+  it('up()：恰一条 INSERT IGNORE、种子 true、version=1、updated_by=seed', async () => {
+    const statements: string[] = [];
+    await new DdzEnabledSeed1796500000000().up(fakeRunner(statements));
+    const sql = flatten(statements.join('\n'));
+
+    expect(sql).toContain(
+      'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
+    );
+    expect(sql.match(/INSERT IGNORE INTO `platform_config`/g)).toHaveLength(1);
+    expect(sql).toContain("('game.doudizhu.enabled', 'true', 1, NOW(3), 'seed')");
+    expect(statements).toHaveLength(1);
+  });
+
+  it('down()：只删该键（不碰跑得快键）', async () => {
+    const statements: string[] = [];
+    await new DdzEnabledSeed1796500000000().down(fakeRunner(statements));
+    const sql = flatten(statements.join('\n'));
+
+    expect(sql.match(/DELETE FROM/g)).toHaveLength(1);
+    expect(sql).toContain("'game.doudizhu.enabled'");
+    expect(sql).not.toContain("'game.paodekuai.enabled'");
+    expect(statements).toHaveLength(1);
+  });
+
+  it('幂等：重放 up() 两次都走 INSERT IGNORE、不抛错', async () => {
+    const statements: string[] = [];
+    const migration = new DdzEnabledSeed1796500000000();
+    await migration.up(fakeRunner(statements));
+    await migration.up(fakeRunner(statements));
+    expect(statements.filter((s) => s.includes('INSERT IGNORE'))).toHaveLength(2);
+  });
+
+  it('形状；迁移号 1796500000000 晚于 1796400000000 且全仓唯一', () => {
+    const migration = new DdzEnabledSeed1796500000000();
+    expect(migration.name).toBe('DdzEnabledSeed1796500000000');
     expect(typeof migration.up).toBe('function');
     expect(typeof migration.down).toBe('function');
 
@@ -1677,6 +1735,6 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
         }
       }
     }
-    expect(hits).toEqual(['config-service/SplitGameConfig1796500000000']);
+    expect(hits).toEqual(['config-service/DdzEnabledSeed1796500000000']);
   });
 });

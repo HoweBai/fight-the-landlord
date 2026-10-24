@@ -272,6 +272,24 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
     expect(wrapper.findAll('.lobby__session').map((n) => flat(n.text()))).toEqual(['免费场']);
   });
 
+  it('斗地主关闭 ⇒ 只剩跑得快；两个都关 ⇒ 空态 + 零档位卡（右栏整块不渲染）', async () => {
+    const pdkOnly = gamesConfig(true);
+    pdkOnly.data.games.doudizhu.enabled = false;
+    const one = mountLobby([], pdkOnly);
+    await flushPromises();
+    expect(one.wrapper.findAll('.lobby__mode-name').map((n) => flat(n.text()))).toEqual(['跑得快']);
+    expect(one.wrapper.findAll('.lobby__level').length, '跑得快档位仍渲染').toBeGreaterThan(0);
+
+    const allOff = gamesConfig(false);
+    allOff.data.games.doudizhu.enabled = false;
+    const none = mountLobby([], allOff);
+    await flushPromises();
+    expect(flat(none.wrapper.find('.lobby__modes-empty').text())).toBe('暂无开放的玩法，请稍后再试');
+    expect(none.wrapper.findAll('.lobby__mode')).toHaveLength(0);
+    expect(none.wrapper.findAll('.lobby__level'), '没有可进入的玩法 ⇒ 零张档位卡').toHaveLength(0);
+    expect(none.wrapper.find('.lobby__levels-empty').exists(), '整块不渲染，不是错误/加载态').toBe(false);
+  });
+
   it('切到跑得快：写 activeMode；当前底分不在新玩法档位表 ⇒ 回落到第一档', async () => {
     const { wrapper, store } = mountLobby([], gamesConfig(true));
     await flushPromises();
