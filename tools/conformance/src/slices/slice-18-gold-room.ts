@@ -1033,14 +1033,22 @@ export async function runSlice18(): Promise<Checks> {
       entryMultiplier: adminCfg.body?.data?.config?.['game.doudizhu.entryMultiplier']?.value,
       rakePercent: adminCfg.body?.data?.config?.['game.doudizhu.rakePercent']?.value,
       reliefAmount: adminCfg.body?.data?.config?.['currency.reliefAmount']?.value,
+      reliefThresholdCoins:
+        adminCfg.body?.data?.config?.['currency.reliefThresholdCoins']?.value,
     };
     checks.eq(
       JSON.stringify(sixValues),
-      JSON.stringify({ entryMultiplier: 10, rakePercent: 0, reliefAmount: RELIEF_AMOUNT_SEED }),
-      'A 三枚稳定种子逐字（entryMultiplier=10 / rakePercent=0 / reliefAmount=200）',
+      JSON.stringify({
+        entryMultiplier: 10,
+        rakePercent: 0,
+        reliefAmount: RELIEF_AMOUNT_SEED,
+        reliefThresholdCoins: 150,
+      }),
+      'A 四枚稳定种子逐字（entryMultiplier=10 / rakePercent=0 / reliefAmount=200 / reliefThresholdCoins=150）',
     );
     const entryMultiplier = Number(sixValues.entryMultiplier);
     const needed = MATCH_BASE_SCORE * entryMultiplier;
+    const reliefThreshold = Number(sixValues.reliefThresholdCoins);
 
     // 2026-10-04 用户裁决后**种子即 true** ⇒ 本 PUT 是「**确保期望态**」（自管理：dev 库
     // 可能带着旧库/上一轮留下的 false）—— 同时保留「管理面 → 客户端面生效」的链路断言。
@@ -1390,7 +1398,7 @@ export async function runSlice18(): Promise<Checks> {
       g3.status === 200 && g3.body?.code === ErrCode.OK &&
         g3.body.data?.grantedToday === true && g3.body.data?.eligible === false &&
         g3.body.data?.reason === '今天已经领过了' && g3.body.data?.balance === RELIEF_AMOUNT_SEED,
-      `G 已领优先于余额闸：发放后余额 ${RELIEF_AMOUNT_SEED} ≥ 门槛（15×entryMultiplier）仍报「今天已经领过了」而非「余额充足」—— 实测 ${JSON.stringify(g3.body?.data)}`,
+      `G 已领优先于余额闸：发放后余额 ${RELIEF_AMOUNT_SEED} ≥ 门槛（${reliefThreshold}）仍报「今天已经领过了」而非「余额充足」—— 实测 ${JSON.stringify(g3.body?.data)}`,
     );
 
     // ── replayed：先 GET 签发、后 RPC 预置同锚流水、再投回调（账本先行判重放）──
@@ -1472,10 +1480,10 @@ export async function runSlice18(): Promise<Checks> {
         g6.body.data?.eligible === true && g6.body.data?.grantedToday === false && claimBalanceOk.length > 0,
       `G balance_ok 组：eligible GET 签发（实测 ${g6.status} ${JSON.stringify(g6.body?.data)}）`,
     );
-    const topUpG = await adminAdjust(admin, userG4.id, needed, AID('g-topup'));
+    const topUpG = await adminAdjust(admin, userG4.id, reliefThreshold, AID('g-topup'));
     checks.that(
-      topUpG.status === 200 && topUpG.code === ErrCode.OK && topUpG.balanceAfter === needed,
-      `G 中途充值 +${needed}（= 15×entryMultiplier 门槛）⇒ 200/code 0/balanceAfter=${needed}（实测 ${topUpG.status}/${topUpG.code}/${topUpG.balanceAfter}）`,
+      topUpG.status === 200 && topUpG.code === ErrCode.OK && topUpG.balanceAfter === reliefThreshold,
+      `G 中途充值 +${reliefThreshold}（= 平台救助门槛）⇒ 200/code 0/balanceAfter=${reliefThreshold}（实测 ${topUpG.status}/${topUpG.code}/${topUpG.balanceAfter}）`,
     );
     const balOkRes = await getNotifyViaEdge(signedParams(callbackFields(userG4, claimBalanceOk, 'balance-ok'), 'G 中途充值样本'));
     checks.that(
@@ -1490,7 +1498,7 @@ export async function runSlice18(): Promise<Checks> {
     checks.that(
       g7.status === 200 && g7.body?.code === ErrCode.OK &&
         g7.body.data?.reason === '余额充足，无需救助' && g7.body.data?.eligible === false,
-      `G GET 裁决余额闸 reason 面（余额 ${needed} ≥ 门槛）⇒「余额充足，无需救助」—— 实测 ${JSON.stringify(g7.body?.data)}`,
+      `G GET 裁决余额闸 reason 面（余额 ${reliefThreshold} ≥ 门槛）⇒「余额充足，无需救助」—— 实测 ${JSON.stringify(g7.body?.data)}`,
     );
 
     // ── G 终态：切回关（收尾组的 relief=false 读数自证依赖本组复原）────────────

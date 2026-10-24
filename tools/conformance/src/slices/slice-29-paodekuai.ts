@@ -33,6 +33,13 @@ async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
   //    下面的 paodekuai 探针必须用**另一个**账号（复用会先撞 12011）。
   const opener = await registerUser(88);
   await setFriendRooms(true, opener.accessToken);
+  // 平行化：跑得快好友房有自己的玩法级开关（种子 false）；只开斗地主不够。
+  const pdkFriendOn = await adminPutConfig('game.paodekuai.friendRoomEnabled', true, admin);
+  if (pdkFriendOn.body?.code !== ErrCode.OK) {
+    throw new ConformanceError(
+      `管理面开启跑得快好友房失败：HTTP ${pdkFriendOn.status} ${JSON.stringify(pdkFriendOn.body)}`,
+    );
+  }
   const put = await adminPutConfig(PDK_ENABLED_KEY, true, admin);
   if (put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(
@@ -66,6 +73,10 @@ async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
       // ⚠️ 先留 2s 让广播失效落地：`setFriendRooms(false)` 的首探若撞上**陈旧缓存**
       //    会真的建出一间房，此后同账号只能读到 12011、永远等不到 12006。
       await sleep(2000);
+      const pdkFriendOff = await adminPutConfig('game.paodekuai.friendRoomEnabled', false, admin);
+      if (pdkFriendOff.body?.code !== ErrCode.OK) {
+        throw new ConformanceError(`还原跑得快好友房失败：${JSON.stringify(pdkFriendOff.body)}`);
+      }
       const closer = await registerUser(91);
       await setFriendRooms(false, closer.accessToken);
       info('跑得快开关与好友房开关已还原为 false');

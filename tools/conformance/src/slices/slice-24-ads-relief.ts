@@ -159,7 +159,7 @@ const PROBE_ADPID = 's24ProbeAdpid';
 /** 第 41 键（管理面键名）/ 客户端裸名（第 15 键）。 */
 const AD_KEY_CONFIG = 'ad.reliefAdpid';
 const AD_KEY_CLIENT = 'reliefAdpid';
-/** 救助金额种子（§12.1 第 17 键缺省 200——④ 中途充值的「门槛之上」读数 = 200 ≥ 15×10=150）。 */
+/** 救助金额种子（§12.1 第 17 键缺省 200——④ 中途充值的「门槛之上」读数应高于平台门槛 `currency.reliefThresholdCoins`）。 */
 const RELIEF_AMOUNT_SEED = 200;
 /** `/api/config` 的**恰好**键集（排序后逐字；记牌器收费片起 = 20 键——阶段 2 已删除派生字段 `entryFeePercents`；
  *  广告片起 `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间）。 */
@@ -839,7 +839,7 @@ export async function runSlice24(): Promise<Checks> {
     const d1 = r1.body?.data as ReliefData;
     checks.that(d1?.eligible === true && d1?.grantedToday === false, `③ eligible=true / grantedToday=false —— 实际 ${JSON.stringify(d1)}`);
     checks.eq(d1?.amount, RELIEF_AMOUNT_SEED, '③ amount = 200 种子（响应恒在场）');
-    checks.eq(d1?.balance, 0, '③ 新用户余额 0（< 门槛 15×10=150 ⇒ 走 ⑤ 签发枝）');
+    checks.eq(d1?.balance, 0, '③ 新用户余额 0（< 平台门槛 currency.reliefThresholdCoins ⇒ 走 ⑤ 签发枝）');
     const claim1 = d1?.claim ?? '';
     checks.that(
       /^[A-Za-z0-9_-]{22}$/.test(claim1),
@@ -1014,7 +1014,7 @@ export async function runSlice24(): Promise<Checks> {
     const topUp = await adminAdjust(adminToken, uBalanceOk.id, RELIEF_AMOUNT_SEED, `s24-${TAG}-topup`);
     checks.that(
       topUp.status === 200 && topUp.code === ErrCode.OK && topUp.balanceAfter === RELIEF_AMOUNT_SEED,
-      `④ 中途充值（+${RELIEF_AMOUNT_SEED}）⇒ 余额 ${topUp.balanceAfter} ≥ 门槛 150 —— 实际 HTTP ${topUp.status} code=${topUp.code}`,
+      `④ 中途充值（+${RELIEF_AMOUNT_SEED}）⇒ 余额 ${topUp.balanceAfter} ≥ 平台门槛 —— 实际 HTTP ${topUp.status} code=${topUp.code}`,
     );
     const balOkRes = await getNotifyViaEdge(signedParams(callbackFields(uBalanceOk, claimBalanceOk, 'mid-topup'), '④ 中途充值样本'));
     checks.eq(balOkRes.status, 200, '④ 充值后回调 ⇒ 200（余额闸拒绝；终态 JSON true 止投）');
@@ -1149,7 +1149,7 @@ export async function runSlice24(): Promise<Checks> {
     const dG2 = rG2.body?.data as ReliefData;
     checks.that(
       dG2?.grantedToday === false && dG2?.reason === '余额充足，无需救助',
-      `⑧ **今日** grantedToday 未翻转（时钟当日账本无流水；余额 200 ≥ 150 ⇒ 余额闸面）—— 实际 ${JSON.stringify(dG2)}`,
+      `⑧ **今日** grantedToday 未翻转（时钟当日账本无流水；余额 200 ≥ 平台门槛 ⇒ 余额闸面）—— 实际 ${JSON.stringify(dG2)}`,
     );
     const m8 = readMetricCounts();
     checks.eq(m8.cbAccepted - m7.cbAccepted, 1, '⑧ 回调面 accepted +1');

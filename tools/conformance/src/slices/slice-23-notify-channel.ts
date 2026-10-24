@@ -62,7 +62,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { CONFIG_KEYS, ErrCode, RPC_PATTERNS } from '@fight-the-landlord/protocol';
+import { CLIENT_CONFIG_KEYS, CONFIG_KEYS, ErrCode, RPC_PATTERNS } from '@fight-the-landlord/protocol';
 import { Checks, ConformanceError, info, sleep, step } from '../lib/assert';
 import {
   GATEWAY_URL,
@@ -738,7 +738,7 @@ export async function runSlice23(): Promise<Checks> {
     const cfg15 = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     expectHttp(checks, cfg15 as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/config（玩家面）');
     const cfgData = cfg15.body?.data ?? {};
-    checks.eq(Object.keys(cfgData).length, 20, `② /api/config 恰 21 键 —— 实际 ${Object.keys(cfgData).length}`);
+    checks.eq(Object.keys(cfgData).length, CLIENT_CONFIG_KEYS.length, `② /api/config 恰 ${CLIENT_CONFIG_KEYS.length} 键 —— 实际 ${Object.keys(cfgData).length}`);
     checks.that(!JSON.stringify(cfgData).includes('notify'), '② /api/config 响应无 notify 子串（九键不入客户端面）');
 
     for (const name of RETIRED_ENV_NAMES) {
