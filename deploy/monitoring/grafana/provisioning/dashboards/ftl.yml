@@ -1,0 +1,18 @@
+# deploy/monitoring/grafana/provisioning/dashboards/ftl.yml
+# 面板 provider：指向 **/etc/grafana/dashboards**（**卷外** —— R1：grafana-data 卷挂
+# /var/lib/grafana，面板落卷内会被首启冻结遮蔽）。镜像内 COPY 目标 = 同一路径
+# （Dockerfile.grafana），两边必须逐字一致。
+apiVersion: 1
+
+providers:
+  - name: ftl
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    # 面板随镜像更新（重启后 30s 内重扫）；UI 改动不被回写（面板真源 = 仓库 JSON）
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

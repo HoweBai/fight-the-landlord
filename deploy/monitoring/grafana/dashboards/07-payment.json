@@ -1,0 +1,170 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (result) (rate(payment_notify_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "回调结果速率（ok/bad_sign/amount_mismatch/unknown_order/reopen；bad_sign 尖峰 = PaymentNotifyBadSignSpike 10m>10 · reopen = 迟到重开）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (op) (rate(payment_fundop_retry_total[5m]))",
+          "legendFormat": "重放 {{op}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (result) (rate(payment_refund_total[5m]))",
+          "legendFormat": "退款 {{result}}",
+          "refId": "B"
+        }
+      ],
+      "title": "恢复机器运转量（同锚重放 / 5m）+ 退款生命周期事件（applied/approved/rejected/channel_fail）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_order_pending",
+          "legendFormat": "订单 {{state}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_fundop_pending",
+          "legendFormat": "资金动作 {{op}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_withdraw_pending",
+          "legendFormat": "提现 {{state}}",
+          "refId": "C"
+        }
+      ],
+      "title": "在途水位（订单 pending_pay/paid_uncredited · 资金动作五 op · 提现 pending/approved）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_fundop_oldest_age_seconds",
+          "legendFormat": "资金动作 {{op}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_withdraw_oldest_age_seconds",
+          "legendFormat": "提现 {{state}}",
+          "refId": "B"
+        }
+      ],
+      "title": "最老滞留年龄（s）——PaymentFundOpStalled 分档线 900/3600 · WithdrawBacklog 线 172800（48h）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (api) (rate(payment_outbound_fail_total[5m]))",
+          "legendFormat": "{{api}}",
+          "refId": "A"
+        }
+      ],
+      "title": "渠道出站失败速率（wap_pay/query/refund/close；密钥错配或渠道不可用的第一读数）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "payment_reconcile_diff",
+          "instant": true,
+          "legendFormat": "日自检差异（入账勾稽+锚勾稽；>0 = critical）",
+          "refId": "A"
+        }
+      ],
+      "title": "日自检差异（payment_reconcile_diff；>0 ⇒ PaymentReconcileDiff critical ——处置=设计 §14 R12）",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ftl", "monitoring"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "支付 / Payment",
+  "uid": "ftl-payment",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,15 @@
+{
+  /**
+   * `test/**` 的类型闸（形态照 `packages/api-gateway/tsconfig.test.json`，R541/R542）：
+   * `src/**` 由包的 `lint`（`tsc --noEmit`，NodeNext）独立守着 —— 两把尺子各量各的。
+   * 本包 `test/**` 只被 vitest（esbuild，不做类型检查）执行，没有这份就无人量。
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/**/*", "test/**/*"]
+}

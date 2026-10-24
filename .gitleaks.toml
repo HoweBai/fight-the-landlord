@@ -1,0 +1,38 @@
+# 本仓的 gitleaks 配置（全历史扫描；见 docs/superpowers/specs/2026-10-02-security-scan-*）。
+# 允许项只许是「保留字面量」型豁免（测试夹具 / 文档示例），不许是「修不了」型；每条必须带理由。
+# ⛔ 禁用键四类（名单见规格 C6 判据行——本文件不得出现其字面量）。
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "日志脱敏用例的测试夹具 JWT（redact.test.ts:53 构造的样本，非真密钥、无泄露面）"
+paths = ['''packages/shared/src/logging/redact\.test\.ts$''']
+
+[[allowlists]]
+description = "dev 内部占位 token 字面量（生产 compose 无默认值 ${INTERNAL_SERVICE_TOKEN:-}；文档 curl 示例必须保留该字面量）"
+regexTarget = "match"
+regexes = ['''dev-internal-token-change-in-production''']
+
+[[allowlists]]
+description = "alert-relay 钉钉签名测试夹具的固定向量假 secret（sign/sinks/server 三个测试文件；钉钉加签向量需固定值、不可改运行时拼接；显式假值、非真凭据、无泄露面。复查触发：三文件引入其他高熵字面量或夹具形态变化 ⇒ 重审本条）"
+paths = ['''packages/alert-relay/test/(sign|sinks|server)\.test\.ts$''']
+
+[[allowlists]]
+description = "支付片 T6 支付宝金标夹具的固定测试密钥对（规格 ⚙️14/§12 明示「仅测试密钥对入仓；生产密钥永不入仓、只存服务器 .env」——自造密钥对，仅用于验签/签名金标回放与造假负例，真凭据从未进入仓库。复查触发：该文件引入测试密钥对以外的任何高熵字面量、或夹具形态变化【如改为测试内运行时生成】⇒ 重审本条）"
+paths = ['''packages/payment-service/test/fixtures/alipay/keys\.json$''']
+
+[[allowlists]]
+description = "支付片 T16 conformance 支付宝测试密钥夹具目录（规格 ⚙️14：仅测试密钥对入仓、= T6 keys.json 同一对；stub 只读挂载 /keys 消费 + conformance-stack.sh 就此 base64 注入 payment-service。复查触发：该目录引入测试密钥对以外的任何高熵字面量、或夹具形态变化【如改为运行时生成/额外文件】⇒ 重审本条）"
+paths = ['''tools/conformance/fixtures/alipay-test/''']
+
+[[allowlists]]
+description = "通知通道管理化片 config-service 测试夹具的固定测试主钥与假凭据字面量（⚙️13 dev 主钥字面量、假钉钉加签密钥/假 webhook 值；自造测试值、非真凭据、无泄露面；gitleaks default generic-api-key 误伤。复查触发：四文件引入上述夹具以外的任何高熵字面量、或夹具改为运行期生成 ⇒ 重审本条）"
+paths = ['''packages/config-service/test/notify-channel\.(controller|metrics|service|crypto)\.test\.ts$''']
+
+[[allowlists]]
+description = "支付配置管理化片 config-service 测试夹具同族字面量（固定测试主钥 DEV_KEY_B64/DEV_ENC_KEY_B64 与假 PEM 负例；自造测试值、非真凭据。该片提交时 gitleaks 未随 CI 执行【Actions 额度耗尽】，全历史复核在通知片 T17 补做、就地补列。复查触发：五文件引入测试主钥/假凭据以外的任何高熵字面量、或夹具改为运行期生成 ⇒ 重审本条。⚠️ 广告片 T20（v3.6）邻接扩面：pay/ad-channel 测试族同为该主钥字面量消费面，path 一并覆盖——扩面窗口 = T20 提交前本机全历史实跑 3 条 `generic-api-key`（commit `430e0db` 引入）现身；若无此扩面，本分支 push 后 security-scan job 必红）"
+paths = ['''packages/config-service/test/(config\.rpc|(pay|ad)-channel\.(controller|crypto|service|validators))\.test\.ts$''']
+
+[[allowlists]]
+description = "广告片 T20/T0 回填 conformance 广告回调测试密钥夹具目录（规格 v1.4 §2.4/§5.4：sign=sha256(secret:trans_id) 对称共享密钥；生成器产单枚 callback-secret.txt（32B hex 测试值），conformance 签名面与 conformance-stack.sh 栈种子同源消费、产品侧经第四键空间现拉验签。自造测试密钥、非真凭据、无泄露面。复查触发：该目录引入测试共享密钥以外的任何高熵字面量、或夹具形态变化【如改回非对称密钥/额外文件】⇒ 重审本条）"
+paths = ['''tools/conformance/fixtures/ad-callback/''']

@@ -1,0 +1,41 @@
+# platform/Dockerfile.alertmanager —— 监控片：Alertmanager（通知通道管理化片 T15 起**不再拼装配置**）。
+#
+# 配置来源（T15 起）：am-renderer（alert-relay 镜像的第二入口）渲染到**共享命名卷**
+# `alertmanager-live` 的 `/alertmanager-live/alertmanager.yml`；本镜像的 entrypoint 只剩
+# 「等生成物（90s 有界）→ token 落盘（600）→ amtool 预检 → exec」（`deploy/monitoring/alertmanager/
+# entrypoint.sh`，规格 §3.5 逐字）。旧的「shell 条件拼装 + `alertmanager.yml.tmpl`」已删除
+# （静态段唯一真源迁至 renderer TS 常量；两形态逐字对照 = renderer golden 测试）。
+#
+# ⚙️ 实施期核对（2026-10-03，docker inspect prom/alertmanager:v0.34.1 实测）：
+#   - `USER=nobody`（65534）；`/alertmanager` 已属 nobody 且可写（数据卷初始化沿用）
+#     ⇒ token 落盘 `/alertmanager/secret/internal_token`（600）成立。
+#   - 官方 `CMD` 逐字 = `["--config.file=/etc/alertmanager/alertmanager.yml","--storage.path=/alertmanager"]`
+#     ⇒ entrypoint **不转发** `"$@"`（O3：异值重复有 last-wins 静默吞生成配置之险；脚本全给 flag）。
+#     ⚠️ T9 实测：子 Dockerfile 里设 ENTRYPOINT 会**清空继承来的 CMD**（本镜像 `CMD=null`）——
+#     不转发的形态不受影响（脚本不从 CMD 取任何东西）；这条记录防「日后有人改成转发"$@" 时
+#     以为拿到的还是官方 CMD」。
+#   - 镜像内**有** amtool（`which amtool` ⇒ /bin/amtool）⇒ entrypoint 的 `amtool check-config`
+#     预检可用（载入前拦下坏 yml）。
+FROM prom/alertmanager:v0.34.1
+
+USER root
+
+# entrypoint（T15 重写后只剩「等 → 落 token → 预检 → exec」；tmpl 已删除）
+COPY deploy/monitoring/alertmanager/ /etc/alertmanager/
+
+# secret 目录（token 落盘 600——同 prometheus 的 R3③ 处理）+ entrypoint 可执行位
+RUN mkdir -p /alertmanager/secret \
+ && chown 65534:65534 /alertmanager/secret \
+ && chmod 700 /alertmanager/secret \
+ && chmod 755 /etc/alertmanager/entrypoint.sh
+
+# 共享卷挂载点**镜像内预建**（属主 65534）：`alertmanager-live` 卷初始化属主继承依据 ——
+# Dockerfile.alert-relay 也预建（哪个先挂载都成立；规格 §2.10）
+RUN mkdir -p /alertmanager-live && chown 65534:65534 /alertmanager-live
+
+# 回官方运行用户（安全扫描 trivy DS-0002 同族）
+USER 65534
+
+# ENTRYPOINT：等生成物（90s 有界）→ token 落盘 → amtool 预检 → `exec /bin/alertmanager`
+# （脚本给全 flag，不转发 CMD——O3）
+ENTRYPOINT ["/etc/alertmanager/entrypoint.sh"]

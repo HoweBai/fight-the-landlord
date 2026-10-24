@@ -1,0 +1,984 @@
+# ⚠️ 本文件是**生产形态**（R98/R144/R1203）：**只有门口（`edge`）发布宿主端口**（默认 80/443，
+#    经 `EDGE_HTTP_PORT`/`EDGE_HTTPS_PORT` 参数化 —— compose 的 `ports` 是**并集**，override 减不掉），
+#    其余 18 个服务一律网内可达；且 `INTERNAL_SERVICE_TOKEN` **没有默认值** —— 未配置 ⇒ 容器内为空
+#    ⇒ R89/R92 的启动期 fail-closed 让服务**起不来**（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+#
+#    开发/联调形态在 `docker-compose.override.yml`：Compose 在**不显式给 `-f`** 时
+#    会**自动合并**它（实测 v5.5.1）。
+#      * 本地跑 `docker compose up -d`（不带 -f）          ⇒ 开发形态（11 个容器：全套宿主端口 + dev token）
+#      * 本地要门口：`docker compose --profile edge up -d edge`（第 12 个容器；`--profile` 是全局参数，
+#        生命周期协议见 spec R1209 —— `down` **删不掉**带 profile 的容器）
+#      * 本地要监控：`docker compose --profile monitoring up -d`（+7 个容器 = 18 个；宿主端口
+#        3010 Grafana / 9090 Prometheus / 9093 Alertmanager / 9100 node-exporter / 8081 cadvisor / 8090 relay；
+#        通知通道管理化片起 am-renderer 无宿主端口）
+#      * 生产部署 `docker compose -f docker-compose.yml …` ⇒ 只有本文件（19 个服务：18 + 门口；
+#        监控七容器在这里**没有** profile ⇒ 随 `up -d` 恒起 —— 升级前先在 `.env` 写 GRAFANA_ADMIN_PASSWORD）
+#
+#    因此既有的门禁命令（`docker compose build && docker compose up -d`）**一字不改**，
+#    而 R98 的结构断言就用 `-f docker-compose.yml`（并配 `--env-file /dev/null`，R147）。
+#
+# ── 日志上限（R1108 · spec §4）────────────────────────────────────────────
+#    每个服务都带 `logging.options: {max-size: 10m, max-file: 5}` ⇒ **每服务 ≈50MB 封顶**，
+#    超出即轮转、删最旧的（dockerd 的 json-file 驱动的原生能力，**不涉及任何挂载**）。
+#    ⚠️ **轮转即丢弃**：本片**不做留存** —— 要留存/检索得靠采集器（Loki/ES 那类），另立。
+#    ⚠️ 它放在**基文件**而不是 override：日志增长是**运行期**事实，与"只该出现在开发形态"的
+#       宿主端口/dev token 不是一类的东西（那两个是**暴露面**）。
+#    判据：`slice-07.2-deploy` 的 9（两种形态的渲染结果）与 9′（重建后真容器 `docker inspect`）。
+#
+# ── 项目名钉死（M6 · 最终评审）────────────────────────────────────────────
+#    顶层 `name: pokergame` 把 compose 项目名**钉成常量**：不给它时项目名按检出**目录名**
+#    推导（实测：同一份文件放 `othername-check/` 里渲染出 `othername-check` 的项目名与
+#    `othername-check_ftl-platform` 网络名）—— 而 conformance 的门口片按**字面量**
+#    `pokergame` 拼网络名（`slice-07.3-edge.ts` 的 `COMPOSE_PROJECT`）⇒ 检出目录改名后
+#    整片会去找一个**不存在的**网络。加了它之后，项目名/网络名与检出目录**无关**。
+#    ⚠️ **只在基文件加**：`docker-compose.override.yml` **不加**（override 若也写 `name`
+#    会给开发形态引入第二个真源；基文件的顶层键在不带 `-f` 时同样生效，两形态一致）。
+#    ⚠️ 实测核对：加之前本仓（目录名 `pokergame`）渲染出的 name/network 与加之后**逐字一致**
+#    （`pokergame` / `pokergame_ftl-platform`）⇒ 对既有栈零扰动。
+#
+# ── 镜像命名（R1303）────────────────────────────────────────────────────
+#    唯一规则 = `image: ${IMAGE_PREFIX:-pokergame}-<svc>:${IMAGE_TAG:-latest}`，
+#    `<svc>` 就是 compose 的服务键。**14 个带 `build:` 的服务全都要写**。
+#    ⚠️ 必须**显式**写出来：compose 的隐式名恒为 `<项目名>-<服务名>`，而项目名不允许带 `/`
+#       （`docker compose -p ghcr.io/howebai/x build` ⇒ `invalid project name`；⚠️ 顶层 `name:`
+#       那条路更阴 —— 它**静默**删掉非法字符、不报错：`ghcr.io/howebai/x` ⇒ `ghcriohowebaix`）。
+#       ⇒ 显式 `image:` 是拿到 registry 限定名的**正路**：`docker compose push`/`pull`
+#       **只认 `image:` 这个操作数**，没有 `image:` 的服务直接 `Skipped`。
+#       （`build.tags` 也能给构建产物挂 registry 限定 tag，但 push/pull 照样跳过它 ——
+#       所以本仓的推/拉一律以 `image:` 为准。）
+#    ⚠️ 归因别搞反：「镜像名与检出目录无关」来自上面 M6 的 `name: pokergame` 钉死，**不是**
+#       写 `image:` 换来的；检出**目录名**（含 CI 的 `fight-the-landlord`）**不是**理由，别再拿它当依据。
+#    ⚠️ 默认值下与旧名逐字相同，**只有一个例外**：门口原先是 `ftl-edge:latest`，
+#       本次统一过来 ⇒ 本机需重建一次门口镜像并 `docker rmi ftl-edge:latest`。
+#    ⚠️ CI 必须显式给 `IMAGE_PREFIX=ghcr.io/howebai/fight-the-landlord`：那是**推**到
+#       镜像库、以及服务器**拉**取时用的 registry 限定名（默认的 `pokergame-*` 只在本地）。
+name: pokergame
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ftl-redis
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R145（N10）：不再发布到宿主。这里存的就是 `GameSession` 与三家手牌，而
+    # 此前是**无认证**的 redis —— 宿主映射一并移入 override（与 3001–3005 同一条理由，
+    # 只是更强）。开发调试用 `docker compose`（不带 -f）即拿回该端口。
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ftl-platform
+
+  mysql:
+    image: mysql:8.0
+    container_name: ftl-mysql
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-fight_the_landlord}
+    # R145（N10）：root/root 的 MySQL 不再发布到宿主（同上）。
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ftl-platform
+
+  douzero:
+    build:
+      context: ./douzero
+      dockerfile: Dockerfile
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-douzero:${IMAGE_TAG:-latest}
+    container_name: ftl-douzero
+    restart: unless-stopped
+    # 运维可见性（2026-10-02 债务批）：Python 的 stdout 在非 tty 下**块缓冲** ⇒
+    # `server.py` 的启动 print（Loading ONNX sessions / listening …）全卡在缓冲区里，
+    # `docker logs ftl-douzero` 恒空（实测 4+ 小时 0 行）。置 1 = 逐行无缓冲落 stdout/stderr。
+    environment:
+      PYTHONUNBUFFERED: "1"
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R145（N10）：douzero 不再发布到宿主（同上）。
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2021/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ftl-platform
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.user-service
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-user-service:${IMAGE_TAG:-latest}
+    container_name: ftl-user-service
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R98：下游服务**不发布**到宿主。发布它们等于给「直连 + 伪造 X-User-Id」留门，
+    # 而 P1 的内部 token 边界只在「不发布 + 显式配置 token」的部署下才成立。
+    # conformance 的**直连断言**需要这些端口 ⇒ 开发形态在 docker-compose.override.yml。
+    #
+    # ⚠️ 记录片（D2）：本服务**重新**是 RPC 监听方（`record.write`，room → user，3101）——
+    # 片⑦ 退役的是「读**底分档位表**」那条边（随档位收编进 `config.snapshot`），**不是端口**。
+    # ⚠️ **只 `expose`、绝不 `ports`** —— §2.1 逐字「内部 RPC 端口仅供服务间
+    # `Transport.TCP` 使用，**不对外暴露**」（照 game/robot 的处理）。
+    expose:
+      - "3001"
+      - "3101"
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-root}
+      - DB_NAME=${DB_NAME:-fight_the_landlord}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      # §5.1 的 session:{jti} 令牌白名单依赖 Redis；§2.1 已登记 user-service 为 Redis 使用者
+      - REDIS_URL=redis://redis:6379
+      # §2.3 / §4.2 末段：TCP RPC **监听**端口（`connectMicroservice` 用）
+      - RPC_PORT=3101
+      # 货币片 T6（规格 §2.13 env 表 / §4.1 #23）：本服务**第二条出站 RPC 边**
+      # （user → currency 的注册赠送 `currency.apply`）的基址；命名照 `CONFIG_SERVICE_RPC_*`
+      # 先例（代码默认同值 —— `src/currency/currency.client.ts` 的 `currencyClientOptions()`）。
+      - CURRENCY_SERVICE_RPC_HOST=currency-service
+      - CURRENCY_SERVICE_RPC_PORT=3104
+      # 节奏管理化片 T10（本片 ⚙️8）：记录清理 / 风险扫描 / 设备清理三链的**间隔已管理化**
+      # —— 经 config 快照（ConfigCache）读 `record.cleanupIntervalMs`（第 40 键）/
+      # `risk.scanIntervalMs`（第 38 键）/ `risk.devicesCleanupIntervalMs`（第 39 键）；
+      # 缺键/坏值/快照不可用 ⇒ 回落种子常数（janitor fail-safe——唯一真源 =
+      # `ConfigCacheService`）。旧三行 env 测试注入面（`RECORDS_CLEANUP_INTERVAL_MS` /
+      # `RISK_SCAN_INTERVAL_MS` / `RISK_DEVICES_CLEANUP_INTERVAL_MS`）**已退役**（本片 ⚙️8）
+      # —— conformance 经**管理面种子**供给（`conformance-stack.sh` 的 `config_seed_put`
+      # 段，基线 3600000 = 出厂缺省 ⇒ 行为等价）；生产 `.env` 不再有该面。
+      # §5.2 rule 3：服务间调用的内部密钥
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  # ── 片⑦ 配置中心（第 8 个自建镜像；支付片后共 14 个）────────────────────────
+  # ⚠️ **软依赖**（片⑦ D8-3/§5.2-9）：room/robot/game（消费侧）对 config-service
+  #    **刻意不加 `depends_on` 硬门** —— 配置中心不健康时**不得**拦消费服务的启动/重建
+  #    （r2-C1 实测：`service_healthy` 硬门会让 no-op `up -d` 都 exit 1、需重建的消费
+  #    服务被停并停在 Created）。启动错序由消费侧的「1s 退避重试 + 60s 安全网」兜住
+  #    （短暂窗口登记 C16）。**对比**：mysql/redis 是**硬数据依赖**（healthy 门照旧）。
+  #    ⚠️ 网关（api-gateway）对它的转发面同理不并入 `depends_on` —— 网关的既有口径是
+  #    「未就绪的下游不应阻塞整个平台启动」（见其块内注释）。
+  #    ⚠️ 本服务**自身**照常 depends_on mysql/redis(healthy) + 自带 healthcheck ——
+  #    后者只作 `docker compose ps` 的运维可见性，**不**作用于消费服务的启动顺序。
+  config-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.config-service
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-config-service:${IMAGE_TAG:-latest}
+    container_name: ftl-config-service
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R98：下游服务**不发布**到宿主。发布它们等于给「直连 + 伪造 X-User-Id」留门，
+    # 而 P1 的内部 token 边界只在「不发布 + 显式配置 token」的部署下才成立。
+    # conformance 的 **TCP 探针**（宿主机跑）需要 3106 ⇒ 开发形态在 docker-compose.override.yml。
+    #
+    # ⚠️ 片⑦ §2.1：HTTP 3006（客户端子集 `/api/config` / 管理面 `/api/admin/*`，经网关）
+    # **与 RPC 3106**（`config.snapshot`，room/robot → config）都在这里 `expose`。
+    # ⚠️ **只 `expose`、绝不 `ports`** —— §2.1 逐字「内部 RPC 端口仅供服务间
+    # `Transport.TCP` 使用，**不对外暴露**」（照 game/robot 的处理）。
+    expose:
+      - "3006"
+      - "3106"
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-root}
+      - DB_NAME=${DB_NAME:-fight_the_landlord}
+      # §2.1：数据层 = MySQL（`platform_config` 唯一真源）+ Redis（`config:changed` pub/sub）
+      - REDIS_URL=redis://redis:6379
+      # §2.3 / §4.2 末段：TCP RPC **监听**端口（`connectMicroservice` 用）
+      - RPC_PORT=3106
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      # 片⑦ §2.7：管理面凭据 —— **空默认透传**（口令只在运行侧给：服务器 `.env` /
+      # conformance-stack.sh 的 export / 开发形态的 override）。③ 起 = **首启引导口令**：
+      # 只在 **admin_accounts 空表**的首次启动用它建引导号 `admin`；账号在库后本键不再
+      # 参与判定 —— 登录 404 的谓词是**零账号**，不是本键空（S10a）。
+      # **生产形态这里不得发明文默认值。**
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # §2.6：管理令牌**独立**签名密钥（可选；未设 ⇒ 两侧代码回落下面那行 `JWT_SECRET`）
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
+      # §2.6 / **C4-1**（T9 只修了 `ADMIN_JWT_SECRET` 半环，本行由片⑦ T17 审查补登）：
+      #   管理令牌**回落链的第二环** —— 未设 `ADMIN_JWT_SECRET` 时，本服务（**签发侧**）
+      #   用它签管理令牌，api-gateway（**验签侧**）用它验（两侧代码链：
+      #   `ADMIN_JWT_SECRET || JWT_SECRET || dev 兜底`）。
+      #   漏本行 ⇒ 生产 `.env` 给了真钥时：签发侧落**公开 dev 兜底**、验签侧用真钥
+      #   ⇒ 登录 200 而**每个 `/api/admin/*` 都 401**（dev 形态被"两侧默认值恰好同值"掩盖）。
+      #   ⚠️ 必须与网关块那行**逐字同形**（同 `JWT_SECRET` 真源 ⇒ 两侧同钥）。
+      #   判据：`slice-07.2-deploy` ①k-bis（同一份渲染里与 api-gateway 逐字比 +
+      #   双侧 `ADMIN_JWT_SECRET` 键在位）。
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      # 支付配置管理化片 ⚙️5/§2.6：渠道凭据两枚 env —— **空默认透传**（`${VAR:-}`，不用
+      # `??`：宿主未设 ⇒ 空串 = **未设**）。空 ⇒ 渠道块整体 503 / 拒一切拉取（**fail-closed**）；
+      # dev 值供给点 = `conformance-stack.sh` 的 export + 开发者 shell（照 `ADMIN_PASSWORD`
+      # 先例，见上）。**生产形态这里不得发明文默认值**；生产两键必填（服务器 `.env`，
+      # `PAY_CHANNEL_PULL_TOKEN` 两端同源同值）。
+      - PAY_CONFIG_ENC_KEY=${PAY_CONFIG_ENC_KEY:-}          # 渠道凭据加密主钥（base64 32B；空 = 渠道块关闭）
+      - PAY_CHANNEL_PULL_TOKEN=${PAY_CHANNEL_PULL_TOKEN:-}  # 拉取令牌（与 payment 段同值；空 = 服务端拒拉）
+      # 通知通道管理化片 §2.6：通知拉取令牌（**空默认透传**，三持有之一 —— config-service +
+      # alert-relay + am-renderer 同源同值）。空 ⇒ 拒一切 `config.notifyChannel.get`（fail-closed）；
+      # 主钥 = 复用上面 `PAY_CONFIG_ENC_KEY`（已裁 Q2-A，无新键）。dev 供给点同上（栈脚本/`??=`）。
+      - NOTIFY_CHANNEL_PULL_TOKEN=${NOTIFY_CHANNEL_PULL_TOKEN:-}
+      # 广告片 §2.3：第四键空间（广告回调密钥 `ad.callbackSecret`）拉取令牌（**空默认透传**，
+      # 两持有之一 —— config-service + currency-service 同源同值；≠ 通知的三持有）。空 ⇒ 拒一切
+      # `config.adChannel.get`（fail-closed）；主钥 = 复用上面 `PAY_CONFIG_ENC_KEY`（无新主钥键）。
+      # dev 供给点同上（栈脚本 export / `run.ts` 的 `??=`；两处同源逐字——R96 纪律）。
+      - AD_CHANNEL_PULL_TOKEN=${AD_CHANNEL_PULL_TOKEN:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  # ── 货币片（P2-①）currency-service（第 13 个自建镜像）──────────────────────
+  # ⚠️ HTTP 3004 / RPC 3104 / metrics 9004（货币片规格 §2.1 逐字写死；三处均为既有序列空位）。
+  # ⚠️ 与 user/config **共库**（fight_the_landlord）⇒ 迁移表第三份独立（`migrations_currency`，⚙️9）。
+  currency-service:
+    build: { context: ., dockerfile: Dockerfile.currency-service }
+    image: ${IMAGE_PREFIX:-pokergame}-currency-service:${IMAGE_TAG:-latest}
+    container_name: ftl-currency-service
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
+    expose: ["3004", "3104"]        # 指标 9004 不进 expose（照 9000–9006 既形：同网自可达，探针走 exec）
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-root}
+      - DB_NAME=${DB_NAME:-fight_the_landlord}
+      - REDIS_URL=redis://redis:6379
+      - RPC_PORT=3104
+      # ② 金币场 T8 / 规格 §9：currency → config-service 的**首条**边（读配置快照
+      # `config.snapshot` —— `currency.reliefEnabled` / `currency.reliefAmount` /
+      # `currency.entryMultiplier` / `currency.reconcileIntervalMs` 四键经 ConfigCache，订阅推送失效同 room/robot）走 TCP RPC；
+      # 广告片 §2.3 起另有**第二条**边 `config.adChannel.get`（第四键空间专用拉取——现拉 + lastGood；
+      # 与快照边各自一条 TCP：3s / 1000ms——不要「合并」成一条）
+      # 命名照 room/robot 段样板（两行均有代码默认值 —— `src/config/config.client.ts`，
+      # 显式写出防「同名异值」漂移）。⚠️ 消费侧对 config-service **刻意不加** `depends_on`
+      # 硬门（同 room/robot：配置中心不健康不得拦消费服务启动，片⑦ D8-3/§5.2-9）。
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}        # 无默认值——fail-closed（照 config）
+      # 广告片 §2.3：第四键空间拉取令牌（**两持有之一** —— 与 config-service 段同源同值；
+      # 消费侧形态照 payment 段的 `PAY_CHANNEL_PULL_TOKEN` 先例）。空 ⇒ 回调链拉取被拒 ⇒
+      # 无 lastGood ⇒ 回调 5xx（fail-closed；键未配置期 = 平台尚未开通，此形态语义正确）；
+      # **不阻塞启动**（消费侧对 config-service 刻意不加 depends_on 硬门——片⑦ D8-3）。
+      # dev 供给点同上（栈脚本 export / `run.ts` 的 `??=`；两处同源逐字——R96 纪律）。
+      - AD_CHANNEL_PULL_TOKEN=${AD_CHANNEL_PULL_TOKEN:-}
+    depends_on: { mysql: { condition: service_healthy }, redis: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks: [ftl-platform]
+
+  # ── 支付片（T2）payment-service（第 14 个自建镜像）─────────────────────────
+  # ⚠️ HTTP 3007 / metrics 9007（支付片规格 ⚙️2 逐字写死）；**零被调 RPC 面** ⇒ 没有 3100 段
+  #    的监听端口（expose 只有 3007）。出站面 = 渠道 HTTPS + 内网 currency/config 的 TCP
+  #    RPC（**客户端**角色，3104/3106）。
+  # ⚠️ 与 user/config/currency **共库**（fight_the_landlord）⇒ 迁移表第四份独立
+  #    （`migrations_payment`，⚙️1）—— 五表迁移在 T3。
+  payment-service:
+    build: { context: ., dockerfile: Dockerfile.payment-service }
+    image: ${IMAGE_PREFIX:-pokergame}-payment-service:${IMAGE_TAG:-latest}
+    container_name: ftl-payment-service
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
+    expose: ["3007"]        # 指标 9007 不进 expose（照 9000–9006 既形：同网自可达，探针走 exec）
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-root}
+      - DB_NAME=${DB_NAME:-fight_the_landlord}
+      - REDIS_URL=redis://redis:6379
+      # 支付片 T2 / ⚙️2：payment → config-service 的**首条**边（读配置快照
+      # `config.snapshot`，T5 起消费 26–34 键 + 本片两节奏键 35/36 ⇒ 十一键）走 TCP RPC；
+      # 命名照 room/robot/currency 段样板
+      # （两行均有代码默认值 —— `src/config/config.client.ts`，显式写出防「同名异值」漂移）。
+      # ⚠️ 消费侧对 config-service **刻意不加** `depends_on` 硬门（同 room/robot/currency：
+      # 配置中心不健康不得拦消费服务启动，片⑦ D8-3/§5.2-9）。
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}        # 无默认值——fail-closed（照 config/currency）
+      # 支付配置管理化片（规格 §2.7）：渠道凭据已管理化 —— config-service 第二键空间 +
+      # `config.payChannel.get` 专用拉取通道。⚠️ 旧六项 env（`ALIPAY_*` 五 +
+      # `PAY_PUBLIC_BASE_URL`）已整体退役 —— 渠道值一律走管理面「支付渠道」视图；切片断言
+      # 扫 `containerEnv` 负例，不得在仓库任何文件复活。
+      # 节奏管理化片 T10（本片 ⚙️8）：扫描/日自检两链的**间隔已管理化** —— 经 config 快照
+      # （ConfigCache）读 `pay.scanIntervalMs`（第 35 键）/ `pay.reconcileIntervalMs`（第 36 键）；
+      # 缺键/坏值/快照不可用 ⇒ 回落种子常数（唯一真源 = `ConfigCacheService`）。旧两行 env
+      # 测试注入面（`PAY_SCAN_INTERVAL_MS` / `PAY_RECONCILE_INTERVAL_MS`）**已退役**（本片
+      # ⚙️8）—— conformance 经**管理面种子**供给（`conformance-stack.sh` 的
+      # `config_seed_put` 段，基线 2000/2000 = 观测基线、非出厂种子 60000/86400000）。
+      # 本段自此只剩渠道拉取令牌（下行）。
+      # 渠道拉取令牌（⚙️5/D3 **双持有**：与 config-service 段同源同值）；空默认透传 ——
+      # 空 = 缺省 fail-closed（拉取被拒 ⇒ 渠道未配置语义：15001，**不阻塞启动**——⚙️3）。
+      - PAY_CHANNEL_PULL_TOKEN=${PAY_CHANNEL_PULL_TOKEN:-}
+    depends_on: { mysql: { condition: service_healthy }, redis: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks: [ftl-platform]
+
+  room-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.room-service
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-room-service:${IMAGE_TAG:-latest}
+    container_name: ftl-room-service
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R98：下游服务**不发布**到宿主。发布它们等于给「直连 + 伪造 X-User-Id」留门，
+    # 而 P1 的内部 token 边界只在「不发布 + 显式配置 token」的部署下才成立。
+    # conformance 的**直连断言**需要这些端口 ⇒ 开发形态在 docker-compose.override.yml。
+    #
+    # ⚠️ N20/P4 Task 5：room-service **不是** RPC 监听方（§4.2 只要求 game/robot 监听），
+    # 因此它**没有** `RPC_PORT` / `expose` —— 它只有**客户端**配置（下面 6 条 *_RPC_*）。
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # §2.3 / §4.1：room → game-service 的**四条边**（start/snapshot/view/action）走 TCP RPC
+      - GAME_SERVICE_RPC_HOST=game-service
+      - GAME_SERVICE_RPC_PORT=3103
+      # §2.3 / §4.1：room → robot-service 的两条边（acquire/release）走 TCP RPC
+      - ROBOT_SERVICE_RPC_HOST=robot-service
+      - ROBOT_SERVICE_RPC_PORT=3105
+      # 片⑦ §2.1 / §2.3：room → config-service 的**唯一**一条边（读配置快照
+      # `config.snapshot`——底分档位已收编为**十七键**之一，记录片加 `record.retentionDays`、
+      # 货币片加 `currency.signupGrant`、金币场加免费/金币场开关与门槛/抽水/救助六键）
+      # 走 TCP RPC。
+      # ⚠️ 记录片（D2）：原 room → user-service 的 `USER_SERVICE_RPC_*`（读底分档位表）
+      # **已退役**；但 **3101 没有退役** —— 记录片起 room → user-service 有一条**新边**
+      # `record.write`（写对局记录；发送侧 `gateway/record.client.ts`，host/port 走代码
+      # 缺省 `user-service`/`3101`，见 `rpc.options.ts`）。
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+      # 片⑦：**仅测试注入**（C16/C17 的变异开关）；**空串 = 未设**（消费侧用 `||` 不用 `??`）
+      # —— 宿主未设 ⇒ 空串漏进容器 ⇒ 走代码默认（安全网 60s / 推送启用）。
+      - CONFIG_SYNC_SAFETY_NET_MS=${CONFIG_SYNC_SAFETY_NET_MS:-}
+      - CONFIG_SYNC_DISABLE_PUSH=${CONFIG_SYNC_DISABLE_PUSH:-}
+      # ⚠️ N20/P4 Task 5：`GAME_SERVICE_URL` / `ROBOT_SERVICE_URL` 已从**本服务**删除 ——
+      # 它的全部服务间调用都走 TCP RPC，不再需要任何下游 HTTP 地址（§2.3）。
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  game-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.game-service
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-game-service:${IMAGE_TAG:-latest}
+    container_name: ftl-game-service
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R98：下游服务**不发布**到宿主。发布它们等于给「直连 + 伪造 X-User-Id」留门，
+    # 而 P1 的内部 token 边界只在「不发布 + 显式配置 token」的部署下才成立。
+    # conformance 的**直连断言**需要这些端口 ⇒ 开发形态在 docker-compose.override.yml。
+    #
+    # ⚠️ N20/P4 Task 5：**生产形态只 `expose`，绝不 `ports`** —— §2.1 逐字
+    # 「内部 RPC 端口仅供服务间 `Transport.TCP` 使用，**不对外暴露**」。
+    # 开发/联调的宿主映射在 `docker-compose.override.yml`（R226）。
+    expose:
+      - "3103"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # §2.3 / §4.2 末段：TCP RPC **监听**端口（`connectMicroservice` 用）
+      - RPC_PORT=3103
+      # §2.3 / §4.1：game → robot-service 的 `robot.decide`（§9.4 的回合决策）走 TCP RPC
+      - ROBOT_SERVICE_RPC_HOST=robot-service
+      - ROBOT_SERVICE_RPC_PORT=3105
+      # ⚠️ N20/P4 Task 5：`ROBOT_SERVICE_URL` 已删除（`robot.decide` 改走 RPC）。
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      # 挂机治理片（T8）：**仅测试注入**的四个时长 env（同 room-service 的 CONFIG_SYNC_*
+      # 先例；⛔ 不进 design.md §2.3 的生产 env 表）。**空默认透传**——未注入 ⇒ 空串，
+      # 消费侧逐字 `Number(process.env.X) || 默认`（⚠️ `||` 非 `??`：空串转数是 0，
+      # 用 `??` 会让「未注入」变成 0ms 回合）。生产默认 30000/10000/2000/3 由代码承担。
+      - GAME_TURN_TIMEOUT_MS=${GAME_TURN_TIMEOUT_MS:-}
+      - GAME_TURN_TIMEOUT_ACCEL_MS=${GAME_TURN_TIMEOUT_ACCEL_MS:-}
+      - GAME_TRUSTEE_DELAY_MS=${GAME_TRUSTEE_DELAY_MS:-}
+      - GAME_TRUSTEE_AFTER=${GAME_TRUSTEE_AFTER:-}
+    depends_on:
+      douzero:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  robot-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot-service
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-robot-service:${IMAGE_TAG:-latest}
+    container_name: ftl-robot-service
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # R98：下游服务**不发布**到宿主。发布它们等于给「直连 + 伪造 X-User-Id」留门，
+    # 而 P1 的内部 token 边界只在「不发布 + 显式配置 token」的部署下才成立。
+    # conformance 的**直连断言**需要这些端口 ⇒ 开发形态在 docker-compose.override.yml。
+    #
+    # ⚠️ N20/P4 Task 5：**生产形态只 `expose`，绝不 `ports`**（§2.1「不对外暴露」）。
+    expose:
+      - "3105"
+    environment:
+      - DOUZERO_URL=http://douzero:2021
+      - REDIS_URL=redis://redis:6379
+      # §2.3 / §4.2 末段：TCP RPC **监听**端口（`connectMicroservice` 用）
+      - RPC_PORT=3105
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      # 片⑦：`ROBOT_SKILL_DISTRIBUTION` / `ROBOT_RULE_FALLBACK` 两行 env **已退役** ——
+      # 难度分布与规则开关等收编进 config-service 十七键（robot 经 ConfigCache 读快照；
+      # 老镜像滚动期仍读 env，其默认值与种子同值 ⇒ 行为不变，设计 D3）。
+      # 片⑦ §2.1 / §2.3 / §2.7：robot → config-service 的**唯一**一条边（读配置快照
+      # `config.snapshot` —— 四键经 ConfigCache）走 TCP RPC。spec §2.7 的消费方是
+      # room-service · robot-service **双份**（T4 落 room 时漏了此处，T8 补齐；
+      # 与 room 块逐字同形 —— 语义上两行都有代码默认值，显式写出防「同名异值」漂移）。
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+      # 片⑦：**仅测试注入**（同 room-service 的两行）；**空串 = 未设**（消费侧用 `||` 不用 `??`）。
+      - CONFIG_SYNC_SAFETY_NET_MS=${CONFIG_SYNC_SAFETY_NET_MS:-}
+      - CONFIG_SYNC_DISABLE_PUSH=${CONFIG_SYNC_DISABLE_PUSH:-}
+    # ⚠️ **生产形态不得挂宿主机产物**（用户 2026-09-23 的部署原则：*部署统一使用最终镜像，
+    #   容器不依赖宿主机产物；挂载只用于日志、需要持久化的内容*）。
+    #   原先这里挂着 `./packages/robot-service/dist:/app/packages/robot-service/dist` ——
+    #   那是 DouZero 集成期（`0452b09`）留下的**开发便利**，在干净部署机上有两个后果：
+    #     ① 宿主 `dist` 不存在 ⇒ Docker 建一个**空目录**盖住镜像内构建好的 dist ⇒ **容器起不来**；
+    #     ② 宿主 `dist` 陈旧 ⇒ **静默跑旧代码**（镜像里那份被盖掉）。
+    #   ⇒ 先移入 `docker-compose.override.yml`；**再进一步整条删除**（用户 2026-09-23 裁决，
+    #   连开发形态也不留）：它带来的**版本偏斜**（旧服务代码 + 镜像里的新 `shared` ⇒ 崩，
+    #   且 Nest 的 `abortOnError` 默认 `true` ⇒ 只 abort、不打印错误消息）与「跑真栈前必须
+    #   先宿主 build」的前置纪律，代价大于那点便利。⇒ 改 robot-service 一律重建镜像。
+    #   **判据**（防它悄悄回来）：`slice-07.2-deploy` 的 ①c（生产形态**零** bind 挂载）
+    #   与 ②c（开发形态**同样**为零）；谓词判别力由 ①c′ 的**合成样本**自证。
+    depends_on:
+      douzero:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-gateway
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-api-gateway:${IMAGE_TAG:-latest}
+    container_name: ftl-api-gateway
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # ⚠️ R1203 端口收敛：**生产形态零宿主发布** —— 原先的 `ports: ["3000:3000"]` **移入
+    #   `docker-compose.override.yml`**（开发形态与 conformance 的直连断言仍需它；`ports` 是**并集**，
+    #   两边都写会重复发布）。对外入口只剩门口，网关退为网内可达。
+    expose:
+      - "3000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:3001
+      - ROOM_SERVICE_URL=http://room-service:3002
+      - ROOM_SERVICE_WS_URL=http://room-service:3002
+      - GAME_SERVICE_URL=http://game-service:3003
+      # 片⑦ §2.7：gateway → config-service 的 HTTP 边（`/api/config` 与 `/api/admin/*` 反代；
+      # 网关的 AdminAuthMiddleware 验管理令牌后注入 `X-Admin: 1`，见 packages/api-gateway）。
+      - CONFIG_SERVICE_URL=http://config-service:3006
+      # 货币片 T7（规格 §2.13）：gateway → currency-service 的 HTTP 边
+      # （`/api/wallet/balance` 与 `/api/admin/wallet/*` 反代；玩家面/管理面一律经网关）。
+      - CURRENCY_SERVICE_URL=http://currency-service:3004
+      # 支付片 T2（规格 §2.7.2）：gateway → payment-service 的 HTTP 边
+      # （`/api/pay/*` 玩家面与 `/api/admin/pay/*` 管理面反代 —— 转发接线在 T13；
+      # 本行与 design.md §2.3 表 / `design-md-*.gate.test.ts` 的 NEW_ENVS 同提交登记）。
+      - PAYMENT_SERVICE_URL=http://payment-service:3007
+      # 客户端接入片 T4/T9（规格 §2.3/§5.1；设计 §4「env 登记」节 r1-S-I7 纪律）：
+      # gateway → config-service 的**首条** RPC 边（读配置快照 `config.snapshot` ——
+      # `client.appEnabled`/`client.h5Enabled` 两端闸两键经 config-cache 专用订阅 + last-good
+      # + ≤60s 安全网）走 TCP RPC；命名照 room/robot/currency/payment 段样板
+      # （两行均有代码默认值 —— `src/config/config.client.ts`，显式写出防「同名异值」漂移 ——
+      # 不靠代码默认值静默回落）。⚠️ 网关对 config-service **刻意不加** `depends_on` 硬门
+      # （同五消费者：配置中心不健康不得拦网关启动/重建，片⑦ D8-3/§5.2-9）。
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+      # R136：**没有** `ROBOT_SERVICE_URL` 了 —— §4.1 的调用表里没有
+      # 「gateway → robot」这条边，`forwardToRobotSvc` 已随客户端可达面一起删除。
+      # §5.4：网关的限流计数存在 Redis
+      - REDIS_URL=redis://redis:6379
+      # ⚠️ **必须与 user-service 的那行逐字同形**（Task 7 Step 0 的缺陷修复）：令牌由
+      #    user-service **签发**、由本服务**验签** ⇒ 两处必须拿到**同一个**密钥。缺这行 ⇒
+      #    生产给真密钥后网关回落代码里的公开默认值（`?? 'dev-secret-change-in-production'`）
+      #    ⇒ **每个登录令牌都验不过**（Task 6 实测发现，生产阻断级）。
+      #    判据：`slice-07.2-deploy` ①k —— 同一份 `config --format json` 里与 user-service 逐字比（缺键/null ⇒ 红）。
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      # 片⑦ §2.6 / **C4-1**（T4 实测补登）：管理令牌的**验签侧**密钥 —— 必须与
+      #    config-service 的**签发侧**逐字同链（`ADMIN_JWT_SECRET || JWT_SECRET || dev 兜底`；
+      #    空串 = 未设 ⇒ 回落 —— 裁决 2026-10-01，与 ADMIN_PASSWORD、CONFIG_SYNC_* 同一纪律）。
+      #    缺本行 ⇒ 生产 `.env` 设了它时：config-service 用它签发、网关回落 JWT_SECRET ⇒
+      #    **管理令牌全 401**。空默认透传：宿主未设 ⇒ 两侧同拿 ''、同回落到同一 JWT_SECRET
+      #    （判据：两侧单测的密钥链各例 + 渲染 grep + 真栈复烟 —— T9 报告修复轮）。
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
+      # §5.2：网关注入给下游的身份头之外，WS 代理用它连接 room-service
+      # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
+      # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      # ⚠️ **可信代理 = 门口一跳**（R1205）。值必须与 edge 的 ipv4_address **逐字相同**
+      #    （判据 A5 会在同一份 config --format json 里比这两处）；**字面地址**、不是 `${VAR:-}`
+      #    —— 否则空 env-file 渲染下两处都空 ⇒ A5 恒红、A4 的负对照恒取不到（复核第四轮 #4）。
+      #    这里是 api-gateway 而不是门口：**限流在网关**，放门口完全无效。
+      - TRUST_PROXY=172.28.0.250
+    depends_on:
+      # 简单依赖即可：网关本身不连数据库，Redis 只用于限流（§5.4），
+      # 未就绪时不应阻塞整个平台启动。
+      - user-service
+      - room-service
+      - game-service
+      - robot-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ftl-platform
+
+  # ⚠️ **门口**（R1202/R1209）：TLS 终止 + H5 静态站 + 反代 `/api`、`/socket.io`。
+  #    生产形态的**唯一对外入口**；开发形态在 override 里打 `profiles: ["edge"]`（按需启动）。
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-edge:${IMAGE_TAG:-latest}
+    container_name: ftl-edge
+    restart: unless-stopped
+    ports:
+      # ⚠️ 宿主侧才跟 EDGE_HTTP_PORT 走：容器内那个跳转监听**固定是 :80**
+      - "${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_HTTPS_PORT:-443}:${EDGE_HTTPS_PORT:-443}"
+    environment:
+      # ⚠️ **无默认值** ⇒ 未配置 ⇒ 容器内为空 ⇒ Caddy 启动即失败（fail-closed）
+      - SITE_ADDRESS=${SITE_ADDRESS:-}
+      - TLS_MODE=${TLS_MODE:-}
+    volumes:
+      # 证书与 ACME 账户库（R1202；命名卷 ⇒ 不算宿主产物挂载，①c 不受影响）
+      - caddy-data:/data
+    networks:
+      ftl-platform:
+        # 固定地址（R1205）⇒ A5 用它当"唯一可信代理"的锚
+        ipv4_address: 172.28.0.250
+    depends_on:
+      api-gateway:
+        condition: service_started
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    healthcheck:
+      # ⚠️ 必须**形态无关**：`curl -fk https://localhost:<port>/` 只在站点 host 是 localhost 时成立
+      #    ⇒ 生产用域名会握手失败、永远 unhealthy。走容器内那个 :80 跳转监听（两种形态都 308）。
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  # ── 监控片：六个服务块 ────────────────────────────────────────────────────
+  # ⚠️ 生产形态**一律零宿主端口**（只 `expose`，与下游服务同规，R98/R1203）：Prometheus、
+  #    Alertmanager 的 UI 与指标面都只在网内；唯一新公网面 = 门口 `/grafana/` 一条路由。
+  # ⚠️ 凭据只从 .env（不做任何仓库内默认值）：`INTERNAL_SERVICE_TOKEN` / `GRAFANA_ADMIN_PASSWORD`
+  #    / SMTP / IM webhook 全部 `${VAR:-}` 透传——空串=未设，各容器自己的守卫决定
+  #    「拒启动（fail-closed）」还是「该通道整体关闭」（口径见各块与规格 §2）。
+  # ⚠️ 开发/联调形态在 override：六块各打 `profiles: ["monitoring"]` + 宿主端口
+  #    （`docker compose --profile monitoring up -d` 才拉起；日常 9 容器不变）。
+  prometheus:
+    build:
+      context: .
+      dockerfile: Dockerfile.prometheus
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-prometheus:${IMAGE_TAG:-latest}
+    container_name: ftl-prometheus
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # 抓取面/UI 都在网内（生产零发布）。prometheus.yml 的七个 Bearer job 用它抓六服务+relay的
+    # /metrics（token 由镜像 entrypoint 落盘成 600 的 credentials_file）。
+    # §5.2 规则 3：**没有默认值**。未配置 ⇒ 值为空 ⇒ entrypoint 的 `:?` 守卫让容器**起不来**。
+    expose:
+      - "9090"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+    volumes:
+      # TSDB（保留 30d / 5GiB 软上限——flag 在 entrypoint）。命名卷跨版本保留：回滚/前进都不丢
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ftl-platform
+
+  grafana:
+    build:
+      context: .
+      dockerfile: Dockerfile.grafana
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-grafana:${IMAGE_TAG:-latest}
+    container_name: ftl-grafana
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # 全片**唯一**新公网面：经门口 `/grafana/`（Caddyfile 两条 handle）；生产零宿主端口。
+    # 容器内端口取 3010（避开与任何既有服务 3000 段的混淆），子路径模式 + 生产 root_url 走
+    # SITE_ADDRESS 插值（开发形态在 override 显式给 localhost 值——dev 下 SITE_ADDRESS 为空）。
+    expose:
+      - "3010"
+    environment:
+      - GF_SERVER_HTTP_PORT=3010
+      - GF_SERVER_ROOT_URL=https://${SITE_ADDRESS:-}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # 口令**没有默认值**：空串 ⇒ 镜像 entrypoint 的 `:?` 守卫让容器起不来（fail-closed，O4）。
+      # 首启生效语义与换口令路径见 docs/ops/first-deploy.md 的 grafana 小节。
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-}
+      # 显式钉住：禁注册 + 禁匿名（设计 S3；防「无口令可浏览」的第二道）
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # 元监控：Prometheus 抓 grafana 自己的 /metrics（Y9：若真栈实测要鉴权则加 basic_auth，回填规格）
+      - GF_METRICS_ENABLED=true
+    volumes:
+      # Grafana 状态（用户/首启生成的 admin 口令哈希/star 偏好）。面板**不在**卷内——
+      # 面板落 /etc/grafana/dashboards（卷外，R1：卷会遮蔽 /var/lib/grafana 下的面板 ⇒ 改面板不生效）
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3010/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ftl-platform
+
+  alertmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.alertmanager
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-alertmanager:${IMAGE_TAG:-latest}
+    container_name: ftl-alertmanager
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # UI/API 不对外（生产零发布；静默操作走手册的 ssh + docker exec 命令模板）。
+    # SMTP 配置已管理化 ⇒ renderer（`am-renderer`）渲染 /alertmanager-live/alertmanager.yml；
+    # 本段只留 INTERNAL_SERVICE_TOKEN（webhook 接收器的 Bearer）。
+    expose:
+      - "9093"
+    environment:
+      # token = webhook 接收器访问 relay 的 Bearer（同 prometheus：entrypoint 落盘 600）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+    volumes:
+      # 生成配置（由 am-renderer 写、本容器**只读**挂载 ⇒ 结构性只读）+ 静默/通知状态。
+      # 命名卷跨版本保留。
+      - alertmanager-live:/alertmanager-live:ro
+      - alertmanager-data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ftl-platform
+
+  # ⚠️ node-exporter / cadvisor **无 `build:`**（官方镜像）⇒ 不带 `image:` 前缀，
+  #    A12 的「官方镜像不受参数化波及」面自动覆盖；但两者**仍要**走 R1108 日志上限与既有的
+  #    「生产零 ports」口径。cadvisor 用**官方现址字面名** `ghcr.io/google/cadvisor:v0.60.6`
+  #    （2026-10-03 双端实测：服务器与开发机均可直拉该 tag；gcr.io 路径的版本 tag 已不存在
+  #    —— 旧「CI 从 gcr 搬运到 GHCR」机制随之**退役**，勿复活）。
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: ftl-node-exporter
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    expose:
+      - "9100"
+    command:
+      # Y13：只留 rootfs（`/:/rootfs:ro` 已覆盖）；⚙️ T12 生效核对 `node_filesystem_*`/`node_memory_*`
+      # 均在 ⇒ 收缩安全；若实证缺指标再加回 procfs/sysfs（HostDisk/Memory 规则不就哑火）。
+      - --path.rootfs=/rootfs
+      # 备份新鲜度上板（backup.sh 写 textfile；node-exporter 以 nobody 读——原子写 + 644）
+      - --collector.textfile.directory=/textfile
+    volumes:
+      # 宿主只读（node-exporter 的标准用法：读宿主 /proc、/sys 与根文件系统）
+      - /:/rootfs:ro
+      # ⚠️ bind 源目录由 install-cron.sh 预建（先于 compose up）；本机不建该目录时 docker 会
+      #    以 root 建空目录 ⇒ 容器照常起、只是暂时读不到备份指标（失败形态见 backup.sh 的 WARN）。
+      - /home/ubuntu/ftl-monitoring/textfile:/textfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9100/metrics"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ftl-platform
+
+  cadvisor:
+    # 官方镜像（Google 的 GHCR 命名空间；**无 build、无搬运**——2026-10-03 订正：ghcr.io 直拉，
+    # 服务器与开发机双端实测可达）
+    image: ghcr.io/google/cadvisor:v0.60.6
+    container_name: ftl-cadvisor
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    expose:
+      - "8080"
+    # docker_only：只看容器（不测宿主全量 cgroup）；housekeeping 30s；disable_metrics 控基数
+    # （percpu/sched/tcp 对「容器重启潮/每容器资源」无贡献，白名单 relabel 在 prometheus.yml 侧）。
+    command: ["--docker_only=true", "--housekeeping_interval=30s", "--disable_metrics=percpu,sched,tcp"]
+    volumes:
+      # 官方推荐只读挂载集（不 privileged；本机真栈已核——T12：16 目标含 cadvisor 全 up；
+      # **真 Linux 服务器首跑会响亮暴露任何权限差异**，失败走降级 checklist〔规格 C2〕）
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    # healthcheck：**官方镜像自带**（`/usr/bin/healthcheck.sh`；T12 真栈实测 Up healthy）
+    # ⇒ 本仓不另配，也不发明一个可能恒 unhealthy 的测试。
+    networks:
+      - ftl-platform
+
+  alert-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.alert-relay
+    # R1303：镜像命名唯一规则（见文件头）
+    image: ${IMAGE_PREFIX:-pokergame}-alert-relay:${IMAGE_TAG:-latest}
+    container_name: ftl-alert-relay
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # AM webhook 的唯一投递点（网内）。**槽位配置已管理化**：拉取驱动（`config.notifyChannel.get`，
+    # 30s 轮询/裁剪后四 IM 键/last-good 持久化）；**空串 = 未设**；URL/secret 永不进
+    # 日志与指标标签（URL 即凭据——S2③）。
+    expose:
+      - "8090"
+    environment:
+      # /webhook 与 /metrics 的 Bearer 守卫（/health 无守卫，供 healthcheck）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      # 通知拉取令牌 + 拓扑（⚙️5/§2.6：**空默认透传** —— dev 值由 conformance-stack.sh
+      # 的 export / run.ts 的 `??=` 供给；生产服务器 `.env` 必填、三端同值）。
+      - NOTIFY_CHANNEL_PULL_TOKEN=${NOTIFY_CHANNEL_PULL_TOKEN:-}
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+    volumes:
+      # last-good 持久化（`notify-config.json`，600；⚙️9 —— 从未拉到 ≠ 成功空图）。
+      - relay-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ftl-platform
+
+  # 通知通道管理化片（2026-10-07）：通知图 ⇒ Alertmanager 配置渲染 + 原地重载（极小组件；
+  # `command` 换同镜像第二入口 —— **共享镜像形态**，无 `build:`）。
+  am-renderer:
+    # R1303：镜像命名唯一规则（见文件头）——与 alert-relay **同参数化表达式、逐字相同**；
+    # 无 `build:` ⇒ A12 的「带 `build:` 的服务恰好 14 个」不动（评审 r2-N2 钉死）。
+    image: ${IMAGE_PREFIX:-pokergame}-alert-relay:${IMAGE_TAG:-latest}
+    container_name: ftl-am-renderer
+    restart: unless-stopped
+    # R1108 日志上限：每服务 ≈50MB 封顶、超出轮转删最旧（**轮转即丢弃** —— 见文件头说明）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # 渲染产物 `/alertmanager-live/alertmanager.yml`（600）落共享卷 ⇒ 以卷属主（65534）运行；
+    # 镜像内预建目录属主同值（Dockerfile.alert-relay——卷初始化属主继承依据）。
+    user: "65534:65534"
+    command: ["node", "packages/alert-relay/dist/am-renderer.js"]
+    # 仅顺序（非 health 条件）：config-service 未起时首拉失败 = 正常降级（baseline 不依赖拉取）。
+    depends_on:
+      - config-service
+    environment:
+      # 与 alert-relay 同源同值（§2.6 三持有）；空默认透传，供给点见 relay 段注释。
+      - NOTIFY_CHANNEL_PULL_TOKEN=${NOTIFY_CHANNEL_PULL_TOKEN:-}
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+    volumes:
+      # 渲染产物共享卷（rw；AM 端同卷 `:ro`）；无其它持久化面。
+      - alertmanager-live:/alertmanager-live
+    # **无 `expose`/`ports`/healthcheck**（无服务面；可用性由判据 ⑦ 的行为承接——登记理由在规格 §2.10）。
+    networks:
+      - ftl-platform
+
+volumes:
+  redis-data:
+    driver: local
+  mysql-data:
+    driver: local
+  caddy-data:
+    driver: local
+  # 监控片三卷：TSDB / Grafana 状态 / AM 静默与通知状态。
+  # ⚠️ 数据可弃性（设计 §7）：**不入备份**（配置全在仓库；TSDB 与看板状态丢失只损失历史曲线）。
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+  # 通知通道管理化片两卷：AM 生成配置共享卷（am-renderer rw ↔ alertmanager ro 同卷）+
+  # relay 的 last-good 持久化卷（`notify-config.json`）。均可从管理面配置重建 ⇒ 同监控片
+  # 口径**不入备份**（「数据可弃性」）。
+  alertmanager-live:
+    driver: local
+  relay-data:
+    driver: local
+
+networks:
+  ftl-platform:
+    driver: bridge
+    # ⚠️ **钉死 subnet**（R1205）：门口要一个**固定地址**当"唯一可信代理"，
+    #    而固定地址必须落在声明过的网段里。⚠️ 选段要避让宿主上其它 docker 网络。
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

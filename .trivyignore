@@ -1,0 +1,3 @@
+# trivy config 豁免登记（M0.1）。依据：docs/superpowers/specs/2026-10-02-security-scan-design.md D4。
+# 规则：逐 ID 一行；每条的上一行必须是 # 理由行；不许通配、不许 exp: 形态。
+# 首跑读数处置后在此逐条登记（能修则修优先）。

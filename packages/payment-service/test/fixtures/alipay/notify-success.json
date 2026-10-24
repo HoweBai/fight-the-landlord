@@ -1,0 +1,35 @@
+{
+  "name": "notify-success",
+  "source": "self-made（T6 自造；沙箱采集后按同构追加）",
+  "purpose": "成功回调（TRADE_SUCCESS）—— 口径①：通知验签通过；四项业务校验归 T8 消费",
+  "params": {
+    "gmt_create": "2026-10-06 10:00:00",
+    "charset": "utf-8",
+    "seller_email": "merchant@example.test",
+    "subject": "金币充值 6 元",
+    "buyer_id": "2088102147948060",
+    "invoice_amount": "6.00",
+    "notify_id": "ac05099524730693a8b330c5ecf72da9786",
+    "fund_bill_list": "[{\"amount\":\"6.00\",\"fundChannel\":\"ALIPAYACCOUNT\"}]",
+    "notify_type": "trade_status_sync",
+    "trade_status": "TRADE_SUCCESS",
+    "receipt_amount": "6.00",
+    "app_id": "9021000000000000",
+    "buyer_pay_amount": "6.00",
+    "sign_type": "RSA2",
+    "seller_id": "2088721087500000",
+    "gmt_payment": "2026-10-06 10:00:05",
+    "notify_time": "2026-10-06 10:00:05",
+    "version": "1.0",
+    "out_trade_no": "pay_m3xq8t9u7v2k1p",
+    "total_amount": "6.00",
+    "trade_no": "2026100622001448060000000001",
+    "auth_app_id": "9021000000000000",
+    "buyer_logon_id": "159****5678",
+    "point_amount": "0.00",
+    "sign": "0IFWVx5bPlj+c47fOKdX/7rl/4uZXQNXvD5YJUxp94K9zjiLTv0KPAcTG54s6OQDworZKVPlzfkGLpsJXz+bytYozfKXfyy4jyZBm9tPanoOXhyPX5kI4eDcigsuQr/sGryxwmRd/oSb/jMAnI88VZwEm/r2TI1hf0WLJzFJmjuOownLI25NfutVNQwqC98ZfMal9H2fMEeZCWMNquzKv7zOIub+jZNxT/bAysgy9yjAURyBguyTUD9MlB1MMCOFIepm3w01PzuobvYCEoDI7kNaOiYzBj4AsMAS8Dn/G/mzgb3SUpa1bJAPKDb1SRuPawhycqFnoE5eAa8baiWv6w=="
+  },
+  "expect": {
+    "verifyNotify": true
+  }
+}

@@ -1,0 +1,24 @@
+{
+  /**
+   * `test/**` 的类型闸（切片 P16 / R481 的收口）。
+   *
+   * 为什么必须单独一份：包的 `tsconfig.json` 要 `rootDir: ./src` + `outDir: ./dist` 才能构建，
+   * 因此它的 `include` 只能是 `src/**` ⇒ **测试代码长期不受任何类型闸管辖**
+   * （vitest 走 esbuild，不做类型检查）⇒ 夹具的形状漂移不可见（P12 实测代价）。
+   *
+   * ⚠️ 两个**必须**的覆盖（R541，实测依据）：
+   *  - `module: ESNext` + `moduleResolution: Bundler`：**vitest 的真实解析语义**
+   *    （类 bundler：允许无后缀相对导入、允许 `import.meta`）。照抄包的 `NodeNext` 会产生
+   *    7 处 TS1470（`import.meta`）+ 7 处 TS2835（要求显式 `.js`）这种**纯噪音**，那不是缺陷。
+   *  - `include` 同时含 `src/**` 与 `test/**`：测试引用的 src 符号也要在这把尺子下解析。
+   * ⚠️ `src/**` 仍由包的 `lint`（`tsc --noEmit`，NodeNext）独立守着 —— 两把尺子各量各的（R542）。
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/**/*", "test/**/*"]
+}

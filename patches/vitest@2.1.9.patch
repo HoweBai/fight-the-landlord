@@ -1,0 +1,48 @@
+diff --git a/dist/chunks/resolveConfig.rBxzbVsl.js b/dist/chunks/resolveConfig.rBxzbVsl.js
+index 8f3732f..53f3daa 100644
+--- a/dist/chunks/resolveConfig.rBxzbVsl.js
++++ b/dist/chunks/resolveConfig.rBxzbVsl.js
+@@ -6593,6 +6593,28 @@ async function groupFilesByEnv(files) {
+ 
+ const created = /* @__PURE__ */ new Set();
+ const promises = /* @__PURE__ */ new Map();
++async function atomicWriteFile(realFilePath, data) {
++  const __akDir = dirname(realFilePath);
++  const __akTmp = join(__akDir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
++  try {
++    await writeFile(__akTmp, data, "utf-8");
++    let __akErr;
++    for (let __akI = 0; __akI < 10; __akI++) {
++      try {
++        await fs.promises.rename(__akTmp, realFilePath);
++        return;
++      } catch (e) {
++        __akErr = e;
++        await new Promise((r) => setTimeout(r, 5 * (__akI + 1)));
++      }
++    }
++    throw __akErr;
++  } finally {
++    try {
++      await fs.promises.unlink(__akTmp);
++    } catch {}
++  }
++}
+ function createMethodsRPC(project, options = {}) {
+   const ctx = project.ctx;
+   const cacheFs = options.cacheFs ?? false;
+@@ -6633,12 +6655,12 @@ function createMethodsRPC(project, options = {}) {
+         return { id: tmp };
+       }
+       if (!created.has(dir)) {
+-        await mkdir(dir, { recursive: true });
++        fs.mkdirSync(dir, { recursive: true });
+         created.add(dir);
+       }
+       promises.set(
+         tmp,
+-        writeFile(tmp, code, "utf-8").finally(() => promises.delete(tmp))
++        atomicWriteFile(tmp, code).finally(() => promises.delete(tmp))
+       );
+       await promises.get(tmp);
+       Object.assign(result, { id: tmp });

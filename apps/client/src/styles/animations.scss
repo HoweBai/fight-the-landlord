@@ -1,0 +1,237 @@
+/**
+ * §8 动效。数值逐条照 `docs/superpowers/specs/2026-09-18-reference-ui-teardown.md` §1 的清单
+ * （`dsh-doudizhu` 的实测值：`cubic-bezier(.22,1,.36,1)` + `animation-fill-mode: both` +
+ * 内联 `--ddz-delay` 错峰）。
+ *
+ * ## ⚠️ 本文件**只能**被组件 `@import`（**不能**用 `@use`）
+ *
+ * 绝不能进 `src/uni.scss` —— 后者是 token 文件，uni-app CLI 会把它的内容**原样前置到
+ * 每一个 scss 块**（见 `uni.scss` 顶部注释），往里放选择器会让每个组件的样式里都重复一遍
+ * 这段 CSS。
+ *
+ * ⚠️ **组件里必须写 `@import`，不能写 `@use`**（构建期实测）：
+ * uni-app 把 `uni.scss` 的全部内容（含一个 `@mixin`）**前置**到每个 scss 块，
+ * 而 Sass 要求 `@use` 出现在**任何规则之前** ⇒ 组件里写 `@use` 会直接**构建失败**：
+ *   `[sass] @use rules must be written before any other rules.`
+ * `@import` 没有位置约束。（Dart Sass 会提示 `@import` 已弃用，但它仍是本仓唯一可用的形态。）
+ *
+ * ## ⚠️ 起始态必须**可见**
+ *
+ * 全部动画只从**位移 / 缩放**起手，**不**用 `opacity: 0`。理由：动画一旦不被执行
+ * （老端 / 降级 / 中间态），元素**不能**因此永久隐形 —— 那比不动效糟得多。
+ *
+ * ## ⚠️ 零 JS 定时器
+ *
+ * 错峰靠内联 `--ftl-delay`（模板里 `:style="{ '--ftl-delay': '35ms' }"`），
+ * **不用 `setTimeout`** —— 牌桌区「不新造时钟」的纪律（§9.6 同族）。
+ */
+
+$ftl-ease: cubic-bezier(.22, 1, .36, 1);
+
+/// 发牌落入。参考：`ddz-deal-in .36s`（`translateY(-18px) rotate(-3deg) scale(.92)` → none）。
+@keyframes ftl-deal-in {
+  from {
+    transform: translateY(-18px) rotate(-3deg) scale(.92);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/// 出牌入场。参考：`ddz-played-in .24s`。
+@keyframes ftl-played-in {
+  from {
+    transform: translateY(8px) scale(.94);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/// 底牌揭示（翻牌）。参考：每张 `.46s rotateY(90deg)`，容器 `perspective: 600px`。
+@keyframes ftl-reveal-in {
+  from {
+    transform: rotateY(90deg);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/// 结算弹窗。参考：卡片 `.24s`（`translateY(10px) scale(.985)`）。
+@keyframes ftl-settlement-in {
+  from {
+    transform: translateY(10px) scale(.985);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/// 气泡。参考：`ddz-toast-in .22s`。
+@keyframes ftl-toast-in {
+  from {
+    transform: translateY(-6px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/// 底部浮层入场：轻微上浮（只动 transform，起始态可见）。
+@keyframes ftl-float-up {
+  from {
+    transform: translateY(12px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/**
+ * 倒计时紧迫脉动（A 档）：末 5 秒的钟**循环轻放大**。
+ * ⚠️ 只动 `transform: scale`（不动 opacity / 布局 —— 起始可见纪律 + 不引发重排挤动牌桌）；
+ * 幅度刻意压到 12%：钟在窄列里，放大会不会压到旁列由容器几何决定，缩放不参与排版故安全。
+ */
+@keyframes ftl-urgent-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+/**
+ * 匹配等待跳点：三个点依次轻跳（循环）。只动 `transform`（起始可见纪律）；
+ * 错峰仍走 `--ftl-delay`（0/150/300ms），零 JS 定时器。
+ */
+@keyframes ftl-wait-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-4px) scale(1.08);
+  }
+}
+
+/**
+ * 错峰容器：`min(i, 12) * 35ms`（参考实现同款上限 —— 不封顶的话 20 张牌要等 700ms）。
+ * 由宿主在模板里给 `--ftl-delay`；缺省 0ms ⇒ 不传也能动，只是不递增。
+ *
+ * ⚠️ **发牌动画用 `backwards`，不用 `both`**（走查实测）：手牌的 `.anim-deal-in` 类
+ * **播完不移除**（Hand.vue 常驻），而 `both` 的 forwards 填充会把 to 帧的 `transform: none`
+ * 永久留在元素上——CSS 动画填充值的级联优先级高于普通规则，于是
+ * `.card--selected { transform: translateY(-24px) }` 被**整局压住**，选牌只剩描边、
+ * 完全不抬升。`backwards` 只在延迟等待期摆好起始姿势，播完即把 transform 归还普通规则
+ *（to 帧本身就是 `none`，未选牌零跳变；选中牌的抬起即刻生效）。
+ * 其余一次性动画（played/reveal/settlement/toast）的元素基础 transform 恒为 `none`，
+ * 保持 `both` 与 `backwards` 视觉等价，不在此列。
+ */
+.anim-deal-in {
+  animation: ftl-deal-in .36s $ftl-ease backwards;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
+/**
+ * 重新发牌：整手牌重新落入。
+ * 比首发位移更大、带旋转（`-48px / -8deg / .86`），让“换了一手牌”一眼可见；
+ * 与 `.anim-deal-in` 同族的纪律：**只从位移/缩放起手**（起始态可见）、**backwards** 填充
+ * （`both` 的 forwards 值会永久压住 `.card--selected` 的抬升，走查实测见上）。
+ */
+@keyframes ftl-redeal-in {
+  from {
+    transform: translateY(-48px) rotate(-8deg) scale(.86);
+  }
+  to {
+    transform: none;
+  }
+}
+.anim-redeal-in {
+  animation: ftl-redeal-in .46s $ftl-ease backwards;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
+/**
+ * 重新发牌横幅的生命周期：入场（缩放可见）→ 停留 → 末段淡出。
+ * ⚠️ 时长由内联 `--ftl-redeal-ms` 给（与 `useRedealNotice` 的 `REDEAL_BANNER_MS` 同源；
+ *    兜底值必须与它相等，`animations.test.ts` 有跨文件闸）。
+ * ⚠️ `0%` 必须是**可见**的（`opacity: 1`）—— 起始态不得依赖动画才出现。
+ * ⚠️ 这是**一次性长动画**：`both` 保持末帧（透明）直到 composable 的计时器卸载元素；
+ *    reduced-motion 下动画被关掉，元素静态可见 2 秒后同样由计时器移除。
+ */
+@keyframes ftl-redeal-banner-life {
+  0% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  12% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.anim-redeal-banner {
+  animation: ftl-redeal-banner-life var(--ftl-redeal-ms, 2000ms) $ftl-ease both;
+}
+.anim-played-in {
+  animation: ftl-played-in .24s $ftl-ease both;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+/** 翻牌需要透视，否则 `rotateY` 看起来只是「压扁」。 */
+.anim-reveal-in {
+  animation: ftl-reveal-in .46s $ftl-ease both;
+  animation-delay: var(--ftl-delay, 0ms);
+  perspective: 600px;
+}
+.anim-settlement-in {
+  animation: ftl-settlement-in .24s $ftl-ease both;
+}
+.anim-toast-in {
+  animation: ftl-toast-in .22s $ftl-ease both;
+}
+/** 底部浮层入场：轻微上浮（起始可见；只动 transform；播完归还 transform）。 */
+.anim-float-up {
+  animation: ftl-float-up .24s $ftl-ease backwards;
+}
+/** 末 5 秒紧迫态：循环脉动（颜色由各组件自己的 `--urgent` 类切换，本类只管动）。 */
+.anim-urgent-pulse {
+  animation: ftl-urgent-pulse 0.8s ease-in-out infinite;
+}
+/** 匹配等待：跳点循环；同一类靠 `--ftl-delay` 错峰。 */
+.anim-wait-dot {
+  animation: ftl-wait-bounce 1s $ftl-ease infinite;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
+/**
+ * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
+ * 形态照参考实现（`transition: none` + `animation: none !important`）。
+ *
+ * ⚠️ **只关动画，不改任何布局 / 可见性** —— 降级后元素仍在原位、仍然可见
+ * （与「起始态必须可见」是同一条纪律的两面）。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .anim-deal-in,
+  .anim-redeal-in,
+  .anim-redeal-banner,
+  .anim-played-in,
+  .anim-reveal-in,
+  .anim-settlement-in,
+  .anim-toast-in,
+  .anim-float-up,
+  .anim-urgent-pulse,
+  .anim-wait-dot {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

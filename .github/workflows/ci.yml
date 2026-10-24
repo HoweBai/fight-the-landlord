@@ -1,0 +1,107 @@
+# §13.4 的 CI 六阶段（R269）。
+#
+# ⚠️ 本文件**只是薄调用**：六个阶段的定义在 `scripts/ci.sh`（单一真源）。
+#    在这里重抄一份阶段列表 = 制造第二个真源 —— 本仓为「同一事实两处实现」
+#    反复付过代价（改了一处、另一处没改，而单侧测试测不出来）。
+name: ci
+# 触发面（2026-10-15 用户口径）：push 只认 master —— 开发分支（`dev`）随推**零 CI**；
+# PR 仍跑（合并点自带一次快筛）；需要时可手动：`gh workflow run ci.yml --ref dev`。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ⚠️ 版本与根 `package.json` 的 `packageManager`（`pnpm@9.15.0`）一致。
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: bash scripts/ci.sh
+
+  # ⚠️ R1309①/B2：**纯渲染**判据（片① 的 A 类）从此每次 push 都有自动闸。
+  #    与上面的 `ci` job **并行**（互不依赖）：本 job 不需要 docker daemon、不需要任何镜像，
+  #    实测 ≈2.8s ⇒ 放在这里几乎不花钱，却把「生产形态保证没有任何自动闸」这个片① 的 R2 关掉。
+  #
+  # ⚠️ 为什么**不是**六阶段的一部分：六阶段的定义在 `scripts/ci.sh`（单一真源），
+  #    而本 job 跑的是 conformance 工具 —— 塞进 `ci.sh` 会让「六阶段」不再是规格里那张表。
+  render-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # ⚠️ **必须带 `...`**（= 连同它的依赖一起构建）：`tools/conformance` import 了
+      #    `@fight-the-landlord/protocol`，而 `tsc` 解析到的是那个包的 `dist/*.d.ts` ——
+      #    不先构建它就会 TS2307 假红。不构建 6 个服务：切片跑在容器里，宿主不需要它们的 dist。
+      - run: pnpm exec turbo run build --filter=@fight-the-landlord/conformance...
+      # ⚠️ 显式步骤选择 + `--render`：纯渲染 = 全部 `prod`+`dev` 段**减去** `caddy`（A6a(ii)）。
+      #    不带 `--render` 会去探测网关健康 ⇒ 没有栈 ⇒ 假红。
+      #
+      # ⚠️ 形状（B4 起）：**`baselines.json` 的 `render` 列列了的每个切片各占一步**、都**追加**到
+      #    同一个日志；比较**只做一次**（最后一步）。这是「基线列了它 ⇒ 它必须跑」的落地形态：
+      #      * 某片从下面的步骤里掉了而基线仍列着它 ⇒ 比较那一步以「缺席」响亮报错（不是静默通过）；
+      #      * 日志里多出基线未回填的切片 ⇒ 同样报错 ⇒ 两边键集必须**恰好**相等。
+      #    所以「加新切片」= 加一步 + 回填基线；只做一半就会红。
+      - name: 纯渲染判据（slice-07.2-deploy · prod+dev）
+        run: |
+          set -o pipefail
+          : > "$RUNNER_TEMP/render.log"
+          CONFORMANCE_DEPLOY_STEPS=prod,dev \
+            node tools/conformance/dist/run.js slice-07.2-deploy --render 2>&1 | tee -a "$RUNNER_TEMP/render.log"
+
+      # ⚠️ B1（工作流清点）也在这里跑：它只读 YAML、不碰 docker，与 `--render` 的语义一致。
+      - name: 工作流清点（slice-07.4-pipeline · B1）
+        run: |
+          set -o pipefail
+          node tools/conformance/dist/run.js slice-07.4-pipeline --render 2>&1 | tee -a "$RUNNER_TEMP/render.log"
+
+      # ⚠️ 终审 M8：`--self-test` 的四条负对照此前**没有任何自动化调用**（只在被 gitignore 的
+      #    清单里手工跑过）—— 静态、免费 ⇒ 放在这里，下一次编辑把它改坏时**这里会红**，
+      #    而不是等到某个「比较脚本自己变成空测」的场合才发现（R115 同族）。
+      - name: 比对脚本自身行为自证（四条负对照）
+        run: node scripts/check-baselines.mjs --self-test
+
+      # ⚠️ 比较**恰好一次**、且在**所有** `render` 列列了的切片都落盘之后。
+      - name: 比对 render 基线（`render` 列列了的切片必须都在日志里）
+        run: node scripts/check-baselines.mjs render "$RUNNER_TEMP/render.log"
+
+  # ⚠️ M0.1：第三个 job —— 三路安全扫描（依赖漏洞 / 密钥泄露 / 配置误配），与上面两个 job **并行**。
+  #    与 `render-gate` 同理由不进六阶段：六阶段真源在 `scripts/ci.sh`，安全扫描不是规格里那张表的一部分。
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # gitleaks 全历史的地基（浅检出 = 静默只扫 1 commit）
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # ⚠️ **不加 `cache: pnpm`**——本 job 不跑 `pnpm install`（audit 只读锁文件），pnpm store 不存在；
+          #    带缓存会让 post-step 保存缓存时「路径不存在」**把 job 判红**（master 首跑实测，M0.1 修复轮）。
+          node-version: 20
+      - name: 依赖漏洞（门脚本）
+        run: node scripts/security/check-audit.mjs
+      - name: 门脚本行为自证
+        run: node scripts/security/check-audit.mjs --self-test
+      - name: 密钥泄露（gitleaks 全历史）
+        run: |
+          curl -fsSLo /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --config .gitleaks.toml --redact --no-banner -v --exit-code 1
+      - name: 配置误配（trivy config）
+        run: |
+          curl -fsSLo /tmp/trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          echo "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  /tmp/trivy.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          /tmp/trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore .

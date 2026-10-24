@@ -1,0 +1,118 @@
+# 真栈 conformance：**Linux 侧验证的自动化答案**（片① 用户裁决「后移到实际部署时统一跑」由此落地且长期生效）。
+#
+# 三种被调用形态：
+#   * push→master：自己构建 14 镜像，起真栈，跑全部切片（feature 分支**不跑** —— R1304 的触发分级）。
+#   * `workflow_call`（由 `release.yml` 传 `image_tag`）：**拉刚推好的 tag 镜像**，省一次全量构建
+#     （R1314⑤：tag 路径的构建次数 = 2）。
+#
+# ⚠️ **额度吃紧时的降级路径**（R1314③）：删掉下面的 `on.push.branches`、只留 `workflow_call`
+#    ⇒ 真栈 conformance 就只在 tag 上跑。
+#    ⚠️ 触发面**不是**「tag 与手动 dispatch」：dispatch 打的是 `release.yml`，而它的 `conformance`
+#       job 带 `if: github.event_name == 'push'` ⇒ 那条路径上本工作流**整条被跳过**（回滚快正靠它）。
+#    ⚠️ 也**已不是一行改动**：`slice-07.4-pipeline` 把本文件的触发集合钉成 {push, workflow_call}
+#       ⇒ 删 `on.push` 会让那一片红（得分两处一起改）。代价不变：master 上不再有真栈闸
+#       （渲染闸 `render-gate` 仍在 `ci.yml` 里每次 push 跑，不受影响）。
+name: conformance
+
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+  workflow_call:
+    inputs:
+      image_tag:
+        description: '从 GHCR 拉的既有 tag；留空 = 本机构建'
+        required: false
+        type: string
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    # ⚠️ 终审 M11：不写它 ⇒ 挂死的栈/切片可以吃掉 **360 分钟**的 job 默认上限（R1314 是成本控制
+    #    要求）。实测形态：本 job 全是构建 + 起栈 + 跑 29 个切片 + 拆栈 —— 冷启动最慢的一轮也在
+    #    半小时内（首轮 `--build` 203.7s + 各切片数十秒）。60 分钟 = 给 runner 慢速留足余量、
+    #    同时把「挂死」的代价钉在一个有限数上。
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # 拉 GHCR 私有包需要 read（复用路径）。
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # ⚠️ `...` = 连同依赖一起构建（`tools/conformance` 需要 `@fight-the-landlord/protocol` 的
+      #    `dist`）。**不**构建 6 个服务 —— 它们跑在容器里，由 Dockerfile 在镜像内自己构建。
+      - run: pnpm exec turbo run build --filter=@fight-the-landlord/conformance...
+      - name: 起真栈
+        env:
+          IMAGE_TAG_PULL: ${{ inputs.image_tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          # 片⑦ I6：**与 stack 脚本 / `lib/http.ts` 的常量三处同源、必须逐字一致**
+          # （那个 export 在 `scripts/deploy/conformance-stack.sh` 顶部；helper 常量在
+          # `tools/conformance/src/lib/http.ts` 的 `ADMIN_PASSWORD`）。workflow 的 env **继承不到**
+          # 脚本里的 export ⇒ 起栈步与循环步**两处**都要显式给（不同 step 是不同 shell）。
+          ADMIN_PASSWORD: conformance-admin-pass
+        run: bash scripts/deploy/conformance-stack.sh up
+      # ⚠️ 片⑦ C11（**不是切片、不进 baselines**）：起真栈后、切片循环前，先钉「fresh 态 =
+      #    生产默认」——`friendRoomEnabled === false`（种子铁律的唯一可观测时点；「偷偷把栈种成
+      #    true」会让 C8 的默认态覆盖被静默丢掉）。放在这里 = 循环步里任何切片动过开关之前。
+      - name: 默认态前置断言（C11）
+        run: node tools/conformance/dist/run.js --fresh
+      # ⚠️ 单一栈 · **串行** · 固定顺序（spec B3①），顺序**取自 `run.ts` 的 `CASES`**。
+      #    `set +e` + 累积 `fail`：某一片红也要把其余的跑完（一次拿到全貌），最后统一非零退出。
+      # ⚠️ `set -o pipefail` **不可少**：下面每片都走 `node … | tee -a …`，而未指定 `shell:` 时
+      #    Actions 用的是 `bash -e {0}`（**不含 pipefail**）⇒ 管道的退出码取**最后一个**命令
+      #    （`tee`，常态 0）⇒ `|| fail=1` 永不触发、**某片红也不会让 job 红**，闸就这样静默地少做
+      #    （R115 同族）。成例：`ci.yml` 的 `render-gate` 在 `| tee` 前显式写同一行。
+      #    `set +e` 只关 errexit、与 pipefail 互不干扰（默认 shell 本就带 pipefail 时此行为 no-op）。
+      - name: 跑全部切片（顺序取自 run.ts 的 CASES）
+        env:
+          # 片⑦ I6：与「起真栈」步、`lib/http.ts` 的 `ADMIN_PASSWORD` 常量**三处同源** ——
+          # 管理面登录（slice-14 C6半/C15、slice-06/07.1/07.2-hardening/12 的开关前置）用它。
+          # 不显式给的话这里会回落到 helper 的默认值（也是 conformance-admin-pass，但两处默认
+          # 对齐是有意为之，别把「碰巧相等」当契约）。
+          ADMIN_PASSWORD: conformance-admin-pass
+        run: |
+          set +e
+          set -o pipefail
+          fail=0
+          LOG="$RUNNER_TEMP/conformance.log"
+          : > "$LOG"
+          for c in $(node tools/conformance/dist/run.js --list); do
+            echo "───── $c ─────" | tee -a "$LOG"
+            node tools/conformance/dist/run.js "$c" 2>&1 | tee -a "$LOG"
+            rc="${PIPESTATUS[0]}"
+            # ⚠️ **逐片记退出码**（2026-09-25，CI 首跑诊断）：原先只有 `|| fail=1`，于是
+            #    「node 自己**静默退出**（打了一行标题就没了）」与「跑了但没输出」在日志里
+            #    长得一模一样 —— 实测就踩到了：slice-12 与 slice-07.4-pipeline 各只活 **111ms/178ms**
+            #    就消失（本机同一条要跑 74s），而日志里只剩一行标题。有了这行就能直接读出
+            #    退出码。⚠️ `PIPESTATUS` 必须**紧跟**管道取值（中间插任何命令都会被重置）。
+            echo "[loop] $c ⇒ exit $rc" | tee -a "$LOG"
+            if [ "$rc" -ne 0 ]; then fail=1; fi
+          done
+          node scripts/check-baselines.mjs full "$LOG" || fail=1
+          exit $fail
+      - name: 失败诊断（仅失败时）—— 容器重启数/OOM/事件/尾部日志
+        if: failure()
+        run: |
+          # 2026-10-04 货币片 CI 轮：slice-16 C1 的 user-service 9001 探针二连红（「实际 0」= exec 无哨兵
+          # ——容器重启窗口或连接被拒），而收尾步一销毁现场就无从对证。本步在任何红出现时先取证再收尾。
+          echo "=== docker ps -a ==="
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}' || true
+          for c in $(docker ps -a --format '{{.Names}}' | grep '^ftl-' || true); do
+            echo "=== $c ==="
+            docker inspect "$c" --format 'RestartCount={{.RestartCount}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} StartedAt={{.State.StartedAt}} Status={{.State.Status}}' || true
+            docker logs "$c" --tail 15 2>&1 || true
+          done
+          echo "=== 近 40 分钟容器事件（die/kill/oom/restart）==="
+          docker events --since 40m --until 0m \
+            --filter type=container --filter event=die --filter event=kill --filter event=oom --filter event=restart 2>/dev/null | tail -50 || true
+      - name: 收尾（无论成败）
+        if: always()
+        run: bash scripts/deploy/conformance-stack.sh down || true

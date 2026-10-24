@@ -1,0 +1,39 @@
+# platform/Dockerfile.prometheus —— 监控片：Prometheus（抓取配置 + 27 条规则 + entrypoint 进镜像）。
+#
+# 「配置进镜像」是本仓部署纪律（改配置 = 发版；不放宿主挂载）——prometheus.yml / rules/ 的
+# 唯一真源在 `deploy/monitoring/prometheus/`，构建时 COPY 进镜像。
+#
+# ⚙️ 实施期核对（2026-10-03，docker inspect prom/prometheus:v3.15.0 实测）：
+#   - 官方 `USER=nobody`（uid 65534）⇒ 需要写文件的 `/etc/prometheus/secret` 必须在
+#     `USER root` 段预建并 chown 回 65534（R3③：token 由 entrypoint 从 env 落盘 600）。
+#   - 官方 `CMD` 逐字 = `["--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.path=/prometheus"]`
+#     ⇒ entrypoint **原样转发** `"$@"`（O3：同值重复的 flag 在 kingpin 下是**报错**），
+#     本镜像只把自家配置 COPY 到官方默认路径上（覆盖官方自带的 demo 配置）。
+FROM prom/prometheus:v3.15.0
+
+USER root
+
+# 配置 + 规则 + entrypoint（覆盖官方 /etc/prometheus/prometheus.yml）
+COPY deploy/monitoring/prometheus/ /etc/prometheus/
+
+# secret 目录（R3③ / 规格 §2.4ter）：chown 回 nobody + mode 700 + 显式给 entrypoint 可执行位
+# （Windows 宿主构建时 COPY 不保留可执行位；一行 chmod 比「猜宿主文件模式」可靠）。
+RUN mkdir -p /etc/prometheus/secret \
+ && chown 65534:65534 /etc/prometheus/secret \
+ && chmod 700 /etc/prometheus/secret \
+ && chmod 755 /etc/prometheus/entrypoint.sh
+
+# 回官方运行用户（安全扫描 trivy DS-0002 同族：非 root 运行）
+USER 65534
+
+# ENTRYPOINT 换成我们的脚本：落 token → `exec /bin/prometheus`（只补增量 flag + 转发官方 CMD，O3）
+ENTRYPOINT ["/etc/prometheus/entrypoint.sh"]
+
+# ⚠️ **必须显式重述官方 CMD**（T9 实测，2026-10-03）：Docker 语义 = 子 Dockerfile 里出现
+#    ENTRYPOINT 时，**继承来的 CMD 会被清空**（实测 `docker inspect`：只写 ENTRYPOINT ⇒
+#    `CMD=null`）⇒ entrypoint 末尾的 `"$@"` 转发的是**空** ⇒ prometheus 以 kingpin 默认值
+#    找相对路径 `prometheus.yml` 而**起不来**（实测原文：`Error loading config
+#    (--config.file=prometheus.yml) … open prometheus.yml: no such file or directory`）。
+#    这里逐字重述官方 CMD（与 `prom/prometheus:v3.15.0` 的 docker inspect **逐字一致**）⇒
+#    恢复「官方 CMD 提供路径 flag、脚本只补增量」的 O3 形态（零重复）。
+CMD ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]

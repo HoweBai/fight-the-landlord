@@ -1,0 +1,228 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1000000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "currency_robot_pool_balance",
+          "instant": true,
+          "legendFormat": "虚拟池余额（告警线 100 万）",
+          "refId": "A"
+        }
+      ],
+      "title": "虚拟池余额（告警线 100 万）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "currency_robot_accounts_balance_sum",
+          "instant": true,
+          "legendFormat": "机器人账户余额总量",
+          "refId": "A"
+        }
+      ],
+      "title": "机器人账户余额总量（僵尸余额通缩观测）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "currency_settle_outbox_oldest_seconds",
+          "instant": true,
+          "legendFormat": "最老条目滞留",
+          "refId": "A"
+        }
+      ],
+      "title": "结算补偿队列最老滞留（告警线 300s）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (result) (rate(currency_settle_result_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "结算结果速率（按 result / 5m：ok|replayed|retried|r2|outboxed|dropped）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (result) (rate(currency_relief_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "救助速率（按 result / 5m：granted|replayed|rejected）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "rate(currency_settle_residue_total[5m])",
+          "legendFormat": "残差销毁（金额/秒，5m 窗）",
+          "refId": "A"
+        }
+      ],
+      "title": "残差销毁增速",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (action) (rate(currency_robot_topup_total[5m]))",
+          "legendFormat": "{{action}}",
+          "refId": "A"
+        }
+      ],
+      "title": "机器人补给/回收速率（按 action / 5m：refill|recall）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "currency_robot_ensure_failed_total",
+          "legendFormat": "累计失败（≥1 即异常）",
+          "refId": "A"
+        }
+      ],
+      "title": "机器人 ensure 失败累计",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum by (reason) (rate(entry_fee_skipped_total[5m]))",
+          "legendFormat": "漏收 {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "rate(entry_fee_conflict_total[5m])",
+          "legendFormat": "冲突（视为已收，非漏收）",
+          "refId": "B"
+        }
+      ],
+      "title": "台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ftl", "monitoring"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "资金面 / Currency",
+  "uid": "ftl-currency",
+  "version": 1,
+  "weekStart": ""
+}

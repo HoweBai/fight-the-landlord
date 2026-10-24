@@ -1,0 +1,38 @@
+{
+  "name": "@fight-the-landlord/conformance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "端到端联调测试（真实后端 + 真实 socket.io 客户端）。刻意不提供 test 脚本：它需要 3000-3003 的服务在跑，挂进 turbo run test 会让无容器环境假红。用 pnpm conformance 显式运行。",
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "conformance": "node dist/run.js",
+    "conformance:slice-05": "node dist/run.js slice-05",
+    "conformance:slice-06": "node dist/run.js slice-06",
+    "conformance:slice-07": "node dist/run.js slice-07",
+    "conformance:slice-07.1": "node dist/run.js slice-07.1",
+    "conformance:slice-08": "node dist/run.js slice-08",
+    "conformance:slice-09": "node dist/run.js slice-09",
+    "conformance:slice-10": "node dist/run.js slice-10",
+    "conformance:slice-11": "node dist/run.js slice-11",
+    "conformance:slice-07.2-security": "node dist/run.js slice-07.2-security",
+    "conformance:slice-07.2-boundary": "node dist/run.js slice-07.2-boundary",
+    "conformance:slice-07.2-hardening": "node dist/run.js slice-07.2-hardening",
+    "conformance:slice-07.2-deploy": "node dist/run.js slice-07.2-deploy",
+    "conformance:slice-07.2-rpc": "node dist/run.js slice-07.2-rpc",
+    "conformance:slice-07.3-edge": "node dist/run.js slice-07.3-edge",
+    "conformance:slice-12": "node dist/run.js slice-12",
+    "conformance:slice-07.4-pipeline": "node dist/run.js slice-07.4-pipeline"
+  },
+  "dependencies": {
+    "@fight-the-landlord/protocol": "workspace:*",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@fight-the-landlord/test-utils": "workspace:*",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "js-yaml": "4.3.2",
+    "typescript": "^5.7.0"
+  }
+}

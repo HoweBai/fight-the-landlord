@@ -1,0 +1,73 @@
+# platform/Dockerfile.alert-relay —— 监控片：Alertmanager webhook → 飞书/钉钉/企微 转发服务。
+# 通知通道管理化片（T15）起本镜像**承两个入口**：relay（`dist/server.js`，本镜像缺省 CMD）
+# + am-renderer（`dist/am-renderer.js`，compose 以 `command:` 覆写起独立容器）。
+#
+# ── 多阶段（T15）：只为拿 amtool 这一个静态二进制 ─────────────────────────────
+# `FROM prom/alertmanager:v0.34.1 AS alertmanager-bin` **置于文件顶部**（node stage **之前** ——
+# 中段插入会截断 node stage、build 必败；评审 r2-B5）+ `COPY --from= ... /bin/amtool`：
+# am-renderer 落盘前的 `amtool check-config` 预检用（评审 S-Y3；Go 静态二进制，alpine 可运行）。
+#
+# COPY 次序**照 `Dockerfile.user-service` 的模板**（工作区文件 + `patches/` + `tsconfig.base`
+# 先于 install；被 COPY 的包的 workspace 依赖也必须 COPY —— 两门 Dockerfile 对账闸会抓，
+# 见 packages/shared/test/dockerfile-{patches,workspace}-copy.gate.test.ts）。
+#
+# ⚠️ 基底 **node:20-alpine**（O1）：BusyBox 自带 wget 供 compose 的 healthcheck 用
+#    （node:20-slim 里既无 wget 也无 curl——七个 Nest 镜像是显式 apt 装 curl 出来的，
+#    这里不值得为一条 healthcheck 装包）。
+FROM prom/alertmanager:v0.34.1 AS alertmanager-bin
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy all workspace files first
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
+COPY package.json ./
+# ⚠️ 根 package.json 的 pnpm.patchedDependencies 会在 install 时读取 patches/（hash 计算即读文件）；
+# 缺了这一行，容器内 `pnpm install` 直接 ENOENT 失败
+COPY patches ./patches
+# 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）并在 vitest 的 .d.ts 上报 TS18028
+COPY tsconfig.base.json ./
+
+# Copy all packages（依赖方向：protocol 零依赖 → shared 依赖 protocol → 服务依赖两者）
+# N46：dev-only 测试工具包（测试侧唯一真源）—— 被 COPY 的多个包以 workspace:* 引用它；
+# 缺这一行，容器内 pnpm install 解析不到该 workspace 依赖
+COPY packages/test-utils ./packages/test-utils
+COPY packages/protocol ./packages/protocol
+COPY packages/shared ./packages/shared
+COPY packages/alert-relay ./packages/alert-relay
+
+# Install dependencies.
+# ⚠️ `--ignore-scripts` 的由来见 `Dockerfile.user-service` 详注（sqlite3 的 prebuild-install
+# 无超时拉 GitHub）；relay 自身无原生依赖，跳过脚本无副作用。
+RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts
+
+# Build the service（按依赖顺序：test-utils 是 protocol 测试文件的 import，先于 protocol；
+# 缺 protocol 时 shared 的 tsc 解析不到 @fight-the-landlord/protocol）
+RUN pnpm --filter @fight-the-landlord/test-utils build \
+ && pnpm --filter @fight-the-landlord/protocol build \
+ && pnpm --filter @fight-the-landlord/shared build \
+ && pnpm --filter @fight-the-landlord/alert-relay build
+
+# amtool（多阶段 COPY；见文件头）——am-renderer 的 `/bin/amtool check-config` 预检（§3.4）
+COPY --from=alertmanager-bin /bin/amtool /bin/amtool
+
+# 两个运行期目录**镜像内预建**（命名卷初始化属主继承依据；T15/§2.10——两镜像都预建，
+# 哪个先挂载都成立）：
+#   · /data              = relay 的 last-good（`notify-config.json`，600）——relay 以 node(1000) 运行；
+#   · /alertmanager-live = renderer 渲染产物（`alertmanager.yml`，600）——am-renderer 由 compose
+#     以 `user: "65534:65534"` 运行（AM 端只读挂同卷）。
+RUN mkdir -p /data /alertmanager-live && chown node:node /data && chown 65534:65534 /alertmanager-live
+
+EXPOSE 8090
+
+# 安全扫描（M0.1 T7）：非 root 运行（trivy DS-0002）。node:20-alpine 自带 uid 1000 的 `node`；
+# relay 以 node 运行、写 /data（属主 node）；am-renderer 面由 compose 覆写为 `user: 65534:65534`
+# 写 /alertmanager-live（属主 65534）——两运行面与两目录属主一一对应。
+USER node
+
+# 缺省入口形态：`node packages/alert-relay/dist/server.js`（server.ts 的 argv 守卫命中 ⇒ main()
+# 自启常驻）。⚠️ am-renderer 容器由 compose `command: ["node","packages/alert-relay/dist/am-renderer.js"]`
+# **覆写**本 CMD（am-renderer.ts 的 argv 守卫同款命中）。
+CMD ["node", "packages/alert-relay/dist/server.js"]

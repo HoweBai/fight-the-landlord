@@ -1,0 +1,226 @@
+# ⚠️ 开发/联调形态（R98/R144/R1203）。Compose 在**不显式给 `-f`** 时自动合并本文件；
+#    `docker compose -f docker-compose.yml …` 则**只**看生产形态（R98 的判据就这么取）。
+#
+# 这里放回**三样**只该出现在开发环境的东西：
+#   ① 宿主端口映射 —— `3001/3002/3003/3005` + RPC `3103/3105/3101/3106`（R226：基文件只 `expose`
+#      ⇒ 宿主**连不上**，而 conformance 在**宿主机**跑 `tools/conformance/src/lib/rpc.ts` 的 TCP 探针）
+#      与 `6379/3306/2021`（本地调试所依赖的，R145/N10）；**新增 `api-gateway:3000`** ——
+#      R1203 把它的宿主映射从**基文件**移到这里（生产形态不发布它；`ports` 是**并集**，
+#      所以基文件里必须**零**映射，否则合并后又出现）；
+#   ② `INTERNAL_SERVICE_TOKEN` 的 dev 默认值（生产必须显式配置，见基文件）；
+#   ③ 门口（`edge`）的**本机形态** —— `profiles: ["edge"]` ⇒ 日常 `docker compose up -d` 仍是
+#      11 个容器，只有 `docker compose --profile edge up -d edge` 才拉起第 12 个（门口）。
+#      ⚠️ `--profile` 是**全局参数**（写在子命令**之前**）；生命周期协议见 spec R1209
+#      （`down` **删不掉**带 profile 的容器 ⇒ 收尾用 `docker compose --profile edge rm -sf edge`）。
+#      ⚠️ 门口环境里的 `TRUST_PROXY` 属 **api-gateway**（限流在网关；放门口无效）——
+#      这里写成**透传 + 默认空**（不是"无条件置空"）：宿主未设 ⇒ 空（= 不信任何人）；
+#      宿主 `export TRUST_PROXY=<门口固定地址>` ⇒ 会漏进来（本机验可信 IP 就是这么注的）。
+#
+# ⚠️ **本文件不含任何宿主产物挂载**（第三样曾在这里：`robot-service` 的宿主 dist 挂载）。
+#    用户 2026-09-23 裁决**整条删除** —— 它换来「改完 robot-service 不用重建镜像」，代价是
+#    **版本偏斜**（旧服务代码 + 镜像里的新 `shared` ⇒ `Cannot read properties of undefined
+#    (reading 'service')` 崩；Nest 的 `abortOnError` 默认 `true` ⇒ 只 abort、不打印错误消息
+#    ⇒ 症状极难读），外加每次跑真栈前「必须先在宿主 build」的前置纪律。
+#    ⇒ 改 robot-service 一律 `docker compose build robot-service`（与其余五个服务同构）。
+#    判据：`slice-07.2-deploy` ①c（生产形态零 bind 挂载）/ ②c（开发形态**同样**为零）；
+#    谓词判别力改由 ①c′ 的**合成样本**自证（不再依赖真实挂载存在）。
+#
+# ⚠️ 合并语义（实测 v5.5.1）：`environment` 是**按键合并**（override 覆盖基文件），
+#    `ports` 是**并集**。因此基文件里**不能**再留任何下游端口映射，否则合并后又出现。
+services:
+  redis:
+    ports:
+      - "6379:6379"
+
+  mysql:
+    ports:
+      - "3306:3306"
+
+  douzero:
+    ports:
+      - "2021:2021"
+
+  user-service:
+    ports:
+      - "3001:3001"
+      # ⚠️ 记录片（D2）：user-service **重新**是 RPC 监听方（`record.write`，3101）⇒ 宿主映射
+      # 与 game/robot 同规（R226：基文件只 `expose` ⇒ 宿主连不上）。
+      # 不补这一条时，T9/slice-15 的 `rpcCall` 直投 3101（C4 幂等 ×2）在宿主机永远连不上。
+      - "3101:3101"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+
+  room-service:
+    ports:
+      - "3002:3002"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+
+  game-service:
+    ports:
+      - "3003:3003"
+      # ⚠️ R226 / N20-P4 Task 5：**RPC 端口的宿主映射只出现在开发形态**。
+      # 生产形态（基文件）只有 `expose: ["3103"]` ⇒ 宿主连不上 ⇒ 与 §2.1 的
+      # 「内部 RPC 端口……不对外暴露」逐字一致。
+      # 不补这一条时，`slice-07.2-rpc` 的探针（在宿主机跑）会**永远连不上**：
+      # 第 1 组（game.snapshot 存在性）、第 2 组（game.start + game.view）、
+      # 第 4 组（robot.acquire 幂等）与 `slice-07.2-deploy` 的 dev 子判据全部失败。
+      - "3103:3103"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+
+  robot-service:
+    ports:
+      - "3005:3005"
+      # ⚠️ 同上（R226）：`robot.*` 三条边的宿主映射只在开发形态。
+      - "3105:3105"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+    # ⚠️ 这里曾有 `./packages/robot-service/dist:/app/packages/robot-service/dist`
+    #    （宿主产物挂载）—— 2026-09-23 用户裁决**整条删除**，理由见文件头。一律走镜像。
+
+  api-gateway:
+    ports:
+      # ⚠️ 3000 的宿主映射**从基文件移到这里**（R1203）：生产形态不发布它。
+      - "3000:3000"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+      # ⚠️ **透传 + 默认空**（不是"无条件置空"）：宿主未设 ⇒ 空（= 不信任何人）；
+      #    宿主 export 了 ⇒ 会漏进来 ⇒ A8 必须把该变量剔出渲染环境。
+      - TRUST_PROXY=${TRUST_PROXY:-}
+
+  config-service:
+    ports:
+      # ⚠️ 片⑦ §2.1：只发布 **RPC 3106**（conformance 在宿主机跑 TCP 探针 —— R226 同规，
+      # 基文件只 `expose` ⇒ 不补这条宿主永远连不上）。
+      # HTTP 3006 **不**发布 —— 客户端面/管理面一律经网关（`/api/config`、`/api/admin/*`）。
+      - "3106:3106"
+    environment:
+      # ⚠️ **空默认透传**（不是"无条件置空"）：宿主未设 ⇒ 空串 ⇒ config-service 判「未设」⇒
+      # 管理面整体关闭（登录 404）—— C6 的「未设」半边靠它可在**裸 `docker compose`**
+      # （不经 stack 脚本）下构造。运行侧 export 口令 ⇒ 会漏进来（dev 供给点 = 本行 +
+      # `conformance-stack.sh` 顶部的 `${ADMIN_PASSWORD:-conformance-admin-pass}` + 开发者 shell）。
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+      # 支付配置管理化片 ⚙️13：渠道两键**空默认透传** —— dev 值**不落本文件的字面值**：
+      # 非空默认（`:-dev 值`）会让「unset 主钥」**构造不出来**（空值也回落默认）⇒ 反证
+      # 窗口的 fail-closed 判据（slice-22 ⑨）恒不可达。dev 值供给点 = `conformance-stack.sh`
+      # 的 export + 开发者 shell（与 `ADMIN_PASSWORD` 同规）。
+      - PAY_CONFIG_ENC_KEY=${PAY_CONFIG_ENC_KEY:-}
+      - PAY_CHANNEL_PULL_TOKEN=${PAY_CHANNEL_PULL_TOKEN:-}
+      # 广告片 §2.3：第四键空间拉取令牌**空默认透传**（同规：dev 值不落本文件字面值，
+      # 供给点 = `conformance-stack.sh` 的 export / 开发者 shell / `run.ts` 的 `??=`）。
+      - AD_CHANNEL_PULL_TOKEN=${AD_CHANNEL_PULL_TOKEN:-}
+
+  currency-service:
+    ports:
+      # ⚠️ 货币片 §2.1（dev 形态）：只发布 **RPC 3104**（conformance 的 `rpcCall` 直投
+      # `currency.apply` / `currency.get` 依赖它 —— R226 同规：基文件只 `expose` ⇒
+      # 不补这条宿主永远连不上）。HTTP 3004 **不**发布 —— 玩家面/管理面一律经网关。
+      - "3104:3104"
+    environment:
+      # 基文件里这行没有默认值（fail-closed）⇒ 开发形态必须给 dev 值，否则容器起不来。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+      # 广告片 §2.3：第四键空间拉取令牌**空默认透传**（dev 值不落本文件字面值 —— 供给点 =
+      # `conformance-stack.sh` 的 export / 开发者 shell / `run.ts` 的 `??=`；与 config-service
+      # 段同行同源。⚠️ 此处若写非空默认，会让「unset 令牌」构造不出来）。
+      - AD_CHANNEL_PULL_TOKEN=${AD_CHANNEL_PULL_TOKEN:-}
+
+  payment-service:
+    # ⚠️ **无宿主端口**（支付片 §2.7.2/§2.7.3）：本服务**零被调 RPC 面**、HTTP 3007 只被
+    # 网关（网内）与门口（edge 直连 `/pay/notify/*`）使用 —— 没有任何宿主机侧的直连需求
+    # （探针一律 `docker compose exec`；T16 的 slice-21 也经门口/网关打）。
+    environment:
+      # 基文件里这行没有默认值（fail-closed）⇒ 开发形态必须给 dev 值，否则容器起不来
+      # （先例货币片 ae5099b：缺它则容器 fail-closed 退出、整栈 `--wait` 必挂）。
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+
+  edge:
+    # 按需启动：日常 `docker compose up -d` 仍是 11 个容器
+    profiles: ["edge"]
+    environment:
+      - SITE_ADDRESS=localhost:${EDGE_HTTPS_PORT:-8443}
+      - TLS_MODE=internal
+
+  # ── 监控片（第四样"只该出现在开发环境"的东西）：七块 ↔ `profiles: ["monitoring"]` ─────
+  # （六容器 + 通知通道管理化片的 am-renderer；后者无宿主端口，见块内注释）
+  # ⚠️ `--profile` 是**全局参数**：`docker compose --profile monitoring up -d` 才拉起七服务
+  #    （与门口 `--profile edge` 同款机制；`down` 删不掉带 profile 的容器 ⇒ 收尾用
+  #    `docker compose --profile monitoring rm -sf <服务名…>`，供给链三路径见
+  #    `scripts/deploy/conformance-stack.sh`）。
+  # ⚠️ 宿主端口六条（grafana 3010 是唯一公网面的本机形态；cadvisor **8081:8080** 避让
+  #    dev edge 的 8080）：本机调试/门禁用；**指标端口（9000–9006）两侧都不发布**——
+  #    探针一律 `docker exec`（D2）。
+  prometheus:
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    # 监控三服务（prometheus/alertmanager/alert-relay）的 dev token **与六服务同款同源** ——
+    # 生产必须显式配置（基文件无默认）；不补这三行 ⇒ dev/CI 抓取与探针全 401（r2-F3）。
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+
+  grafana:
+    profiles: ["monitoring"]
+    ports:
+      - "3010:3010"
+    environment:
+      # 口令的 dev 默认值（照 ADMIN_PASSWORD 的「脚本 export + 两处同源」先例；生产必填）。
+      # ⚠️ **键必须写 `GF_SECURITY_ADMIN_PASSWORD`（T9 实测订正，2026-10-03）**：compose 的
+      #    `environment` 是**按键合并**、且**每个文件分别插值** —— 若只给 `GRAFANA_ADMIN_PASSWORD`
+      #    键，基文件那行 `${GRAFANA_ADMIN_PASSWORD:-}` 取的是**宿主**变量（拿不到 override 里的
+      #    值）⇒ 渲染为空 ⇒ 镜像守卫拒起 ⇒ dev/CI 根本起不了 grafana。写回容器真读的键后：
+      #    宿主 `GRAFANA_ADMIN_PASSWORD` 仍可整体覆写（同 ADMIN_PASSWORD 的注入先例）。
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-dev-grafana-pass}
+      # ⚠️ dev **显式给一份** root_url：基文件那份走 `SITE_ADDRESS` 插值，而 dev 该变量为空
+      #    （门口才用）⇒ 不覆盖会渲染出 `https:///grafana/` 的畸形值。
+      - GF_SERVER_ROOT_URL=http://localhost:3010/grafana/
+
+  alertmanager:
+    profiles: ["monitoring"]
+    ports:
+      - "9093:9093"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+    volumes:
+      # 通知通道管理化片：生成配置共享卷（am-renderer 写、本容器只读 —— 与基文件同形）。
+      - alertmanager-live:/alertmanager-live:ro
+
+  node-exporter:
+    profiles: ["monitoring"]
+    ports:
+      - "9100:9100"
+
+  cadvisor:
+    profiles: ["monitoring"]
+    ports:
+      # 宿主 8081：避让 dev edge 的 8080（CONFORMANCE 脚本的既有取舍，见其头部注释）。
+      - "8081:8080"
+
+  alert-relay:
+    profiles: ["monitoring"]
+    ports:
+      - "8090:8090"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-dev-internal-token-change-in-production}
+      # 通知通道管理化片 §2.6：拉取令牌**空默认透传**（dev 值不落本文件的字面值 —— 供给点 =
+      # `conformance-stack.sh` 的 export / 开发者 shell，与 PAY_* 两键同规）+ 拓扑两行（字面量）。
+      - NOTIFY_CHANNEL_PULL_TOKEN=${NOTIFY_CHANNEL_PULL_TOKEN:-}
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+    volumes:
+      # last-good 持久化卷（基文件同形）。
+      - relay-data:/data
+
+  # 通知通道管理化片（2026-10-07）：am-renderer —— 与 alert-relay **共享镜像**（`image` 参数化
+  # 同串、无 `build:`；见基文件注释），这里只补 dev 形态四件：profile / env 空默认透传 / 卷 / user。
+  # ⚠️ 无宿主端口、无 healthcheck（无服务面 —— 与基文件同口径）。
+  am-renderer:
+    profiles: ["monitoring"]
+    user: "65534:65534"
+    environment:
+      - NOTIFY_CHANNEL_PULL_TOKEN=${NOTIFY_CHANNEL_PULL_TOKEN:-}
+      - CONFIG_SERVICE_RPC_HOST=config-service
+      - CONFIG_SERVICE_RPC_PORT=3106
+    volumes:
+      - alertmanager-live:/alertmanager-live

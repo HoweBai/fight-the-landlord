@@ -1,0 +1,72 @@
+{
+    "name" : "优比棋牌",
+    "appid" : "__UNI__CE6765E",
+    "description" : "优比棋牌（多人在线棋牌平台）客户端（uni-app 多端）",
+    "versionName" : "0.1.0",
+    "versionCode" : "100",
+    "transformPx" : false,
+    "app-plus" : {
+        "screenOrientation" : [ "landscape-primary", "landscape-secondary" ],
+        "usingComponents" : true,
+        "compilerVersion" : 3,
+        "splashscreen" : {
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
+            "autoclose" : true,
+            "delay" : 0
+        },
+        "modules" : {},
+        "distribute" : {
+            "android" : {
+                /* 2026-10-13 用户裁决（uni-ad Sigmob 开通前置）：应用名 =「优比棋牌」（多人在线棋牌平台，
+         * 不止斗地主一个玩法）；包名 = com.yobeeo.pokergame。
+         * 🔴 包名在 uni-ad/Sigmob 后台**提交审核后不可修改**，三处必须逐字一致：
+         * 本处 / HBuilderX 打包界面 / uni-ad 开通表单。
+         * ⚠️ 安装态与开发态共用一个包名会互盖，真机联调时注意（先卸载旧的再装）。 */
+                "packagename" : "com.yobeeo.pokergame",
+                "permissions" : [ "<uses-permission android:name=\"android.permission.INTERNET\"/>" ]
+            },
+            "ios" : {
+                "dSYMs" : false
+            },
+            "sdkConfigs" : {
+                "ad" : {
+                    "sigmob" : {}
+                }
+            }
+        }
+    },
+    /*
+         * uni-ad（激励视频）渠道打包配置：**在 HBuilderX 打包界面勾选**——「App模块配置 →
+         * 广告(uni-ad)」+ 渠道 SDK 勾 **Sigmob**（官方口径逐字：「manifest 或打包界面选择
+         * 渠道SDK广告SDK」，HBuilderX 会把选择写回本节点；本地 3.x schema 未含经典 manifest
+         * 该节点定义 ⇒ 本仓**不手工发明**字段形态，以打包界面回写为准）。
+         * ⚠️ 渠道 SDK「真机运行不生效、打包后生效」（官方实文）⇒ 真机验收必须用打包产物。
+         * ⚠️ 救助广告位 adpid **不在这里**：它由服务端配置中心第 41 键 `ad.reliefAdpid`
+         * 下发（客户端裸名 `reliefAdpid`，第 15 键）⇒ 本文件勿凭空配置。
+         * 块注释为 uni-app manifest.json 的既有惯例（uni-cli 用 jsonc-parser 解析）。
+         * ✅ 2026-10-13：HBuilderX 已按此回写 `sdkConfigs.ad.sigmob`（**形态自此以该节点为准，勿手改**）。
+         */
+    "mp-weixin" : {
+        "appid" : "",
+        "setting" : {
+            "urlCheck" : false,
+            "es6" : true,
+            "minified" : true
+        },
+        "usingComponents" : true,
+        "lazyCodeLoading" : "requiredComponents"
+    },
+    "h5" : {
+        "router" : {
+            "mode" : "hash"
+        },
+        "title" : "优比棋牌"
+    },
+    "vueVersion" : "3",
+    "uniStatistics" : {
+        "version" : "2",
+        "type" : "public"
+    },
+    "locale" : "zh-Hans"
+}

@@ -1,0 +1,14 @@
+# deploy/monitoring/grafana/provisioning/datasources/prometheus.yml
+# 数据源唯一真源；**uid 固定 ftl-prometheus** —— 七面板 JSON 里的 datasource 引用
+# 全部指向它（`{"type":"prometheus","uid":"ftl-prometheus"}`），改 uid = 全面板失联。
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: ftl-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    # 面板 as code（改面板 = 发版）⇒ 不允许在 UI 里改数据源造成两处真源
+    editable: false

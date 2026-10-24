@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- C20 的判据串：响应必须含「FTL 管理面」（title 与 h1 两处）。 -->
+    <title>FTL 管理面</title>
+    <link rel="stylesheet" href="/admin/style.css" />
+  </head>
+  <body>
+    <!--
+      片⑦ T12：管理页 —— **无构建静态页**（设计 D6），由门口镜像 COPY 进 /srv/admin，
+      Caddy 在 catch-all 之前用独立 handle 路由到这里（deploy/Caddyfile）。
+      ⚠️ 本页**不含任何配置值**（R4）：键名与值都在登录成功后从 /api/admin/config 拉取；
+      这个 HTML 只是外壳。逻辑全在 app.js（含 M1 的按 HTTP status 分流）。
+      货币核心 T9：新增「钱包调整」视图（规格 §2.14；与配置编辑并列，不推倒 —— §4.6）。
+      ③ T10（财务后台 + RBAC + 审计）：登录卡加「用户名」（账号登录）；顶栏视图按角色显隐
+      （配置/钱包调整/财务/风控/审计/账号 —— **仅 UI 门面**，服务端才是闸，规格 §2.12）；
+      新增「财务」「审计」「账号」三视图（形状 = 规格 §2.12；一切数据渲染只用 textContent）。
+      风控片 T9（规格 §2.10）：新增「风控」视图（super_admin/operator —— 审核队列 + 行内详情 +
+      五动作）与审计第五页签「风控处置」（读 /api/admin/risk/actions + CSV）。
+      支付片 T12（规格 §5/设计 §7）：新增「支付订单 / 退款审核 / 提现审核」三视图（读面全角色；
+      审核动作按钮 = super_admin/finance 门面）与审计第六页签「支付处置」（读 /api/admin/pay/actions
+      + CSV）；财务「来源」下拉 +5 选项（12 项）。
+      支付配置管理化片 T10（规格 §2.8）：新增「支付渠道」视图（渠道凭据掩码写）——读面
+      super_admin/operator/finance；保存 / 清空按钮仅 super_admin 渲染（网关 policy E′ 才是真门）；
+      私钥只写不读（状态显示「已配置 ✓ · 指纹 <12hex>」或「未配置」，不显示明文）。
+      通知通道管理化片 T9（规格 §2.8）：新增「通知通道」视图（SMTP/IM 告警凭据掩码写）——读面
+      照支付渠道（super_admin/operator/finance）；保存 / 清空按钮仅 super_admin 渲染；密键只写不读
+      （状态显示「已配置 ✓ · 指纹 <12hex>」或「未配置」，URL 三键附 hint）；两组 = 邮件（SMTP）5 行
+      + IM 通道 4 行；组尾完整性提示（邮件通道 / 钉钉通道）由客户端按配置数算。
+      广告片 T9（规格 §2.3）：新增「广告回调」视图（第四键空间回调密钥掩码写）——读面照通知通道
+      （super_admin/operator/finance）；保存 / 清空按钮仅 super_admin 渲染；密键只写不读
+      （状态显示「已配置 ✓ · 指纹 <12hex>」或「未配置」）；单列表（恰 1 键）由
+      GET /api/admin/ad-channel 响应驱动。
+      台费片 T8（设计 §2.6）：财务「来源」下拉 +1 选项（13 项：entry_fee）＋ 汇总区新增
+      「台费漏收」行（entryFeeSkips：笔数/人数/金额；配置面新增第 42 键的台费费率表编辑器，
+      键集 42 = 37 简单 + 5 结构化）。阶段 2（2026-10-21）删除第 42 键与其编辑器；台费并入
+      档位表第三列（entryFeePercent），键集 51 = 47 简单 + 4 结构化。
+      设备绑定片：配置「风控安全 → 设备绑定」页签新增第 43 键（risk.deviceBindingEnabled，
+      布尔开关；键集 43 = 38 简单 + 5 结构化）；风控用户详情新增设备绑定卡片与「解绑设备」
+      （DELETE /api/admin/risk/users/:userId/device-binding）。
+    -->
+    <header class="topbar">
+      <h1 class="brand">FTL 管理面</h1>
+      <!-- 当前登录身份（用户名（角色））——仅登录后可见；登出即清。 -->
+      <span id="whoami" class="whoami" hidden></span>
+      <div id="status" class="status" role="status" hidden></div>
+      <button id="logout-btn" type="button" class="btn ghost" hidden>退出</button>
+    </header>
+
+    <section id="login-view" class="login-view" hidden>
+      <form id="login-form" class="login-card">
+        <p class="login-title">管理员登录</p>
+        <input
+          id="login-username"
+          type="text"
+          autocomplete="username"
+          placeholder="用户名"
+        />
+        <input
+          id="password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="口令"
+        />
+        <button id="login-btn" type="submit" class="btn primary">登录</button>
+        <p class="hint">会话令牌存于 sessionStorage（关标签页即失效）。</p>
+      </form>
+    </section>
+
+    <!--
+      主视图（v2.1 VSCode 设置页形态）：
+        左 #side-nav = 全站一棵树（玩法 / 通用设置（含动态「未分组」叶）/ 渠道与凭据 /
+          运营 / 安全与审计）。11 个既有 nav-*-btn 原样保 id（显隐仍是角色门面，
+          app.js 的 applyRoleNav；广告回调已并入广告配置页，其按钮改为 hidden 锚点）；
+          配置域 5 叶为新 id nav-cfg-*-btn（app.js openCfgDomain 驱动）；
+          nav-config-btn 无叶可挂但 VIEWS.config.nav 运行时引用，以 hidden 锚点保留。
+        右 #content-host = 一次只显一个内容：#settings-host（配置域内联设置行（广告域含
+          广告回调面板）/ 凭据两页）或 8 个整页 view（钱包/财务/订单/退款/提现/风控/审计/账号）。
+      配置键集合仍以 GET /api/admin/config 快照为准（页面不硬编码键集合）；快照里出现但
+      CONFIG_IA 未收录的键由 app.js 自动落入「未分组」桶并显示叶，不从界面消失。
+    -->
+    <main id="main-view" class="shell" hidden>
+      <aside id="side-nav" class="side-nav">
+        <!-- VIEWS.config.nav 运行时锚点：无叶可挂，hidden 保留。 -->
+        <button id="nav-config-btn" type="button" class="nav-leaf" hidden>配置</button>
+        <!-- G12 针脚锚点：广告回调已并入「广告」配置页（nav-cfg-dataad-btn），此按钮恒隐。 -->
+        <button id="nav-ad-channel-btn" type="button" class="nav-leaf" hidden>广告回调</button>
+
+        <p class="nav-group-title">玩法</p>
+        <button id="nav-cfg-ddz-btn" type="button" class="nav-leaf">斗地主<span class="nav-count" id="nav-count-ddz"></span></button>
+        <button id="nav-cfg-pdk-btn" type="button" class="nav-leaf">跑得快<span class="nav-count" id="nav-count-pdk"></span></button>
+
+        <p class="nav-group-title">通用设置</p>
+        <button id="nav-cfg-economy-btn" type="button" class="nav-leaf">货币经济<span class="nav-count" id="nav-count-economy"></span></button>
+        <button id="nav-cfg-paycfg-btn" type="button" class="nav-leaf">支付与提现<span class="nav-count" id="nav-count-paycfg"></span></button>
+        <button id="nav-cfg-riskcfg-btn" type="button" class="nav-leaf">风控安全<span class="nav-count" id="nav-count-riskcfg"></span></button>
+        <button id="nav-cfg-dataad-btn" type="button" class="nav-leaf">广告<span class="nav-count" id="nav-count-dataad"></span></button>
+        <button id="nav-cfg-ungrouped-btn" type="button" class="nav-leaf" hidden>未分组<span class="nav-count" id="nav-count-ungrouped"></span></button>
+
+        <p class="nav-group-title">渠道与凭据</p>
+        <button id="nav-pay-channel-btn" type="button" class="nav-leaf">支付渠道</button>
+        <button id="nav-notify-channel-btn" type="button" class="nav-leaf">通知通道</button>
+
+        <p class="nav-group-title">运营</p>
+        <button id="nav-players-btn" type="button" class="nav-leaf">玩家</button>
+        <button id="nav-wallet-btn" type="button" class="nav-leaf">钱包调整</button>
+        <button id="nav-finance-btn" type="button" class="nav-leaf">财务</button>
+        <button id="nav-pay-orders-btn" type="button" class="nav-leaf">支付订单</button>
+        <button id="nav-pay-refunds-btn" type="button" class="nav-leaf">退款审核</button>
+        <button id="nav-pay-withdrawals-btn" type="button" class="nav-leaf">提现审核</button>
+
+        <p class="nav-group-title">安全与审计</p>
+        <button id="nav-risk-btn" type="button" class="nav-leaf">风控</button>
+        <button id="nav-audit-btn" type="button" class="nav-leaf">审计</button>
+        <button id="nav-accounts-btn" type="button" class="nav-leaf">账号</button>
+      </aside>
+      <div id="content-host" class="content-host">
+        <!-- 配置域内联设置行 + 凭据两页（支付渠道/通知通道）共用一 host：
+             app.js renderSettings 决定显示 #settings-rows 还是某一凭据 section；
+             广告回调面板随「广告」配置域在 #settings-rows 之后显示。 -->
+        <div id="settings-host" class="settings-host" hidden>
+          <div class="settings-toolbar">
+            <input
+              id="settings-search"
+              type="search"
+              placeholder="搜索配置键或说明…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div id="settings-rows" class="settings-rows"></div>
+
+    <!--
+      支付配置管理化片 T10（规格 §2.8）：支付渠道视图 —— 六项渠道凭据（渠道网关地址 / 应用 APPID /
+      应用私钥 / 支付宝公钥 / 商户 PID / 对外站点基址）逐行：label / 状态 / 值或指纹 / 输入框 /
+      保存 / 清空。非密键显示明文（<code>）+ 输入框留空（不预填，防误覆盖）；私钥只写不读
+      （状态 = 「已配置 ✓ · 指纹 <12hex>」或「未配置」；输入 type=password）。
+      保存 / 清空按钮仅 super_admin 渲染（网关 policy E′ 才是真门；app.js 的 buildPayChannelRow）。
+      六行由 GET /api/admin/pay-channel 响应驱动（顺序即响应序）——本骨架不含任何键值（R4 同款纪律）。
+    -->
+    <section id="pay-channel-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">支付渠道</h2>
+        <p class="hint">渠道凭据保存后「下一次渠道调用即生效」；私钥只写不读（已配置时仅显示指纹）。</p>
+        <div id="pay-channel-rows" class="pay-channel-rows"></div>
+      </section>
+    </section>
+
+    <!--
+      通知通道管理化片 T9（规格 §2.8）：通知通道视图 —— 两组：邮件（SMTP）5 行 + IM 通道 4 行。
+      非密键显示明文（<code>）+ 输入框留空（不预填，防误覆盖）；密键只写不读（状态 =
+      「已配置 ✓ · 指纹 <12hex>」或「未配置」；URL 三键附 hint；smtp.pass 输入 type=password
+      + -webkit-text-security:disc）。保存 / 清空按钮仅 super_admin 渲染（网关 policy 才是真门；
+      app.js 的 buildNotifyChannelRow）。组尾完整性提示逐字（「邮件通道 / 钉钉通道」；IM 组尾
+      只判钉钉两键须成对），由客户端按配置数算 —— 零新服务端面。九行由
+      GET /api/admin/notify-channel 响应驱动（顺序即响应序）——本骨架不含任何键值（R4 同款纪律）。
+    -->
+    <section id="notify-channel-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">通知通道</h2>
+        <p class="hint">告警通知凭据（邮件 SMTP / IM 机器人）保存后 30 秒内生效；密键只写不读（已配置时仅显示指纹与来源提示）。</p>
+        <h3 class="panel-title sub">邮件（SMTP）</h3>
+        <div id="notify-channel-email-rows" class="notify-channel-rows"></div>
+        <p id="notify-channel-email-hint" class="hint"></p>
+        <h3 class="panel-title sub">IM 通道</h3>
+        <div id="notify-channel-im-rows" class="notify-channel-rows"></div>
+        <p id="notify-channel-im-hint" class="hint"></p>
+      </section>
+    </section>
+
+    <!--
+      广告片 T9（规格 §2.3）：广告回调面板（2026-10-21 并入「广告」配置页）——
+      第四键空间（恰 1 键）回调密钥掩码写。
+      密键只写不读（状态 = 「已配置 ✓ · 指纹 <12hex>」或「未配置」；`value` 恒 null，
+      服务端只回指纹）；输入框留空（不预填，防误覆盖）+ 遮蔽（type=password）。
+      保存 / 清空按钮仅 super_admin 渲染（网关 policy P-a1/P-a2 才是真门；app.js 的
+      buildAdChannelRow）。单行由 GET /api/admin/ad-channel 响应驱动（顺序即响应序）——
+      本骨架不含任何键值（R4 同款纪律）。显示条件见 app.js syncAdSection。
+    -->
+    <section id="ad-channel-view" class="settings-inline-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">广告回调</h2>
+        <p class="hint">广告回调密钥保存后「下一次回调即生效」（消费侧每次回调现拉）；密键只写不读（已配置时仅显示指纹）。</p>
+        <div id="ad-channel-rows" class="ad-channel-rows"></div>
+      </section>
+    </section>
+        </div>
+        <!-- /settings-host -->
+
+
+    <!--
+      玩家管理页（2026-10-22）：列表 + 汇总 + 筛选 + 分页 + 详情 + 封禁/解封。
+      数据面：GET /api/admin/players + 批量余额/充值汇总；详情复用用户/风控/钱包/支付订单端点。
+      仅 super_admin/operator（网关 policy P10–P13）。全部 createElement/textContent。
+    -->
+    <main id="players-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">玩家</h2>
+        <div id="pl-summary" class="players-summary"></div>
+        <div class="filter-bar">
+          <label class="field" for="pl-q">
+            <span class="field-label">搜索</span>
+            <input id="pl-q" type="search" autocomplete="off" placeholder="手机号 / 昵称 / 用户ID" />
+          </label>
+          <label class="field" for="pl-status">
+            <span class="field-label">状态</span>
+            <select id="pl-status">
+              <option value="">全部</option>
+              <option value="active">active</option>
+              <option value="banned">banned</option>
+            </select>
+          </label>
+          <label class="field" for="pl-online">
+            <span class="field-label">在线</span>
+            <select id="pl-online">
+              <option value="">全部</option>
+              <option value="online">在线</option>
+              <option value="offline">离线</option>
+            </select>
+          </label>
+          <label class="field" for="pl-activity">
+            <span class="field-label">活跃</span>
+            <select id="pl-activity">
+              <option value="">全部</option>
+              <option value="active7">7 日活跃</option>
+              <option value="active30">30 日活跃</option>
+              <option value="inactive14">14 日流失</option>
+              <option value="inactive30">30 日流失</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button id="pl-search-btn" type="button" class="btn primary">查询</button>
+            <button id="pl-reset-btn" type="button" class="btn">重置</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>手机号</th>
+              <th>昵称</th>
+              <th>状态</th>
+              <th>在线</th>
+              <th>注册时间（北京）</th>
+              <th>最后活跃（北京）</th>
+              <th>设备</th>
+              <th>对局 / 胜场</th>
+              <th>余额</th>
+              <th>累计充值（元）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="pl-body"></tbody>
+        </table>
+        <p id="pl-empty" class="hint"></p>
+        <div class="panel-foot players-pager">
+          <button id="pl-prev-btn" type="button" class="btn">上一页</button>
+          <span id="pl-page-info" class="hint"></span>
+          <button id="pl-next-btn" type="button" class="btn">下一页</button>
+          <select id="pl-page-size" aria-label="每页条数">
+            <option value="20">20 / 页</option>
+            <option value="50">50 / 页</option>
+            <option value="100">100 / 页</option>
+          </select>
+        </div>
+      </section>
+
+      <section id="pl-detail" class="panel" hidden>
+        <div class="panel-head">
+          <h2 class="panel-title">玩家详情</h2>
+          <button id="pl-back-btn" type="button" class="btn">返回列表</button>
+        </div>
+        <div id="pl-detail-body" class="player-detail"></div>
+      </section>
+    </main>
+
+    <!--
+      货币核心 T9（规格 §2.14）：钱包调整 —— 手机号 → userId → 当前余额 → ±金额调整。
+      ③ T10 后本视图**保留原样**，作为 super_admin/finance 的快捷操作（规格 §2.12 导航行）。
+      六点契约全在 app.js 的 walletLookup / walletRefreshBalance / walletAdjust 一带
+      （actionId 每次填表生成一次、重试复用；只按 HTTP status 分流 —— M1，绝不读 body.code）。
+      本骨架只含控件；数值与键名一样**不静态携带**（R4 同款纪律）。
+    -->
+    <main id="wallet-view" class="wallet-view" hidden>
+      <div class="wallet-card">
+        <h2 class="wallet-title">钱包调整</h2>
+        <p class="hint">按手机号定位玩家，发放 / 扣减其金币（每次调整以管理身份留痕）。</p>
+
+        <form id="wallet-lookup-form" class="wallet-row">
+          <input
+            id="wallet-phone"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="玩家手机号"
+            aria-label="玩家手机号"
+          />
+          <button id="wallet-lookup-btn" type="submit" class="btn">查询</button>
+        </form>
+
+        <div id="wallet-target" class="wallet-target" hidden>
+          <p class="wallet-line">玩家 <span id="wallet-user-id"></span></p>
+          <p class="wallet-line">当前余额 <span id="wallet-balance" class="wallet-num"></span> 金币</p>
+        </div>
+
+        <form id="wallet-adjust-form" class="wallet-adjust">
+          <label class="wallet-field" for="wallet-delta">
+            <span class="wallet-label">金额（正数发放 / 负数扣减，单位：金币）</span>
+            <input
+              id="wallet-delta"
+              type="number"
+              step="1"
+              autocomplete="off"
+              placeholder="如 100 或 -50"
+            />
+          </label>
+          <label class="wallet-field" for="wallet-reason">
+            <span class="wallet-label">原因（必填，1..200 字）</span>
+            <input id="wallet-reason" type="text" maxlength="200" autocomplete="off" placeholder="如：活动发放" />
+          </label>
+          <div class="wallet-row">
+            <button id="wallet-adjust-btn" type="submit" class="btn primary" disabled>确认调整</button>
+            <span class="hint">先查询玩家；同一笔调整重试不会重复发放。</span>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <!--
+      ③ T10 财务视图（规格 §2.12）：筛选条 + 流水表（keyset「加载更多」+ 行内冲正 + 详情展开）
+      + 汇总卡（按来源/按日）+ 机器人池卡 + 对账面板 + 导出（fetch+blob 带 Bearer，不能裸 <a>）。
+      ⚠️ 行数据（昵称/手机/原因等）一律 textContent 渲染（不拼接 HTML 串，规格 §2.12 红字纪律）；
+      时间一律北京时间展示（toLocaleString zh-CN + Asia/Shanghai，⚙️1）。
+    -->
+    <main id="finance-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">财务 · 资金流水</h2>
+        <div class="filter-bar">
+          <label class="field" for="fin-source">
+            <span class="field-label">来源</span>
+            <select id="fin-source">
+              <option value="">全部</option>
+              <option value="signup_grant">signup_grant</option>
+              <option value="admin_adjust">admin_adjust</option>
+              <option value="admin_reverse">admin_reverse</option>
+              <option value="game_settle">game_settle</option>
+              <option value="robot_pool">robot_pool</option>
+              <option value="relief_grant">relief_grant</option>
+              <option value="recharge">recharge</option>
+              <option value="refund_hold">refund_hold</option>
+              <option value="refund_rollback">refund_rollback</option>
+              <option value="withdraw_hold">withdraw_hold</option>
+              <option value="withdraw_rollback">withdraw_rollback</option>
+              <option value="entry_fee">entry_fee</option>
+              <option value="card_counter">card_counter</option>
+            </select>
+          </label>
+          <label class="field" for="fin-actor">
+            <span class="field-label">操作者</span>
+            <input id="fin-actor" type="text" autocomplete="off" placeholder="actor（如 admin）" />
+          </label>
+          <label class="field" for="fin-owner">
+            <span class="field-label">账户</span>
+            <input id="fin-owner" type="text" autocomplete="off" placeholder="ownerId / 手机号" />
+            <span id="fin-owner-info" class="hint"></span>
+          </label>
+          <label class="field" for="fin-range">
+            <span class="field-label">时间</span>
+            <select id="fin-range">
+              <option value="">不限</option>
+              <option value="today">今日</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label class="field" id="fin-custom" hidden>
+            <span class="field-label">起止（本机时区）</span>
+            <span class="field-inline">
+              <input id="fin-from" type="datetime-local" />
+              <span class="hint">～</span>
+              <input id="fin-to" type="datetime-local" />
+            </span>
+          </label>
+          <div class="filter-actions">
+            <button id="fin-search-btn" type="button" class="btn primary">查询</button>
+            <button id="fin-reset-btn" type="button" class="btn">重置</button>
+            <button id="fin-export-btn" type="button" class="btn">导出流水 CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="card-row">
+        <section class="panel card-wide">
+          <div class="panel-head">
+            <h3 class="panel-title sub">汇总</h3>
+            <div class="seg">
+              <button id="fin-summary-source-btn" type="button" class="seg-btn active">按来源</button>
+              <button id="fin-summary-day-btn" type="button" class="seg-btn">按日</button>
+            </div>
+            <button id="fin-summary-export-btn" type="button" class="btn mini">导出 CSV</button>
+          </div>
+          <table class="data-table">
+            <thead id="fin-summary-head"></thead>
+            <tbody id="fin-summary-body"></tbody>
+          </table>
+          <p id="fin-summary-totals" class="hint"></p>
+          <p id="fin-burn-line" class="hint"></p>
+          <p id="fin-entryfee-skip-line" class="hint"></p>
+          <p id="fin-cardcounter-purchases-line" class="hint"></p>
+          <p id="fin-cardcounter-consumptions-line" class="hint"></p>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title sub">机器人虚拟池</h3>
+          <p class="kv">余额 <span id="fin-pool-balance" class="num">—</span> 金币</p>
+          <div class="panel-foot">
+            <button id="fin-pool-flows-btn" type="button" class="btn mini">查看池流水</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title sub">对账</h3>
+            <span id="rec-running" class="hint" hidden>对账进行中…</span>
+          </div>
+          <p class="kv">最近尝试：<span id="rec-last-attempt">—</span></p>
+          <p class="kv">最近成功：<span id="rec-last-success">—</span></p>
+          <p class="kv">最近读数：<span id="rec-last-result">—</span></p>
+          <p class="kv">最近错误：<span id="rec-last-error" class="err-text">—</span></p>
+          <div class="panel-foot">
+            <button id="rec-run-btn" type="button" class="btn mini">立即对账</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h3 class="panel-title sub">资金流水（新 → 旧）</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>流水ID</th>
+              <th>时间（北京）</th>
+              <th>来源</th>
+              <th>操作者</th>
+              <th>账户ID</th>
+              <th>昵称</th>
+              <th>手机号</th>
+              <th>金额</th>
+              <th>操作后余额</th>
+              <th>原因</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="fin-flows-body"></tbody>
+        </table>
+        <p id="fin-flows-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="fin-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+    </main>
+
+    <!--
+      支付片 T12（规格 §5/设计 §7）：支付订单视图（读面全角色）—— 筛选（状态/用户ID/时间）+
+      列表（keyset「加载更多」）+ 行内详情（notify_log 尾 20）。
+      ⚠️ 一切数据（订单号/渠道单号/结果…）一律 textContent 渲染；时间一律北京时间展示。
+    -->
+    <main id="pay-orders-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">支付 · 订单</h2>
+        <div class="filter-bar">
+          <label class="field" for="po-status">
+            <span class="field-label">状态</span>
+            <select id="po-status">
+              <option value="">全部</option>
+              <option value="created">created</option>
+              <option value="paid">paid</option>
+              <option value="credited">credited</option>
+              <option value="closed">closed</option>
+            </select>
+          </label>
+          <label class="field" for="po-user">
+            <span class="field-label">用户ID</span>
+            <input id="po-user" type="text" autocomplete="off" placeholder="userId" />
+          </label>
+          <label class="field" for="po-range">
+            <span class="field-label">时间</span>
+            <select id="po-range">
+              <option value="">不限</option>
+              <option value="today">今日</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label class="field" id="po-custom" hidden>
+            <span class="field-label">起止（本机时区）</span>
+            <span class="field-inline">
+              <input id="po-from" type="datetime-local" />
+              <span class="hint">～</span>
+              <input id="po-to" type="datetime-local" />
+            </span>
+          </label>
+          <div class="filter-actions">
+            <button id="po-search-btn" type="button" class="btn primary">查询</button>
+            <button id="po-reset-btn" type="button" class="btn">重置</button>
+            <button id="po-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>订单号</th>
+              <th>用户ID</th>
+              <th>档位（元）</th>
+              <th>金额（分）</th>
+              <th>金币</th>
+              <th>状态</th>
+              <th>渠道</th>
+              <th>渠道单号</th>
+              <th>支付时间（北京）</th>
+              <th>入账时间（北京）</th>
+              <th>关闭时间（北京）</th>
+              <th>创建时间（北京）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="po-body"></tbody>
+        </table>
+        <p id="po-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="po-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+    </main>
+
+    <!--
+      支付片 T12：退款审核视图 —— 列表（status/userId 过滤）+ 通过/驳回（note 弹窗；按钮 =
+      super_admin/finance 门面，服务端 403 才是权威）。
+      ⚠️ 通过（approve）会立即向渠道发起原路退款：渠道不可用时服务端就地退避重试（最长约
+      12.6 分钟）——网关 5 秒兜底超时可能先回 503，**服务端仍在继续**；页面提示按实际态刷新。
+    -->
+    <main id="pay-refunds-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">支付 · 退款审核</h2>
+        <p class="hint">通过 = 立即向支付渠道发起原路退款（服务端可能持续重试数分钟；若页面提示网关超时，请稍后刷新查看实际状态——重复审批会被状态校验拒绝）。</p>
+        <div class="filter-bar">
+          <label class="field" for="rf-status">
+            <span class="field-label">状态</span>
+            <select id="rf-status">
+              <option value="">全部</option>
+              <option value="holding">holding</option>
+              <option value="pending">pending</option>
+              <option value="approved">approved</option>
+              <option value="rejecting">rejecting</option>
+              <option value="rejected">rejected</option>
+              <option value="refunded">refunded</option>
+              <option value="failed">failed</option>
+            </select>
+          </label>
+          <label class="field" for="rf-user">
+            <span class="field-label">用户ID</span>
+            <input id="rf-user" type="text" autocomplete="off" placeholder="userId" />
+          </label>
+          <div class="filter-actions">
+            <button id="rf-search-btn" type="button" class="btn primary">查询</button>
+            <button id="rf-reset-btn" type="button" class="btn">重置</button>
+            <button id="rf-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>退款单号</th>
+              <th>订单号</th>
+              <th>用户ID</th>
+              <th>金币</th>
+              <th>状态</th>
+              <th>原因</th>
+              <th>审核者</th>
+              <th>审核时间（北京）</th>
+              <th>退款时间（北京）</th>
+              <th>创建时间（北京）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="rf-body"></tbody>
+        </table>
+        <p id="rf-empty" class="hint"></p>
+      </section>
+    </main>
+
+    <!--
+      支付片 T12：提现审核视图 —— 列表（status/userId 过滤）+ 行内详情（余额/可离场额度快照）
+      + 通过/驳回/登记打款（voucher 必填 + note 可空；按钮 = super_admin/finance 门面）。
+    -->
+    <main id="pay-withdrawals-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">支付 · 提现审核</h2>
+        <p class="hint">通过 = 等待线下打款（打款完成后在本页「登记打款」填凭证号）；驳回 = 金币即时退回玩家余额。超时未打款由服务端自动回滚。</p>
+        <div class="filter-bar">
+          <label class="field" for="ws-status">
+            <span class="field-label">状态</span>
+            <select id="ws-status">
+              <option value="">全部</option>
+              <option value="holding">holding</option>
+              <option value="pending">pending</option>
+              <option value="approved">approved</option>
+              <option value="paid">paid</option>
+              <option value="rolling_back">rolling_back</option>
+              <option value="rejected">rejected</option>
+              <option value="timeout_rolled_back">timeout_rolled_back</option>
+              <option value="failed">failed</option>
+            </select>
+          </label>
+          <label class="field" for="ws-user">
+            <span class="field-label">用户ID</span>
+            <input id="ws-user" type="text" autocomplete="off" placeholder="userId" />
+          </label>
+          <div class="filter-actions">
+            <button id="ws-search-btn" type="button" class="btn primary">查询</button>
+            <button id="ws-reset-btn" type="button" class="btn">重置</button>
+            <button id="ws-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>提现单号</th>
+              <th>用户ID</th>
+              <th>金币</th>
+              <th>状态</th>
+              <th>超时时刻（北京）</th>
+              <th>审核者</th>
+              <th>确认者</th>
+              <th>凭证</th>
+              <th>回滚时间（北京）</th>
+              <th>创建时间（北京）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="ws-body"></tbody>
+        </table>
+        <p id="ws-empty" class="hint"></p>
+      </section>
+    </main>
+
+    <!--
+      风控片 T9（规格 §2.10）：风控视图（super_admin/operator）—— 审核队列表格（status 过滤 +
+      keyset「加载更多」）+ 行内「详情 / 处置」（stats / 设备原文（含关联账号）/ 谓词拒绝计数 /
+      条目历史 + 动作条五按钮 dismiss/throttle/unthrottle/ban/unban + reason 必填）。
+      ⚠️ 一切数据（userId/deviceId/reasons…）一律 textContent 渲染（deviceId 同纪律）；
+      动作只按 HTTP status 分流；按钮可用性 = 条目 status / accountStatus / limitSource /
+      bannedFlagPresent（终审 F2：孤儿封禁旗态解锁 unban）的 UI 门面 —— 服务端 409 才是权威
+      （app.js 的 applyRiskAction）。
+      本骨架只含控件；数值与键名一样**不静态携带**（R4 同款纪律）。
+    -->
+    <main id="risk-view" class="page-view" hidden>
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">风控 · 审核队列</h2>
+          <div class="filter-bar">
+            <label class="field" for="rk-status">
+              <span class="field-label">状态</span>
+              <select id="rk-status">
+                <option value="">全部</option>
+                <option value="open">open</option>
+                <option value="throttled">throttled</option>
+                <option value="dismissed">dismissed</option>
+                <option value="banned">banned</option>
+              </select>
+            </label>
+            <div class="filter-actions">
+              <button id="rk-search-btn" type="button" class="btn primary">查询</button>
+              <button id="rk-reset-btn" type="button" class="btn">重置</button>
+            </div>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>条目ID</th>
+              <th>用户ID</th>
+              <th>分数</th>
+              <th>状态</th>
+              <th>命中理由</th>
+              <th>创建时间（北京）</th>
+              <th>更新时间（北京）</th>
+              <th>处置者</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="rk-body"></tbody>
+        </table>
+        <p id="rk-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="rk-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+    </main>
+
+    <!--
+      ③ T10 审计视图（规格 §2.12）：六页签（配置变更 / 资金操作＝流水预筛
+      source∈{admin_adjust, admin_reverse} / 登录事件 / 账号变更 / 风控处置〔风控片 T9〕/
+      支付处置〔支付片 T12 = 审计第六源〕），各带筛选 + 导出。
+    -->
+    <main id="audit-view" class="page-view" hidden>
+      <div class="tabs">
+        <button id="audit-tab-config" type="button" class="tab-btn active">配置变更</button>
+        <button id="audit-tab-wallet" type="button" class="tab-btn">资金操作</button>
+        <button id="audit-tab-login" type="button" class="tab-btn">登录事件</button>
+        <button id="audit-tab-account" type="button" class="tab-btn">账号变更</button>
+        <button id="audit-tab-risk" type="button" class="tab-btn">风控处置</button>
+        <button id="audit-tab-pay" type="button" class="tab-btn">支付处置</button>
+      </div>
+
+      <section id="audit-panel-config" class="panel audit-panel">
+        <div class="filter-bar">
+          <label class="field" for="ac-key">
+            <span class="field-label">配置键</span>
+            <input id="ac-key" type="text" autocomplete="off" placeholder="如 room.friendRoomEnabled" />
+          </label>
+          <label class="field" for="ac-actor">
+            <span class="field-label">操作者</span>
+            <input id="ac-actor" type="text" autocomplete="off" placeholder="actor" />
+          </label>
+          <div class="filter-actions">
+            <button id="ac-search-btn" type="button" class="btn primary">查询</button>
+            <button id="ac-reset-btn" type="button" class="btn">重置</button>
+            <button id="ac-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>时间（北京）</th>
+              <th>配置键</th>
+              <th>旧值</th>
+              <th>新值</th>
+              <th>操作者</th>
+            </tr>
+          </thead>
+          <tbody id="ac-body"></tbody>
+        </table>
+        <p id="ac-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="ac-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+
+      <section id="audit-panel-wallet" class="panel audit-panel" hidden>
+        <div class="filter-bar">
+          <label class="field" for="aw-actor">
+            <span class="field-label">操作者</span>
+            <input id="aw-actor" type="text" autocomplete="off" placeholder="actor" />
+          </label>
+          <label class="field" for="aw-owner">
+            <span class="field-label">账户</span>
+            <input id="aw-owner" type="text" autocomplete="off" placeholder="ownerId / 手机号" />
+            <span id="aw-owner-info" class="hint"></span>
+          </label>
+          <label class="field" for="aw-range">
+            <span class="field-label">时间</span>
+            <select id="aw-range">
+              <option value="">不限</option>
+              <option value="today">今日</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label class="field" id="aw-custom" hidden>
+            <span class="field-label">起止（本机时区）</span>
+            <span class="field-inline">
+              <input id="aw-from" type="datetime-local" />
+              <span class="hint">～</span>
+              <input id="aw-to" type="datetime-local" />
+            </span>
+          </label>
+          <div class="filter-actions">
+            <button id="aw-search-btn" type="button" class="btn primary">查询</button>
+            <button id="aw-reset-btn" type="button" class="btn">重置</button>
+          </div>
+        </div>
+
+        <div class="audit-section">
+          <div class="panel-head">
+            <h3 class="panel-title sub">人工调整（admin_adjust）</h3>
+            <button id="aw-adjust-export-btn" type="button" class="btn mini">导出 CSV</button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>流水ID</th>
+                <th>时间（北京）</th>
+                <th>账户ID</th>
+                <th>昵称</th>
+                <th>手机号</th>
+                <th>金额</th>
+                <th>操作后余额</th>
+                <th>原因</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="aw-adjust-body"></tbody>
+          </table>
+          <p id="aw-adjust-empty" class="hint"></p>
+          <div class="panel-foot">
+            <button id="aw-adjust-more-btn" type="button" class="btn" hidden>加载更多</button>
+          </div>
+        </div>
+
+        <div class="audit-section">
+          <div class="panel-head">
+            <h3 class="panel-title sub">冲正（admin_reverse）</h3>
+            <button id="aw-reverse-export-btn" type="button" class="btn mini">导出 CSV</button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>流水ID</th>
+                <th>时间（北京）</th>
+                <th>账户ID</th>
+                <th>昵称</th>
+                <th>手机号</th>
+                <th>金额</th>
+                <th>操作后余额</th>
+                <th>原因</th>
+                <th>关联ID</th>
+              </tr>
+            </thead>
+            <tbody id="aw-reverse-body"></tbody>
+          </table>
+          <p id="aw-reverse-empty" class="hint"></p>
+          <div class="panel-foot">
+            <button id="aw-reverse-more-btn" type="button" class="btn" hidden>加载更多</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="audit-panel-login" class="panel audit-panel" hidden>
+        <div class="filter-bar">
+          <label class="field" for="al-username">
+            <span class="field-label">用户名</span>
+            <input id="al-username" type="text" autocomplete="off" placeholder="username" />
+          </label>
+          <label class="field" for="al-success">
+            <span class="field-label">结果</span>
+            <select id="al-success">
+              <option value="">全部</option>
+              <option value="1">成功</option>
+              <option value="0">失败</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button id="al-search-btn" type="button" class="btn primary">查询</button>
+            <button id="al-reset-btn" type="button" class="btn">重置</button>
+            <button id="al-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>时间（北京）</th>
+              <th>用户名</th>
+              <th>账号ID</th>
+              <th>IP</th>
+              <th>结果</th>
+            </tr>
+          </thead>
+          <tbody id="al-body"></tbody>
+        </table>
+        <p id="al-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="al-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+
+      <section id="audit-panel-account" class="panel audit-panel" hidden>
+        <div class="filter-bar">
+          <label class="field" for="aa-target">
+            <span class="field-label">目标账号ID</span>
+            <input id="aa-target" type="text" inputmode="numeric" autocomplete="off" placeholder="如 2" />
+          </label>
+          <label class="field" for="aa-actor">
+            <span class="field-label">操作者</span>
+            <input id="aa-actor" type="text" autocomplete="off" placeholder="actor" />
+          </label>
+          <label class="field" for="aa-action">
+            <span class="field-label">动作</span>
+            <select id="aa-action">
+              <option value="">全部</option>
+              <option value="create">create</option>
+              <option value="role">role</option>
+              <option value="disable">disable</option>
+              <option value="enable">enable</option>
+              <option value="password_reset">password_reset</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button id="aa-search-btn" type="button" class="btn primary">查询</button>
+            <button id="aa-reset-btn" type="button" class="btn">重置</button>
+            <button id="aa-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>时间（北京）</th>
+              <th>目标账号ID</th>
+              <th>用户名</th>
+              <th>动作</th>
+              <th>详情</th>
+              <th>操作者</th>
+            </tr>
+          </thead>
+          <tbody id="aa-body"></tbody>
+        </table>
+        <p id="aa-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="aa-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+
+      <section id="audit-panel-risk" class="panel audit-panel" hidden>
+        <div class="filter-bar">
+          <label class="field" for="ar-user">
+            <span class="field-label">用户ID</span>
+            <input id="ar-user" type="text" autocomplete="off" placeholder="userId" />
+          </label>
+          <label class="field" for="ar-action">
+            <span class="field-label">动作</span>
+            <select id="ar-action">
+              <option value="">全部</option>
+              <option value="dismiss">dismiss</option>
+              <option value="throttle">throttle</option>
+              <option value="unthrottle">unthrottle</option>
+              <option value="ban">ban</option>
+              <option value="unban">unban</option>
+              <option value="auto_throttle">auto_throttle</option>
+              <option value="reopen">reopen</option>
+            </select>
+          </label>
+          <label class="field" for="ar-actor">
+            <span class="field-label">操作者</span>
+            <input id="ar-actor" type="text" autocomplete="off" placeholder="actor（管理员名 / system）" />
+          </label>
+          <label class="field" for="ar-range">
+            <span class="field-label">时间</span>
+            <select id="ar-range">
+              <option value="">不限</option>
+              <option value="today">今日</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label class="field" id="ar-custom" hidden>
+            <span class="field-label">起止（本机时区）</span>
+            <span class="field-inline">
+              <input id="ar-from" type="datetime-local" />
+              <span class="hint">～</span>
+              <input id="ar-to" type="datetime-local" />
+            </span>
+          </label>
+          <div class="filter-actions">
+            <button id="ar-search-btn" type="button" class="btn primary">查询</button>
+            <button id="ar-reset-btn" type="button" class="btn">重置</button>
+            <button id="ar-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>时间（北京）</th>
+              <th>用户ID</th>
+              <th>动作</th>
+              <th>操作者</th>
+              <th>条目ID</th>
+              <th>理由</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody id="ar-body"></tbody>
+        </table>
+        <p id="ar-empty" class="hint"></p>
+        <div class="panel-foot">
+          <button id="ar-more-btn" type="button" class="btn" hidden>加载更多</button>
+        </div>
+      </section>
+
+      <!--
+        支付片 T12（规格 §5/设计 §7）：审计第六页签「支付处置」—— 读
+        /api/admin/pay/actions（三表处置事件流：申请/审/驳回/确认/回滚；含 actor+时刻）+ CSV。
+        ⚠️ 无分页（规格 §2.4.2 #8 键集 = from/to/actor）。
+      -->
+      <section id="audit-panel-pay" class="panel audit-panel" hidden>
+        <div class="filter-bar">
+          <label class="field" for="ap-actor">
+            <span class="field-label">操作者</span>
+            <input id="ap-actor" type="text" autocomplete="off" placeholder="actor（管理员名 / 用户ID / system）" />
+          </label>
+          <label class="field" for="ap-range">
+            <span class="field-label">时间</span>
+            <select id="ap-range">
+              <option value="">不限</option>
+              <option value="today">今日</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label class="field" id="ap-custom" hidden>
+            <span class="field-label">起止（本机时区）</span>
+            <span class="field-inline">
+              <input id="ap-from" type="datetime-local" />
+              <span class="hint">～</span>
+              <input id="ap-to" type="datetime-local" />
+            </span>
+          </label>
+          <div class="filter-actions">
+            <button id="ap-search-btn" type="button" class="btn primary">查询</button>
+            <button id="ap-reset-btn" type="button" class="btn">重置</button>
+            <button id="ap-export-btn" type="button" class="btn">导出 CSV</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>时间（北京）</th>
+              <th>操作者</th>
+              <th>动作</th>
+              <th>单号</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody id="ap-body"></tbody>
+        </table>
+        <p id="ap-empty" class="hint"></p>
+      </section>
+    </main>
+
+    <!--
+      ③ T10 账号视图（规格 §2.12，仅 super_admin 导航可见）：列表（用户名/角色/状态/最近登录/
+      创建时间）+ 建号表单 + 行内（改角色下拉、停用/启用、重置口令弹窗）。
+      ⚠️ 自锁闸（不能停用/变更自己、最后一名超管）在服务端强制；本页只做按钮门面。
+    -->
+    <main id="accounts-view" class="page-view" hidden>
+      <section class="panel">
+        <h2 class="panel-title">账号 · 新建</h2>
+        <form id="acc-create-form" class="filter-bar">
+          <label class="field" for="acc-username">
+            <span class="field-label">用户名</span>
+            <input id="acc-username" type="text" autocomplete="off" placeholder="3–32 位小写字母/数字/._-" />
+          </label>
+          <label class="field" for="acc-password">
+            <span class="field-label">口令</span>
+            <input id="acc-password" type="password" autocomplete="new-password" placeholder="10–72 字符" />
+          </label>
+          <label class="field" for="acc-role">
+            <span class="field-label">角色</span>
+            <select id="acc-role">
+              <option value="operator">operator（运维：配置 + 审计）</option>
+              <option value="finance">finance（财务：钱包 + 财务 + 审计）</option>
+              <option value="viewer">viewer（只读：财务 + 审计）</option>
+              <option value="super_admin">super_admin（超级管理员：全部）</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button id="acc-create-btn" type="submit" class="btn primary">建号</button>
+            <button id="acc-refresh-btn" type="button" class="btn">刷新列表</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">账号列表</h2>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>用户名</th>
+              <th>角色</th>
+              <th>状态</th>
+              <th>最近登录（北京）</th>
+              <th>创建时间（北京）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="acc-body"></tbody>
+        </table>
+        <p id="acc-empty" class="hint"></p>
+      </section>
+    </main>
+      </div>
+      <!-- /content-host -->
+    </main>
+
+    <!--
+      ③ T10 通用弹窗（冲正原因 / 重置口令共用）：Promise 形态的 modalPrompt（app.js）。
+      必填/长度校验的第一道在此（required/minlength），真校验点在服务端。
+    -->
+    <div id="modal" class="modal-overlay" hidden>
+      <form id="modal-form" class="modal-card">
+        <h3 id="modal-title" class="modal-title"></h3>
+        <p id="modal-desc" class="hint"></p>
+        <input id="modal-input" type="text" autocomplete="off" />
+        <div class="modal-actions">
+          <button id="modal-ok" type="submit" class="btn primary">确定</button>
+          <button id="modal-cancel" type="button" class="btn">取消</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="/admin/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,263 @@
+# **打 tag 才部署**（R1304）。三个 job 用 `needs` **串行**：
+#
+#   images（仅 tag push）→ conformance（复用 workflow_call，拉刚推好的 tag 镜像）
+#                        → deploy（Task C1 补上）
+#
+# 🔴 **为什么不能拆成独立的 `deploy.yml`**：两个工作流都挂 `push: tags` 时会**同时**被触发、
+#    并行跑 ⇒ 部署可能在镜像推上去**之前**开始 ⇒ 拉不到 tag 镜像（一次竞态型假红）。
+#
+# ⚠️ `workflow_dispatch` 是**回滚入口**（R1308）：那条路径上 `images` 必须被 `if` 掉，
+#    否则它会用 **master HEAD** 构建并**覆盖推成** `:v<旧tag>`（GHCR 的 tag 默认可覆盖）
+#    ⇒ 静默部署错版本。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        # ⚠️ 终审 M10：这里**不能写 Markdown** —— workflow_dispatch 的表单把描述当**纯文本**渲染
+        #    （`**既有**` 会原样显示成带星号的四个字）。
+        description: '要部署/回滚到的「既有」tag（如 v1.0.0）。回滚时填上一个 tag（秒级：只 pull，不构建）'
+        required: true
+        type: string
+
+jobs:
+  images:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 清理 runner 磁盘
+        run: docker image prune -af || true
+      - name: 构建并推送 14 个镜像（`sha-<短>` + 本 tag）
+        env:
+          IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord
+          # ⚠️ 终审 I1：`github.ref_name` 是**自由文本** —— git 的 ref 名**合法地**可以含 `"` 与 `;`
+          #    （本仓 `deploy.sh` 的 `printf %q` 注释里有两个实证载荷）。`${{ … }}` 直接插进
+          #    `run:` 体会把这段自由文本当**代码**交给 runner 的 shell ⇒ 恶意 tag 名可在**持有
+          #    `packages: write` 的 job 里**任意执行（推任意镜像进 GHCR，而服务器随后会拉它们）。
+          #    ⇒ 与同片其它路径一致（`conformance.yml:48-50`、`deploy.sh` 的 `printf %q` 纪律）：
+          #    经 `env:` 传入、在 shell 里以引号引用 —— 自由文本永远到不了「被当代码解析」的位置。
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # ⚠️ `SHORT` 是本 job **自己派生**的（`git rev-parse` ⇒ 恒为十六进制），且引用时带引号。
+          SHORT="$(git rev-parse HEAD | cut -c1-7)"
+          bash scripts/deploy/build-images.sh "sha-$SHORT" "$REF_NAME"
+
+  conformance:
+    needs: images
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/conformance.yml
+    with:
+      image_tag: ${{ github.ref_name }}
+
+  deploy:
+    # 🔴 不能写 `if: always()`：那会在 images/conformance **失败**时也部署。
+    #    正确形态 = always && !cancelled && 两个上游都不是 failure/cancelled
+    #    ⇒ dispatch 路径上 conformance 是 skipped，仍然放行（回滚秒级，R1308）。
+    needs: [images, conformance]
+    if: |
+      always() && !cancelled()
+      && (needs.images.result == 'success' || needs.images.result == 'skipped')
+      && (needs.conformance.result == 'success' || needs.conformance.result == 'skipped')
+    runs-on: ubuntu-latest
+    # ⚠️ 复评 Minor·第二轮：`conformance` job 有 60 分钟上限（终审 M11），而**部署**这一步此前没有
+    #    —— 远端 `docker compose pull` 不设超时、`ssh` 也没设 `ServerAlive*` ⇒ 一次挂死的部署可以
+    #    一路吃到 **360 分钟**的 job 默认上限（R1314 是成本控制要求）。90 分钟的算术（按**首次**
+    #    部署、冷服务器算；**监控片起重估**、**货币片 +1 镜像同核**、**支付片 +1 镜像同核** ——
+    #    自建镜像从 8 个 → **14 个**〔另有 redis/mysql/node-exporter/cadvisor 4 个官方镜像〕）：
+    #      拉取 ≈11.7GB（14 个自建镜像 ≈10.1GB〔既有 8 个 ≈5.8GB + 监控 4 个 ≈2.9GB + currency
+    #        约 0.7GB + payment 约 0.7GB，其中 grafana 一个就 ≈1.9GB〕+ redis/mysql/node-exporter/cadvisor 基础镜像 ≈1.3GB
+    #        —— 手册 ①/⑦7.3 的数）
+    #        按「慢速 VPS」≈3 MB/s 算 ≈65 min  +  冒烟 ≤5 min（deploy.sh 里的墙钟硬上限）
+    #        +  up -d / scp / 收尾 ≈2 min  ⇒  ≈72 min，取 90 留 ≈1.25× 余量。
+    #    仍只有默认上限的 ¼ —— 「挂死」的代价被钉在有限数上；后续发布只下一个镜像的新层，远低于此。
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      # ⚠️ 终审 M17：R1308 的前提之一「**tag 只打在 master 上**」此前**没有任何机械闸** ——
+      #    一个写权限协作者给任意提交打一个 `v*` tag，它就会被构建、被 conformance 验、**并部署
+      #    到生产**；而回滚之所以安全，靠的正是「线上每一版都过过真栈」。⇒ 部署前用 git 自己判一次。
+      #    dispatch（回滚）路径上 `GITHUB_SHA` = 所选的 master HEAD（手册要求从 master 发起）⇒ 恒过；
+      #    真正有判别力的是 tag push 路径：那时它 = **tag 指向的提交**。
+      - name: 前置：tag 指向的提交必须在 master 上（R1308）
+        run: |
+          set -euo pipefail
+          # 检出是**浅**克隆（`fetch-depth 1`，且 `--depth` 隐含 `--single-branch`：remote.origin.fetch
+          # 只覆盖被检出的那个 ref）⇒ 两步都要做，而且第二步**必须给明确的目标 ref**：
+          #   ① `--unshallow` 去掉浅边界 —— 浅边界上 `merge-base --is-ancestor` 判不准；
+          #   ② `master:refs/remotes/origin/master` 显式目标 ⇒ 才会真的建出 `origin/master`。
+          #      ⚠️ 只写 `origin master`（无目标）时拉下来的东西**只进 FETCH_HEAD**
+          #      ⇒ 下面那条命令会报 `Not a valid object name origin/master` 而**恒红**（实测踩到过）。
+          git fetch --no-tags --unshallow origin 2>/dev/null || true
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "❌ [release] 拒绝部署：这个 tag 指向的提交（$GITHUB_SHA）**不在** origin/master 上。" >&2
+            echo "   理由（R1308）：tag 只打在 master 上 —— 打在别处的 tag 指向没跑过真栈 conformance 的提交，" >&2
+            echo "   部署它 = 把未经检验的版本放上生产；且回滚的「上一个 tag 是好的」前提也不再成立。" >&2
+            echo "   处置：把该提交合进 master、过一遍 CI，然后在 master 上重新打 tag。" >&2
+            exit 1
+          fi
+          echo "✅ [release] $GITHUB_SHA 在 origin/master 上 —— 放行部署"
+      # ── 片③-B（设计 §3.1 / §5）：备份前两件前置动作 —— 投递 3 个脚本 → 装 cron（幂等）。
+      #    🔴 第三件（「**仅当还没有 `ok:true` 的 manifest 时**立刻跑一次备份」）**不在这里** ——
+      #    它独立成步、排在 `部署` **之后**（见下面那一步的注释：它要连活着的 mysql，排在部署之前
+      #    会把**首次发布**整条锁死。第一轮修复轮 C1）。
+      #    🔴 三条落点纪律（每一条都有事故可指）：
+      #      ① `if: github.event_name == 'push'`（与 `images`/`conformance` 同一个谓词）：
+      #         **dispatch 回滚路径整条跳过它们** —— 回滚不该被与本次操作无关的备份问题弄红；
+      #      ② ⛔ 不落进 `deploy.sh` 的 rc 路径 —— `deploy.sh:243` 在**任何**非零退出时都打印
+      #         「❌ 部署失败。回滚命令…」，而「备份没跑起来」不是「这次发布坏了」；
+      #      ③ 那个「仅当还没有 ok manifest」的限定词是**判据的一部分**，不是优化：无条件每次
+      #         发布都跑一次，会在下面「备份新鲜度」那一步**之前**刚造出一份新鲜的 manifest ⇒
+      #         新鲜度判据在 push 路径上**永远不可能红**（= 用户裁决 5 的整个机制作废）。
+      #    ⚠️ 这一步**不可省**：它同时兑现手册里两句承诺 ——「脚本由发布流水线在每次发布时投递」
+      #       与「定时任务由发布流水线在每次发布时核对安装」（定时被删/机器重装都能自愈）。
+      - name: 装备份（投递 + 装 cron）
+        if: github.event_name == 'push'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"; chmod 600 "$SSH_KEY"
+          SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+          TARGET="${SSH_USER:-ubuntu}@$SSH_HOST"
+          # ① 投递：**恰好三个**（`restore-drill.sh` 是开发/CI 工具、`check-backup-fresh.sh` 是
+          #    runner 侧的闸 —— 两个都不许进生产；手册让读者 `ls` 到恰好这三个）
+          ssh "${SSH_OPTS[@]}" "$TARGET" 'mkdir -p /home/ubuntu/ftl-ops && chmod 700 /home/ubuntu/ftl-ops'
+          scp -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new \
+            scripts/ops/backup.sh scripts/ops/restore.sh scripts/ops/install-cron.sh \
+            "$TARGET:/home/ubuntu/ftl-ops/"
+          ssh "${SSH_OPTS[@]}" "$TARGET" 'chmod 700 /home/ubuntu/ftl-ops/*.sh'
+          # ② 装 cron（幂等：`# ftl-backup` 那行恰好一条；别人的行一行不动）
+          ssh "${SSH_OPTS[@]}" "$TARGET" 'bash /home/ubuntu/ftl-ops/install-cron.sh'
+      - name: 部署（或回滚）
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          # ⚠️ 两个名字**故意不同**：`SSH_KEY` 是 `deploy.sh` 要的**路径**（与本地演练同名），
+          #    `DEPLOY_KEY_CONTENT` 才是密钥**内容**。同名会让「路径 vs 内容」在这段脚本里
+          #    看起来是同一个东西 —— 那正是最容易写错的地方。
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          # ⚠️ tag push ⇒ 部署 `v1.2.3`；dispatch（回滚）⇒ 部署输入里那个**既有** tag。
+          IMAGE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          bash scripts/deploy/deploy.sh "$IMAGE_TAG"
+      # ── 片③-B（设计 §3.1 / §5）第三件：**仅当还没有 `ok:true` 的 manifest 时**立刻跑一次备份。
+      #    🔴 它必须排在 `部署` **之后**（第一轮修复轮 C1 —— 修前它在部署之前，**首次发布会死锁**）：
+      #       新服务器上备份目录是空的 ⇒ 这一步**一定会跑**；而 `backup.sh` 要 `docker exec` 进
+      #       **ftl-mysql**（容器还不存在 ⇒ `No such container`，`pipefail` 下非零退出）⇒ 这一步红
+      #       ⇒ 而 `部署` 那一步**没有 `if:`**、带着隐式 `success()` ⇒ 前一步红它就被**跳过**
+      #       ⇒ 栈永远起不来 ⇒ 重跑复现同一个状态。手册那条首发路径（〇→①→②→③，然后打 tag）
+      #       整个锁死。移到部署之后：栈已经起来了 ⇒ 首跑能成功 ⇒ 首次发布为**正确的理由**变绿。
+      #    🔴 两个闸一个都不能松 —— 它们是**判据的一部分**，不是优化：
+      #       · `if: github.event_name == 'push'` —— dispatch 回滚路径整条跳过（设计 §3.1）；
+      #       · 「**仅当还没有 `ok:true` 的 manifest**」这个限定词 —— 无条件每次发布都跑一次，会在
+      #         **下一步**「备份新鲜度」之前刚造出一份新鲜 manifest ⇒ 新鲜度判据在 push 路径上
+      #         **永远不可能红** = 用户裁决 5 的整个机制作废（第三轮 Critical）。
+      #       移位之后这个性质照旧成立，且要对得上下面这条：「备份停了」那种情形（比如定时任务被删）
+      #       目录里是**旧的** `ok:true` manifest ⇒ 限定词为假 ⇒ 首跑**不跑** ⇒ 新鲜度那一步照样
+      #       按**年龄**红 —— 防制造（不许给闸喂一份刚造出来的新鲜 manifest）没被这次移位削弱。
+      #    ⛔ 同样**不许**落进 `deploy.sh` 的 rc 路径（那里打印的是「回滚命令」）：它红了要说的
+      #       是「备份没起来」，**站是好的，别回滚**。
+      - name: 首次备份（仅当还没有 ok:true 的 manifest）
+        if: github.event_name == 'push'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"; chmod 600 "$SSH_KEY"
+          SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+          TARGET="${SSH_USER:-ubuntu}@$SSH_HOST"
+          # 仅当**还没有 ok:true 的 manifest** 时才立刻跑一次。失败即红 —— 唯一豁免是**锁竞争**
+          # （拿不到锁 = 另一次备份正在跑，那说明备份活着；设计 §5）。
+          # ⚠️ `head -n 1` 写在**远端**：本地 `set -o pipefail` 下若把 `ssh | head` 串成本地管道，
+          #    输出多行时 head 提前收工会让 ssh 吃到 SIGPIPE（141）⇒ 条件误判成「没有 ok manifest」
+          #    ⇒ 白跑一次首跑，而那会在新鲜度那一步**之前**造出一份新鲜 manifest（= 我们要防的形态）。
+          ok_now="$(ssh "${SSH_OPTS[@]}" "$TARGET" \
+            'grep -l "\"ok\":true" /home/ubuntu/ftl-backups/manifest-[0-9]*.json 2>/dev/null | head -n 1' || true)"
+          if [ -n "$ok_now" ]; then
+            echo "ℹ️ [release] 备份目录里已有 ok:true 的 manifest（${ok_now}）⇒ **不**跑首跑（新鲜度那一步才有判别的余地）"
+          else
+            echo '=== [release] 还没有 ok:true 的 manifest ⇒ 立刻跑一次备份（首次安装）==='
+            rc=0
+            out="$(ssh "${SSH_OPTS[@]}" "$TARGET" 'bash /home/ubuntu/ftl-ops/backup.sh' 2>&1)" || rc=$?
+            printf '%s\n' "$out"
+            if [ "$rc" -ne 0 ]; then
+              case "$out" in
+                *'拿不到锁'*)
+                  echo 'ℹ️ [release] 首跑没跑成：**拿不到锁**（另一次备份正在跑）—— 设计 §5 的唯一豁免，不算失败' ;;
+                *)
+                  echo "❌ [release] 首次备份失败（退出码 $rc）—— 备份没有起来。" >&2
+                  echo '   这一条与本次发布无关：**站是好的，别回滚**。去看 /home/ubuntu/ftl-backups/backup.log' >&2
+                  echo '   与手册「备份还活着吗」那节。' >&2
+                  exit 1 ;;
+              esac
+            fi
+          fi
+      # ⚠️ R1306③：登出的**第三层**（C4 的机械闸）。`if: always()` 让它在**普通失败路径**上
+      #    也跑（前面的部署步骤红了/被跳过时）。⚠️ 但 job 超时 / runner 失联时**没有任何步骤
+      #    会跑** —— 连它也不跑（复评 Minor 7：此前这句说反了）。那种情况真正兜得住的性质是
+      #    「`--assert-clean` 能**被独立重跑**」：后端是一个独立子命令，下一次运行的收尾步骤、
+      #    或人手都可以随时再执行它。
+      - name: 收尾断言：服务器上没有留下镜像库凭据（C4）
+        if: always()
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+        run: |
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          bash scripts/deploy/deploy.sh --assert-clean
+      # ── 片③-B（设计 §6.4 / 第二轮 I-1）：备份新鲜度 —— **本 job 的最后一步**。
+      #    🔴 位置是承诺，不是习惯：手册「备份还活着吗」逐字写着「那次发布会**在最后一步红**」
+      #       ⇒ 它必须排在上面那个 `if: always()` 的 C4 收尾断言**之后**（否则那一句不可能发生 ——
+      #       本仓点名的复发缺陷正是「手册的预期读数与真实形态不一致」）。
+      #       `tools/conformance` 的 `slice-07.4-pipeline` 用「调 `check-backup-fresh.sh` 的那一步
+      #       必须是最后一步」这条机械闸把这句话钉住。
+      #    🔴 它打印的每一类红都自带「站是好的，**别回滚**」：⛔ 绝不落进 `deploy.sh` 的 rc 路径
+      #       —— 那里是「❌ 部署失败。回滚命令…」，会把「备份过期」变成「撤下刚发上去的好版本」的指令。
+      #    🔴 `if: github.event_name == 'push'`（与上面那一步同一个谓词）：dispatch 回滚路径整条跳过。
+      - name: 备份新鲜度（与本次发布无关 —— **站是好的，别回滚**）
+        if: github.event_name == 'push'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          bash scripts/ops/check-backup-fresh.sh

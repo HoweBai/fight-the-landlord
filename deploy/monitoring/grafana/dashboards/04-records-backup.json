@@ -1,0 +1,174 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "records_table_bytes",
+          "legendFormat": "records 两表字节（DATA+INDEX 近似值）",
+          "refId": "A"
+        }
+      ],
+      "title": "records 表字节",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "rate(records_rows_deleted_total[1h])",
+          "legendFormat": "删除速率（行/秒，1h 窗）",
+          "refId": "A"
+        }
+      ],
+      "title": "记录删除速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 7200 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "time() - records_cleanup_last_success_timestamp_seconds",
+          "instant": true,
+          "legendFormat": "距上次成功",
+          "refId": "A"
+        }
+      ],
+      "title": "清理任务新鲜度（≥0 = 启动置 0 的「从未成功」；告警线 2h）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "records_cleanup_failures_total",
+          "legendFormat": "累计失败",
+          "refId": "A"
+        }
+      ],
+      "title": "清理失败计数（告警：6h 内 > 0）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "time() - backup_last_success_timestamp_seconds",
+          "instant": true,
+          "legendFormat": "距上次备份成功",
+          "refId": "A"
+        }
+      ],
+      "title": "备份新鲜度（上次成功距今；textfile 指标）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "dateTimeAsIso" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "backup_last_success_timestamp_seconds * 1000",
+          "legendFormat": "上次成功时刻",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "backup_last_attempt_timestamp_seconds * 1000",
+          "legendFormat": "上次尝试时刻",
+          "refId": "B"
+        }
+      ],
+      "title": "备份时间线（成功不擦：失败时上次成功值 carry-forward）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "backup_last_attempt_result",
+          "legendFormat": "上次尝试结果：{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "上次备份结果（result ∈ {ok, failure}；锁竞争与真失败同码）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ftl", "monitoring"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "FTL 记录与备份",
+  "uid": "ftl-records-backup",
+  "version": 1,
+  "weekStart": ""
+}

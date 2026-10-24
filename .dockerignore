@@ -1,0 +1,23 @@
+# Docker 构建上下文排除项。
+#
+# 没有这个文件时 `COPY packages/*` 会把宿主机的 node_modules 与 dist 一起复制进镜像：
+#  - 宿主的 node_modules 里是软链到 ../../node_modules/.pnpm 的**宿主布局**
+#    （含 jsdom/terser 等镜像里不会装的包），镜像内的 tsc 会解析到这些悬空路径；
+#  - dist 是 gitignore 的构建产物，镜像里应当由 `pnpm build` 自己生成。
+#
+# 实测症状：`packages/protocol` 的 tsc 在 vitest 的 .d.ts 上报 TS18028
+# （Private identifiers are only available when targeting ECMAScript 2015 and higher）。
+node_modules
+**/node_modules
+**/dist
+**/.env*
+**/.turbo
+.turbo
+.git
+.gitignore
+.worktrees
+.superpowers
+.pnpm-store
+test-results
+coverage
+*.log

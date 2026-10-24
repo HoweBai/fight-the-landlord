@@ -1,0 +1,354 @@
+{
+  "views": [
+    {
+      "roomCode": "GOLDEN01",
+      "version": 42,
+      "state": "ended",
+      "baseScore": 80,
+      "seat": 0,
+      "hand": [],
+      "cardCounts": [
+        0,
+        17,
+        17
+      ],
+      "trustees": [
+        false,
+        false,
+        false
+      ],
+      "bottomCards": [
+        {
+          "r": 13,
+          "s": 2
+        },
+        {
+          "r": 14,
+          "s": 2
+        },
+        {
+          "r": 3,
+          "s": 3
+        }
+      ],
+      "landlordSeat": 0,
+      "currentPlayer": 1,
+      "recentActions": [],
+      "turnDeadlineAt": 1700000030000,
+      "bidPhase": {
+        "currentBidder": 0,
+        "bidMultiplier": 2,
+        "landlordCandidate": 0,
+        "grabActions": 3,
+        "redealCount": 0,
+        "kind": "rob",
+        "decisions": [
+          {
+            "seat": 0,
+            "kind": "call",
+            "grab": true
+          },
+          {
+            "seat": 1,
+            "kind": "rob",
+            "grab": false
+          },
+          {
+            "seat": 2,
+            "kind": "rob",
+            "grab": false
+          }
+        ]
+      },
+      "playPhase": {
+        "bombCount": 1
+      },
+      "winner": "landlord"
+    },
+    {
+      "roomCode": "GOLDEN01",
+      "version": 42,
+      "state": "ended",
+      "baseScore": 80,
+      "seat": 1,
+      "hand": [
+        {
+          "r": 3,
+          "s": 0
+        },
+        {
+          "r": 4,
+          "s": 0
+        },
+        {
+          "r": 5,
+          "s": 0
+        },
+        {
+          "r": 6,
+          "s": 0
+        },
+        {
+          "r": 7,
+          "s": 0
+        },
+        {
+          "r": 8,
+          "s": 0
+        },
+        {
+          "r": 9,
+          "s": 0
+        },
+        {
+          "r": 10,
+          "s": 0
+        },
+        {
+          "r": 11,
+          "s": 0
+        },
+        {
+          "r": 12,
+          "s": 0
+        },
+        {
+          "r": 13,
+          "s": 0
+        },
+        {
+          "r": 14,
+          "s": 0
+        },
+        {
+          "r": 3,
+          "s": 1
+        },
+        {
+          "r": 4,
+          "s": 1
+        },
+        {
+          "r": 5,
+          "s": 1
+        },
+        {
+          "r": 6,
+          "s": 1
+        },
+        {
+          "r": 7,
+          "s": 1
+        }
+      ],
+      "cardCounts": [
+        0,
+        17,
+        17
+      ],
+      "trustees": [
+        false,
+        false,
+        false
+      ],
+      "bottomCards": [
+        {
+          "r": 13,
+          "s": 2
+        },
+        {
+          "r": 14,
+          "s": 2
+        },
+        {
+          "r": 3,
+          "s": 3
+        }
+      ],
+      "landlordSeat": 0,
+      "currentPlayer": 1,
+      "recentActions": [],
+      "turnDeadlineAt": 1700000030000,
+      "bidPhase": {
+        "currentBidder": 0,
+        "bidMultiplier": 2,
+        "landlordCandidate": 0,
+        "grabActions": 3,
+        "redealCount": 0,
+        "kind": "rob",
+        "decisions": [
+          {
+            "seat": 0,
+            "kind": "call",
+            "grab": true
+          },
+          {
+            "seat": 1,
+            "kind": "rob",
+            "grab": false
+          },
+          {
+            "seat": 2,
+            "kind": "rob",
+            "grab": false
+          }
+        ]
+      },
+      "playPhase": {
+        "bombCount": 1
+      },
+      "winner": "landlord"
+    },
+    {
+      "roomCode": "GOLDEN01",
+      "version": 42,
+      "state": "ended",
+      "baseScore": 80,
+      "seat": 2,
+      "hand": [
+        {
+          "r": 8,
+          "s": 1
+        },
+        {
+          "r": 9,
+          "s": 1
+        },
+        {
+          "r": 10,
+          "s": 1
+        },
+        {
+          "r": 11,
+          "s": 1
+        },
+        {
+          "r": 12,
+          "s": 1
+        },
+        {
+          "r": 13,
+          "s": 1
+        },
+        {
+          "r": 14,
+          "s": 1
+        },
+        {
+          "r": 3,
+          "s": 2
+        },
+        {
+          "r": 4,
+          "s": 2
+        },
+        {
+          "r": 5,
+          "s": 2
+        },
+        {
+          "r": 6,
+          "s": 2
+        },
+        {
+          "r": 7,
+          "s": 2
+        },
+        {
+          "r": 8,
+          "s": 2
+        },
+        {
+          "r": 9,
+          "s": 2
+        },
+        {
+          "r": 10,
+          "s": 2
+        },
+        {
+          "r": 11,
+          "s": 2
+        },
+        {
+          "r": 12,
+          "s": 2
+        }
+      ],
+      "cardCounts": [
+        0,
+        17,
+        17
+      ],
+      "trustees": [
+        false,
+        false,
+        false
+      ],
+      "bottomCards": [
+        {
+          "r": 13,
+          "s": 2
+        },
+        {
+          "r": 14,
+          "s": 2
+        },
+        {
+          "r": 3,
+          "s": 3
+        }
+      ],
+      "landlordSeat": 0,
+      "currentPlayer": 1,
+      "recentActions": [],
+      "turnDeadlineAt": 1700000030000,
+      "bidPhase": {
+        "currentBidder": 0,
+        "bidMultiplier": 2,
+        "landlordCandidate": 0,
+        "grabActions": 3,
+        "redealCount": 0,
+        "kind": "rob",
+        "decisions": [
+          {
+            "seat": 0,
+            "kind": "call",
+            "grab": true
+          },
+          {
+            "seat": 1,
+            "kind": "rob",
+            "grab": false
+          },
+          {
+            "seat": 2,
+            "kind": "rob",
+            "grab": false
+          }
+        ]
+      },
+      "playPhase": {
+        "bombCount": 1
+      },
+      "winner": "landlord"
+    }
+  ],
+  "settlement": {
+    "roomCode": "GOLDEN01",
+    "baseScore": 80,
+    "winner": "landlord",
+    "landlordSeat": 0,
+    "farmerSeats": [
+      1,
+      2
+    ],
+    "multiplier": 4,
+    "spring": "none",
+    "landlordScoreChange": 640,
+    "farmerScoreChange": -320
+  },
+  "finished": {
+    "winner": "landlord"
+  }
+}

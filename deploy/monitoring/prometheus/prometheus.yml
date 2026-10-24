@@ -1,0 +1,44 @@
+# deploy/monitoring/prometheus/prometheus.yml —— 抓取面唯一真源（规格 §2.4 逐字）。
+# ⚠️ 进镜像（Dockerfile.prometheus 的 COPY 目标 = 官方默认路径 /etc/prometheus/）——
+#    「改配置 = 发版」；不放宿主挂载（部署原则：容器不依赖宿主产物）。
+# 15 个 job = 八 Nest（Bearer 走 credentials_file，entrypoint 落盘 600）+ douzero（网络内、
+# 与既有 /health 同口径无守卫）+ node-exporter + cadvisor（白名单 relabel 控基数）
+# + prometheus/alertmanager/grafana（元监控）+ alert-relay（Bearer 守卫，S2）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+scrape_configs:
+  # 八个 Nest：Bearer 走 credentials_file（entrypoint 生成，600）
+  - { job_name: api-gateway,   static_configs: [{ targets: ["api-gateway:9000"] }],   authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: user-service,  static_configs: [{ targets: ["user-service:9001"] }],  authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: room-service,  static_configs: [{ targets: ["room-service:9002"] }],  authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: game-service,  static_configs: [{ targets: ["game-service:9003"] }],  authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: robot-service, static_configs: [{ targets: ["robot-service:9005"] }], authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: config-service,static_configs: [{ targets: ["config-service:9006"] }],authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: currency-service, static_configs: [{ targets: ["currency-service:9004"] }], authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  # 支付片 T15：第 15 个 job（第 8 个 Nest；metrics 9007——⚙️2）
+  - { job_name: payment-service, static_configs: [{ targets: ["payment-service:9007"] }], authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }
+  - { job_name: douzero,       static_configs: [{ targets: ["douzero:2021"] }] }   # 无守卫（网络内）
+  - { job_name: node-exporter, static_configs: [{ targets: ["node-exporter:9100"] }] }
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs: [{ targets: ["cadvisor:8080"] }]
+    metric_relabel_configs:   # 白名单：只留四类（基数与磁盘控制）
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|start_time_seconds|last_seen)|machine_memory_bytes"
+        action: keep
+  - { job_name: prometheus,    static_configs: [{ targets: ["prometheus:9090"] }] }
+  - { job_name: alertmanager,  static_configs: [{ targets: ["alertmanager:9093"] }] }
+  # ⚙️ Y9 实测订正（2026-10-03，T12 真栈）：`GF_SERVER_SERVE_FROM_SUB_PATH=true` ⇒ grafana 对
+  #    `/metrics` 回 **301**，Location 用 `GF_SERVER_ROOT_URL` 拼成 `<root>/grafana/metrics`
+  #    （dev = `http://localhost:3010/grafana/metrics` ⇒ Prometheus 跟随后连的是**它自己容器里的**
+  #    localhost:3010 ⇒ 目标恒 down；prod 形态更坏：会指向公网域名打一次出站回环，并叠出假
+  #    ServiceDown=critical）。⇒ 抓取路径**显式走子路径**（该路径实测**无鉴权** 200，basic_auth 不需要）。
+  - { job_name: grafana,       metrics_path: /grafana/metrics, static_configs: [{ targets: ["grafana:3010"] }] }
+  - { job_name: alert-relay,   static_configs: [{ targets: ["alert-relay:8090"] }],   authorization: { type: Bearer, credentials_file: /etc/prometheus/secret/internal_token } }

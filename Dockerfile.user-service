@@ -1,0 +1,53 @@
+# platform/Dockerfile.user-service
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install curl for health checks（`--no-install-recommends`：trivy DS-0029，M0.1 T7；
+# python3/make/g++ 就为 bcrypt 的 `--build-from-source`（见下方 install 段），都是显式依赖、
+# 不在 recommends 里，少装 recommended 包不影响该构建）
+RUN apt-get update && apt-get install -y --no-install-recommends curl python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+# Copy all workspace files first
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
+COPY package.json ./
+# ⚠️ 根 package.json 的 pnpm.patchedDependencies 会在 install 时读取 patches/（hash 计算即读文件）；
+# 缺了这一行，容器内 `pnpm install` 直接 ENOENT 失败
+COPY patches ./patches
+# 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）并在 vitest 的 .d.ts 上报 TS18028
+COPY tsconfig.base.json ./
+
+# Copy all packages（依赖方向：protocol 零依赖 → shared 依赖 protocol → 服务依赖两者）
+# N46：dev-only 测试工具包（测试侧唯一真源）—— 被 COPY 的多个包以 workspace:* 引用它；
+# 缺这一行，容器内 pnpm install 解析不到该 workspace 依赖
+COPY packages/test-utils ./packages/test-utils
+COPY packages/protocol ./packages/protocol
+COPY packages/shared ./packages/shared
+COPY packages/user-service ./packages/user-service
+
+# Install dependencies.
+# ⚠️ **故意**用 `--ignore-scripts`：本工作区会拖入 sqlite3（typeorm 的可选驱动），它的
+# `prebuild-install` 会在构建时去 GitHub 拉预编译包且**没有超时** —— 网络一抖就卡死整个
+# `docker compose build`（本机实测卡了 50 分钟，连带 api-gateway 永远轮不到重建）。
+# 但它同时会跳过 **bcrypt**（user-service 唯一真正需要的原生依赖）的编译 ⇒ 下一行
+# 用 `--build-from-source` **只**重建 bcrypt：不走网络，只用本镜像已有的 python3/make/g++，
+# 构建确定可重复。缺了它，user-service 会以
+# `MODULE_NOT_FOUND: .../bcrypt_lib.node` 崩溃重启（已实测）。
+RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts \
+ && cd node_modules/.pnpm/bcrypt@*/node_modules/bcrypt \
+ && ./node_modules/.bin/node-pre-gyp install --fallback-to-build --build-from-source
+
+# Build the service（必须按依赖顺序：test-utils 是 protocol 测试文件的 import，先于 protocol；缺 protocol 时 shared 的 tsc 解析不到 @fight-the-landlord/protocol）
+RUN pnpm --filter @fight-the-landlord/test-utils build \
+ && pnpm --filter @fight-the-landlord/protocol build \
+ && pnpm --filter @fight-the-landlord/shared build \
+ && pnpm --filter @fight-the-landlord/user-service build
+
+EXPOSE 3001
+
+# 安全扫描（M0.1 T7）：非 root 运行（trivy DS-0002）。node:20-slim 自带 uid 1000 的 `node`；
+# 服务运行期不写 /app（状态在 MySQL/Redis、日志走 stdout）⇒ 无需 chown。
+USER node
+
+CMD ["node", "packages/user-service/dist/main.js"]

@@ -1,0 +1,55 @@
+# platform/Dockerfile.edge —— 门口（TLS 终止 + H5 静态站 + 反代）。两段式：
+#   阶段一在**镜像内**构建 H5（宿主 dist 不进镜像 —— 部署原则：容器不依赖宿主产物）。
+#   阶段二只把产物与配置塞进 caddy 官方镜像。
+# ⚠️ 不得 COPY 任何 `.env*`（R1202 契约；`.dockerignore` 已排除）。
+FROM node:20-slim AS web
+WORKDIR /app
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
+COPY package.json ./
+# ⚠️ 根 package.json 的 pnpm.patchedDependencies 会在 install 时读取 patches/（hash 计算即读文件）；
+# 缺了这一行，容器内 `pnpm install` 直接 ENOENT 失败
+COPY patches ./patches
+# 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）
+COPY tsconfig.base.json ./
+# 依赖方向：protocol 零依赖 → client 依赖 protocol
+# N46：dev-only 测试工具包（测试侧唯一真源）—— 被 COPY 的多个包以 workspace:* 引用它；
+# 缺这一行，容器内 pnpm install 解析不到该 workspace 依赖
+COPY packages/test-utils ./packages/test-utils
+COPY packages/protocol ./packages/protocol
+COPY packages/shared ./packages/shared
+COPY apps/client ./apps/client
+RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts
+# 台账 N46：test-utils 是 protocol 测试文件（`src/robot-availability-wiring.gate.test.ts`）的 import，
+# 而 protocol build 编译 `src/` 全树（含该测试）⇒ 必须先建 test-utils
+RUN pnpm --filter @fight-the-landlord/test-utils build \
+ && pnpm --filter @fight-the-landlord/protocol build \
+ && pnpm --filter @fight-the-landlord/client build:h5
+
+FROM caddy:2-alpine
+# 安全扫描（M0.1 T7）：非 root 运行（trivy DS-0002）。官方镜像**没有** caddy 用户（实测
+# /etc/passwd 只有系统账号）⇒ 自建 uid/gid 1001（与镜像内 /usr/bin/caddy 的属主一致）。
+# caddy 二进制自带 setcap `cap_net_bind_service` ⇒ 非 root 仍可绑 80/443；Caddyfile 里
+# `admin off` ⇒ 不需要 admin 套接字/root 的任何东西。
+RUN addgroup -g 1001 -S caddy && adduser -S -D -H -u 1001 -G caddy caddy
+COPY --from=web /app/apps/client/dist/build/h5 /srv
+# 片⑦ T12：管理页（无构建静态页，与玩家 H5 分属两个路由面；Caddy 侧见 deploy/Caddyfile
+# 的 `handle /admin/*`——那个 handle 自带 `root * /srv` ⇒ 与 /srv 的物理布局解耦的是路由，
+# 不是目录：admin/ 放在 /srv 下只是复用同一个 root）。
+COPY admin /srv/admin
+# /download/：安装包目录（uni-ad 开通链接的落点；`*.apk` 不入库、按需在**手动构建轮**放入，
+# 机制与 CI 构建的 404 语义见 deploy/download/README.md）
+COPY deploy/download /srv/download
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+# 属主改给 caddy：/data（证书/ACME 账户库）与 /config（autosave）运行期都要写。
+# ⚠️ 必须在下面 `VOLUME /data` **之前** —— VOLUME 声明之后对卷目录的改动不会进入卷的初始化内容。
+RUN chown -R caddy:caddy /srv /data /config
+# 证书与 ACME 账户库落在 /data ⇒ **必须**挂命名卷（否则每次重建都重签 ⇒ 撞 Let's Encrypt 配额）
+VOLUME /data
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fs -o /dev/null http://localhost/ || exit 1
+# 安全扫描（M0.1 T7）：运行时用户（trivy DS-0002）。⚠️ 历史 root 属主的 /data 命名卷需一次性
+# 迁移（裸 `docker run --rm --user root --entrypoint chown -v pokergame_caddy-data:/data <edge镜像>
+# -R caddy:caddy /data` —— 不能经 `docker compose run`：本服务钉了固定 IP 172.28.0.250，
+# 常驻 ftl-edge 在时临时容器撞同一 IP、创建即失败（实测）；手册登记见 docs/ops/first-deploy.md 详注 ⑨）。
+USER caddy

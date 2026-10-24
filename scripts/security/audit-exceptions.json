@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1241259,
+    "module": "@vue/server-renderer",
+    "reason": "修补只在 @vue/server-renderer≥3.5.42；命中链 100% 在 apps/client 的 uni 构建工具链（@dcloudio/uni-*@alpha > @vue/server-renderer@3.4.21），该链的 @vue 栈被 @dcloudio 精确锁定在 3.4.21，单点 override 3.5.42 会撕裂（跨 minor 混版，同 vite 豁免同族困境）；形态 = SSR 属性名黑名单漏 CR 致 XSS —— 本仓生产无 SSR（H5=CSR、App/mp 为 uni 编译器产物），玩家/生产不可达。2026-10-06 由门脚本按 advisory DB 漂移首报（v1.8.0 上线推送轮）。",
+    "reviewTrigger": "@dcloudio uni 工具链升级其 @vue 依赖至 ≥3.5.42（或官方声明支持该版本）⇒ 重审本豁免并移除 override 面。",
+    "ghsa": "GHSA-g2v6-rqmx-r4w6"
+  },
+  {
+    "id": 1123525,
+    "module": "vite",
+    "reason": "修补只在 vite≥6.4.3；uni 构建栈整体锁在 vite5（@dcloudio/vite-plugin-uni 精确 peer vite=5.2.8，在用版与最新 alpha 双双如此）；影响面 = vite dev server 的 server.fs.deny Windows 旁路（玩家/生产不可达）。",
+    "reviewTrigger": "vite-plugin-uni 的 vite peer 放宽到含 6（或 uni 官方声明支持 vite 6）⇒ 重审本豁免并升 6.x。",
+    "ghsa": "GHSA-fx2h-pf6j-xcff"
+  },
+  {
+    "id": 1240992,
+    "module": "braces",
+    "reason": "上游**无修补版本**（advisory patched=<0.0.0；npm 上 braces 最新即 3.0.3 = vulnerable，无更高版本可升）；命中链 = apps/client 的 uni 构建工具链（uni-cli-shared > chokidar > braces），构建期依赖、玩家/生产不可达；形态 = 深嵌套模式导致栈耗尽的 DoS（输入来自构建机自身）。2026-10-03 由门脚本按 advisory DB 漂移首报（M0.1 收口后新增通告）。",
+    "reviewTrigger": "上游发布修复版（braces > 3.0.3）或 uni 工具链换用不含 braces 的链 ⇒ 复审本豁免。",
+    "ghsa": "GHSA-vfj7-8cjw-p6xm"
+  }
+]

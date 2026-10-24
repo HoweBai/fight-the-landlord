@@ -1,0 +1,28 @@
+# platform/Dockerfile.grafana —— 监控片：Grafana（provisioning + 七面板进镜像；口令 fail-closed 守卫）。
+#
+# 「配置进镜像」纪律：datasource/面板 as code 的唯一真源在 `deploy/monitoring/grafana/`。
+# ⚠️ 面板落 **/etc/grafana/dashboards（卷外）**——R1：`grafana-data` 命名卷挂
+#    `/var/lib/grafana`，面板若落卷内会在首启后被卷内容「冻结」遮蔽（改面板不生效、
+#    且下一版镜像里的新面板看不见）。卷外的代价是「改面板 = 发版」——那正是本纪律要的。
+#
+# ⚙️ 实施期核对（2026-10-03，docker inspect grafana/grafana:13.2.3 / 容器内实测）：
+#   - 官方 `USER=472`（grafana）、`ENTRYPOINT=["/run.sh"]`、**无 CMD** ⇒ 守卫脚本的
+#     `exec /run.sh "$@"` 在零参下走官方默认路径（run.sh 自带 grafana server 启动行）。
+#   - `/etc/grafana/provisioning/` 已存在（官方自带子目录）⇒ COPY 为合并。
+FROM grafana/grafana:13.2.3
+
+USER root
+
+# provisioning：datasource（uid ftl-prometheus）+ dashboards provider
+COPY deploy/monitoring/grafana/provisioning/ /etc/grafana/provisioning/
+# 七面板 JSON —— **卷外**落点（R1），与 provisioning/dashboards/ftl.yml 的 provider path 同路径
+COPY deploy/monitoring/grafana/dashboards/ /etc/grafana/dashboards/
+# 守卫脚本（非模板；唯一职责 = 口令 fail-closed，见脚本头注）
+COPY deploy/monitoring/grafana/entrypoint.sh /etc/grafana/entrypoint.sh
+RUN chmod 755 /etc/grafana/entrypoint.sh
+
+# 回官方运行用户（安全扫描 trivy DS-0002 同族；官方 run.sh 的写面都在 472 的权限内）
+USER 472
+
+# ENTRYPOINT 换成守卫脚本：GF_SECURITY_ADMIN_PASSWORD 缺失/空串 ⇒ 拒启动；否则 exec 官方 run.sh
+ENTRYPOINT ["/etc/grafana/entrypoint.sh"]

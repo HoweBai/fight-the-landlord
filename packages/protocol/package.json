@@ -1,0 +1,17 @@
+{
+  "name": "@fight-the-landlord/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@fight-the-landlord/test-utils": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

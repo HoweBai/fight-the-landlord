@@ -1,0 +1,57 @@
+{
+  "name": "fight-the-landlord-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "ci": "bash scripts/ci.sh",
+    "e2e:browser": "node scripts/browser-e2e.mjs",
+    "verify:admin": "node scripts/verify-admin-static.mjs",
+    "verify:admin-players": "node scripts/admin-players-probe.mjs",
+    "verify:monitoring": "node scripts/verify-monitoring.mjs",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^26.4.1",
+    "@types/passport": "^1.0.17",
+    "@types/passport-jwt": "^4.0.1",
+    "@types/uuid": "^11.0.0",
+    "sqlite3": "^6.0.1",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@fight-the-landlord/shared": "workspace:*"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "description": "NestJS microservices + uni-app 棋牌游戏平台。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "pnpm": {
+    "patchedDependencies": {
+      "vitest@2.1.9": "patches/vitest@2.1.9.patch"
+    },
+    "overrides": {
+      "axios": "^1.16.0",
+      "tar": "^7.5.22",
+      "brace-expansion@1": "^1.1.20",
+      "brace-expansion@2": "^2.1.6",
+      "adm-zip": "^0.6.1",
+      "jpeg-js": "^0.4.4",
+      "ws": "^8.21.3",
+      "postcss": "^8.5.18",
+      "@intlify/core-base": "9.1.11",
+      "@intlify/message-resolver": "9.1.11",
+      "vite": "5.4.21",
+      "source-map-js": "^1.2.2"
+    }
+  }
+}

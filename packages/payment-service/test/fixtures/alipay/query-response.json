@@ -1,0 +1,13 @@
+{
+  "name": "query-response",
+  "source": "self-made（T6 自造；沙箱采集后按同构追加）",
+  "api": "alipay.trade.query",
+  "purpose": "口径②：`<api>_response` 键对应值的**原文子串**字节对 sign 验签（不是重排序）",
+  "rawBody": "{\"alipay_trade_query_response\":{\"code\":\"10000\",\"msg\":\"Success\",\"buyer_logon_id\":\"159****5678\",\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\",\"trade_no\":\"2026100622001448060000000001\",\"total_amount\":\"6.00\",\"trade_status\":\"TRADE_SUCCESS\"},\"sign\":\"TU+MeGZEOhhcUkVuytBEK8lmKGLaVejr/CRHR/OmhAPYVMxL8Ls3Hp7Ziw4uWuRubFuAlRTAdGdO+t58nebCZMzEoPRoY8wgdD5fER8W/QeYAol58e5jybtw//YX/F7VHuNF5lW+c4MDSf967NpJY1ujwiApTeWm9r7QC7WhlvnmNhCqX66zVT0gfWpQoD0d8TycOG53o5p+sT/PQ+jVsV9Mu5Oe0innrYXARDoCzu1bZOR32a95Q9ba+Sg5T0Chpc2RN6xNvEHVlUrsigXV2uvw1TFaUXktF04Ya8CmPrLJDaMeVTMSvkYVxYXuHxOd1jMwEZhSYqrJlRFCK/NlXw==\"}",
+  "expect": {
+    "verifyResponse": true,
+    "extractedNode": "{\"code\":\"10000\",\"msg\":\"Success\",\"buyer_logon_id\":\"159****5678\",\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\",\"trade_no\":\"2026100622001448060000000001\",\"total_amount\":\"6.00\",\"trade_status\":\"TRADE_SUCCESS\"}",
+    "tradeStatus": "TRADE_SUCCESS",
+    "totalAmount": "6.00"
+  }
+}

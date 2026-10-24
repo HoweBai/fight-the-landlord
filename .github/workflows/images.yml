@@ -1,0 +1,36 @@
+# push→master 时把 14 个自建镜像构建并推到 GHCR（R1304 的触发分级：feature 分支**不**跑）。
+#
+# ⚠️ 为什么不放在 `ci.yml` 里：`ci.yml` 只是六阶段（`scripts/ci.sh`）的薄调用；
+#    把构建塞进去会让「六阶段」不再是规格里那张表。
+name: images
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # ⚠️ 推 GHCR 私有包**必须**有 write；缺了会在 push 那一步 403。
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # ⚠️ 内置 token，**不是**长期密钥 ⇒ 服务器侧与仓库侧都没有长期凭据（R1306）。
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # ⚠️ `-af` 只在 **runner 侧**允许（一次性机器）；服务器侧只许 `-f`（R1307/R1314）。
+      - name: 清理 runner 磁盘
+        run: docker image prune -af || true
+      - name: 构建并推送 14 个镜像
+        env:
+          IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord
+        run: |
+          SHORT="$(git rev-parse HEAD | cut -c1-7)"
+          bash scripts/deploy/build-images.sh "sha-$SHORT" latest

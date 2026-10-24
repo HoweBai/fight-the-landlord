@@ -1,0 +1,18 @@
+# platform/douzero/docker-compose.douzero.yml
+services:
+  douzero:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fight-the-landlord-douzero
+    restart: unless-stopped
+    ports:
+      - "2021:2021"
+    environment:
+      - PORT=2021
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2021/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

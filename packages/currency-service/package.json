@@ -1,0 +1,36 @@
+{
+  "name": "@fight-the-landlord/currency-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "test": "vitest run",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "migration:run": "typeorm migration:run -d dist/data-source.js",
+    "migration:revert": "typeorm migration:revert -d dist/data-source.js",
+    "migration:generate": "typeorm migration:generate src/migrations/Generated -d dist/data-source.js"
+  },
+  "dependencies": {
+    "@fight-the-landlord/protocol": "workspace:*",
+    "@fight-the-landlord/shared": "workspace:*",
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/microservices": "^11.2.6",
+    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/typeorm": "^11.0.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "ioredis": "^5.11.1",
+    "mysql2": "^3.24.3",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/testing": "^11.2.6",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

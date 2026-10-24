@@ -1,0 +1,254 @@
+# deploy/monitoring/prometheus/rules/ftl-alerts.yml —— 告警规则唯一真源（规格 §2.4bis + 金币场片 §11.2 + 风控片 §2.12 + 支付片 §2.6 + 通知通道片 §3.8 + 广告小片 §2.7：**27 条**）。
+# 27 条 = 24 类，3 类按 severity 拆名（Http5xxRatio / HostDiskSpace / WsConnections）。
+# ⚠️ 改阈值 = 发版（规则进镜像 + promtool check rules 做语法闸，C3）。
+# ⚠️ 备份新鲜度**不设规则**（设计 §D6：独立闸 check-backup-fresh.sh 在先，只上板）——
+#    不要"顺手补一条"，那是被裁决过的范围。
+groups:
+  - name: ftl-alerts
+    rules:
+      # ── 心跳 ────────────────────────────────────────────────────────────
+      # vector(1) 恒 firing ⇒ 经 AM 的独立路由（Watchdog → heartbeat 接收器）每 24h 一封
+      # 「监控活着」邮件。它不来了 = Prometheus/AM/主机这层死了（三者超集关系）。
+      # ⚠️ 未配 SMTP 时心跳不存在（heartbeat = 空接收器）——残余登记在设计 §4。
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: 「监控活着」心跳（每 24h 一封；它不来了 = 监控自己坏了）
+
+      # ── 抓取面 ──────────────────────────────────────────────────────────
+      - alert: ServiceDown
+        expr: up{job=~".+"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} 抓不到了'
+          runbook: 先看容器 `docker ps`（`docker logs ftl-{{ $labels.job }}`）；再看九字段日志按 traceId 追查
+
+      # ── HTTP 错误率（按 job；分母 clamp 防"无流量"时的 0/0）──────────────
+      - alert: Http5xxRatioHigh
+        expr: 'sum by (job) (rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum by (job) (rate(http_requests_total[5m])), 1e-9) > 0.05'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} 5xx 占比 > 5%（近 5m）'
+          runbook: 先看该服务日志里的 error 行（九字段 `level=error`）；再对 `http_requests_total` 按 route 拆出重灾路径
+      - alert: Http5xxRatioCritical
+        expr: 'sum by (job) (rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum by (job) (rate(http_requests_total[5m])), 1e-9) > 0.2'
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} 5xx 占比 > 20%（近 5m）'
+          runbook: 同 Http5xxRatioHigh，且先看最近一次发布（是否刚上过新版本）
+
+      # ── 主机（node-exporter）────────────────────────────────────────────
+      - alert: HostDiskSpaceLow
+        expr: '(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}) < 0.2'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 根分区可用空间 < 20%
+          runbook: 先 `docker system df`（镜像与 build cache 是主要增长源）；再查 `/home/ubuntu/ftl-backups` 与 prometheus-data 卷
+      - alert: HostDiskSpaceCritical
+        expr: '(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}) < 0.1'
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 根分区可用空间 < 10%（写满 = MySQL 挂）
+          runbook: 同 HostDiskSpaceLow，先删旧镜像/构建缓存；备份保留期见「数据没了怎么办」
+      - alert: HostMemoryAvailableLow
+        expr: node_memory_MemAvailable_bytes < 800 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 主机可用内存 < 800 MiB（OOM 前兆；OOM 会在别处表现为「莫名挂了」）
+          runbook: 先 `docker stats --no-stream` 找大头（cadvisor 面板同看）；再查 dmesg 有无 oom-killer
+
+      # ── WS 连接数（8000 = M0.3 既定线，监控先到岗）──────────────────────
+      - alert: WsConnectionsHigh
+        expr: ws_connections > 4000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: WS 连接数 > 4000
+          runbook: 先看是否推广/活动带来的正常增长；再看 `ratelimit:ws-conn:*` 是否有单 IP 刷连接
+      - alert: WsConnectionsCritical
+        expr: ws_connections > 8000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: WS 连接数 > 8000（达 M0.3 既定线）
+          runbook: 先看 `docker stats` 与 room-service 日志；必要时限流/扩容决策由人拍板
+
+      # ── 容器重启潮 ──────────────────────────────────────────────────────
+      # 语义 = **同 ID 重启（crash-loop）**。⚠️ 容器**重建**（每次发布 recreate）是否计入，
+      # 取决于 cadvisor relabel 保留的标签口径（id 标签是否在手）——⚙️ 由 T12 真栈核对回填。
+      # ⚠️ 正则 `/?(ftl-.*)`：cadvisor 在部分驱动下给 `name` 带前导 `/`，写死不匹配会**静默失配**
+      # （C2 附带 `count(...) >= 6` 的自证断言防这一点——Y7）。
+      - alert: ContainerRestartFlapping
+        expr: 'changes(container_start_time_seconds{name=~"/?(ftl-.*)"}[1h]) > 2'
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '容器 {{ $labels.name }} 近 1h 重启 > 2 次（crash-loop 嫌疑）'
+          runbook: 先 `docker ps -a` 看状态与 RestartCount；再 `docker logs <容器> --tail 200` 看退出前最后几行
+
+      # ── 记录清理（user-service；0 初值语义见 T6：启动即置 0 ⇒「从未成功」也命中）──
+      - alert: RecordsCleanupStalled
+        expr: time() - records_cleanup_last_success_timestamp_seconds > 7200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 记录清理已 > 2h 未成功（含「本进程从未成功」——首轮 +30s 后未成功即命中）
+          runbook: 先看 user-service 九字段日志里的清理行（30s 首轮 + 每小时一轮）；再查 MySQL 连通与 records 表大小
+      - alert: RecordsCleanupFailing
+        expr: increase(records_cleanup_failures_total[6h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 记录清理近 6h 出现过失败
+          runbook: 同 RecordsCleanupStalled（日志里有失败原文）；失败计数不降，恢复与否看 last_success 是否前进
+
+      # ── 元告警：打铃的铃 ────────────────────────────────────────────────
+      # relay → IM 通道全挂时命中。**经邮件通道送达**（relay 挂了邮件仍在——结构性冗余）。
+      - alert: AlertDeliveryFailing
+        expr: rate(alert_deliveries_total{result="error"}[30m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: alert-relay 投递 IM 失败（近 30m 有 error）
+          runbook: 先 `docker logs ftl-alert-relay`（只含 sink 名与状态码）；再核各 IM 侧 webhook 是否被限流/停用
+
+      # ── 资金面（金币场）────────────────────────────────────────────────
+      - alert: CurrencySettleOutboxStuck
+        expr: currency_settle_outbox_oldest_seconds > 300
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 金币结算补偿队列有条目滞留 > 5 分钟（钱没动，账面不一致可见）
+          runbook: 看 room-service 九字段日志（含 roomCode/version/round）；核 currency-service 可用性与池；对账用 currency_flows 按 actionId 查
+      - alert: CurrencyReconcileDrift
+        expr: currency_reconcile_drift_accounts > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 货币对账出现漂移账户（账实不符或缓存漂移未自愈）
+          runbook: 看 currency-service 对账日志（三检查哪一类的哪些账户）；先让自愈跑一轮，仍漂移 ⇒ 人工核对 currency_accounts 与 flows
+      - alert: CurrencyRobotPoolLow
+        expr: currency_robot_pool_balance < 1000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 机器人虚拟池余额 < 100 万（补给将开始失败）
+          runbook: 管理面注入虚拟池（拆笔、单笔 ≤ 100 万）；注入前先看补给/回收速率指标判断方向；**支付片视角：池余额若被系统性提走 = 玩家赢机器人后提现的真实资金外流路径（设计 §14 R5）——先查近期大额 `game_settle` 获胜者与其提现申请，再决定是否调机器人强度/设池上限**
+
+      # ── 风控（风控片 §2.12）─────────────────────────────────────────────
+      # ⚠️ 谓词默认关（`risk.predicate.*=false`）⇒ 拒绝率规则靠 expr 里的「样本量」
+      #    条件自然静默（设计 D9：不为默认关的谓词加默认告警；开启后即为安全绳）。
+      - alert: RiskScanStalled
+        expr: time() - risk_scan_last_success_timestamp_seconds > 7200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 风控扫描已 > 2h 未成功（含「本进程从未成功」——首轮 +30s 后未成功即命中）
+          runbook: 先看 user-service 九字段日志里的 `risk scan …` 行（首轮 +30s、此后每小时一轮）；再查 Redis 锁键 `risk:scan:lock`（残留锁 ⇒ 整轮跳过、不刷 last_success；EX 600 兜底）与 MySQL 连通
+      - alert: MatchPredicateRejectionHigh
+        expr: 'sum(rate(match_predicate_rejections_total[10m])) / clamp_min(sum(rate(match_selection_rounds_total[10m])), 0.001) > 0.5 and sum(rate(match_selection_rounds_total[10m])) > 0.05'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 匹配谓词拒绝率 > 50%（10m 窗且样本足够）——「谓词开启后的安全绳」（CGNAT 全灭时打铃）
+          runbook: 先查 `risk.predicate.*` 开关（sameDevice/sameIp 默认关，刚开 ⇒ 排查误配）；再对 06-risk 面板（风控 / Risk）按 predicate 拆分排除 CGNAT 误伤（同出口 IP 大面积 sameIp 拒绝）
+
+      # ── 支付（支付片 §2.6；语义与设计 §10/§2.5 逐行一致）──────────────────
+      - alert: PaymentFundOpStalled
+        expr: payment_fundop_oldest_age_seconds{op=~"pay|withdraw_hold|refund_hold"} > 900 or payment_fundop_oldest_age_seconds{op=~"withdraw_rb|refund_rb"} > 3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '资金动作最老者滞留超档（{{ $labels.op }}：前向 > 15m / 回滚 > 1h）——「钱动了没落账」的统一哨兵'
+          runbook: 先看 payment-service 九字段日志的 `入账未收敛` / `replayAnchor` warn 行与扫描轮报；再按锚（`pay:`/`withdraw:`/`refund:` 前缀）到 currency_ops 查该笔真实结果——钱动了没落账**先人工核对渠道/台账再处置**（修复判据=设计 §14 R12；回滚类 1h 档 = 回滚明确失败转人工）
+      - alert: PaymentNotifyBadSignSpike
+        expr: increase(payment_notify_total{result="bad_sign"}[10m]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: 支付回调验签失败 10m 内 > 10 次（密钥错配或攻击的第一道铃）
+          runbook: 先看 payment-service 日志的验签失败行（不落 notify_log、只计数）；核**管理页 →「支付渠道」**的公钥 / APPID / 商户 PID 三件与渠道后台是否逐字一致——口径类错配（常见：换钥/换 APPID 后只改了一处）在**管理页**覆盖重填即生效，疑似攻击则查 edge 访问日志按来源 IP 处置（回调面已有边缘单桶限流兜底）
+      - alert: WithdrawBacklog
+        expr: payment_withdraw_oldest_age_seconds > 172800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 最老在途提现 > 48h 未打款（pending/approved 积压）
+          runbook: 管理面（支付管理视图）列 pending/approved 逐笔核支付宝后台是否已打款——**驳回前先核渠道后台**（设计 §5.4 手顺）；瓶颈期先降 `pay.withdrawMaxCoinsPerOrder` / 提门槛 / 暂关 `pay.withdrawEnabled` 压入水
+      - alert: PaymentLateNotifyReopen
+        expr: increase(payment_notify_total{result="reopen"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 过期订单收到支付成功通知被重开入账（钱在手必入账；反复出现 = 过期配置/时钟异常哨兵）
+          runbook: 先看 payment-service 日志的重开行（`late_reopen_at` 已记、订单已补入账）；再查 `pay.orderExpireMinutes` 与渠道侧支付窗口/服务器时钟——频繁重开 = 订单有效期配置过短（调大第 33 键），单发 = 渠道窗口边缘的正常兜底
+      - alert: PaymentReconcileDiff
+        expr: payment_reconcile_diff > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 支付日自检差异 > 0（入账勾稽 Σ credited.coins ≠ Σ recharge 流水，或锚勾稽 孤儿锚/行无锚）
+          runbook: 先看 payment-service 日志 `payment reconcile done:` 行取分项（creditedDiff / orphanAnchors / unanchoredRows）；入账勾稽非零 ⇒ 对 currency_flows（source='recharge'）按 `pay:` 锚逐笔核对；孤儿锚（ledger 有锚本地无行）⇒ 按设计 §14 R12 修复（同单已有行 ⇒ 回滚孤儿；无行 ⇒ 补行按冻结事实记 pending）——**修复前禁开提现放量**
+
+      # ── 通知通道（通知通道片 §3.8）──────────────────────────────────────
+      - alert: NotifyEmailIncomplete
+        expr: notify_config_group_complete{group="email"} == 0 and notify_config_keys_configured{group="email"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "邮件告警通道配置不完整（缺项不会发出邮件）"
+          runbook: "管理页 → 通知通道：邮件组被改到一半（五项未齐）。补全或清空。"
+      - alert: NotifyDingtalkIncomplete
+        expr: notify_config_group_complete{group="dingtalk"} == 0 and notify_config_keys_configured{group="dingtalk"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "钉钉告警通道配置不完整（URL/密钥半配）"
+          runbook: "管理页 → 通知通道：钉钉两项须成对。补全或清空。"
+
+      # ── 广告救助（广告小片 §2.7）────────────────────────────────────────
+      - alert: ReliefCallbackBroken
+        expr: increase(relief_callback_total{result=~"bad_sign|error"}[10m]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: 广告回调验签失败/内部错误 10m 内 > 10 次（密钥错配或攻击的第一道铃）
+          runbook: 先看 currency-service 日志的验签失败行；核管理页「广告回调」的密钥与 uni-ad 后台是否逐字一致；疑似攻击查 edge 访问日志（回调面已有单桶限流兜底）
+      - alert: ReliefGrantZero
+        expr: increase(relief_callback_total[10m]) > 0 and increase(currency_relief_total{result="granted"}[10m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 回调有流量但 30m 零发放（「看了广告永不发」）
+          runbook: 核窗长/时序（claim 过期）、claim 读取故障、apply 失败与余额闸误拦；对账 GET 日志与 Redis 键面

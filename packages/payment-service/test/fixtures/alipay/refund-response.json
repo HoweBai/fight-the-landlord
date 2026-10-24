@@ -1,0 +1,12 @@
+{
+  "name": "refund-response",
+  "source": "self-made（T6 自造；沙箱采集后按同构追加）",
+  "api": "alipay.trade.refund",
+  "purpose": "口径②（退款）：原文子串验签；响应面**无独立退款单号**，渠道引用取 trade_no（T11 消费）",
+  "rawBody": "{\"alipay_trade_refund_response\":{\"code\":\"10000\",\"msg\":\"Success\",\"buyer_logon_id\":\"159****5678\",\"fund_change\":\"Y\",\"gmt_refund_pay\":\"2026-10-06 11:00:00\",\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\",\"refund_fee\":\"6.00\",\"trade_no\":\"2026100622001448060000000001\"},\"sign\":\"xUHHEbd96TA8gM1GX8wxDZbzUtQ4VbAMy42UgRCst7A5P4U7OoJFZjQfLaUe9WDZExbnCjUreVMKfQxB5fetDeesuywhRB/rvvafm02Uo+xKrjp1jz4T5vQGccWtdjU0jCf6LtHcbUulwV1PdW+/Iw+JAiY9Bf/Vj/t417VwwOgIWMjNoeKqqeEtpTBbuBYs5s+ZvYeWcif9v0q33iQOcOvVTy6sx1xp6m3mUO/o2FHMIOZGeS9uq3ThnqnBuI/W16uvMZuw6R3ap6Al90oMZ80YUD0bUQh7XQVh/lM9iZXUKlAYXQtUAy8Wt2J1Dp8YgnOeVSPz8MVa5OxSs94Fbg==\"}",
+  "expect": {
+    "verifyResponse": true,
+    "extractedNode": "{\"code\":\"10000\",\"msg\":\"Success\",\"buyer_logon_id\":\"159****5678\",\"fund_change\":\"Y\",\"gmt_refund_pay\":\"2026-10-06 11:00:00\",\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\",\"refund_fee\":\"6.00\",\"trade_no\":\"2026100622001448060000000001\"}",
+    "fundChange": "Y"
+  }
+}

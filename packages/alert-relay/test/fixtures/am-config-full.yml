@@ -1,0 +1,45 @@
+global:
+  smtp_smarthost: "smtp.example.com:465"
+  smtp_from: "alerts@example.com"
+  smtp_auth_username: "alerts@example.com"
+  smtp_auth_password: "fixture-app-password"
+  smtp_require_tls: true
+route:
+  receiver: all
+  group_by: [alertname, job]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [alertname="Watchdog"]
+      receiver: heartbeat
+      repeat_interval: 24h
+
+# critical 抑制同 alertname/job 的 warning（规格 §2.5 钉死）
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [alertname, job]
+receivers:
+  - name: all
+    webhook_configs:
+      - url: http://alert-relay:8090/webhook
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/secret/internal_token
+    email_configs:
+      - to: "ops@example.com"
+  - name: webhook
+    webhook_configs:
+      - url: http://alert-relay:8090/webhook
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/secret/internal_token
+  - name: email
+    email_configs:
+      - to: "ops@example.com"
+  - name: heartbeat
+    email_configs:
+      - to: "ops@example.com"

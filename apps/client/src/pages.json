@@ -1,0 +1,82 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
+    }
+  },
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
+      "path": "pages/lobby/lobby",
+      "style": {
+        "navigationBarTitleText": "大厅"
+      }
+    },
+    {
+      "path": "pages/game/game",
+      "style": {
+        "navigationBarTitleText": "玩法"
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/table",
+      "pages": [
+        {
+          "path": "table",
+          "style": {
+            "navigationBarTitleText": "牌桌"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/history",
+      "pages": [
+        {
+          "path": "history",
+          "style": {
+            "navigationBarTitleText": "历史战绩"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/wallet",
+      "pages": [
+        {
+          "path": "wallet",
+          "style": {
+            "navigationBarTitleText": "钱包"
+          }
+        },
+        {
+          "path": "recharge",
+          "style": {
+            "navigationBarTitleText": "充值"
+          }
+        },
+        {
+          "path": "withdraw",
+          "style": {
+            "navigationBarTitleText": "提现"
+          }
+        }
+      ]
+    }
+  ],
+  "globalStyle": {
+    "navigationStyle": "custom",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "优比棋牌",
+    "navigationBarBackgroundColor": "#1565c0",
+    "backgroundColor": "#f5f5f5"
+  }
+}

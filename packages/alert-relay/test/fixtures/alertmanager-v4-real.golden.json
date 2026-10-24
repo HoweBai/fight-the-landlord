@@ -1,0 +1,42 @@
+{
+  "receiver": "webhook",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "ServiceDown",
+        "instance": "api-gateway:9000",
+        "job": "api-gateway",
+        "severity": "critical"
+      },
+      "annotations": {
+        "runbook": "先看容器 docker ps（docker logs ftl-api-gateway）；再看九字段日志按 traceId 追查",
+        "summary": "api-gateway 抓不到了"
+      },
+      "startsAt": "2026-10-03T10:23:10.26Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://ftl-prometheus:9090/graph?g0.expr=up%7Bjob%3D%22api-gateway%22%7D+%3D%3D+0",
+      "fingerprint": "6d15bf069f274242"
+    }
+  ],
+  "notification_reason": "first notification",
+  "groupLabels": {
+    "alertname": "ServiceDown"
+  },
+  "commonLabels": {
+    "alertname": "ServiceDown",
+    "instance": "api-gateway:9000",
+    "job": "api-gateway",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "runbook": "先看容器 docker ps（docker logs ftl-api-gateway）；再看九字段日志按 traceId 追查",
+    "summary": "api-gateway 抓不到了"
+  },
+  "routeLabels": {},
+  "externalURL": "http://3ff0300dd67f:9093",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"ServiceDown\"}",
+  "truncatedAlerts": 0
+}

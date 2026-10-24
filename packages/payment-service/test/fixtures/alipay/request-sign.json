@@ -1,0 +1,19 @@
+{
+  "name": "request-sign",
+  "source": "self-made（T6 自造）",
+  "purpose": "出站签名稳定向量（RSA PKCS#1 v1.5 确定性 ⇒ 金标可回放）：params 的插入序**故意乱序**，钉住「按名 ASCII 升序 + sign_type=RSA2 同序」",
+  "api": "alipay.trade.query",
+  "params": {
+    "app_id": "9021000000000000",
+    "method": "alipay.trade.query",
+    "charset": "utf-8",
+    "sign_type": "RSA2",
+    "timestamp": "2026-10-06 12:00:00",
+    "version": "1.0",
+    "biz_content": "{\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\"}"
+  },
+  "expect": {
+    "signSource": "app_id=9021000000000000&biz_content={\"out_trade_no\":\"pay_m3xq8t9u7v2k1p\"}&charset=utf-8&method=alipay.trade.query&sign_type=RSA2&timestamp=2026-10-06 12:00:00&version=1.0",
+    "sign": "M+n3Nhex1k+QpmA6Ez7q8d+u2sWTQ84zHQFc1QeZmM6lpwMfERI9xVQ2YaBuVbGSCsb3dx7qnOHFdAl6Era4NcSmODdc+P7ydqOf2MV6MAnpODlDgiB/OKEQm3wB+TjsQQ9PnhNr8N/SXylXWXViFYtbwJFNG4tUGae2Jlm6mKhDaxivsHxOyPUqVGuqw8BgsNw7L6T5fxE5SMO3YdguED2F0IfO1o2+f/pM9V1Gyk4wQHa7H2Q8621fn7UvZBZyIYpAX1CP97t/3ofvnZqHcrRGvHblbY4/1avVuZL2Q8PRQDJKFjXBnFSB4c3X9+FOmpKPIatULYqEDy8LLbc3dw=="
+  }
+}

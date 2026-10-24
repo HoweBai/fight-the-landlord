@@ -1,0 +1,90 @@
+# deploy/Caddyfile —— 门口配置的**唯一真源**。本机与生产**只差环境变量**：
+#   本机：SITE_ADDRESS=localhost:8443  TLS_MODE=internal（自签）
+#   生产：SITE_ADDRESS=<域名>          TLS_MODE=<ACME 邮箱>（自动签发）
+# ⚠️ 两个变量**无默认值** ⇒ 未配置时 Caddy 启动即失败（fail-closed，与 INTERNAL_SERVICE_TOKEN 同一成例）。
+# ⚠️ 不得写死 `tls internal`（判据 A6b 会红）。
+{
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	tls {$TLS_MODE}
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	# 访问日志走 stdout ⇒ 上限由 compose 的 logging.options（json-file）承担。
+	# ⚠️ 不要 `output file` —— json-file 的上限**管不到**容器可写层里的文件。
+	log {
+		output stdout
+	}
+	# 桥接页 URL 带 HMAC 能力 token（?t=…）——该面**跳过访问日志**，token 不落 edge stdout。
+	log_skip /pay/cashier/*
+
+	handle /api/* {
+		reverse_proxy api-gateway:3000
+	}
+	handle /socket.io* {
+		reverse_proxy api-gateway:3000
+	}
+
+	# 片⑦ T12：管理面（独立静态页；与玩家 H5 分开路由，互不影响）。
+	# ⚠️ 两条 `handle` 都必须在 catch-all `handle {` **之前**（设计 r1-M-4③ 的方向）。
+	#    2026-10-01 实测订正（T12，caddy v2.11.4）：适配器会**按 matcher 把 handle 组成员重排**
+	#    （`/socket.io*` → `/admin/*` → `/admin` → `/api/*` → catch-all），**源码顺序不是保证**；
+	#    行为正确的实际机制 = 「裸 `/admin` 只能被 `path /admin` 命中」+ 精确块在组内受理它。
+	# 🔴 另一个同批实测的语法坑：`redir` 把**以 `/` 开头的第一个参数**当作**路径 matcher（from
+	#    简写）** ⇒ 误写的 `redir /admin/ 301` 会编译成「match `/admin/` · Location: `"301"` ·
+	#    302」——重定向目标是字面量 `301` 且永不命中（`/admin/` 被组内排更前的 `handle /admin/*`
+	#    接走）。正确写法 = **显式给 matcher**：`redir * /admin/ 301`（编译为 Location `/admin/`、
+	#    301，无额外 matcher 约束）。判据 C20 的「`GET /admin` ⇒ 301」按此成立。
+	# ⚠️ `handle /admin/*` 的 `root` **自带**：handle 之间不继承 root（r1-S-M4），
+	#    依赖他块的 root 是隐性耦合。
+	handle /admin {
+		redir * /admin/ 301
+	}
+	handle /admin/* {
+		root * /srv
+		file_server
+	}
+
+	# 监控片：Grafana 看板（片内**唯一**新公网面；写法照 /admin 的实测经验：
+	# redir 必须显式给 matcher；handle 组按 matcher 重排，源码次序不是保证——2026-10-01 实测）。
+	# ⚠️ 两条都必须放在 catch-all `handle {` **之前**（否则 `/grafana` 被静态站接走 ⇒ C4 红）。
+	# ⚠️ 未登录访问 `/grafana/` 是 302 → `/grafana/login`（C4 按**跟随重定向后** 200 断言，Y1）。
+	# ⚠️ 指标面不出网：`/metrics` 不在这里加任何反代（C4 的负对照 = 经边缘 GET /metrics ⇒ 404）。
+	handle /grafana {
+		redir * /grafana/ 301
+	}
+	handle /grafana/* {
+		reverse_proxy grafana:3010
+	}
+
+	# 支付片：渠道回调公开面。**唯一信任入口 = 验签**（RSA2），不经网关 JWT（设计 §2.2）。
+	# ⚠️ 必须在 catch-all handle { 之前（与 /admin、/grafana 同规矩——2026-10-01 实测注记）。
+	handle /pay/notify/* {
+		reverse_proxy payment-service:3007
+	}
+
+	# 支付桥接页：玩家浏览器直连的收银台跳转面（HMAC token 自守，见 payment-service cashier/）。
+	# ⚠️ 同 /pay/notify/* 规矩：必须在 catch-all `handle {` 之前（否则被静态站接走）。
+	handle /pay/cashier/* {
+		reverse_proxy payment-service:3007
+	}
+
+	# 广告小片：激励视频回调公开面（唯一信任入口 = 验签；provider 段 = 首发平台 literal）。
+	handle /ad/notify/* {
+		reverse_proxy currency-service:3004
+	}
+	handle {
+		root * /srv
+		file_server
+	}
+}

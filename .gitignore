@@ -1,0 +1,48 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+.turbo/
+
+# git worktrees（并行开发隔离用；必须忽略，否则整棵树会被提交进仓库）
+.worktrees/
+
+# 本地 pnpm store（沙箱下 ~/.pnpm-store 不可写时的替代）
+.pnpm-store/
+
+# superpowers 的 SDD 工作区（ledger / brief / 评审包等过程产物，无需入库）
+.superpowers/
+
+# 参考项目（只读参考；素材按清单拷进 apps/client/src/static/，参考仓库本身不入库）
+reference/
+.env.*.local
+*.bak
+
+# 素材源库（385 文件 / 16.70 MB，其中 225 个是引擎专有/边车文件，可用媒体只有 160 个）。
+# 只把精选子集拷进 apps/client/src/static/ 入库，逐张白名单挑、**不递归拷目录**。
+# 规模与预算见 apps/client/src/static/ASSETS.md 与 test/asset-budget.test.ts。
+# 纪律见 docs/superpowers/specs/2026-09-18-suit-protocol-and-assets-design.md §6.2.1（R703）
+resources/
+
+# 临时产物（截图 / 跑测日志等；此前堆了 46MB 在仓库根，且 .png 未被 *.log 覆盖）
+.tmp_*
+# 历史会话的临时探针/取证目录（文档已注明「取证物不入库」）
+.tmp-gen/
+
+# 工具产物
+.playwright-mcp/
+.hbuilderx/
+# Trae（另一 AI 工具）的会话工作区文档（过程产物；2026-10-11 曾随批捎带进过一次提交）
+.trae/
+
+# 备份产物（片③-B）：`users-<ts>.sql.gz` / `caddy-data-<ts>.tgz` 由 backup.sh 在**服务器**上生成，
+# 只在开发机/CI 演练时会落到工作区里。⚠️ 这两行与判据 l（`slice-07.5-backup`：仓库里不得有被
+# 跟踪的这两类文件）是**一起**落地的 —— 少了规则，判据只能靠「没人手滑」维持。
+*.sql.gz
+*.tgz
+
+# /download/ 的安装包（发布产物不入库；机制见 deploy/download/README.md）
+deploy/download/*.apk

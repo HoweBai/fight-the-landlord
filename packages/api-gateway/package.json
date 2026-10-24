@@ -1,0 +1,44 @@
+{
+  "name": "@fight-the-landlord/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "test": "vitest run",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@fight-the-landlord/protocol": "workspace:*",
+    "@fight-the-landlord/shared": "workspace:*",
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/microservices": "^11.2.6",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/websockets": "^11.2.7",
+    "express": "^4.21.0",
+    "http-proxy-middleware": "^3.0.0",
+    "ioredis": "^5.11.1",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "proxy-addr": "^2.0.8",
+    "reflect-metadata": "^0.2.2",
+    "socket.io": "^4.7.0",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@fight-the-landlord/test-utils": "workspace:*",
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/testing": "^11.2.6",
+    "@types/express": "^4.17.0",
+    "@types/passport": "^1.0.17",
+    "@types/passport-jwt": "^4.0.1",
+    "@types/proxy-addr": "^2.0.3",
+    "@types/uuid": "^11.0.0",
+    "supertest": "^7.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

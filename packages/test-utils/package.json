@@ -1,0 +1,17 @@
+{
+  "name": "@fight-the-landlord/test-utils",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dev-only 跨包测试工具（唯一真源，台账 N46）。刻意不发布、不被任何服务 src/ 引用 —— 只被各包的 devDependencies 引用。",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
