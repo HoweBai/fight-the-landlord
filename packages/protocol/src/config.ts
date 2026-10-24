@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （六十六键清单、校验函数、客户端子集）。
+ * （九十二键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -135,6 +135,7 @@ export const CONFIG_KEYS = [
   /**
    * 多玩法配置平行化（2026-10-24）：以下 24 键把原平台级/斗地主专属键迁到
    * `game.<玩法>.*`，并新增平台救助门槛。旧键保留在清单尾部（只读回退）。
+   * 2026-10-25：再追加跑得快风控两键（`game.paodekuai.risk.*`），共 26 键。
    */
   'game.doudizhu.freeRoomEnabled',
   'game.doudizhu.goldRoomEnabled',
@@ -159,6 +160,9 @@ export const CONFIG_KEYS = [
   'game.paodekuai.goldBotFillEnabled',
   'game.paodekuai.rakePercent',
   'game.paodekuai.entryMultiplier',
+  /** 跑得快风控两键（2026-10-25）：与斗地主阈值独立；有对局记录即纳入扫描，无 enabled 键。 */
+  'game.paodekuai.risk.winRateThreshold',
+  'game.paodekuai.risk.minGames',
   /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
   'currency.reliefThresholdCoins',
 ] as const;
@@ -385,6 +389,15 @@ const GAME_CARD_COUNTER_PRICE_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.cardCounterPricePerGameCoins',
   'game.doudizhu.cardCounterPricePerHourCoins',
 ];
+/** 两玩法风控阈值（2026-10-25）：同一 parser，错误文案带各自键名。 */
+const GAME_RISK_WIN_RATE_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.risk.winRateThreshold',
+  'game.paodekuai.risk.winRateThreshold',
+];
+const GAME_RISK_MIN_GAMES_KEYS: readonly ConfigKey[] = [
+  'game.doudizhu.risk.minGames',
+  'game.paodekuai.risk.minGames',
+];
 
 /**
  * 写入校验（管理面）——非法 ⇒ 抛 `ProtocolError`（中文原因）；合法 ⇒ 返回**归一化后**的值
@@ -450,10 +463,8 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
     return parseSkillDistribution(value, key);
   }
   if (key === 'game.doudizhu.robot.modelBySkill') return parseModelBySkill(value, key);
-  if (key === 'game.doudizhu.risk.winRateThreshold') {
-    return parseWinRateThreshold(value, key);
-  }
-  if (key === 'game.doudizhu.risk.minGames') return parseMinGames(value, key);
+  if (GAME_RISK_WIN_RATE_KEYS.includes(key)) return parseWinRateThreshold(value, key);
+  if (GAME_RISK_MIN_GAMES_KEYS.includes(key)) return parseMinGames(value, key);
   if (key === 'currency.reliefThresholdCoins') return parseReliefThresholdCoins(value);
   throw new ProtocolError(`未知配置键：${String(key)}`);
 }

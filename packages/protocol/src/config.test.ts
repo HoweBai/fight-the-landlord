@@ -12,7 +12,7 @@ import {
 import { ProtocolError } from './validate';
 
 describe('完整键清单与客户端子集', () => {
-  it('既有键 + 14 个跑得快键；客户端子集暂不变', () => {
+  it('既有键 + 16 个跑得快键；客户端子集暂不变', () => {
     expect(CONFIG_KEYS).toEqual([
       'robot.skillDistribution', 'robot.ruleFallback', 'robot.modelBySkill',
       'robot.reclaimIntervalMs', 'room.matchScanIntervalMs',
@@ -93,6 +93,9 @@ describe('完整键清单与客户端子集', () => {
       'game.paodekuai.goldBotFillEnabled',
       'game.paodekuai.rakePercent',
       'game.paodekuai.entryMultiplier',
+      // 跑得快风控（2026-10-25）：两玩法独立阈值
+      'game.paodekuai.risk.winRateThreshold',
+      'game.paodekuai.risk.minGames',
       'currency.reliefThresholdCoins',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
@@ -634,6 +637,38 @@ describe('配置平行化（2026-10-24）：新键校验与旧键兼容', () => 
     expect(parseConfigValue('game.doudizhu.risk.minGames', 100)).toBe(100);
     expect(() => parseConfigValue('game.doudizhu.risk.winRateThreshold', 0.785)).toThrow(
       /game\.doudizhu\.risk\.winRateThreshold/,
+    );
+  });
+
+  it('跑得快风控两键：胜率阈值 / 最少局数（与斗地主同域，错误文案带新键名）', () => {
+    expect(parseConfigValue('game.paodekuai.risk.winRateThreshold', 0.5)).toBe(0.5);
+    expect(parseConfigValue('game.paodekuai.risk.winRateThreshold', 0.79)).toBe(0.79);
+    expect(parseConfigValue('game.paodekuai.risk.winRateThreshold', 1)).toBe(1);
+    expect(() => parseConfigValue('game.paodekuai.risk.winRateThreshold', 0.785)).toThrow(
+      /game\.paodekuai\.risk\.winRateThreshold.*两位小数/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.winRateThreshold', 0.49)).toThrow(
+      /game\.paodekuai\.risk\.winRateThreshold.*0\.5 ≤ n ≤ 1/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.winRateThreshold', 1.01)).toThrow(
+      /game\.paodekuai\.risk\.winRateThreshold.*0\.5 ≤ n ≤ 1/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.winRateThreshold', '0.8')).toThrow(
+      /game\.paodekuai\.risk\.winRateThreshold.*必须/,
+    );
+    expect(parseConfigValue('game.paodekuai.risk.minGames', 1)).toBe(1);
+    expect(parseConfigValue('game.paodekuai.risk.minGames', 100000)).toBe(100000);
+    expect(() => parseConfigValue('game.paodekuai.risk.minGames', 0)).toThrow(
+      /game\.paodekuai\.risk\.minGames.*1 ≤ n ≤ 100000/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.minGames', 100001)).toThrow(
+      /game\.paodekuai\.risk\.minGames.*1 ≤ n ≤ 100000/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.minGames', 3.5)).toThrow(
+      /game\.paodekuai\.risk\.minGames.*必须是整数/,
+    );
+    expect(() => parseConfigValue('game.paodekuai.risk.minGames', '100')).toThrow(
+      /game\.paodekuai\.risk\.minGames.*必须是整数/,
     );
   });
 
