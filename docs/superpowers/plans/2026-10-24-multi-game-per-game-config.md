@@ -320,3 +320,25 @@ pnpm -C tools/conformance lint
 | 9 | 高 | 迁移幂等假绿，未证明不覆盖预置新键 | **已修**：T2 预置不同值新键并断言保留 |
 | 10 | 低 | `/api/config` 新 int 键未做范围校验 | **已修**：T3 复用 `parseConfigValue` |
 | 11 | 低 | `ClientConfigState.reliefThresholdCoins` 必填会破现有夹具 | **已修**：T8 设为可选，getter 缺省 null |
+
+## 代码审查记录
+
+### 第一轮独立代码审查（2026-10-24）
+
+审查者：独立子代理（sonnet），审 `81c162ff..70a9b04b`，只报发现。共 12 条：
+2 Critical / 3 Important / 7 Minor。
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | Critical | slice-29 只开斗地主好友房，跑得快建房探针必 12006 | **已修**：setup 同时开/还原 `game.paodekuai.friendRoomEnabled` |
+| 2 | Critical | slice-23 `/api/config` 仍断言 20 键 | **已修**：改用 `CLIENT_CONFIG_KEYS.length` |
+| 3 | Important | browser-e2e 仍写旧好友房键 | **已修**：改 `game.doudizhu.friendRoomEnabled`；pdk 场景用 pdk 键 |
+| 4 | Important | 大厅切玩法不修正场次；配置加载修复顺序反 | **已修**：`selectMode` 后 `repairRoomMode`；先修玩法再修场次 |
+| 5 | Important | 迁移现算救助门槛未还原 mysql2 JSON 字符串 | **已修**：先 `normalizeDbJson`，补字符串形态用例 |
+| 6 | Minor | game.vue 无场次时仍显示“正在匹配” | **已修**：`v-else-if="matching"` |
+| 7 | Minor | 客户端回退/坏值用例旧值等于默认，判别力弱 | **已修**：旧值改非默认（false/true/7/20） |
+| 8 | Minor | 管理/RPC 键集断言弱化为 `db.rows.keys()` | **已修**：恢复 `CONFIG_KEYS` 全集等式 |
+| 9 | Minor | conformance 救助门槛仍按 15×倍率推导 | **已修**：slice-18 读 `currency.reliefThresholdCoins`；slice-24 文案同步 |
+| 10 | Minor | verifier 未断言旧键不出现在未分组/搜索 | **已修**：补两条源码级断言 |
+| 11 | Minor | 测试桩 `friendRoomEnabled` 默认翻为 true | **登记**：生产默认 false 由 config-cache 单测覆盖；闸的正反例显式 mock |
+| 12 | Minor | client-protocol 文档仍写 20 键 | **已修**：改 21 |
