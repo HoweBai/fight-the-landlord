@@ -125,12 +125,12 @@
 - `modeEnabled(deps, gameType, mode)`；random/gold 关 ⇒ 12010；practice 关 ⇒ 12006。
 - `MatchService.botFillEnabled(mode, queue.gameType)`（`queue` 已携带 gameType）。
 - **删除 `rooms.controller.ts` join 的全局 `friendRoomEnabled()` 检查**；由
-  `RoomsService.join` 按房间 `gameType` 检查 ⇒ 12006。
+  `RoomsService.join` 对**好友房（practice）**按房间 `gameType` 检查 ⇒ 12006。
 - controller 的 `GET /api/rooms` / `POST /api/rooms` 按 `gameType` 查好友房开关。
 
 **TDD**：
 1. 两玩法 × 两场次开关矩阵（12010）；practice 关 ⇒ 12006。
-2. 好友房列表空/建房 12006/进房 12006（占座前）；**ddz 关 + pdk 开 ⇒ pdk 进房成功**。
+2. 好友房列表空/建房 12006/好友房进房 12006（占座前）；**ddz 关 + pdk 开 ⇒ pdk 好友房进房成功**。
 3. `baseScoreLevels` 新键/旧键回退；**新键存在但非法 ⇒ 10007，不回退旧键**；
    `entryFeePercents` 删新键仍按旧键收台费、新键坏值 ⇒ 空表。
 4. `botFillEnabled(mode, gameType)` 矩阵；跑得快关补位 ⇒ 不补机器人。

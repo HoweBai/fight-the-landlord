@@ -242,8 +242,8 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - `rooms.controller.ts`：
   - `GET /api/rooms?gameType=`：`friendRoomEnabled(gameType)` 关 ⇒ 返回空数组（既有语义）；
   - `POST /api/rooms`：`friendRoomEnabled(dto.gameType ?? 'doudizhu')` 关 ⇒ `12006`；
-  - `POST /api/rooms/:code/join`：全局检查移除，改由 `RoomsService.join` 在读到房间后
-    按房间 `gameType` 检查；关 ⇒ `12006`（占座之前）。
+  - `POST /api/rooms/:code/join`：全局检查移除，改由 `RoomsService.join` 在读到**好友房（practice）**
+    后按房间 `gameType` 检查；关 ⇒ `12006`（占座之前）。匹配房不经此路径。
 - `rooms.service.create()` 不做好友房开关检查（匹配路径也走它）；玩法/人数/档位校验不变。
 
 #### 金币经济与机器人
@@ -377,7 +377,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 | 旧键写入 | 400 `BAD_PARAM`，消息提示使用新键 |
 | 玩法关闭 | 匹配/建房/进房按既有码：`12012` |
 | 场次关闭 | `room.match` ⇒ `12010` |
-| 好友房关闭 | 列表返回空；建房/进房 ⇒ `12006`；`room.match {mode:'practice'}` 同样 ⇒ `12006` |
+| 好友房关闭 | 列表返回空；建房/好友房进房 ⇒ `12006`；`room.match {mode:'practice'}` 同样 ⇒ `12006` |
 | 新键缺失时的台费 | `entryFeePercents` 回退旧档位表，**不静默变 0**；两表都不可用才空表（不收） |
 | 玩法三入口全关 | 大厅隐藏玩法卡；当前选中被隐藏 ⇒ 回落第一个可玩玩法 |
 | 只开好友房 | 玩法卡可见；开始按钮不显示；好友房可用 |
@@ -414,7 +414,7 @@ private levelsKeyOf(gameType): 'game.levels.doudizhu' | 'game.levels.paodekuai'
 - 经济：`rakePercent(gameType)`、`entryMultiplier(gameType)`、`entryFeePercents(gameType)`；
   **新键缺失 ⇒ 旧键收费；新键存在但非法 ⇒ 不回退旧键（档位 10007 / 收费表空表）**。
 - 好友房：`RoomsController.join` 的**全局**检查必须删除（否则 ddz 关 + pdk 开仍被拒）；
-  列表按玩法返回空；建房/进房按房间玩法 ⇒ `12006`；占座前拒绝。
+  列表按玩法返回空；建房/好友房进房按房间玩法 ⇒ `12006`；占座前拒绝。
 - 机器人补位：`botFillEnabled(mode, queue.gameType)` 两玩法矩阵；
   跑得快关补位 ⇒ 不补机器人。
 - 机器人水位：两玩法不同档位/倍率 ⇒ top 不同；`afterSettle` 带玩法。
