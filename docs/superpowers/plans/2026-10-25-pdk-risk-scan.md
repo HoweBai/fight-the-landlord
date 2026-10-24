@@ -383,3 +383,38 @@ pnpm exec turbo run test lint --force
 | 18 | 低 | T2 红跑只跑 migration.test.ts，SEED 计数红无证据 | **已修**：T2 红跑改全量 config-service test |
 
 > 复核自检：18/18 处置已落入对应任务；无新增分歧。
+
+## 代码审查记录
+
+### 第一轮独立代码审查（2026-10-25）
+
+审查者：独立子代理（sonnet），审 `44274955..HEAD`（12 commits / 38 files）。结论：
+**Critical 0 / Important 0 / Minor 9**。
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | Minor | verifier 的“分玩法”断言可被函数内注释满足 | **已修**：改为断言 `byGame.textContent =` 与 `分玩法：斗地主` |
+| 2 | Minor | CONFIG_NOTES 63 条无机械闸 | **已修**：verifier 统计条目并断言 63 |
+| 3 | Minor | 跑得快备注缺“自动限流仍看 50 分线” | **已修**：备注补一句（胜率 + 设备才到 50） |
+| 4 | Minor | 跑得快键数文本漂移（14/16 vs 实际 23） | **已修**：admin 注释改“23 键中 13 键”；protocol 标题改“+跑得快风控两键”；slice-18/24 文案去数字 |
+| 5 | Minor | design.md 的“跑得快 9 键 / risk.* 六键”表述不准 | **已修**：改“平行化新增 9 键（专属 23 键）”与“斗地主两键 + 平台四键” |
+| 6 | Minor | config-service 测试注释称 pdk 键“以后接入” | **已修**：改为“SEED 与 CONFIG_KEYS 同步 92 键” |
+| 7 | Minor | 跑得快判定缺等值边界反例 | **已修**：新增 `games===minGames` / `winRate===threshold` 两条 ⇒ score 0 |
+| 8 | Minor | 迁移测试未钉完整 `VALUES` 尾部 | **已修**：断言 `VALUES (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?)` |
+| 9 | Minor | 真 MySQL 迁移冒烟未跑（Docker paused） | **登记**：恢复 Docker 后执行 §7.2 冒烟（92 行 + 抽查两键）；交付报告注明 |
+
+> 复核：Minor 1–8 修后，targeted tests + `turbo test lint --force`（44/44，0 cached）+
+> `verify:admin`（373 checks）+ conformance lint 全绿；Minor 9 为环境阻塞，已登记。
+
+## 执行记录（2026-10-25）
+
+- T1–T8 全部按 TDD 红→绿→提交完成；T9 全量验证与代码审查完成。
+- 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
+  protocol 290 / config-service 478 / user-service 356 / client 1485 passed（2 skipped）。
+- `pnpm verify:admin` ⇒ **373 checks passed**。
+- `pnpm -C tools/conformance lint` ⇒ 通过。
+- **未跑**：真 MySQL 迁移冒烟（Docker Desktop 处于手动暂停态，`docker info` 报
+  “Docker Desktop is manually paused.”）；conformance slice-20 真栈（未部署/用户未要求）。
+  恢复 Docker 后执行：起 MySQL → 跑迁移 → `SELECT COUNT(*) FROM platform_config` = 92
+  + 抽查 `game.paodekuai.risk.winRateThreshold` = 0.8 / `minGames` = 100。
+- 推送：按用户要求只推 `dev`（推前 fetch/merge `origin/dev` 并重跑全量）；不推 master、不部署。
