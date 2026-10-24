@@ -115,8 +115,8 @@ async function insertIgnore(
   );
 }
 
-export class SplitGameConfig1796500000000 implements MigrationInterface {
-  name = 'SplitGameConfig1796500000000';
+export class SplitGameConfig1796600000000 implements MigrationInterface {
+  name = 'SplitGameConfig1796600000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const oldKeys = SPLIT_CONFIG_PAIRS.map(([oldKey]) => oldKey);
