@@ -263,6 +263,8 @@ interface SessionWire {
   version: number;
   /** 下一回合的权威截止时刻（`turnDeadlineAt - Date.now()` = 真实剩余时长）。 */
   turnDeadlineAt?: number;
+  /** 当前行动者座位（判定「下一回合是不是托管档」）。 */
+  currentPlayer?: number;
   players: SessionSeat[];
 }
 
@@ -811,17 +813,36 @@ export async function runSlice27(): Promise<Checks> {
      * 轮询只等 version 前进（写路径同步），不等推送。
      */
     let restoreReading = 0;
+    let restoreSession: SessionWire | null = null;
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const s = readSession(room.roomCode);
       if (s.version > restoreOwn.view.version && typeof s.turnDeadlineAt === 'number') {
         restoreReading = s.turnDeadlineAt - Date.now();
+        restoreSession = s;
         break;
       }
       await sleep(250);
     }
+    /**
+     * 还原后下一回合可能是**默认 normal 30000**，也可能是**默认 trustee 2000**：
+     * P0-1（人类座位不再被误判成机器人）修好后，人类在重建窗口内的超时会正常累计，
+     * 下一位可能已进入托管 ⇒ 2000 同样是「默认档」（不是注入值 1500/1000/400）。
+     * 若是 2000，必须同时证明该座位确实是 trustee（防 2s 的别的 bug 冒充默认档）。
+     */
+    const nextSeat = restoreSession?.currentPlayer;
+    const nextPlayer = nextSeat === undefined ? undefined : restoreSession?.players[nextSeat];
+    const nextTrustee = nextPlayer?.trustee === true;
+    const nextCount = typeof nextPlayer?.timeoutCount === 'number' ? nextPlayer.timeoutCount : -1;
+    const normalOk = restoreReading >= 25_000 && restoreReading <= 33_000 && !nextTrustee;
+    const accelOk =
+      restoreReading >= 9_000 && restoreReading <= 11_000 && !nextTrustee &&
+      nextCount >= 1 && nextCount < 3;
+    const trusteeOk = restoreReading >= 1_700 && restoreReading <= 2_300 && nextTrustee;
     checks.that(
-      restoreReading >= 25_000 && restoreReading <= 33_000,
-      `收尾 还原后下一回合读 ≈ 30000（= ${restoreReading}ms ∈ [25000,33000]；默认档行为面恢复，C36；读 Redis 会话权威 deadline）`,
+      normalOk || accelOk || trusteeOk,
+      `收尾 还原后下一回合读 ∈ 默认档（normal≈30000 / accel≈10000 且 count 1–2 / trustee≈2000；` +
+        `注入值 1500/1000/400 必须消失）—— 实际 ${restoreReading}ms、nextTrustee=${nextTrustee}、count=${nextCount}；` +
+        '读 Redis 会话权威 deadline（C36）',
     );
 
     return checks;
