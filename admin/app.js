@@ -147,7 +147,7 @@ const PAGE_LIMIT = 20;
  *    **34 条对 34 键**；节奏/清理旋钮管理化片 T16 加六键（35–40）后 **40 条对 40 键**；
  *    广告片 T9 加第 41 键（`ad.reliefAdpid`）后 **41 条对 41 键**；
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
- *    客户端接入片 T3 加第 43/44 键（`client.appEnabled` / `client.h5Enabled`）、机器人补位开关片加第 45–47 键后 **47 条对 47 键**；提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 **48 条对 48 键**；设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 **49 条对 49 键**；记牌器片加第 50 键（game.cardCounterEnabled，归「斗地主 → 对局辅助」）后 **50 条对 50 键**；记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 **52 条对 52 键**；阶段 2 删除旧费率键后 **65 条对 65 键**。
+ *    客户端接入片 T3 加第 43/44 键（`client.appEnabled` / `client.h5Enabled`）、机器人补位开关片加第 45–47 键后 **47 条对 47 键**；提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 **48 条对 48 键**；设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 **49 条对 49 键**；记牌器片加第 50 键（game.cardCounterEnabled，归「斗地主 → 对局辅助」）后 **50 条对 50 键**；记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 **52 条对 52 键**；阶段 2 删除旧费率键后 65 条；2026-10-24 配置平行化后 **59 条备注 / 73 个 active 键**（16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
   'game.doudizhu.robot.skillDistribution': [
