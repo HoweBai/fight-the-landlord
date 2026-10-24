@@ -12,7 +12,7 @@ import { lastValueFrom, timeout } from 'rxjs';
 
 /**
  * user-service → config-service 的调用封装（记录片 T7 / 设计 D5：本服务的**第一条配置消费链**，
- * 读 `record.retentionDays`（记录片新增的第 10 键；风控片后二十五键、支付片后三十四键、节奏/清理旋钮管理化片后四十键、广告片后四十一键、台费片后四十二键、客户端接入片后四十四键、机器人补位开关片后共五十一键）；经 `config.snapshot` 一次拉**全量**）。
+ * 读 `record.retentionDays`（记录片新增的第 10 键；风控片后二十五键、支付片后三十四键、节奏/清理旋钮管理化片后四十键、广告片后四十一键、台费片后四十二键、客户端接入片后四十四键、机器人补位开关片后共五十一键；配置平行化后九十键；2026-10-25 跑得快风控后九十二键）；经 `config.snapshot` 一次拉**全量**）。
  *
  * 形态逐字照 room-service 的 `gateway/config.client.ts` 与 robot-service 的
  * `config/config.client.ts`（`ClientProxy` + `lastValueFrom` + `timeout` + `RpcResult`

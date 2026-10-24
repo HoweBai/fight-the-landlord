@@ -11,7 +11,7 @@ import { metaFromTrace } from '@fight-the-landlord/shared';
 import { lastValueFrom, timeout } from 'rxjs';
 
 /**
- * robot → config-service 的调用封装（片⑦ 规格 §2.3 —— robot-service 消费五十一键中
+ * robot → config-service 的调用封装（片⑦ 规格 §2.3 —— robot-service 消费九十二键中
  * 的四个 robot 键，经 `config.snapshot` 一次拉**全量**）。
  *
  * 形态逐字照 room-service 的 `gateway/config.client.ts`（`ClientProxy` + `lastValueFrom`

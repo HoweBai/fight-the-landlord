@@ -141,3 +141,9 @@ SELECT `key`, `value`, `version`, `updated_by` FROM platform_config
 2. 再部署全部消费者（room/currency/user/robot/client/admin）；
 3. **全部消费者升级完成前，不修改任何新键**（尤其记牌器价格/抽水/门槛）——
    否则旧消费者读冻结旧键、新消费者读新键，会出现价格/扣费错位。
+
+### 5.4 跑得快风控两键（2026-10-25）
+
+`game.paodekuai.risk.winRateThreshold` / `game.paodekuai.risk.minGames` 是**新增专有键**，
+没有旧平台键对应：回滚到旧镜像时**保留即可，无需回填**（旧镜像不读它们，留着无害）。
+回滚后跑得快不再参与胜率扫描；重新升级到含本片的镜像后自动恢复。

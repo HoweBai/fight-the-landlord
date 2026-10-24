@@ -143,7 +143,7 @@ export class GatewayController {
     return this.proxyGateway.forwardToConfigSvc('POST', '/api/admin/login', body, res, headersOf(req));
   }
 
-  /** `GET /api/admin/config`：全量五十一键 + 每键 version + 全局 MAX（持管理令牌读）。 */
+  /** `GET /api/admin/config`：全量九十二键 + 每键 version + 全局 MAX（持管理令牌读）。 */
   @Get('admin/config')
   async getAdminConfig(@Res() res: any, @Req() req: any) {
     return this.proxyGateway.forwardToConfigSvc('GET', '/api/admin/config', null, res, headersOf(req));

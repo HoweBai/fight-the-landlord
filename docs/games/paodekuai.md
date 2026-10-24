@@ -147,10 +147,16 @@
 | `game.paodekuai.goldBotFillEnabled` | `true` | 金币场缺人是否补机器人 |
 | `game.paodekuai.rakePercent` | `0` | 金币场结算抽水（0–50%） |
 | `game.paodekuai.entryMultiplier` | `10` | 金币场入场门槛倍率（入场需余额 ≥ 底分 × 本值） |
+| `game.paodekuai.risk.winRateThreshold` | `0.8` | 胜率风控阈值（与斗地主独立；有对局记录即自动纳入扫描，无 enabled 键） |
+| `game.paodekuai.risk.minGames` | `100` | 胜率风控最少局数（判定 `games >` 本值；与斗地主独立） |
 
 > 2026-10-24 起跑得快的场次/好友房/补位/抽水/门槛与斗地主**平行独立**；
 > 旧平台键（`room.*` / `currency.rakePercent` / `currency.entryMultiplier` 等）
 > 只读保留，供回滚回填，不再由管理面写入。
+>
+> 2026-10-25 起跑得快的对局记录进入胜率风控扫描：**有对局记录即自动纳入**（没有
+> `enabled` 键）；阈值/最少局数与斗地主各自独立；两个玩法同时命中只记一项胜率分
+> （不叠加）。2/4 人局的胜率期望与 3 人不同，本实现不做归一化，按玩法调阈值即可。
 
 ## 8. 超时与托管
 

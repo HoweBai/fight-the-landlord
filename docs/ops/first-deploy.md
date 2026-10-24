@@ -1013,7 +1013,7 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 **上线第一个动作（重要）**：**好友房默认是关闭的**（玩家端不显示「好友房」入口，服务端也拒绝创建/加入）。
 **要开放好友房 ⇒ 上线后第一件事就是来这里把它打开**：找到 `game.doudizhu.friendRoomEnabled`，把值改成 `true` 保存；想再关掉同理。
 
-**89 键配置（73 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
+**92 键配置（76 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
 
 > 2026-10-24 配置平行化：斗地主与跑得快各有一套场次/好友房/补位/金币经济键。下表列斗地主与平台级键；跑得快对应键见 `docs/games/paodekuai.md` §7.1。旧平台键（`room.*` / `currency.entryMultiplier` / `currency.rakePercent` 等）只读保留，回滚前按 runbook 回填。
 
@@ -1041,6 +1041,8 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 | `risk.predicate.sameIp` | **同 IP 谓词**：同上，按公网 IP 判 —— ⚠️ 公司 / 学校 / 网吧共用出口 IP 会互相拒配（**误伤面大**），评估过再开 | **关** |
 | `game.doudizhu.risk.winRateThreshold` | **胜率检测阈值**（0.5–1.0）：对局数超过下面那个门槛后，胜率**高于**此值的账号进风控审核队列 | 0.8 |
 | `game.doudizhu.risk.minGames` | **胜率检测的最少局数**：对局数**超过**这个数才参与胜率判定（防小样本误报） | 100 |
+| `game.paodekuai.risk.winRateThreshold` | **跑得快胜率检测阈值**（0.5–1.0）：跑得快对局数超过下面那个门槛后，胜率**高于**此值的账号进风控审核队列。与斗地主阈值独立；两个玩法同时命中只记一项胜率分 | 0.8 |
+| `game.paodekuai.risk.minGames` | **跑得快胜率检测的最少局数**：跑得快对局数**超过**这个数才参与胜率判定（防小样本误报） | 100 |
 | `risk.deviceLimit` | **多设备阈值**：统计窗口内同一账号用过的设备数**超过**此值 ⇒ 进审核队列 | 3 |
 | `risk.deviceWindowDays` | **设备统计窗口（天）**：设备数只数最近这些天出现过的 | 30 |
 | `risk.autoThrottle` | **自动限流总开关**：命中两项（评分 ≥50）时自动给账号上「3 次/秒」限流档；关 ⇒ 只进队列、等人工处置（**封禁永远是人工动作**，没有自动封禁） | 开 |
@@ -1057,7 +1059,7 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 | `pay.scanIntervalMs` | **支付扫描周期**（毫秒）：八条补偿循环（过期关闭 / 主动补单 / 入账重试 / 提现解冻与超时回滚 / 退款解冻回滚与未知结果重放）的统一节奏——改小 ⇒ 卡住的单收敛更及时 | 60000 |
 | `pay.reconcileIntervalMs` | **支付日自检周期**（毫秒）：入账勾稽 + 锚勾稽的反差自检（钱的事故面第一道铃） | 86400000 |
 | `currency.reconcileIntervalMs` | **货币对账周期**（毫秒）：账实相符 / 缓存漂移自愈 / 孤儿诊断 | 3600000 |
-| `risk.scanIntervalMs` | **风控扫描周期**（毫秒）：胜率 / 设备判定与自动限流的轮询节奏 | 3600000 |
+| `risk.scanIntervalMs` | **风控扫描周期**（毫秒）：两玩法胜率 / 设备判定与自动限流的轮询节奏 | 3600000 |
 | `risk.devicesCleanupIntervalMs` | **风控设备记录清理周期**（毫秒）：按 `risk.deviceRetentionDays` 保留期批删（玩家看不到，只影响管理页风控详情里能查到的设备） | 3600000 |
 | `record.cleanupIntervalMs` | **对局记录清理周期**（毫秒）：按 `record.retentionDays` 保留期清理玩家「历史战绩」（**库里也删**；备份里仍有） | 3600000 |
 | `ad.reliefAdpid` | **救助广告位 id**（uni-ad 激励视频）：在 uni-ad 后台申请广告位拿到的 **adpid**。**空 = 未配置** ⇒ 玩家端不显示「看广告领救助」入口（救助开关开着也一样）。⚠️ 是**字符串**（照原文粘贴，别当数字）；开通 / 回调 / 换位 / 轮换手顺见本节「广告怎么开通」 | 空（未配置） |

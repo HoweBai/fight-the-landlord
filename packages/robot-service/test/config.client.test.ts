@@ -44,7 +44,7 @@ function fakeProxy(handler: (call: SendCall, index: number) => unknown) {
 /** 一个形状真实的快照响应（成功路径的样本）。 */
 const SNAPSHOT: ConfigSnapshotResponse = {
   config: {
-    // 不逐键铺满五十一键：client 是**透传**（返回 `res.data`），本条判据只证明「没解错层」。
+    // 不逐键铺满九十二键：client 是**透传**（返回 `res.data`），本条判据只证明「没解错层」。
     'robot.ruleFallback': { value: true, version: 4 },
   } as ConfigSnapshotResponse['config'],
   version: 4,
