@@ -24,10 +24,12 @@ const room = (over: Partial<Room> = {}): Room => ({
 describe('RoomsService（§3.1 / §10.1 / §10.2 / R124–R128）', () => {
   let service: RoomsService;
   let redis: FakeRedis;
+  let cache: ReturnType<typeof makeConfigCache>;
 
   beforeEach(() => {
     redis = createFakeRedis();
-    service = new RoomsService(asRedis(redis), asConfigCache(makeConfigCache()));
+    cache = makeConfigCache();
+    service = new RoomsService(asRedis(redis), asConfigCache(cache));
   });
 
   it('create 的持久化元数据是 **Hash**、不含 players（R124 + N9）', async () => {
@@ -93,6 +95,23 @@ describe('RoomsService（§3.1 / §10.1 / §10.2 / R124–R128）', () => {
     expect(redis.hset.mock.calls.filter(([key]) => key === seatsKey('JOIN01'))).toEqual([]);
     // 占座给的座位键带 §10.1 的 TTL
     expect(redis.ttls.get(seatsKey('JOIN01'))).toBe(ROOM_TTL_SECONDS);
+  });
+
+  it('好友房（practice）按玩法闸拒绝；匹配房 join 不受好友房闸影响', async () => {
+    cache.paodekuaiEnabled.mockReturnValue(true);
+    cache.friendRoomEnabled.mockImplementation((gameType: unknown) => gameType === 'paodekuai');
+    await service.create({ mode: 'practice', roomCode: 'FRI001', gameType: 'doudizhu' });
+    await expect(service.join('FRI001', 'u1', 'doudizhu')).rejects.toThrow('好友房暂未开放');
+
+    await service.create({ mode: 'practice', roomCode: 'FRI002', gameType: 'paodekuai' });
+    await expect(service.join('FRI002', 'u1', 'paodekuai')).resolves.toMatchObject({
+      code: 'FRI002',
+    });
+
+    await service.create({ mode: 'random', roomCode: 'RND001', gameType: 'doudizhu' });
+    await expect(service.join('RND001', 'u1', 'doudizhu')).resolves.toMatchObject({
+      code: 'RND001',
+    });
   });
 
   it('重复 join 同一 userId → 原座位、人数不变（R126；旧实现会 push 两次）', async () => {

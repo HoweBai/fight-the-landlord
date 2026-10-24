@@ -638,18 +638,25 @@ describe('routeClientMessage', () => {
       expect(match.addToQueue).toHaveBeenCalledWith('alice', 'random', 15, undefined, {}, { gameType: 'doudizhu', playerCount: 3 });
     });
 
-    it('C1 边界：practice 不在双开关范围（好友房走 REST 建房入口的 friendRoomEnabled/12006）', async () => {
+    it('C1 边界：practice 走好友房闸（friendRoomEnabled/12006），不走双场次开关', async () => {
       const { deps, match, configCache } = makeDeps();
       configCache.freeRoomEnabled.mockReturnValue(false);
       configCache.goldRoomEnabled.mockReturnValue(false);
+      configCache.friendRoomEnabled.mockReturnValue(false);
 
-      const ack = await route(deps, makeSocket('alice'), C('room.match', { mode: 'practice', baseScore: 15 }));
+      const off = await route(deps, makeSocket('alice'), C('room.match', { mode: 'practice', baseScore: 15 }));
+      expect(off.code).toBe(ErrCode.FRIEND_ROOM_FAILED);
+      expect(off.code).toBe(12006);
+      expect(match.addToQueue).not.toHaveBeenCalled();
 
-      expect(ack.code).toBe(0);
+      configCache.friendRoomEnabled.mockReturnValue(true);
+      const on = await route(deps, makeSocket('alice'), C('room.match', { mode: 'practice', baseScore: 15 }));
+      expect(on.code).toBe(0);
       expect(match.addToQueue).toHaveBeenCalledWith('alice', 'practice', 15, undefined, {}, { gameType: 'doudizhu', playerCount: 3 });
-      // 反空测：两个开关都**不该**为 practice 被读（读了说明映射写错了形状）。
+      // 反空测：两个场次开关都**不该**为 practice 被读；好友房闸按玩法读。
       expect(configCache.freeRoomEnabled).not.toHaveBeenCalled();
       expect(configCache.goldRoomEnabled).not.toHaveBeenCalled();
+      expect(configCache.friendRoomEnabled).toHaveBeenCalledWith('doudizhu');
     });
 
     it('C4：余额 < baseScore × entryMultiplier ⇒ 14003（消息含所需金额）、不入队', async () => {

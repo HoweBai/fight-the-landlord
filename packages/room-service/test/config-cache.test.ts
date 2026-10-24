@@ -1239,3 +1239,152 @@ describe('ConfigCacheService：多玩法配置（Task 2.2）', () => {
     wide.onApplicationShutdown();
   });
 });
+
+describe('配置平行化（2026-10-24）：按玩法读取与旧键回退', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  async function cacheWith(
+    over: Partial<Record<ConfigKey, unknown>>,
+  ): Promise<ConfigCacheService> {
+    const { client, snapshot } = makeClient();
+    snapshot.mockResolvedValue(snapshotWith(over));
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+    await vi.advanceTimersByTimeAsync(0);
+    return cache;
+  }
+
+  it('场次/好友房/补位：新键优先、缺失回退旧键、跑得快缺省保守', async () => {
+    const cache = await cacheWith({
+      'game.doudizhu.freeRoomEnabled': false,
+      'room.freeRoomEnabled': true,
+      'game.paodekuai.freeRoomEnabled': false,
+      'game.paodekuai.goldRoomEnabled': true,
+      'room.goldRoomEnabled': true,
+      'game.paodekuai.friendRoomEnabled': false,
+      'room.friendRoomEnabled': true,
+      'game.paodekuai.freeBotFillEnabled': false,
+      'room.freeBotFillEnabled': true,
+    });
+    try {
+      expect(cache.freeRoomEnabled('doudizhu')).toBe(false); // 新键覆盖旧键
+      expect(cache.freeRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.goldRoomEnabled('doudizhu')).toBe(true); // 新键缺失 ⇒ 旧键 true
+      expect(cache.goldRoomEnabled('paodekuai')).toBe(true);
+      expect(cache.friendRoomEnabled('doudizhu')).toBe(true); // 新键缺失 ⇒ 旧键 true
+      expect(cache.friendRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.freeBotFillEnabled('paodekuai')).toBe(false);
+      expect(cache.botFillEnabled('random', 'paodekuai')).toBe(false);
+      expect(cache.botFillEnabled('practice', 'paodekuai')).toBe(true);
+    } finally {
+      cache.onApplicationShutdown();
+    }
+  });
+
+  it('全缺省：斗地主沿用种子、跑得快金币场默认关', async () => {
+    const cache = await cacheWith({ 'room.matchScanIntervalMs': 5000 });
+    try {
+      expect(cache.freeRoomEnabled('doudizhu')).toBe(true);
+      expect(cache.goldRoomEnabled('doudizhu')).toBe(true);
+      expect(cache.friendRoomEnabled('doudizhu')).toBe(false);
+      expect(cache.freeRoomEnabled('paodekuai')).toBe(true);
+      expect(cache.goldRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.friendRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.entryMultiplier('doudizhu')).toBe(10);
+      expect(cache.entryMultiplier('paodekuai')).toBe(10);
+      expect(cache.rakePercent('doudizhu')).toBe(0);
+      expect(cache.rakePercent('paodekuai')).toBe(0);
+    } finally {
+      cache.onApplicationShutdown();
+    }
+  });
+
+  it('档位表：新键优先；新键缺失回退旧键；新键存在但非法 ⇒ fail-closed 不回退', async () => {
+    const valid = await cacheWith({
+      'game.levels.doudizhu': LEVELS_B,
+      'game.baseScoreLevels': LEVELS_A,
+    });
+    try {
+      await expect(valid.baseScoreLevels('doudizhu')).resolves.toEqual(LEVELS_B);
+      expect(valid.entryFeePercents('doudizhu')).toHaveLength(3);
+    } finally {
+      valid.onApplicationShutdown();
+    }
+
+    const fallback = await cacheWith({ 'game.baseScoreLevels': LEVELS_A });
+    try {
+      await expect(fallback.baseScoreLevels('doudizhu')).resolves.toEqual(LEVELS_A);
+      expect(fallback.entryFeePercents('doudizhu')).toHaveLength(2);
+    } finally {
+      fallback.onApplicationShutdown();
+    }
+
+    const badNew = await cacheWith({
+      'game.levels.doudizhu': [],
+      'game.baseScoreLevels': LEVELS_A,
+    });
+    try {
+      await expect(badNew.baseScoreLevels('doudizhu')).rejects.toBeInstanceOf(ConfigServiceError);
+      expect(badNew.entryFeePercents('doudizhu')).toEqual([]);
+    } finally {
+      badNew.onApplicationShutdown();
+    }
+  });
+
+  it('门槛/抽水：按玩法读；坏新值不回退旧键', async () => {
+    const cache = await cacheWith({
+      'game.doudizhu.entryMultiplier': 20,
+      'currency.entryMultiplier': 10,
+      'game.paodekuai.entryMultiplier': 30,
+      'game.doudizhu.rakePercent': 5,
+    });
+    try {
+      expect(cache.entryMultiplier('doudizhu')).toBe(20);
+      expect(cache.entryMultiplier('paodekuai')).toBe(30);
+      expect(cache.rakePercent('doudizhu')).toBe(5);
+      expect(cache.rakePercent('paodekuai')).toBe(0);
+    } finally {
+      cache.onApplicationShutdown();
+    }
+
+    const bad = await cacheWith({
+      'game.doudizhu.entryMultiplier': 0,
+      'currency.entryMultiplier': 7,
+    });
+    try {
+      expect(bad.entryMultiplier('doudizhu')).toBe(10); // 坏新值 ⇒ 代码默认，不回退 7
+    } finally {
+      bad.onApplicationShutdown();
+    }
+  });
+
+  it('记牌器：新键优先、缺失回退旧键', async () => {
+    const cache = await cacheWith({
+      'game.doudizhu.cardCounterEnabled': false,
+      'game.cardCounterEnabled': true,
+      'game.doudizhu.cardCounterPricePerGameCoins': 20,
+      'game.cardCounterPricePerGameCoins': 10,
+      'game.doudizhu.cardCounterPricePerHourCoins': 200,
+      'game.cardCounterPricePerHourCoins': 100,
+    });
+    try {
+      expect(cache.cardCounterEnabled()).toBe(false);
+      expect(cache.cardCounterPrices()).toEqual({ perGame: 20, perHour: 200 });
+    } finally {
+      cache.onApplicationShutdown();
+    }
+
+    const fallback = await cacheWith({
+      'game.cardCounterEnabled': true,
+      'game.cardCounterPricePerGameCoins': 10,
+      'game.cardCounterPricePerHourCoins': 100,
+    });
+    try {
+      expect(fallback.cardCounterEnabled()).toBe(true);
+      expect(fallback.cardCounterPrices()).toEqual({ perGame: 10, perHour: 100 });
+    } finally {
+      fallback.onApplicationShutdown();
+    }
+  });
+});

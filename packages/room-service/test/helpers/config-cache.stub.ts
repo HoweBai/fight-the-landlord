@@ -84,7 +84,8 @@ export function makeConfigCache(
   const paodekuaiEnabled = vi.fn(() => false);
   const paodekuaiNonThreePlayerEnabled = vi.fn(() => false);
   return {
-    friendRoomEnabled: vi.fn(() => false),
+    // 测试桩默认「好友房开着」：大多数用例不是在测好友房闸；闸的正反例显式 mockReturnValue。
+    friendRoomEnabled: vi.fn(() => true),
     freeRoomEnabled: vi.fn(() => true),
     goldRoomEnabled: vi.fn(() => true),
     entryMultiplier: vi.fn(() => 10),

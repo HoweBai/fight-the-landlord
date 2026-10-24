@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpException } from '@nestjs/common';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { RoomsController } from '../src/rooms/rooms.controller';
+import { DomainError } from '../src/http/errors';
 import { RoomMode } from '../src/rooms/rooms.dto';
 import { MANUAL_ROOM_TIMEOUT_MS } from '../src/rooms/rooms.timeout';
 import type { Room, RoomsService } from '../src/rooms/rooms.service';
@@ -81,8 +82,9 @@ describe('RoomsController：好友房开关三面（片规格 C8 —— 拒绝�
     expect(rooms.setFillDeadline).not.toHaveBeenCalled();
   });
 
-  it('C8②：开关关 ⇒ POST /api/rooms/:code/join 抛 12006（占座面同样在入口拒）', async () => {
+  it('C8②：join 由 service 按好友房玩法执法（controller 只透传 gameType）', async () => {
     cache.friendRoomEnabled.mockReturnValue(false);
+    rooms.join.mockRejectedValue(new DomainError(ErrCode.FRIEND_ROOM_FAILED, '好友房暂未开放'));
 
     const err = await controller.join('JOIN01', 'u1').catch((e: unknown) => e);
 
@@ -92,7 +94,8 @@ describe('RoomsController：好友房开关三面（片规格 C8 —— 拒绝�
       code: ErrCode.FRIEND_ROOM_FAILED,
       message: '好友房暂未开放',
     });
-    expect(rooms.join, '拒绝必须在入口 —— 不得先入座再报错').not.toHaveBeenCalled();
+    // 闸在 service（按房间所属玩法）；controller 只负责透传，不重复全局判断。
+    expect(rooms.join).toHaveBeenCalledWith('JOIN01', 'u1', 'doudizhu');
   });
 
   it('C8③：开关关 ⇒ GET /api/rooms 返空（code 0、data []），且不扫库（service 零调用）', async () => {

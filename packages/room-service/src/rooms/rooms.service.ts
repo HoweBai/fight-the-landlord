@@ -282,12 +282,18 @@ export class RoomsService {
   async join(code: string, userId: string, gameType: GameType = DEFAULT_GAME_TYPE): Promise<Room> {
     const room = await this.findOne(code);
     if (!room) throw new DomainError(ErrCode.ROOM_NOT_FOUND, '房间不存在');
+    const roomGameType = room.gameType ?? DEFAULT_GAME_TYPE;
+    // 平行化（2026-10-24）：好友房（practice）按**房间所属玩法**的开关执法；匹配房不经过
+    // 好友房闸（它由 createGameRoom 直接占座，永远不会走本方法）。
+    if (room.mode === 'practice' && !this.configCache.friendRoomEnabled(roomGameType)) {
+      throw new DomainError(ErrCode.FRIEND_ROOM_FAILED, '好友房暂未开放');
+    }
     if (room.status !== 'waiting') throw new DomainError(ErrCode.ROOM_ALREADY_STARTED, '游戏已开始');
     /**
      * 多玩法（Task 2.2 / D16 / RB1）：**占座之前**校验玩法 —— 旧客户端（缺省 doudizhu）
      * 进跑得快房 ⇒ `12012`，且**一个座位都不占**（否则旧客户端会占着 pdk 的座却渲染不了）。
      */
-    if ((room.gameType ?? DEFAULT_GAME_TYPE) !== gameType) {
+    if (roomGameType !== gameType) {
       throw new DomainError(ErrCode.GAME_UNAVAILABLE, '房间玩法与客户端不符');
     }
 

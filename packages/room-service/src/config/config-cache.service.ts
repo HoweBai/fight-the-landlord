@@ -148,50 +148,84 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
 
   // ─── 读面（getters）────────────────────────────────────────────────────
 
+  /**
+   * 平行化（2026-10-24）通用读取：新键存在性优先；缺失才回退旧键（仅斗地主）；再回退默认。
+   * 新键存在但值非法 ⇒ 不回退旧键（走默认）。
+   */
+  private gameBool(
+    gameType: GameType,
+    suffix: string,
+    legacyKey: string | undefined,
+    fallback: boolean,
+  ): boolean {
+    const key = `game.${gameType}.${suffix}` as ConfigKey;
+    const hasNew = this.snapshot !== null && Object.hasOwn(this.snapshot, key);
+    const value = hasNew
+      ? this.snapshot?.[key]?.value
+      : legacyKey
+        ? this.snapshot?.[legacyKey as ConfigKey]?.value
+        : undefined;
+    return typeof value === 'boolean' ? value : fallback;
+  }
+
+  private gameInt(
+    gameType: GameType,
+    suffix: string,
+    legacyKey: string | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
+    const key = `game.${gameType}.${suffix}` as ConfigKey;
+    const hasNew = this.snapshot !== null && Object.hasOwn(this.snapshot, key);
+    const value = hasNew
+      ? this.snapshot?.[key]?.value
+      : legacyKey
+        ? this.snapshot?.[legacyKey as ConfigKey]?.value
+        : undefined;
+    return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
+      ? value
+      : fallback;
+  }
+
   /** 好友房开关。缺失/非 boolean ⇒ **false**（安全方向：配置说不清 ⇒ 不开）。 */
-  friendRoomEnabled(): boolean {
-    const value = this.snapshot?.['room.friendRoomEnabled']?.value;
-    return typeof value === 'boolean' ? value : false;
+  friendRoomEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    return this.gameBool(gameType, 'friendRoomEnabled', 'room.friendRoomEnabled', false);
+  }
+
+  /** 免费场开关。缺失/非 boolean ⇒ **true**（与种子一致：保持现状开）。 */
+  freeRoomEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    return this.gameBool(gameType, 'freeRoomEnabled', 'room.freeRoomEnabled', true);
   }
 
   /**
-   * 免费场开关（② 金币场 §1.1 第 12 键；设计 D2）。缺失/非 boolean ⇒ **true**
-   * ——与种子一致（`room.freeRoomEnabled=true`：免费场**保持现状开**，新开关不是为关它加的；
-   * 配置说不清时不改变现状、不掐掉服务）。
+   * 金币场开关。斗地主缺失 ⇒ **true**（种子：2026-10-04 用户裁决）；
+   * 跑得快缺失 ⇒ **false**（保守灰度：金币场默认关）。
    */
-  freeRoomEnabled(): boolean {
-    const value = this.snapshot?.['room.freeRoomEnabled']?.value;
-    return typeof value === 'boolean' ? value : true;
+  goldRoomEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    return this.gameBool(
+      gameType,
+      'goldRoomEnabled',
+      'room.goldRoomEnabled',
+      gameType === 'paodekuai' ? false : true,
+    );
   }
 
-  /**
-   * 金币场开关（② 金币场 §1.1 第 13 键；设计 D2）。缺失/非 boolean ⇒ **true**
-   * ——与种子一致（`room.goldRoomEnabled=true`：**默认开**，2026-10-04 用户裁决；
-   * 原「暗上线 = 缺省关」同款翻转。与 `freeRoomEnabled` 同一个方向：配置说不清时
-   * 不改变种子现状、不掐服务）。
-   */
-  goldRoomEnabled(): boolean {
-    const value = this.snapshot?.['room.goldRoomEnabled']?.value;
-    return typeof value === 'boolean' ? value : true;
+  /** 免费场补位开关。缺失 ⇒ true（现状）。 */
+  freeBotFillEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    return this.gameBool(gameType, 'freeBotFillEnabled', 'room.freeBotFillEnabled', true);
   }
 
-  /**
-   * 机器人补位开关片（第 45 键）：**免费场**匹配缺人时是否补机器人。
-   * 缺失/非 boolean ⇒ **true**（与种子一致 = 现状：缺人等 30s 后补机器人开局；
-   * 关掉后缺人只发 `match.wait_prompt`、绝不补机器人，总等待上限到点发 12007）。
-   */
-  freeBotFillEnabled(): boolean {
-    const value = this.snapshot?.['room.freeBotFillEnabled']?.value;
-    return typeof value === 'boolean' ? value : true;
+  /** 金币场补位开关。缺失 ⇒ true（现状）。 */
+  goldBotFillEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    return this.gameBool(gameType, 'goldBotFillEnabled', 'room.goldBotFillEnabled', true);
   }
 
-  /**
-   * 机器人补位开关片（第 46 键）：**金币场**匹配缺人时是否补机器人。缺省方向与
-   * `freeBotFillEnabled()` 逐字同（true = 现状）。`practice`（好友房）不读这两个开关。
-   */
-  goldBotFillEnabled(): boolean {
-    const value = this.snapshot?.['room.goldBotFillEnabled']?.value;
-    return typeof value === 'boolean' ? value : true;
+  /** 该模式是否允许缺人补机器人（`practice` 恒 true，历史面不变）。 */
+  botFillEnabled(mode: 'random' | 'gold' | 'practice', gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    if (mode === 'random') return this.freeBotFillEnabled(gameType);
+    if (mode === 'gold') return this.goldBotFillEnabled(gameType);
+    return true;
   }
 
   /**
@@ -209,19 +243,16 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
       : NO_BOT_MAX_WAIT_DEFAULT_MS;
   }
 
-  /**
-   * 入场门槛倍数（② 金币场 §1.1 第 14 键；设计 D8/§5.1 的 `baseScore × entryMultiplier`）。
-   *
-   * 缺失/非整数/**越界（范围哨兵）** ⇒ 代码默认 `10`（=种子）。范围照
-   * `protocol/src/config.ts` 的 `parseEntryMultiplier`（`1..100`）—— 快照里出现越界值
-   * 理论上不可能（写入口已拦），但消费方（门槛 14003 / 机器人水位）拿到的必须是
-   * **可用的数字**：这里兜一道，绝不让 0/负数/小数漏进 `needed` 的乘法。
-   */
-  entryMultiplier(): number {
-    const value = this.snapshot?.['currency.entryMultiplier']?.value;
-    return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100
-      ? value
-      : ENTRY_MULTIPLIER_DEFAULT;
+  /** 入场门槛倍数：按玩法读；缺失/越界 ⇒ 代码默认 10。 */
+  entryMultiplier(gameType: GameType = DEFAULT_GAME_TYPE): number {
+    return this.gameInt(
+      gameType,
+      'entryMultiplier',
+      'currency.entryMultiplier',
+      ENTRY_MULTIPLIER_DEFAULT,
+      1,
+      100,
+    );
   }
 
   /**
@@ -243,44 +274,20 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return typeof value === 'boolean' ? value : false;
   }
 
-  /**
-   * 结算抽水比例（② 金币场 §1.1 第 15 键；设计 D3/§5 的 `floor(g × p / 100)`）。
-   *
-   * 缺失/非整数/**越界（范围哨兵，`0..50`）** ⇒ 代码默认 `0`（=种子：零和起点，
-   * 抽水是运营开关不是默认行为）。范围照 `protocol/src/config.ts` 的 `parseRakePercent`。
-   * 消费方 = T5 的结算算法（`settle.service.ts`）——它必须永远拿到一个可用的整数，
-   * 绝不让越界值漏进 `floor(g × p / 100)`。
-   */
-  rakePercent(): number {
-    const value = this.snapshot?.['currency.rakePercent']?.value;
-    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 50
-      ? value
-      : RAKE_PERCENT_DEFAULT;
+  /** 结算抽水比例：按玩法读；缺失/越界 ⇒ 代码默认 0（零和起点）。 */
+  rakePercent(gameType: GameType = DEFAULT_GAME_TYPE): number {
+    return this.gameInt(gameType, 'rakePercent', 'currency.rakePercent', RAKE_PERCENT_DEFAULT, 0, 50);
   }
 
   /**
-   * 台费费率表（2026-10-21 起**唯一来源 = 各玩法档位表**；旧第 42 键已删）。
+   * 台费费率表（唯一来源 = 各玩法档位表）。
    *
-   * 多玩法（Task 2.2 / D8）：`gameType` 缺省斗地主（既有调用零改动）——
-   * 斗地主读旧键 `game.baseScoreLevels`，跑得快读 `game.levels.paodekuai`。
-   *
-   * **fail 方向 = 空表**：快照缺失 / 档位表缺失 / 形状坏 / 越界 ⇒ `[]`（= 全 0 = 不收），
-   * **绝不抛** —— 与 `baseScoreLevels()` 的 fail-closed 相反。依据：收费是收入面，
-   * 失败方向必须是不收（玩家无害），且不回退开局。
-   *
-   * ⚠️ 校验族**不复制第二份**：直接复用写入口的 `parseConfigValue`（唯一校验点纪律）；
-   * 派生用 protocol 的 `entryFeePercentsFromLevels`（与客户端 `entryFeeOfLevel` 共用 `entryFeeOf` 公式）。
+   * **键存在性决定回退**：新键存在但非法 ⇒ 空表（不收），不回退旧键；新键缺失 ⇒ 旧档位表
+   * （仅斗地主）；两者都不可用 ⇒ 空表。**绝不抛**（收入面失败方向 = 不收）。
    */
   entryFeePercents(gameType: GameType = DEFAULT_GAME_TYPE): EntryFeePercent[] {
-    const key = this.levelsKeyOf(gameType);
-    const value = this.snapshot?.[key]?.value;
-    if (value === undefined) return [];
-    try {
-      const levels = parseConfigValue(key, value) as BaseScoreLevel[];
-      return entryFeePercentsFromLevels(levels);
-    } catch {
-      return [];
-    }
+    const levels = this.readLevels(gameType);
+    return levels === null ? [] : entryFeePercentsFromLevels(levels);
   }
 
   /**
@@ -354,40 +361,48 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     };
   }
 
-  /** 玩法档位键：斗地主继续沿用旧键（D8：不迁移/不双写）；跑得快新键。 */
-  private levelsKeyOf(gameType: GameType): 'game.baseScoreLevels' | 'game.levels.paodekuai' {
-    return gameType === 'paodekuai' ? 'game.levels.paodekuai' : 'game.baseScoreLevels';
+  /** 玩法档位键：斗地主新键（旧键仅作缺失回退）；跑得快既有新键。 */
+  private levelsKeyOf(
+    gameType: GameType,
+  ): 'game.levels.doudizhu' | 'game.levels.paodekuai' {
+    return gameType === 'paodekuai' ? 'game.levels.paodekuai' : 'game.levels.doudizhu';
   }
 
   /**
-   * 记牌器总开关（第 50 键）。缺失/非 boolean ⇒ **false**（与客户端 fail-safe 同向：
-   * 说不清 = 不开放；急停方向安全）。消费方 = 开局状态块。
+   * 记牌器总开关（斗地主新键，旧键回退）。缺失/非 boolean ⇒ **false**
+   * （与客户端 fail-safe 同向：说不清 = 不开放；急停方向安全）。消费方 = 开局状态块。
    */
   cardCounterEnabled(): boolean {
-    const value = this.snapshot?.['game.cardCounterEnabled']?.value;
-    return typeof value === 'boolean' ? value : false;
+    return this.gameBool(
+      DEFAULT_GAME_TYPE,
+      'cardCounterEnabled',
+      'game.cardCounterEnabled',
+      false,
+    );
   }
 
   /**
-   * 记牌器两价格（第 51/52 键）。缺失/类型漂移/越界 ⇒ **10/100**（= 种子；消费方拿到的
-   * 必须是可用数字）。校验族复用写入口 `parseConfigValue`（唯一校验点纪律）。
+   * 记牌器两价格（斗地主新键，旧键回退）。缺失/类型漂移/越界 ⇒ **10/100**（= 种子；
+   * 消费方拿到的必须是可用数字）。
    */
   cardCounterPrices(): { perGame: number; perHour: number } {
-    const read = (
-      key: 'game.cardCounterPricePerGameCoins' | 'game.cardCounterPricePerHourCoins',
-      fallback: number,
-    ): number => {
-      const value = this.snapshot?.[key]?.value;
-      if (value === undefined) return fallback;
-      try {
-        return parseConfigValue(key, value) as number;
-      } catch {
-        return fallback;
-      }
-    };
     return {
-      perGame: read('game.cardCounterPricePerGameCoins', 10),
-      perHour: read('game.cardCounterPricePerHourCoins', 100),
+      perGame: this.gameInt(
+        DEFAULT_GAME_TYPE,
+        'cardCounterPricePerGameCoins',
+        'game.cardCounterPricePerGameCoins',
+        10,
+        0,
+        1_000_000,
+      ),
+      perHour: this.gameInt(
+        DEFAULT_GAME_TYPE,
+        'cardCounterPricePerHourCoins',
+        'game.cardCounterPricePerHourCoins',
+        100,
+        0,
+        1_000_000,
+      ),
     };
   }
 
@@ -567,9 +582,35 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     }, this.safetyNetMs);
   }
 
-  /** 取缓存里的档位表（按玩法）：非空数组 ⇒ 返回；否则 `null`（「取不到」）。 */
+  /**
+   * 取缓存里的档位表（按玩法）。**键存在性决定回退**：
+   * - 新键存在 ⇒ 必须通过 `parseConfigValue`；非法/空表 ⇒ `null`（fail-closed，不回退旧键）；
+   * - 新键缺失且是斗地主 ⇒ 旧 `game.baseScoreLevels`；
+   * - 都没有 ⇒ `null`。
+   */
   private readLevels(gameType: GameType = DEFAULT_GAME_TYPE): BaseScoreLevel[] | null {
-    const value = this.snapshot?.[this.levelsKeyOf(gameType)]?.value;
-    return Array.isArray(value) && value.length > 0 ? (value as BaseScoreLevel[]) : null;
+    const key = this.levelsKeyOf(gameType);
+    const hasNew = this.snapshot !== null && Object.hasOwn(this.snapshot, key);
+    if (hasNew) {
+      const value = this.snapshot?.[key]?.value;
+      try {
+        const parsed = parseConfigValue(key, value) as BaseScoreLevel[];
+        return parsed.length > 0 ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+    if (gameType === DEFAULT_GAME_TYPE) {
+      const legacy = this.snapshot?.['game.baseScoreLevels']?.value;
+      if (legacy !== undefined) {
+        try {
+          const parsed = parseConfigValue('game.baseScoreLevels', legacy) as BaseScoreLevel[];
+          return parsed.length > 0 ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
   }
 }

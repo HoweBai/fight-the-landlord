@@ -54,7 +54,7 @@ export class RoomsController {
       }
       gameType = gameTypeQuery;
     }
-    if (!this.configCache.friendRoomEnabled()) return { code: ErrCode.OK, data: [] };
+    if (!this.configCache.friendRoomEnabled(gameType)) return { code: ErrCode.OK, data: [] };
     const rooms = await this.roomsService.findAll();
     // 旧房间缺 gameType ⇒ 按斗地主计（读侧语义与 RoomMeta 的兼容缺省一致）。
     const filtered = rooms.filter((room) => (room.gameType ?? DEFAULT_GAME_TYPE) === gameType);
@@ -79,7 +79,7 @@ export class RoomsController {
   @Post()
   async create(@Body() dto: CreateRoomDto) {
     try {
-      if (!this.configCache.friendRoomEnabled()) {
+      if (!this.configCache.friendRoomEnabled(dto.gameType ?? DEFAULT_GAME_TYPE)) {
         throw new DomainError(ErrCode.FRIEND_ROOM_FAILED, '好友房暂未开放');
       }
       // ⚠️ `timeoutMs` **不进 DTO**：`main.ts:44` 的 `ValidationPipe` 是
@@ -115,9 +115,6 @@ export class RoomsController {
   ) {
     if (!userId) throw httpException(ErrCode.UNAUTHENTICATED, 'X-User-Id header is required');
     try {
-      if (!this.configCache.friendRoomEnabled()) {
-        throw new DomainError(ErrCode.FRIEND_ROOM_FAILED, '好友房暂未开放');
-      }
       return {
         code: ErrCode.OK,
         data: toRoomInfo(

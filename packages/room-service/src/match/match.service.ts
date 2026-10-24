@@ -958,7 +958,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
      * 关闭 ⇒ 走独立的 `processQueueNoBots`：只接受 **playerCount 名真人**满座、缺人发等待提示、
      * 总等待上限到点发 12007 —— **绝不**问门禁、**绝不**用机器人给缺人子集开局。
      */
-    if (!this.botFillEnabled(mode)) {
+    if (!this.botFillEnabled(mode, queue.gameType)) {
       await this.processQueueNoBots(alive, tickets, queue, predicates, now, bumped);
       return;
     }
@@ -1037,12 +1037,12 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * 机器人补位开关片：该模式的匹配队列缺人时**是否允许补机器人**。
-   * `practice` 不受新开关管控（好友房路径保持现状）；`random`/`gold` 各读各的开关。
+   * 机器人补位开关片 + 平行化：该模式的匹配队列缺人时**是否允许补机器人**。
+   * `practice` 不受开关管控（好友房路径保持现状）；`random`/`gold` 按**玩法**读开关。
    */
-  private botFillEnabled(mode: MatchMode): boolean {
-    if (mode === 'random') return this.configCache.freeBotFillEnabled();
-    if (mode === 'gold') return this.configCache.goldBotFillEnabled();
+  private botFillEnabled(mode: MatchMode, gameType: GameType = DEFAULT_GAME_TYPE): boolean {
+    if (mode === 'random') return this.configCache.freeBotFillEnabled(gameType);
+    if (mode === 'gold') return this.configCache.goldBotFillEnabled(gameType);
     return true;
   }
 

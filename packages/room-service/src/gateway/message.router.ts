@@ -584,7 +584,10 @@ async function handleMatch(
    * 开关只拦**新的**入队。换场（P1-9）的撤旧票排在开关+门槛**之后**：
    * 被拒的换场不得让玩家从旧队列消失。
    */
-  if (!modeEnabled(deps, mode)) {
+  if (mode === 'practice' && !deps.configCache.friendRoomEnabled(matchGameType)) {
+    return fail(ErrCode.FRIEND_ROOM_FAILED, '好友房暂未开放');
+  }
+  if (!modeEnabled(deps, matchGameType, mode)) {
     return fail(ErrCode.ROOM_MODE_DISABLED, '该场次暂未开放');
   }
 
@@ -602,7 +605,7 @@ async function handleMatch(
   if (mode === 'gold') {
     const { balances } = await deps.currency.get({ ownerIds: [userId] });
     const balance = balances.find((b) => b.ownerId === userId)?.balance ?? 0;
-    const needed = baseScore * deps.configCache.entryMultiplier();
+    const needed = baseScore * deps.configCache.entryMultiplier(matchGameType);
     if (balance < needed) {
       return fail(ErrCode.E_ENTRY_THRESHOLD, `金币不足：该场次需要 ≥ ${needed}`);
     }
@@ -644,17 +647,14 @@ async function handleMatch(
 }
 
 /**
- * ② D2：`room.match` 的**场次开关**（C1/C2）。映射只住这里，不散落：
- *  - `gold` → `room.goldRoomEnabled`（种子 true：默认开 —— 2026-10-04 用户裁决，原暗上线为关）；
- *  - `random` → `room.freeRoomEnabled`（种子 true：免费场保持现状）。
- *
- * ⚠️ `practice` **不在双开关范围**：好友房的开闭是 `room.friendRoomEnabled`，其拒绝
- * （12006）落在 **REST 建房入口**（`rooms.controller`）——设计 D2 明文「好友房不变」；
- * `room.match` 的 practice 分支是历史面（客户端匹配只发 random/gold）。
+ * ② D2 + 平行化：`room.match` 的**场次开关**。映射只住这里，不散落：
+ *  - `gold` → `game.<玩法>.goldRoomEnabled`（旧键缺失回退）；
+ *  - `random` → `game.<玩法>.freeRoomEnabled`（旧键缺失回退）；
+ *  - `practice` 不在这里判 —— `handleMatch` 先按 `friendRoomEnabled(gameType)` 拒 12006。
  */
-function modeEnabled(deps: RouterDeps, mode: MatchMode): boolean {
-  if (mode === 'gold') return deps.configCache.goldRoomEnabled();
-  if (mode === 'random') return deps.configCache.freeRoomEnabled();
+function modeEnabled(deps: RouterDeps, gameType: GameType, mode: MatchMode): boolean {
+  if (mode === 'gold') return deps.configCache.goldRoomEnabled(gameType);
+  if (mode === 'random') return deps.configCache.freeRoomEnabled(gameType);
   return true;
 }
 
