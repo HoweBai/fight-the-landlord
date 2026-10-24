@@ -1580,10 +1580,10 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
       expect(db.rows.get(oldKey), oldKey).toEqual(seeded().rows.get(oldKey));
     }
     for (const [key, value] of SPLIT_PDK_SEEDS) {
-      expect(db.rows.get(key), key).toEqual({ value, version: 1 });
+      expect(db.rows.get(key), key).toEqual({ value, version: 7 });
     }
     // 1 × 20 = 20（不是硬编码 150）
-    expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 20, version: 1 });
+    expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 20, version: 7 });
   });
 
   it('up() 幂等：第二次执行不改任何新键', async () => {

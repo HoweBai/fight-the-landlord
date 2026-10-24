@@ -191,7 +191,8 @@ entryMultiplier`（正常种子 = 15 × 10 = 150；运营改过档位/倍率的�
   1. `SELECT key, value, version FROM platform_config WHERE key IN (<16 个旧键>)`；
   2. 逐键 `INSERT IGNORE INTO platform_config (...) VALUES (?, ?, ?, NOW(3), 'seed')`，
      新键/旧值/旧版本参数化写入；
-  3. 旧行缺失的键用 §4.3 的兜底默认值补种；
+  3. 旧行缺失的键用 §4.3 的兜底默认值补种；**新键版本起点 = 当前全局 MAX（至少 1）**，
+     否则 PDK/救援新键从 1 起写，在旧键版本更高的库里永远推不动全局 `version`；
   4. `currency.reliefThresholdCoins` 现算：解析旧 `game.baseScoreLevels` 的
      `MIN(baseScore) × 旧 currency.entryMultiplier`（旧键缺失时回落 15 × 10 = 150）。
 - 跑得快 7 键直接 `INSERT IGNORE` 种子（D4）。

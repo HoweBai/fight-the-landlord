@@ -126,6 +126,9 @@ export class SplitGameConfig1796500000000 implements MigrationInterface {
       oldKeys,
     )) as SqlRow[];
     const byKey = new Map(rows.map((row) => [row.key, row]));
+    // 新键版本起点 = 当前全局 MAX（至少 1）：否则 PDK/救援新键从 1 起写，
+    // 在旧键版本更高的库里永远推不动全局 `version`（客户端/观测据此判断配置是否变化）。
+    const globalMax = Math.max(1, ...rows.map((row) => row.version));
 
     for (const [oldKey, newKey, fallback] of SPLIT_CONFIG_PAIRS) {
       const row = byKey.get(oldKey);
@@ -133,7 +136,7 @@ export class SplitGameConfig1796500000000 implements MigrationInterface {
         queryRunner,
         newKey,
         row === undefined ? fallback : normalizeDbJson(row.value),
-        row?.version ?? 1,
+        Math.max(globalMax, row?.version ?? 1),
       );
     }
 
@@ -141,10 +144,10 @@ export class SplitGameConfig1796500000000 implements MigrationInterface {
       byKey.get('game.baseScoreLevels')?.value,
       byKey.get('currency.entryMultiplier')?.value,
     );
-    await insertIgnore(queryRunner, RELIEF_THRESHOLD_KEY, relief, 1);
+    await insertIgnore(queryRunner, RELIEF_THRESHOLD_KEY, relief, globalMax);
 
     for (const [key, value] of SPLIT_PDK_SEEDS) {
-      await insertIgnore(queryRunner, key, value, 1);
+      await insertIgnore(queryRunner, key, value, globalMax);
     }
   }
 
