@@ -160,10 +160,12 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   ): boolean {
     const key = `game.${gameType}.${suffix}` as ConfigKey;
     const hasNew = this.snapshot !== null && Object.hasOwn(this.snapshot, key);
+    // 旧键只属于斗地主；跑得快缺失时必须走自己的代码默认（金币场 false）。
+    const legacy = gameType === DEFAULT_GAME_TYPE ? legacyKey : undefined;
     const value = hasNew
       ? this.snapshot?.[key]?.value
-      : legacyKey
-        ? this.snapshot?.[legacyKey as ConfigKey]?.value
+      : legacy
+        ? this.snapshot?.[legacy as ConfigKey]?.value
         : undefined;
     return typeof value === 'boolean' ? value : fallback;
   }
@@ -178,10 +180,12 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   ): number {
     const key = `game.${gameType}.${suffix}` as ConfigKey;
     const hasNew = this.snapshot !== null && Object.hasOwn(this.snapshot, key);
+    // 旧键只属于斗地主；跑得快缺失时必须走自己的代码默认。
+    const legacy = gameType === DEFAULT_GAME_TYPE ? legacyKey : undefined;
     const value = hasNew
       ? this.snapshot?.[key]?.value
-      : legacyKey
-        ? this.snapshot?.[legacyKey as ConfigKey]?.value
+      : legacy
+        ? this.snapshot?.[legacy as ConfigKey]?.value
         : undefined;
     return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
       ? value

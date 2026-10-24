@@ -1282,6 +1282,21 @@ describe('配置平行化（2026-10-24）：按玩法读取与旧键回退', () 
     }
   });
 
+  it('跑得快缺新键 ⇒ 自己的默认，不得回退旧全局金币场 true', async () => {
+    const cache = await cacheWith({
+      'room.goldRoomEnabled': true,
+      'room.freeRoomEnabled': true,
+      'room.friendRoomEnabled': true,
+    });
+    try {
+      expect(cache.goldRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.friendRoomEnabled('paodekuai')).toBe(false);
+      expect(cache.freeRoomEnabled('paodekuai')).toBe(true);
+    } finally {
+      cache.onApplicationShutdown();
+    }
+  });
+
   it('全缺省：斗地主沿用种子、跑得快金币场默认关', async () => {
     const cache = await cacheWith({ 'room.matchScanIntervalMs': 5000 });
     try {
