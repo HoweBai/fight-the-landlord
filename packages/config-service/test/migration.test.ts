@@ -64,6 +64,7 @@ import {
   computeReliefThreshold,
 } from '../src/migrations/1796600000000-SplitGameConfig';
 import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
+import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -1736,5 +1737,129 @@ describe('DdzEnabledSeed1796500000000：斗地主总开关种子', () => {
       }
     }
     expect(hits).toEqual(['config-service/DdzEnabledSeed1796500000000']);
+  });
+});
+
+/**
+ * 跑得快风控种子（2026-10-25 / spec §5.2）：两键、version = 全表 MAX、INSERT IGNORE 幂等。
+ * 用**行表语义**的假 runner 真正执行 up()，不是只记 SQL 字符串。
+ */
+describe('PdkRiskConfigSeed1796700000000：跑得快风控种子', () => {
+  class PdkSeedRunner {
+    readonly rows = new Map<string, { value: unknown; version: number }>();
+    readonly statements: string[] = [];
+    readonly params: unknown[][] = [];
+
+    async query(sql: string, params: unknown[] = []): Promise<unknown> {
+      this.statements.push(sql);
+      this.params.push(params);
+      if (sql.startsWith('SELECT MAX')) {
+        const max = Math.max(0, ...[...this.rows.values()].map((r) => r.version));
+        return [{ maxVersion: max === 0 ? null : max }];
+      }
+      if (sql.startsWith('INSERT IGNORE')) {
+        for (let i = 0; i < params.length; i += 4) {
+          const [key, valueJson, version] = params.slice(i, i + 3) as [
+            string,
+            string,
+            number,
+          ];
+          if (this.rows.has(key)) continue;
+          this.rows.set(key, { value: JSON.parse(valueJson), version });
+        }
+        return undefined;
+      }
+      if (sql.startsWith('DELETE')) {
+        for (const key of params as string[]) this.rows.delete(key);
+        return undefined;
+      }
+      throw new Error(`unexpected SQL: ${sql}`);
+    }
+  }
+
+  const asRunner = (db: PdkSeedRunner): QueryRunner => db as unknown as QueryRunner;
+  const KEY_WIN = 'game.paodekuai.risk.winRateThreshold';
+  const KEY_MIN = 'game.paodekuai.risk.minGames';
+
+  it('up()：两键 0.8/100、version = 全表 MAX、updated_by=seed；SQL 为一条多值 INSERT IGNORE', async () => {
+    const db = new PdkSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 7 });
+
+    await new PdkRiskConfigSeed1796700000000().up(asRunner(db));
+
+    expect(db.rows.get(KEY_WIN)).toEqual({ value: 0.8, version: 7 });
+    expect(db.rows.get(KEY_MIN)).toEqual({ value: 100, version: 7 });
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 7 }); // 旧行不动
+    const insertAt = db.statements.findIndex((s) => s.startsWith('INSERT IGNORE'));
+    expect(insertAt).toBeGreaterThanOrEqual(0);
+    expect(db.statements[insertAt]).toContain(
+      'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
+    );
+    expect(db.statements.filter((s) => s.startsWith('INSERT IGNORE'))).toHaveLength(1);
+    expect(db.params[insertAt]).toEqual([
+      KEY_WIN,
+      JSON.stringify(0.8),
+      7,
+      'seed',
+      KEY_MIN,
+      JSON.stringify(100),
+      7,
+      'seed',
+    ]);
+  });
+
+  it('空表 ⇒ MAX 为 null ⇒ version 1（不写 0）', async () => {
+    const db = new PdkSeedRunner();
+    await new PdkRiskConfigSeed1796700000000().up(asRunner(db));
+    expect(db.rows.get(KEY_WIN)).toEqual({ value: 0.8, version: 1 });
+    expect(db.rows.get(KEY_MIN)).toEqual({ value: 100, version: 1 });
+  });
+
+  it('重放幂等：第二次 up 不改值/版本（INSERT IGNORE 不覆盖）', async () => {
+    const db = new PdkSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 3 });
+    const migration = new PdkRiskConfigSeed1796700000000();
+    await migration.up(asRunner(db));
+    const before = new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]));
+    await migration.up(asRunner(db));
+    expect(new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]))).toEqual(before);
+  });
+
+  it('down()：只删两键，其它键保留', async () => {
+    const db = new PdkSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 3 });
+    const migration = new PdkRiskConfigSeed1796700000000();
+    await migration.up(asRunner(db));
+    await migration.down(asRunner(db));
+
+    expect(db.rows.has(KEY_WIN)).toBe(false);
+    expect(db.rows.has(KEY_MIN)).toBe(false);
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 3 });
+    const deletes = db.statements.filter((s) => s.startsWith('DELETE'));
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]).toContain('`key` IN (?, ?)');
+  });
+
+  it('形状（name/up/down）；迁移号 1796700000000 晚于 SplitGameConfig 且全仓唯一', () => {
+    const migration = new PdkRiskConfigSeed1796700000000();
+    expect(migration.name).toBe('PdkRiskConfigSeed1796700000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new SplitGameConfig1796600000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796700000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/PdkRiskConfigSeed1796700000000']);
   });
 });

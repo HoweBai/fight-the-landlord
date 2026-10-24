@@ -248,7 +248,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何 90 键键名（外层恰好二十一键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何 92 键键名（外层恰好二十一键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);

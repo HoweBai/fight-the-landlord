@@ -26,7 +26,7 @@ import { PlatformConfigService } from '../../src/config/platform-config.service'
  *  - **不建模行锁/并发**：T3 的用例是接口面语义（HTTP 状态码 / 信封 / 四态），
  *    并发与 version 单调由 `platform-config.service.test.ts` 的同键并发用例承担
  *    （两处都在手，砍锁是「夹具不比用例复杂」的取舍，不是遗忘）；
- *  - 五十一键种子值**逐字** = 各键的种子迁移（`1789200000000-PlatformConfig.ts` 九键 +
+ *  - 九十二键种子值**逐字** = 各键的种子迁移（`1789200000000-PlatformConfig.ts` 九键 +
  *    `1789500000000-RecordRetention.ts` 第 10 键 + `1789700000000-SignupGrant.ts` 第 11 键 +
  *    `1789800000000-GoldRoom.ts` 第 12–17 键 + `1790000001000-RiskConfigSeed.ts` 风控第 18–25 键 +
  *    `1791000001000-PayConfigSeed.ts` 支付第 26–34 键 + `1794000000000-IntervalConfigSeed.ts` 节奏/清理第 35–40 键 +
@@ -36,7 +36,10 @@ import { PlatformConfigService } from '../../src/config/platform-config.service'
  *    `1795500000000-RiskWithdrawReAuthSeed.ts` 提现再认证片第 48 键 +
  *    `1795600000000-RiskDeviceBindingSeed.ts` 设备绑定片第 49 键 +
  *    `1795700000000-CardCounterSeed.ts` 记牌器第 50 键 +
- *    `CardCounterPrices1795800000000.ts` 记牌器收费第 51/52 键；
+ *    `CardCounterPrices1795800000000.ts` 记牌器收费第 51/52 键 +
+ *    `1796400000000-MultiGameConfigSeed.ts` 多玩法 14 键 + `1796500000000-DdzEnabledSeed.ts` +
+ *    `1796600000000-SplitGameConfig.ts` 平行化 24 键 +
+ *    `1796700000000-PdkRiskConfigSeed.ts` 跑得快风控两键；
  *    阶段 2 迁移 `1796000000000-RemoveEntryFeePercents.ts` 在最后删除旧台费行）
  *    = `platform-config.service.test.ts` 的 `SEED`（同一事实的既有副本）。
  *
@@ -149,7 +152,7 @@ export class FakePlatformDb {
   }
 }
 
-/** 五十一键种子（值逐字 = 迁移种子；`platform-config.service.test.ts` 有同一份副本）。 */
+/** 九十二键种子（值逐字 = 迁移种子；`platform-config.service.test.ts` 有同一份副本）。 */
 const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['robot.skillDistribution', { beginner: 0.15, intermediate: 0.35, advanced: 0.5 }],
   ['robot.ruleFallback', true],
@@ -273,6 +276,9 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.goldBotFillEnabled', true],
   ['game.paodekuai.rakePercent', 0],
   ['game.paodekuai.entryMultiplier', 10],
+  // 跑得快风控（2026-10-25；来自 `PdkRiskConfigSeed1796700000000`）
+  ['game.paodekuai.risk.winRateThreshold', 0.8],
+  ['game.paodekuai.risk.minGames', 100],
   ['currency.reliefThresholdCoins', 150],
 ];
 
