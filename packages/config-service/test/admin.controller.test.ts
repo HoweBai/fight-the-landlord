@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import { CONFIG_KEYS, ErrCode } from '@fight-the-landlord/protocol';
 import {
   ADMIN_EXEMPT_ROUTES,
   ADMIN_HEADER,
@@ -166,13 +166,13 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
     expect(row(db, 'room.reapIntervalMs')).toMatchObject({ value: 61000, version: v0 + 1 });
   });
 
-  it('GET /api/admin/config：全量 89 键、每键 {value, version}、全局 version = MAX', async () => {
+  it('GET /api/admin/config：全量 CONFIG_KEYS（89 键）、每键 {value, version}、全局 version = MAX', async () => {
     const res = await probe.get('/api/admin/config', AUTH);
 
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(ErrCode.OK);
     const config = res.body.data.config as Record<string, { value: unknown; version: number }>;
-    expect(Object.keys(config).sort()).toEqual([...db.rows.keys()].sort());
+    expect(Object.keys(config).sort()).toEqual([...CONFIG_KEYS].sort());
     for (const [key, cell] of Object.entries(config)) {
       expect(Object.keys(cell).sort(), key).toEqual(['value', 'version']);
       expect(typeof cell.version, key).toBe('number');

@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DataSource } from 'typeorm';
-import { ErrCode, RPC_PATTERNS, type ConfigSnapshot } from '@fight-the-landlord/protocol';
+import { CONFIG_KEYS, ErrCode, RPC_PATTERNS, type ConfigSnapshot } from '@fight-the-landlord/protocol';
 import { ConfigRpcController } from '../src/rpc/config.rpc.controller';
 import type { PlatformConfigService } from '../src/config/platform-config.service';
 import { encrypt, fingerprintOf } from '../src/pay-channel/pay-channel.crypto';
@@ -138,7 +138,7 @@ describe('ConfigRpcController（规格 §2.3 / R220）', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error('unreachable');
     const config = res.data.config as ConfigSnapshot;
-    expect(Object.keys(config).sort()).toEqual([...db.rows.keys()].sort());
+    expect(Object.keys(config).sort()).toEqual([...CONFIG_KEYS].sort());
     expect(config['room.friendRoomEnabled']).toEqual({ value: false, version: 1 });
     // 金币场第 14 键：快照里种子值逐字（room-service/currency-service 的 getter 消费面）
     expect(config['currency.entryMultiplier']).toEqual({ value: 10, version: 1 });

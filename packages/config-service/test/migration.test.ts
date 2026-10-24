@@ -1637,6 +1637,17 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
     expect(db.rows.has(RELIEF_THRESHOLD_KEY)).toBe(false);
   });
 
+  it('computeReliefThreshold：mysql2 返回 JSON 字符串形态也能正确现算', async () => {
+    const db = new SplitFakeRunner();
+    db.rows.set('game.baseScoreLevels', {
+      value: '[{"name":"小","baseScore":5},{"name":"大","baseScore":80}]',
+      version: 3,
+    });
+    db.rows.set('currency.entryMultiplier', { value: '20', version: 3 });
+    await new SplitGameConfig1796500000000().up(asRunner(db));
+    expect(db.rows.get(RELIEF_THRESHOLD_KEY)).toEqual({ value: 100, version: 3 });
+  });
+
   it('computeReliefThreshold：MIN × 倍率；缺/坏值回落 15 × 10', () => {
     expect(
       computeReliefThreshold([{ name: 'A', baseScore: 80 }, { name: 'B', baseScore: 1 }], 20),

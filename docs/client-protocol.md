@@ -114,7 +114,7 @@
 
 ### 支付面（九条，钱包页用；全 ✅ Bearer）
 
-错误码见第 7 节（`15001`–`15009`）。钱包页需要的**开关与限额**都在第 8 条 `GET /api/config` 的 20 键里
+错误码见第 7 节（`15001`–`15009`）。钱包页需要的**开关与限额**都在第 8 条 `GET /api/config` 的 21 键里
 （`rechargeEnabled` / `withdrawEnabled` / `coinPerYuan` / `rechargePackages` / `withdrawMinCoins` /
 `withdrawMaxCoinsPerOrder` / `withdrawDailyMaxCoins`）——**两开关为 `false` 时对应区块不要渲染**。
 

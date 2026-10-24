@@ -144,8 +144,8 @@ export class SplitGameConfig1796500000000 implements MigrationInterface {
     }
 
     const relief = computeReliefThreshold(
-      byKey.get('game.baseScoreLevels')?.value,
-      byKey.get('currency.entryMultiplier')?.value,
+      normalizeDbJson(byKey.get('game.baseScoreLevels')?.value),
+      normalizeDbJson(byKey.get('currency.entryMultiplier')?.value),
     );
     await insertIgnore(queryRunner, RELIEF_THRESHOLD_KEY, relief, globalMax);
 

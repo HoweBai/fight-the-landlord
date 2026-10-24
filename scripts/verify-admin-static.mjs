@@ -361,6 +361,11 @@ ok(
   `控件分类合计 33+2+33=68（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
 );
 
+/* ── 5b. 旧键只读：未分组/搜索都必须排除 LEGACY_KEY_SET ─────────── */
+const ungroupedFn = balancedBlock(app, 'function ungroupedKeys', '{', '}');
+ok(ungroupedFn !== '' && ungroupedFn.includes('LEGACY_KEY_SET'), '未分组差集排除 LEGACY_KEY_SET');
+ok(app.includes('!LEGACY_KEY_SET.has(k) &&'), '搜索遍历排除 LEGACY_KEY_SET');
+
 /* ── 6. 零外链 ───────────────────────────────────────────────── */
 ok(!/(?:src|href)\s*=\s*["']https?:\/\//.test(html), 'index.html 无外部 src/href');
 ok(!/@import/.test(css), 'style.css 无 @import');

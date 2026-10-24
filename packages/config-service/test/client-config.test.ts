@@ -334,6 +334,16 @@ describe('GET /api/config（C7 半边）', () => {
 
   it('平行化回退：斗地主新键缺失 ⇒ 顶层与 games 读旧键；档位也回退旧表', async () => {
     const { svc, db } = makeService(seedDb());
+    db.rows.set('room.freeRoomEnabled', { value: false, version: 2, updatedAt: 'x', updatedBy: 'x' });
+    db.rows.set('room.goldRoomEnabled', { value: false, version: 2, updatedAt: 'x', updatedBy: 'x' });
+    db.rows.set('room.friendRoomEnabled', { value: true, version: 2, updatedAt: 'x', updatedBy: 'x' });
+    db.rows.set('currency.entryMultiplier', { value: 7, version: 2, updatedAt: 'x', updatedBy: 'x' });
+    db.rows.set('game.baseScoreLevels', {
+      value: [{ name: '旧表', baseScore: 20 }],
+      version: 2,
+      updatedAt: 'x',
+      updatedBy: 'x',
+    });
     for (const key of [
       'game.doudizhu.freeRoomEnabled',
       'game.doudizhu.goldRoomEnabled',
@@ -346,16 +356,16 @@ describe('GET /api/config（C7 半边）', () => {
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
-      expect(body.data.freeRoomEnabled).toBe(true);
-      expect(body.data.goldRoomEnabled).toBe(true);
-      expect(body.data.friendRoomEnabled).toBe(false);
-      expect(body.data.entryMultiplier).toBe(10);
-      expect(body.data.baseScoreLevels).toHaveLength(4);
-      expect(body.data.games.doudizhu.freeRoomEnabled).toBe(true);
-      expect(body.data.games.doudizhu.goldRoomEnabled).toBe(true);
-      expect(body.data.games.doudizhu.friendRoomEnabled).toBe(false);
-      expect(body.data.games.doudizhu.entryMultiplier).toBe(10);
-      expect(body.data.games.doudizhu.baseScoreLevels).toHaveLength(4);
+      expect(body.data.freeRoomEnabled).toBe(false);
+      expect(body.data.goldRoomEnabled).toBe(false);
+      expect(body.data.friendRoomEnabled).toBe(true);
+      expect(body.data.entryMultiplier).toBe(7);
+      expect(body.data.baseScoreLevels).toEqual([{ name: '旧表', baseScore: 20 }]);
+      expect(body.data.games.doudizhu.freeRoomEnabled).toBe(false);
+      expect(body.data.games.doudizhu.goldRoomEnabled).toBe(false);
+      expect(body.data.games.doudizhu.friendRoomEnabled).toBe(true);
+      expect(body.data.games.doudizhu.entryMultiplier).toBe(7);
+      expect(body.data.games.doudizhu.baseScoreLevels).toEqual([{ name: '旧表', baseScore: 20 }]);
     } finally {
       await probe.close();
     }
@@ -418,8 +428,20 @@ describe('GET /api/config（C7 半边）', () => {
       updatedAt: 'admin',
       updatedBy: 'admin',
     });
+    db.rows.set('currency.entryMultiplier', {
+      value: 7,
+      version: 2,
+      updatedAt: 'admin',
+      updatedBy: 'admin',
+    });
     db.rows.set('game.doudizhu.cardCounterPricePerGameCoins', {
       value: -1,
+      version: 2,
+      updatedAt: 'admin',
+      updatedBy: 'admin',
+    });
+    db.rows.set('game.cardCounterPricePerGameCoins', {
+      value: 20,
       version: 2,
       updatedAt: 'admin',
       updatedBy: 'admin',
