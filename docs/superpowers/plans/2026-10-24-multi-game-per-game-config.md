@@ -342,3 +342,14 @@ pnpm -C tools/conformance lint
 | 10 | Minor | verifier 未断言旧键不出现在未分组/搜索 | **已修**：补两条源码级断言 |
 | 11 | Minor | 测试桩 `friendRoomEnabled` 默认翻为 true | **登记**：生产默认 false 由 config-cache 单测覆盖；闸的正反例显式 mock |
 | 12 | Minor | client-protocol 文档仍写 20 键 | **已修**：改 21 |
+
+## 验证记录（2026-10-24）
+
+- `pnpm exec turbo run test --force`：29/29 任务通过（client 1484 passed / 2 skipped；room 891；config 468；currency 387；其余包通过）。
+- `pnpm exec turbo run lint --force`：18/18 任务通过。
+- `pnpm verify:admin`：345 checks passed。
+- `pnpm -C tools/conformance lint`：通过。
+- 并发全量首跑曾出现一次 `currency-service#test` 退出 1（单跑与重跑均 29/29 通过）——按已知端口/负载假红处理，未改代码。
+- **真 MySQL 迁移冒烟未执行**：本机 Docker Desktop 处于手动暂停态（`docker desktop status` = paused，CLI 无 unpause 命令），本机无 MySQL。恢复 Docker 后执行：
+  `docker compose up -d mysql && pnpm -C packages/config-service test`（或起 config-service 触发 `migrationsRun`），
+  然后 `SELECT COUNT(*) FROM platform_config` 应为 89，并抽查 `game.levels.doudizhu` 与 `reliefThresholdCoins`。
