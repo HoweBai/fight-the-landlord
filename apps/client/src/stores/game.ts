@@ -206,6 +206,13 @@ export const useGameStore = defineStore('game', {
     /** 每日救助开关（同族）：初值/fail-safe `false`；成功响应缺键 ⇒ 按 `false`（§2.4）。 */
     reliefEnabled: false,
     /**
+     * 平台级救助绝对门槛（平行化 2026-10-24）：`null` = 未知/旧服务端 ⇒ 回退旧算法
+     * （顶层档位最低档 × 顶层倍率）。
+     */
+    reliefThresholdCoins: null as number | null,
+    /** 客户端配置版本（0 = 还没成功取到/写 fail-safe）。用于区分「配置未到」与「三入口全关」。 */
+    clientConfigVersion: 0,
+    /**
      * 记牌器开关（记牌器片第 50 键 `game.cardCounterEnabled` 的裸名下发）——
      * 牌桌左上角入口与横条的门控位。
      *
@@ -387,6 +394,48 @@ export const useGameStore = defineStore('game', {
       if (cfg) return cfg.enabled === true;
       return id === 'doudizhu';
     },
+
+    /**
+     * 平行化（2026-10-24）：玩法是否“可玩” = enabled ∧（免费场 ∨ 金币场 ∨ 好友房）。
+     * `games[id]` 缺字段 ⇒ 回退顶层值（旧服务端/10-23 服务端的形态）。
+     */
+    gamePlayable: (s) => (id: string): boolean => {
+      const cfg = isGameType(id) ? s.games[id] : undefined;
+      if (!cfg) {
+        if (id !== 'doudizhu') return false;
+        if (s.clientConfigVersion === 0) return true; // 配置未到达：保持旧行为，不闪空大厅
+        return s.freeRoomEnabled || s.goldRoomEnabled || s.friendRoomEnabled;
+      }
+      const free = cfg.freeRoomEnabled ?? s.freeRoomEnabled;
+      const gold = cfg.goldRoomEnabled ?? s.goldRoomEnabled;
+      const friend = cfg.friendRoomEnabled ?? s.friendRoomEnabled;
+      return cfg.enabled === true && (free || gold || friend);
+    },
+    /** 当前玩法的场次/好友房/门槛（per-game 缺失 ⇒ 顶层回退）。 */
+    activeFreeRoomEnabled: (s): boolean => {
+      const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+      return cfg?.freeRoomEnabled ?? s.freeRoomEnabled;
+    },
+    activeGoldRoomEnabled: (s): boolean => {
+      const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+      return cfg?.goldRoomEnabled ?? s.goldRoomEnabled;
+    },
+    activeFriendRoomEnabled: (s): boolean => {
+      const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+      return cfg?.friendRoomEnabled ?? s.friendRoomEnabled;
+    },
+    activeEntryMultiplier: (s): number | null => {
+      const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+      return cfg?.entryMultiplier ?? s.entryMultiplier;
+    },
+    /** 当前玩法是否有可匹配场次（免费/金币）。 */
+    activeHasSessions: (s): boolean => {
+      const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+      return (
+        (cfg?.freeRoomEnabled ?? s.freeRoomEnabled) ||
+        (cfg?.goldRoomEnabled ?? s.goldRoomEnabled)
+      );
+    },
     /**
      * 当前玩法的底分档位表：新服务端读 `games[activeMode].baseScoreLevels`；
      * 旧服务端（无 `games`）斗地主回落顶层 `baseScoreLevels`（**不迁移**）。
@@ -503,7 +552,11 @@ export const useGameStore = defineStore('game', {
      * 门槛字面量（`source-boundary` 的机械扫描盯着）。
      */
     goldThreshold: (s) => (baseScore: number): number | null =>
-      s.entryMultiplier === null ? null : baseScore * s.entryMultiplier,
+      (() => {
+        const cfg = isGameType(s.activeMode) ? s.games[s.activeMode] : undefined;
+        const multiplier = cfg?.entryMultiplier ?? s.entryMultiplier;
+        return multiplier === null ? null : baseScore * multiplier;
+      })(),
     /**
      * 「领取救助」入口的点亮条件（§14）：`reliefEnabled` ∧ 余额 **<**
      * `档位表最低档 × entryMultiplier`。
@@ -514,14 +567,13 @@ export const useGameStore = defineStore('game', {
      * 服务端仍是权威，领不了会被 14004 接住）。
      */
     reliefAvailable: (s): boolean => {
+      if (!s.reliefEnabled || s.walletBalance === null) return false;
+      if (s.reliefThresholdCoins !== null) {
+        return s.walletBalance < s.reliefThresholdCoins;
+      }
       if (s.baseScoreLevels.length === 0) return false;
       const lowest = s.baseScoreLevels.reduce((m, l) => Math.min(m, l.baseScore), Infinity);
-      return (
-        s.reliefEnabled &&
-        s.walletBalance !== null &&
-        s.entryMultiplier !== null &&
-        s.walletBalance < lowest * s.entryMultiplier
-      );
+      return s.entryMultiplier !== null && s.walletBalance < lowest * s.entryMultiplier;
     },
   },
 
@@ -645,6 +697,8 @@ export const useGameStore = defineStore('game', {
       this.freeRoomEnabled = cfg.freeRoomEnabled;
       this.goldRoomEnabled = cfg.goldRoomEnabled;
       this.reliefEnabled = cfg.reliefEnabled;
+      this.reliefThresholdCoins = cfg.reliefThresholdCoins ?? null;
+      this.clientConfigVersion = cfg.version;
       this.cardCounterEnabled = cfg.cardCounterEnabled === true;
       this.cardCounterPricePerGameCoins = cfg.cardCounterPricePerGameCoins ?? null;
       this.cardCounterPricePerHourCoins = cfg.cardCounterPricePerHourCoins ?? null;

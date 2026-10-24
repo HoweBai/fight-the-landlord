@@ -981,7 +981,7 @@ onUnmounted(() => stopBgm());
 
         <view class="game__match">
           <button
-            v-if="!matching"
+            v-if="!matching && store.activeHasSessions"
             type="button"
             class="btn btn--primary"
             :disabled="busy || selectedBaseScore === null"
@@ -1031,7 +1031,7 @@ onUnmounted(() => stopBgm());
         <!-- 「好友房」二级入口（规格 §4）：**弹层**，不新增路由。
              片⑦：入口按服务端配置门控 —— `false`/未知一律**不渲染**（C19 fail-safe）。 -->
         <button
-          v-if="store.friendRoomEnabled"
+          v-if="store.activeFriendRoomEnabled"
           type="button"
           class="btn game__friends-open"
           :class="{ 'game__friends-open--matching': matching }"

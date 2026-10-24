@@ -107,7 +107,14 @@ const GOLD_CONFIG = {
 };
 
 /** S5.4：多玩法客户端配置（ddz 开 / pdk 可开可关）。 */
-const gamesConfig = (pdkEnabled: boolean) => ({
+const gamesConfig = (
+  pdkEnabled: boolean,
+  pdkFlags: {
+    freeRoomEnabled: boolean;
+    goldRoomEnabled: boolean;
+    friendRoomEnabled: boolean;
+  } = { freeRoomEnabled: true, goldRoomEnabled: false, friendRoomEnabled: false },
+) => ({
   code: 0,
   data: {
     ...STABLE_CONFIG.data,
@@ -120,12 +127,18 @@ const gamesConfig = (pdkEnabled: boolean) => ({
           { name: '休闲场', baseScore: 15 },
           { name: '标准场', baseScore: 80 },
         ],
+        freeRoomEnabled: true,
+        goldRoomEnabled: false,
+        friendRoomEnabled: true,
+        entryMultiplier: 10,
       },
       paodekuai: {
         enabled: pdkEnabled,
         supportedPlayerCounts: [3],
         defaultPlayerCount: 3,
         baseScoreLevels: [{ name: '快跑场', baseScore: 80 }],
+        ...pdkFlags,
+        entryMultiplier: 10,
       },
     },
   },
@@ -236,6 +249,27 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
       '斗地主',
       '跑得快',
     ]);
+  });
+
+  it('per-game 三入口全关 ⇒ 该玩法卡隐藏，顶层 true 不得兜底', async () => {
+    const { wrapper } = mountLobby(
+      [],
+      gamesConfig(true, {
+        freeRoomEnabled: false,
+        goldRoomEnabled: false,
+        friendRoomEnabled: false,
+      }),
+    );
+    await flushPromises();
+    expect(wrapper.findAll('.lobby__mode-name').map((n) => flat(n.text()))).toEqual(['斗地主']);
+  });
+
+  it('跑得快场次页签按 per-game 开关：金币场关 ⇒ 只显示免费场（顶层金币场仍开）', async () => {
+    const { wrapper } = mountLobby([], gamesConfig(true));
+    await flushPromises();
+    await wrapper.findAll('.lobby__mode')[1]!.trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('.lobby__session').map((n) => flat(n.text()))).toEqual(['免费场']);
   });
 
   it('切到跑得快：写 activeMode；当前底分不在新玩法档位表 ⇒ 回落到第一档', async () => {

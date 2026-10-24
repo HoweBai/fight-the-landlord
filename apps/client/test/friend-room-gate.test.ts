@@ -202,4 +202,52 @@ describe('C19：好友房入口 fail-safe 门控（片⑦ §2.8）', () => {
     expect(entry.exists(), '开关开 ⇒ 入口必须渲染').toBe(true);
     expect(entry.text(), '入口文案逐字保留（探针锚点）').toBe('好友房');
   });
+
+  it('⑥ per-game 好友房：ddz 开 / pdk 关 ⇒ ddz 显示、pdk 隐藏（顶层 true 不得兜底）', async () => {
+    const perGame = {
+      code: 0,
+      data: {
+        ...CONFIG_TRUE.data,
+        games: {
+          doudizhu: {
+            enabled: true,
+            supportedPlayerCounts: [3],
+            defaultPlayerCount: 3,
+            baseScoreLevels: [{ name: '休闲场', baseScore: 15 }],
+            freeRoomEnabled: true,
+            goldRoomEnabled: false,
+            friendRoomEnabled: true,
+            entryMultiplier: 10,
+          },
+          paodekuai: {
+            enabled: true,
+            supportedPlayerCounts: [3],
+            defaultPlayerCount: 3,
+            baseScoreLevels: [{ name: '快跑场', baseScore: 80 }],
+            freeRoomEnabled: true,
+            goldRoomEnabled: false,
+            friendRoomEnabled: false,
+            entryMultiplier: 10,
+          },
+        },
+      },
+    };
+    stubRoutes({ '/config': perGame });
+    const lobby = mountLobby();
+    await flushPromises();
+    lobby.unmount();
+
+    const store = useGameStore();
+    store.setActiveMode('doudizhu');
+    const ddz = mountGame();
+    await flushPromises();
+    expect(ddz.find('.game__friends-open').exists(), 'ddz 好友房开 ⇒ 入口渲染').toBe(true);
+    ddz.unmount();
+
+    store.setActiveMode('paodekuai');
+    const pdk = mountGame();
+    await flushPromises();
+    expect(pdk.find('.game__friends-open').exists(), 'pdk 好友房关 ⇒ 入口隐藏').toBe(false);
+    pdk.unmount();
+  });
 });

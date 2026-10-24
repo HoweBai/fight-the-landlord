@@ -110,4 +110,59 @@ describe('useClientConfig（共享加载/归一化）', () => {
     expect(store.roomMode).toBe('gold');
     vi.unstubAllGlobals();
   });
+
+  it('reliefThresholdCoins：FAILSAFE null；合法值透传；坏值 null', () => {
+    expect(FAILSAFE_CLIENT_CONFIG.reliefThresholdCoins).toBeNull();
+    expect(
+      normalizeClientConfig({ reliefThresholdCoins: 150 } as never).reliefThresholdCoins,
+    ).toBe(150);
+    for (const bad of ['150', 0, -1, 1_000_001, 1.5, true, null]) {
+      expect(
+        normalizeClientConfig({ reliefThresholdCoins: bad } as never).reliefThresholdCoins,
+        `值 ${String(bad)}`,
+      ).toBeNull();
+    }
+  });
+
+  it('reliefAvailable：优先平台门槛；缺失回退旧公式（最低档 × 倍率）', () => {
+    const store = useGameStore();
+    store.setClientConfig({
+      ...FAILSAFE_CLIENT_CONFIG,
+      reliefEnabled: true,
+      reliefThresholdCoins: 150,
+    });
+    store.setWalletBalance(100);
+    expect(store.reliefAvailable).toBe(true);
+    store.setWalletBalance(200);
+    expect(store.reliefAvailable).toBe(false);
+
+    store.setClientConfig({
+      ...FAILSAFE_CLIENT_CONFIG,
+      reliefEnabled: true,
+      reliefThresholdCoins: null,
+      baseScoreLevels: [{ name: '休闲场', baseScore: 15 }],
+      entryMultiplier: 10,
+    });
+    store.setWalletBalance(100);
+    expect(store.reliefAvailable).toBe(true);
+    store.setWalletBalance(200);
+    expect(store.reliefAvailable).toBe(false);
+  });
+
+  it('per-game 三入口全关：当前玩法不可玩 ⇒ 刷新后回退到斗地主', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig({
+      ...FAILSAFE_CLIENT_CONFIG,
+      version: 3,
+      games: {
+        doudizhu: { enabled: true, supportedPlayerCounts: [3], defaultPlayerCount: 3, baseScoreLevels: [{ name: 'A', baseScore: 15 }], freeRoomEnabled: true, goldRoomEnabled: false, friendRoomEnabled: true },
+        paodekuai: { enabled: true, supportedPlayerCounts: [3], defaultPlayerCount: 3, baseScoreLevels: [{ name: 'B', baseScore: 80 }], freeRoomEnabled: false, goldRoomEnabled: false, friendRoomEnabled: false },
+      },
+    } as never);
+    stubConfig({ baseScoreLevels: [], freeRoomEnabled: true, goldRoomEnabled: true, version: 4 });
+    expect(await refreshClientConfig()).toBe(true);
+    expect(store.activeMode).toBe('doudizhu');
+    vi.unstubAllGlobals();
+  });
 });

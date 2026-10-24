@@ -2,6 +2,7 @@ import type { ClientConfig } from '@fight-the-landlord/protocol';
 import type { ClientConfigState, RoomMode } from '../stores/game';
 import { useGameStore } from '../stores/game';
 import { fetchClientConfig } from '../net/rest';
+import { GAME_MODES } from '../gameModes';
 
 /**
  * 客户端配置的**共享加载/归一化**（记牌器收费片 T11 从 `lobby.vue` 抽出）。
@@ -23,6 +24,7 @@ export const FAILSAFE_CLIENT_CONFIG: ClientConfigState = {
   freeRoomEnabled: false,
   goldRoomEnabled: true,
   reliefEnabled: false,
+  reliefThresholdCoins: null,
   cardCounterEnabled: false,
   cardCounterPricePerGameCoins: null,
   cardCounterPricePerHourCoins: null,
@@ -47,6 +49,13 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
     freeRoomEnabled: raw?.freeRoomEnabled ?? true,
     goldRoomEnabled: raw?.goldRoomEnabled ?? true,
     reliefEnabled: raw?.reliefEnabled ?? false,
+    reliefThresholdCoins:
+      typeof raw?.reliefThresholdCoins === 'number' &&
+      Number.isSafeInteger(raw.reliefThresholdCoins) &&
+      raw.reliefThresholdCoins >= 1 &&
+      raw.reliefThresholdCoins <= 1_000_000
+        ? raw.reliefThresholdCoins
+        : null,
     cardCounterEnabled: raw?.cardCounterEnabled === true,
     cardCounterPricePerGameCoins:
       typeof raw?.cardCounterPricePerGameCoins === 'number' &&
@@ -100,10 +109,30 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
 export function repairRoomMode(): void {
   const store = useGameStore();
   const enabled: RoomMode[] = [];
-  if (store.freeRoomEnabled) enabled.push('random');
-  if (store.goldRoomEnabled) enabled.push('gold');
+  if (store.activeFreeRoomEnabled) enabled.push('random');
+  if (store.activeGoldRoomEnabled) enabled.push('gold');
   if (enabled.length > 0 && !enabled.includes(store.roomMode)) {
     store.setRoomMode(enabled[0]!);
+  }
+}
+
+/**
+ * 平行化：当前选中的玩法不再可玩（enabled ∧ 三入口至少一个）⇒ 切到第一个可玩玩法，
+ * 并把底分修正到新玩法的档位表。全部不可玩 ⇒ 保持原值（空态不渲染任何入口）。
+ */
+export function repairActiveMode(): void {
+  const store = useGameStore();
+  const playable = GAME_MODES.filter((m) => store.gamePlayable(m.id));
+  if (playable.length === 0) return;
+  if (!store.gamePlayable(store.activeMode)) {
+    store.setActiveMode(playable[0]!.id);
+    const levels = store.activeLevels;
+    if (
+      store.selectedBaseScore === null ||
+      !levels.some((l) => l.baseScore === store.selectedBaseScore)
+    ) {
+      store.setSelectedBaseScore(levels[0]?.baseScore ?? null);
+    }
   }
 }
 
@@ -117,6 +146,7 @@ export async function refreshClientConfig(): Promise<boolean> {
     if (res.code !== 0 || res.data === null || res.data === undefined) return false;
     useGameStore().setClientConfig(normalizeClientConfig(res.data));
     // P1-12：与大厅同一份修复 —— 管理端刚关掉当前场次时，下一次匹配不得再发旧 mode。
+    repairActiveMode();
     repairRoomMode();
     return true;
   } catch {

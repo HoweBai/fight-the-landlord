@@ -53,6 +53,7 @@ import {
 import {
   FAILSAFE_CLIENT_CONFIG,
   normalizeClientConfig,
+  repairActiveMode,
   repairRoomMode,
 } from "../../composables/useClientConfig";
 import { usePageAlignment } from "../../composables/usePageAlignment";
@@ -187,9 +188,9 @@ const SESSION_LABEL: Record<RoomMode, string> = {
 };
 const sessionOptions = computed<{ mode: RoomMode; label: string }[]>(() => {
   const options: { mode: RoomMode; label: string }[] = [];
-  if (store.freeRoomEnabled)
+  if (store.activeFreeRoomEnabled)
     options.push({ mode: "random", label: SESSION_LABEL.random });
-  if (store.goldRoomEnabled)
+  if (store.activeGoldRoomEnabled)
     options.push({ mode: "gold", label: SESSION_LABEL.gold });
   return options;
 });
@@ -207,7 +208,7 @@ function selectSession(mode: RoomMode) {
  */
 
 /** S5.4：只展示服务端开启的玩法（旧服务端无 `games` ⇒ 只有斗地主）。 */
-const visibleModes = computed(() => GAME_MODES.filter((m) => store.modeEnabled(m.id)));
+const visibleModes = computed(() => GAME_MODES.filter((m) => store.gamePlayable(m.id)));
 
 /**
  * 点玩法卡 = **只切换选中**（片规格 §3 裁决一）。**不跳页**。
@@ -224,25 +225,6 @@ function selectMode(id: string) {
     store.setSelectedBaseScore(levels[0]?.baseScore ?? null);
   }
   levelsEmpty.value = levels.length === 0;
-}
-
-/**
- * 配置到达后修复当前玩法：服务端把当前玩法关掉 ⇒ 切到第一个可见玩法
- * （并同样修复底分选中）。全部关闭 ⇒ 保持原值（空态不渲染任何入口）。
- */
-function repairActiveMode() {
-  const modes = visibleModes.value;
-  if (modes.length === 0) return;
-  if (!store.modeEnabled(store.activeMode)) {
-    store.setActiveMode(modes[0]!.id);
-    const levels = store.activeLevels;
-    if (
-      store.selectedBaseScore === null ||
-      !levels.some((l) => l.baseScore === store.selectedBaseScore)
-    ) {
-      store.setSelectedBaseScore(levels[0]?.baseScore ?? null);
-    }
-  }
 }
 
 /**
