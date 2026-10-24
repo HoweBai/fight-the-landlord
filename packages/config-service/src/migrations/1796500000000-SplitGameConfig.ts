@@ -126,9 +126,12 @@ export class SplitGameConfig1796500000000 implements MigrationInterface {
       oldKeys,
     )) as SqlRow[];
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    // 新键版本起点 = 当前全局 MAX（至少 1）：否则 PDK/救援新键从 1 起写，
-    // 在旧键版本更高的库里永远推不动全局 `version`（客户端/观测据此判断配置是否变化）。
-    const globalMax = Math.max(1, ...rows.map((row) => row.version));
+    // 新键版本起点 = 当前**全表**全局 MAX（至少 1）：否则 PDK/救援新键从 1 起写，
+    // 在任一旧键版本更高的库里永远推不动全局 `version`（客户端/观测据此判断配置是否变化）。
+    const maxRows = (await queryRunner.query(
+      'SELECT MAX(`version`) AS maxVersion FROM `platform_config`',
+    )) as Array<{ maxVersion: number | null }>;
+    const globalMax = Math.max(1, Number(maxRows[0]?.maxVersion ?? 0));
 
     for (const [oldKey, newKey, fallback] of SPLIT_CONFIG_PAIRS) {
       const row = byKey.get(oldKey);

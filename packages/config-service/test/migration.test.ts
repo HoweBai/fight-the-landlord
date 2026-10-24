@@ -1514,6 +1514,9 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
 
     async query(sql: string, params: unknown[] = []): Promise<unknown> {
       this.sqls.push(sql);
+      if (sql.startsWith('SELECT MAX')) {
+        return [{ maxVersion: Math.max(0, ...[...this.rows.values()].map((r) => r.version)) }];
+      }
       if (sql.startsWith('SELECT')) {
         const keys = params as string[];
         return [...this.rows.entries()]
@@ -1601,7 +1604,7 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
     await new SplitGameConfig1796500000000().up(asRunner(db));
     expect(db.rows.get('game.doudizhu.friendRoomEnabled')).toEqual({ value: true, version: 9 });
     // 未预置的新键仍按旧值复制
-    expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: false, version: 7 });
+    expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: false, version: 9 });
   });
 
   it('旧行缺失：新键用 spec §4.3 兜底默认；不因缺失而漏种', async () => {
