@@ -50,6 +50,7 @@ import {
   RISK_DEVICES_SELECT_SQL,
   RISK_ENTRIES_SQL,
   RISK_STATS_SQL,
+  RISK_STATS_PDK_SQL,
 } from '../src/risk/admin-risk.service';
 import { AdminRiskController } from '../src/risk/admin-risk.controller';
 import {
@@ -79,6 +80,10 @@ const SPEC_USER_STATUS_UPDATE_SQL = 'UPDATE users SET status = ? WHERE id = ?';
 const CONFLICT_PREFIX = '当前状态不允许该动作';
 /** 1213 重试再失败文案（T5 遗留裁决第 0 条逐字）。 */
 const CONCURRENCY_MESSAGE = '并发冲突，请重试';
+
+/** 2026-10-25 跑得快详情 stats SQL 逐字（spec §5.5；**测试侧独立誊写**）。 */
+const SPEC_RISK_STATS_PDK_SQL =
+  "SELECT COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0";
 
 const AUTH_READ = { [ADMIN_HEADER]: '1' };
 const AUTH_WRITE = { [ADMIN_HEADER]: '1', [ADMIN_ACTOR_HEADER]: 'tester' };
@@ -184,6 +189,8 @@ class FakeRiskAdminDb {
   users = new Map<string, string>();
   /** 胜率统计的定值回执（SQL 真形态的 JOIN 不在假库重演；缺省 {0,0}）。 */
   winStats = new Map<string, { games: number; wins: number }>();
+  /** 跑得快详情统计的定值回执（2026-10-25；缺省 {0,0}）。 */
+  pdkWinStats = new Map<string, { games: number; wins: number }>();
   queries: Statement[] = [];
   /** `dataSource.transaction` 调用次数（1213 重试断言面）。 */
   transactions = 0;
@@ -283,6 +290,7 @@ class FakeRiskAdminDb {
     this.bindings = new Map();
     this.users = new Map();
     this.winStats = new Map();
+    this.pdkWinStats = new Map();
     this.queries = [];
     this.transactions = 0;
     this.failActionInsertOnce = null;
@@ -413,6 +421,11 @@ class FakeRiskAdminDb {
     if (sql === RISK_STATS_SQL) {
       const [userId] = params as [string];
       const s = this.winStats.get(userId) ?? { games: 0, wins: 0 };
+      return [{ games: s.games, wins: s.wins }];
+    }
+    if (sql === SPEC_RISK_STATS_PDK_SQL) {
+      const [userId] = params as [string];
+      const s = this.pdkWinStats.get(userId) ?? { games: 0, wins: 0 };
       return [{ games: s.games, wins: s.wins }];
     }
     if (sql === RISK_DEVICE_COUNT_WINDOW_SQL) {
@@ -622,6 +635,10 @@ describe('风控片 T6：管理端点（C19）', () => {
     it('SQL 常量全文 == T6 契约逐字（迁移两条语句被单测钉）', () => {
       expect(RISK_ADMIN_REVIEW_TRANSITION_SQL).toBe(SPEC_ADMIN_TRANSITION_SQL);
       expect(RISK_USER_STATUS_UPDATE_SQL).toBe(SPEC_USER_STATUS_UPDATE_SQL);
+    });
+
+    it('SQL 常量全文 == 规格逐字：跑得快详情 stats（mode/is_robot/user 三子句）', () => {
+      expect(RISK_STATS_PDK_SQL).toBe(SPEC_RISK_STATS_PDK_SQL);
     });
 
     // ── dismiss ────────────────────────────────────────────────────────
@@ -1485,7 +1502,16 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
     expect(data.userId).toBe('u-A');
     expect(data.accountStatus).toBe('active');
     expect(data.limitSource).toBe('auto');
-    expect(data.stats).toEqual({ games: 12, wins: 9, winRate: 9 / 12, deviceCount: 2 }); // 窗口内 2 台
+    expect(data.stats).toEqual({
+      games: 12,
+      wins: 9,
+      winRate: 9 / 12,
+      deviceCount: 2, // 窗口内 2 台
+      byGame: {
+        doudizhu: { games: 12, wins: 9, winRate: 9 / 12 },
+        paodekuai: { games: 0, wins: 0, winRate: 0 },
+      },
+    });
     expect(data.devices).toHaveLength(3); // 原文 3 台（含窗口外）
     const d1 = data.devices.find((d: { deviceId: string }) => d.deviceId === 'dev-1');
     expect(d1.firstSeenAt).toBe(T0 - 10 * DAY_MS);
@@ -1504,6 +1530,33 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
     });
     expect(data.hits).toEqual({ sameIp: 7, sameDevice: 3 });
     expect(data.binding).toBeNull(); // 设备绑定片：无绑定行 ⇒ null（与 devices 历史链分离）
+  });
+
+  it('GET users/:userId：stats 顶层 = 两玩法合计，byGame 分玩法；查询顺序 ddz → pdk → device', async () => {
+    db.users.set('u-A', 'active');
+    db.winStats.set('u-A', { games: 12, wins: 9 });
+    db.pdkWinStats.set('u-A', { games: 5, wins: 4 });
+
+    const res = await probe.get('/api/admin/risk/users/u-A', AUTH_READ);
+
+    expect(res.status).toBe(200);
+    expect(res.json.data.stats).toEqual({
+      games: 17,
+      wins: 13,
+      winRate: 13 / 17,
+      deviceCount: 0,
+      byGame: {
+        doudizhu: { games: 12, wins: 9, winRate: 9 / 12 },
+        paodekuai: { games: 5, wins: 4, winRate: 4 / 5 },
+      },
+    });
+    const sqls = db.queries.map((q) => q.sql);
+    const iDdz = sqls.indexOf(RISK_STATS_SQL);
+    const iPdk = sqls.indexOf(SPEC_RISK_STATS_PDK_SQL);
+    const iDev = sqls.indexOf(RISK_DEVICE_COUNT_WINDOW_SQL);
+    expect(iDdz).toBeGreaterThanOrEqual(0);
+    expect(iPdk).toBeGreaterThan(iDdz);
+    expect(iDev).toBeGreaterThan(iPdk);
   });
 
   it('GET users/:userId：limitSource 三态（manual / null）；旗读失败 ⇒ 按无旗（null）+ error 日志', async () => {

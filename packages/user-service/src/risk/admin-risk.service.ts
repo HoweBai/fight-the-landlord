@@ -34,6 +34,15 @@ export const ACTIONS_SELECT_BASE =
 export const RISK_STATS_SQL =
   "SELECT COUNT(*) AS games, COALESCE(SUM(p.won), 0) AS wins FROM game_record_players p JOIN game_records r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold')";
 
+/**
+ * 详情页 stats 的跑得快半边（2026-10-25；单用户形态）。
+ * 口径同扫描 SQL1b：`random|gold`、`is_robot=0`、`seat = winner_seat` 判胜；
+ * **刻意不带 users.status 过滤**（与上面的斗地主详情一致：管理面是诊断视图）。
+ * COUNT 恒回一行；COALESCE 兜 SUM。
+ */
+export const RISK_STATS_PDK_SQL =
+  "SELECT COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0";
+
 /** 详情页 stats 的设备数（**窗口** = `now − risk.deviceWindowDays` 天；口径同扫描 SQL2 的单用户形）。 */
 export const RISK_DEVICE_COUNT_WINDOW_SQL =
   'SELECT COUNT(DISTINCT device_id) AS devices FROM user_devices WHERE user_id = ? AND last_seen_at >= ?';
@@ -114,7 +123,17 @@ export interface RiskUserDetail {
   accountStatus: string;
   limitSource: 'auto' | 'manual' | null;
   bannedFlagPresent: boolean;
-  stats: { games: number; wins: number; winRate: number; deviceCount: number };
+  stats: {
+    games: number;
+    wins: number;
+    winRate: number;
+    deviceCount: number;
+    /** 2026-10-25：分玩法战绩；顶层 games/wins/winRate = 两玩法合计。 */
+    byGame: {
+      doudizhu: { games: number; wins: number; winRate: number };
+      paodekuai: { games: number; wins: number; winRate: number };
+    };
+  };
   devices: Array<{
     deviceId: string;
     firstSeenAt: number;
@@ -336,14 +355,34 @@ export class AdminRiskService {
     if (userRows.length === 0) throw new DomainError(ErrCode.USER_NOT_FOUND, '未找到该用户');
     const accountStatus = String(userRows[0]?.status);
 
-    // ── stats（games/wins 全量；deviceCount 按窗口现读配置）──────────────────
+    // ── stats（两玩法分别查，顶层 = 合计；deviceCount 按窗口现读配置）──────────
     const statsRows = (await this.dataSource.query(RISK_STATS_SQL, [userId])) as Array<{
       games?: unknown;
       wins?: unknown;
     }>;
-    const games = toCount(statsRows[0]?.games);
-    const wins = toCount(statsRows[0]?.wins);
+    const pdkStatsRows = (await this.dataSource.query(RISK_STATS_PDK_SQL, [userId])) as Array<{
+      games?: unknown;
+      wins?: unknown;
+    }>;
+    const ddzGames = toCount(statsRows[0]?.games);
+    const ddzWins = toCount(statsRows[0]?.wins);
+    const pdkGames = toCount(pdkStatsRows[0]?.games);
+    const pdkWins = toCount(pdkStatsRows[0]?.wins);
+    const games = ddzGames + pdkGames;
+    const wins = ddzWins + pdkWins;
     const winRate = games > 0 ? wins / games : 0;
+    const byGame = {
+      doudizhu: {
+        games: ddzGames,
+        wins: ddzWins,
+        winRate: ddzGames > 0 ? ddzWins / ddzGames : 0,
+      },
+      paodekuai: {
+        games: pdkGames,
+        wins: pdkWins,
+        winRate: pdkGames > 0 ? pdkWins / pdkGames : 0,
+      },
+    };
     const cutoff = new Date(now - this.configCache.riskDeviceWindowDays() * DAY_MS);
     const countRows = (await this.dataSource.query(RISK_DEVICE_COUNT_WINDOW_SQL, [
       userId,
@@ -415,7 +454,7 @@ export class AdminRiskService {
       accountStatus,
       limitSource,
       bannedFlagPresent,
-      stats: { games, wins, winRate, deviceCount },
+      stats: { games, wins, winRate, deviceCount, byGame },
       devices,
       entries,
       hits,
