@@ -225,6 +225,8 @@ function selectMode(id: string) {
     store.setSelectedBaseScore(levels[0]?.baseScore ?? null);
   }
   levelsEmpty.value = levels.length === 0;
+  // 切玩法后场次可能不再可用（如金币场只在斗地主开）⇒ 回落到该玩法可用场次。
+  repairRoomMode();
 }
 
 /**
@@ -330,9 +332,9 @@ async function loadClientConfig(replayed = false) {
       store.setClientConfig(cfg);
       // P1-10：`data === null` 是违约响应 —— 与失败同一处置（配置未知，不是「服务端说关」）。
       if (res.data == null) store.markClientConfigFailsafe();
-      repairRoomMode();
       // S5.4：当前玩法若被服务端关闭 ⇒ 切到第一个可见玩法（并修复底分选中）
       repairActiveMode();
+      repairRoomMode();
       levelsEmpty.value = store.activeLevels.length === 0;
       levelsFailed.value = false;
       notices.dismiss("levels");
@@ -342,6 +344,7 @@ async function loadClientConfig(replayed = false) {
     // P1-10：失败路径的 `cardCounterEnabled=false` 是「未知」不是「关」——打标记供牌桌区分。
     store.markClientConfigFailsafe();
     repairActiveMode();
+    repairRoomMode();
     levelsEmpty.value = store.activeLevels.length === 0;
     setLevelsFailure();
     await dispatchRestFailure(res, {
@@ -366,6 +369,7 @@ async function loadClientConfig(replayed = false) {
     store.setClientConfig(FAILSAFE_CLIENT_CONFIG);
     store.markClientConfigFailsafe();
     repairActiveMode();
+    repairRoomMode();
     levelsEmpty.value = store.activeLevels.length === 0;
     setLevelsFailure();
     reportError("lobby.loadClientConfig", e);

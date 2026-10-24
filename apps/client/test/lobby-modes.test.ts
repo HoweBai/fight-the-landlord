@@ -290,6 +290,21 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
     expect(useAuthStore().page, '点玩法卡不得跳页').toBe('lobby');
   });
 
+  it('金币场选中后切到跑得快（金币关）⇒ 场次回落到免费场', async () => {
+    const cfg = gamesConfig(true);
+    cfg.data.goldRoomEnabled = true;
+    cfg.data.games.doudizhu.goldRoomEnabled = true;
+    const { wrapper, store } = mountLobby([], cfg);
+    await flushPromises();
+    store.setRoomMode('gold');
+    expect(store.roomMode).toBe('gold');
+
+    await wrapper.findAll('.lobby__mode')[1]!.trigger('click');
+    await flushPromises();
+    expect(store.activeMode).toBe('paodekuai');
+    expect(store.roomMode).toBe('random');
+  });
+
   it('档位卡按玩法切换：斗地主 15/80 → 跑得快只有 80（快跑场）', async () => {
     const { wrapper, store } = mountLobby([], gamesConfig(true));
     await flushPromises();

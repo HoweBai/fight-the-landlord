@@ -659,7 +659,7 @@ async function backToLobby(cdp) {
  * 为什么需要它：T11 起 `game.vue` 的好友房入口按 `store.friendRoomEnabled` 门控
  * （初值 false = fail-safe，配置来自 `GET /api/config`）；服务端侧 `POST /api/rooms`
  * 与 `:code/join` 也按同一开关拦（关 ⇒ 12006）。⇒ `--scenario full` 的
- * 「创建房间」那一段之前，必须把 `room.friendRoomEnabled` 置 true。
+ * 「创建房间」那一段之前，必须把 `game.doudizhu.friendRoomEnabled` 置 true。
  *
  * ⚠️ 生效观测点 = **建房行为**（`POST /api/rooms` 得 code 0）—— 不是「库里的值」
  * （`GET /api/config` 每次查库、证不了消费侧缓存），而是 room-service 缓存的真实出口；
@@ -704,7 +704,7 @@ async function setupFriendRooms() {
   if (login.body?.code !== 0 || !admin) {
     throw new Error(`管理登录失败：HTTP ${login.status} ${JSON.stringify(login.body)}（口令与 conformance-stack.sh 同源？）`);
   }
-  const put = await gwJson('PUT', '/api/admin/config/room.friendRoomEnabled', { body: { value: true }, token: admin });
+  const put = await gwJson('PUT', '/api/admin/config/game.doudizhu.friendRoomEnabled', { body: { value: true }, token: admin });
   if (put.body?.code !== 0) {
     throw new Error(`置 friendRoomEnabled=true 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
@@ -1030,12 +1030,12 @@ async function setupPdkEnabled() {
     throw new Error(`置 game.paodekuai.enabled=true 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
   // 建房探测需要好友房开关（POST /api/rooms 的门）；探测完立即还原。
-  const friendPut = await gwJson('PUT', '/api/admin/config/room.friendRoomEnabled', {
+  const friendPut = await gwJson('PUT', '/api/admin/config/game.paodekuai.friendRoomEnabled', {
     body: { value: true },
     token: admin,
   });
   if (friendPut.body?.code !== 0) {
-    throw new Error(`开启好友房（建房探测用）失败：${JSON.stringify(friendPut.body)}`);
+    throw new Error(`开启跑得快好友房（建房探测用）失败：${JSON.stringify(friendPut.body)}`);
   }
   const phone = `138${String(Date.now()).slice(-6)}${String(Math.floor(Math.random() * 100)).padStart(2, '0')}`;
   const reg = await gwJson('POST', '/api/auth/register', {
@@ -1052,7 +1052,7 @@ async function setupPdkEnabled() {
       token: player,
     });
     if (probe.body?.code === 0) {
-      await gwJson('PUT', '/api/admin/config/room.friendRoomEnabled', {
+      await gwJson('PUT', '/api/admin/config/game.paodekuai.friendRoomEnabled', {
         body: { value: false },
         token: admin,
       });
@@ -1231,7 +1231,7 @@ async function main() {
   if (SCENARIO === 'full') {
     try {
       await setupFriendRooms();
-      check('setup：经管理面开启好友房并轮询至建房生效（POST /api/rooms ⇒ code 0）', true, `PUT room.friendRoomEnabled=true（网关 ${GW_BASE}）`);
+      check('setup：经管理面开启好友房并轮询至建房生效（POST /api/rooms ⇒ code 0）', true, `PUT game.doudizhu.friendRoomEnabled=true（网关 ${GW_BASE}）`);
     } catch (err) {
       check('setup：经管理面开启好友房', false, err?.message ?? String(err));
       return finish(server);

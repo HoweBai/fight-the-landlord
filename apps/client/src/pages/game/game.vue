@@ -989,7 +989,7 @@ onUnmounted(() => stopBgm());
           >
             开始游戏
           </button>
-          <template v-else>
+          <template v-else-if="matching">
             <text class="game__matching">
               正在匹配
               <text class="game__matching-dots">
