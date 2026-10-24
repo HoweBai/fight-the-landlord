@@ -1,7 +1,7 @@
 // packages/room-service/src/currency/robot-funding.ts
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { ErrCode, type CurrencyEntryIn } from '@fight-the-landlord/protocol';
+import { DEFAULT_GAME_TYPE, ErrCode, type CurrencyEntryIn, type GameType } from '@fight-the-landlord/protocol';
 import { CurrencyClient, CurrencyServiceError } from './currency.client';
 import { ConfigCacheService } from '../config/config-cache.service';
 import type { SettleRobotHook } from './settle.service';
@@ -139,10 +139,13 @@ export class RobotFunding implements SettleRobotHook {
    * 调用方（`fillBots` 的 catch）据此走既有补位失败路径。抛之前先记
    * `currency_robot_ensure_failed_total` + ERROR（含 botIds），失败原因不丢。
    */
-  async ensureBots(botIds: readonly string[]): Promise<void> {
+  async ensureBots(
+    botIds: readonly string[],
+    gameType: GameType = DEFAULT_GAME_TYPE,
+  ): Promise<void> {
     if (botIds.length === 0) return;
     try {
-      const top = await this.computeTop();
+      const top = await this.computeTop(gameType);
       const { balances } = await this.currency.get({ ownerIds: [...botIds] });
       const observed = new Map(balances.map((b) => [b.ownerId, b]));
       for (const botId of botIds) {
@@ -170,11 +173,14 @@ export class RobotFunding implements SettleRobotHook {
    * 都只记 WARN + `currency_robot_ensure_failed_total`，继续下一座（一间房的一步失败
    * 不得阻塞收尾链的其余部分，而收尾链自身另有 try/catch 兜底）。
    */
-  async afterSettle(balances: RobotBalanceAfter[]): Promise<void> {
+  async afterSettle(
+    balances: RobotBalanceAfter[],
+    gameType: GameType = DEFAULT_GAME_TYPE,
+  ): Promise<void> {
     if (balances.length === 0) return;
     let top: number;
     try {
-      top = await this.computeTop();
+      top = await this.computeTop(gameType);
     } catch (err) {
       currencyRobotEnsureFailedTotal.inc();
       this.logger.warn(
@@ -207,10 +213,10 @@ export class RobotFunding implements SettleRobotHook {
    * `baseScoreLevels()` 是 fail-closed 的（拿不到 ⇒ 抛 10007）⇒ 这里原样传播；
    * 推导值 < 15（不变量的前提）同样抛 —— 两条路径的失败语义由调用方决定。
    */
-  private async computeTop(): Promise<number> {
-    const levels = await this.configCache.baseScoreLevels();
+  private async computeTop(gameType: GameType = DEFAULT_GAME_TYPE): Promise<number> {
+    const levels = await this.configCache.baseScoreLevels(gameType);
     const maxBaseScore = levels.reduce((max, level) => Math.max(max, level.baseScore), 0);
-    const multiplier = this.configCache.entryMultiplier();
+    const multiplier = this.configCache.entryMultiplier(gameType);
     const top = maxBaseScore * multiplier;
     if (!Number.isInteger(top) || top < ROBOT_WATER_MIN_TOP) {
       throw new Error(

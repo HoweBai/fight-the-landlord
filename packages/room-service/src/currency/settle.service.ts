@@ -84,7 +84,10 @@ export const SETTLE_ROBOT_HOOK = 'ROOM_SERVICE_SETTLE_ROBOT_HOOK';
 
 /** ③ 的接口：只收「机器人座且**有** `balanceAfter`（= 本局有非零 delta）」，按座位升序。 */
 export interface SettleRobotHook {
-  afterSettle(balances: Array<{ botId: string; balanceAfter: number }>): Promise<void>;
+  afterSettle(
+    balances: Array<{ botId: string; balanceAfter: number }>,
+    gameType: GameType,
+  ): Promise<void>;
 }
 
 /** `game.balances` 广播回调（由 `WsGateway` 在构造期绑定 —— 实现挂点在 ws 层）。 */
@@ -370,7 +373,7 @@ export class SettleService {
     const seats = this.resolveSeats(room, input.botBySeat, version, playerCount);
     if (!seats) return;
 
-    const rakePercent = this.configCache.rakePercent();
+    const rakePercent = this.configCache.rakePercent(gameType);
 
     // ── 读边：结算前余额（截断/分摊的输入）──────────────────────────────
     let balances: ReadonlyMap<string, number>;
@@ -688,7 +691,7 @@ export class SettleService {
         .map((s) => ({ botId: s.ownerId, balanceAfter: afterByOwner.get(s.ownerId)! }));
       if (robotBalances.length > 0) {
         try {
-          await this.robotHook.afterSettle(robotBalances);
+          await this.robotHook.afterSettle(robotBalances, gameType);
         } catch (err) {
           // fail-open（规格 §7）：失败只记指标/日志，绝不阻塞收尾链的其余部分。
           this.logger.warn(

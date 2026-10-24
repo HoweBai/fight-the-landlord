@@ -420,3 +420,28 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
     );
   });
 });
+
+describe('RobotFunding：水位按玩法取档位/倍率（2026-10-24 平行化）', () => {
+  it('paodekuai 与 doudizhu 各自算 top，actionId 里的 target 不同', async () => {
+    const h = makeHarness();
+    h.configCache.baseScoreLevels.mockImplementation(async (gameType?: string) =>
+      gameType === 'paodekuai' ? [{ name: 'x', baseScore: 15 }] : [{ name: 'x', baseScore: 1200 }],
+    );
+    h.configCache.entryMultiplier.mockImplementation((gameType?: string) =>
+      gameType === 'paodekuai' ? 20 : 10,
+    );
+
+    await h.svc.ensureBots([BOT], 'paodekuai');
+    const pdkTop = 15 * 20;
+    expect(h.currency.apply.mock.calls[0]![0].actionId).toBe(
+      `rr:${BOT}:${robotWaterLevels(BOT, pdkTop).target}:0`,
+    );
+
+    h.currency.apply.mockClear();
+    await h.svc.ensureBots([BOT], 'doudizhu');
+    const ddzTop = 1200 * 10;
+    expect(h.currency.apply.mock.calls[0]![0].actionId).toBe(
+      `rr:${BOT}:${robotWaterLevels(BOT, ddzTop).target}:0`,
+    );
+  });
+});

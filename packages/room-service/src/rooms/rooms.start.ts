@@ -511,7 +511,7 @@ export class RoomStartService {
        *   （上面的早返）连这一行都不会走到。
        */
       if (room.mode === 'gold' && botBindings.length > 0) {
-        await this.robotFunding.ensureBots(botBindings.map((b) => b.botId));
+        await this.robotFunding.ensureBots(botBindings.map((b) => b.botId), gameType);
       }
       return { seats: current.players, bindings: botBindings };
     } catch (err) {

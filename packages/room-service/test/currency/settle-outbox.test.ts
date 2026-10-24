@@ -119,7 +119,7 @@ describe('settle:outbox 原样重发 ⇒ 成功走完整收尾并从箱中清除
       },
     ]);
     expect(h.record.moneyDelta).toHaveBeenCalledTimes(1);
-    expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }]);
+    expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }], 'doudizhu');
   });
 
   it('replayed 重发同样算送达（replayed 指标；条目清除）', async () => {

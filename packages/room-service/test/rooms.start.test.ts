@@ -631,7 +631,7 @@ describe('② T6：金币场补位后的机器人 ensure（fillBots 接入）', 
     expect(ok).toBe(true);
     expect(robotFunding.ensureBots).toHaveBeenCalledTimes(1);
     // 内部 botId（rpcStub 的 acquire 产物 = `bot-<seat>`），**不是**出站 displayId（p_…）
-    expect(robotFunding.ensureBots).toHaveBeenCalledWith(['bot-1', 'bot-2']);
+    expect(robotFunding.ensureBots).toHaveBeenCalledWith(['bot-1', 'bot-2'], 'doudizhu');
     // 顺序①：ensure 在 game.start 之前（资金到位先于开局）
     const ensureOrder = robotFunding.ensureBots.mock.invocationCallOrder[0]!;
     const startIdx = calls.findIndex((c) => c.pattern === RPC_PATTERNS.gameStart);

@@ -211,7 +211,8 @@ describe('成功（ok）：收尾三件事的完整契约', () => {
       { seat: 2, balance: 985 },
     ]);
     expect(h.record.moneyDelta).toHaveBeenCalledTimes(1);
-    expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }]);
+    expect(h.configCache.rakePercent).toHaveBeenCalledWith('doudizhu');
+    expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }], 'doudizhu');
     await expect(h.redis.hgetall('recordmoney:outbox')).resolves.toEqual({});
   });
 });
