@@ -600,3 +600,34 @@ describe('ConfigCacheService（记录片 T7：user-service 首条配置消费链
     expect(snapshot2).toHaveBeenCalledTimes(2); // 不再被调
   });
 });
+
+describe('风控键平行化（2026-10-24）：新键优先、缺失回退旧键', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('新键覆盖旧键', async () => {
+    const cache = await cachedWith({
+      'game.doudizhu.risk.winRateThreshold': 0.9,
+      'risk.winRateThreshold': 0.8,
+      'game.doudizhu.risk.minGames': 50,
+      'risk.minGames': 100,
+    });
+    expect(cache.riskWinRateThreshold()).toBe(0.9);
+    expect(cache.riskMinGames()).toBe(50);
+    cache.onApplicationShutdown();
+  });
+
+  it('新键缺失 ⇒ 旧键', async () => {
+    const cache = await cachedWith({
+      'risk.winRateThreshold': 0.7,
+      'risk.minGames': 10,
+    });
+    expect(cache.riskWinRateThreshold()).toBe(0.7);
+    expect(cache.riskMinGames()).toBe(10);
+    cache.onApplicationShutdown();
+  });
+});

@@ -52,8 +52,8 @@ export function parseSkillDistribution(
  *（`douzero.health.ts` 的探测门禁），见 `no-switch-in-decision.gate.test.ts`）。
  */
 export const ROBOT_CONFIG_DEFAULTS = {
-  'robot.skillDistribution': DEFAULT_SKILL_DISTRIBUTION,
-  'robot.ruleFallback': true,
-  'robot.modelBySkill': MODEL_BY_SKILL,
+  'game.doudizhu.robot.skillDistribution': DEFAULT_SKILL_DISTRIBUTION,
+  'game.doudizhu.robot.ruleFallback': true,
+  'game.doudizhu.robot.modelBySkill': MODEL_BY_SKILL,
   'robot.reclaimIntervalMs': 60_000,
 } as const;

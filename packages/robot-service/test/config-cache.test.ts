@@ -302,12 +302,12 @@ describe('ConfigCacheService（robot；design D2：缓存 + 推送 + 安全网�
   it('频道名逐字 + 四键默认表与规格 §2.2 的种子逐键同值', () => {
     expect(CONFIG_CHANGED_CHANNEL).toBe('config:changed');
     // 常量表：真·种子（0.15/0.35/0.5 · true · 三档映射 · 60000）。
-    expect(ROBOT_CONFIG_DEFAULTS['robot.ruleFallback']).toBe(true);
-    expect(ROBOT_CONFIG_DEFAULTS['robot.modelBySkill']).toEqual({
+    expect(ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.ruleFallback']).toBe(true);
+    expect(ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.modelBySkill']).toEqual({
       beginner: 'sl', intermediate: 'douzero_WP', advanced: 'douzero_ADP',
     });
     expect(ROBOT_CONFIG_DEFAULTS['robot.reclaimIntervalMs']).toBe(60_000);
-    expect(ROBOT_CONFIG_DEFAULTS['robot.skillDistribution']).toBe(
+    expect(ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.skillDistribution']).toBe(
       'beginner=0.15,intermediate=0.35,advanced=0.5',
     );
   });
@@ -429,5 +429,62 @@ describe('ConfigCacheService（robot；design D2：缓存 + 推送 + 安全网�
     expect(internals2.safetyTimer).toBeNull(); // 不得重排下一轮安全网
     await vi.advanceTimersByTimeAsync(1_000);
     expect(second.snapshot).toHaveBeenCalledTimes(2); // 不再被调
+  });
+});
+
+describe('机器人键平行化（2026-10-24）：新键优先、缺失回退旧键', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function cacheWith(over: Record<string, unknown>): Promise<ConfigCacheService> {
+    const { client, snapshot } = makeClient();
+    snapshot.mockResolvedValue(snapshotWith(over as never));
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+    await cache.waitForFirstSnapshot();
+    return cache;
+  }
+
+  it('新键覆盖旧键', async () => {
+    const cache = await cacheWith({
+      'game.doudizhu.robot.ruleFallback': false,
+      'robot.ruleFallback': true,
+      'game.doudizhu.robot.skillDistribution': { beginner: 0, intermediate: 0, advanced: 1 },
+      'robot.skillDistribution': { beginner: 1, intermediate: 0, advanced: 0 },
+      'game.doudizhu.robot.modelBySkill': {
+        beginner: 'douzero_ADP',
+        intermediate: 'sl',
+        advanced: 'sl',
+      },
+      'robot.modelBySkill': { beginner: 'sl', intermediate: 'sl', advanced: 'sl' },
+    });
+    expect(cache.ruleFallback()).toBe(false);
+    expect(stable(cache.skillDistribution())).toEqual([
+      ['beginner', 0],
+      ['intermediate', 0],
+      ['advanced', 1],
+    ]);
+    expect(cache.modelBySkill().beginner).toBe('douzero_ADP');
+    cache.onApplicationShutdown();
+  });
+
+  it('新键缺失 ⇒ 旧键', async () => {
+    const cache = await cacheWith({
+      'robot.ruleFallback': false,
+      'robot.skillDistribution': { beginner: 1, intermediate: 0, advanced: 0 },
+      'robot.modelBySkill': { beginner: 'douzero_ADP', intermediate: 'sl', advanced: 'sl' },
+    });
+    expect(cache.ruleFallback()).toBe(false);
+    expect(stable(cache.skillDistribution())).toEqual([
+      ['beginner', 1],
+      ['intermediate', 0],
+      ['advanced', 0],
+    ]);
+    expect(cache.modelBySkill().beginner).toBe('douzero_ADP');
+    cache.onApplicationShutdown();
   });
 });

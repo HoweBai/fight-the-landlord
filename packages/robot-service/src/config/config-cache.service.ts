@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Redis } from 'ioredis';
-import type { ConfigSnapshot, SkillLevel } from '@fight-the-landlord/protocol';
+import type { ConfigKey, ConfigSnapshot, SkillLevel } from '@fight-the-landlord/protocol';
 import { runWithTrace } from '@fight-the-landlord/shared';
 import { ConfigClient } from './config.client';
 import { ROBOT_CONFIG_DEFAULTS, SKILL_LEVELS, parseSkillDistribution } from '../robot/config';
@@ -146,15 +146,26 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
 
   // ─── 读面（四个 getter；缺快照/缺失键/形状非法 ⇒ 代码默认值 = 种子）──────────
 
+  /** 平行化（2026-10-24）：新键存在性优先，缺失回退旧键。 */
+  private readWithLegacy(newKey: string, legacyKey: string): unknown {
+    if (this.snapshot !== null && Object.hasOwn(this.snapshot, newKey)) {
+      return this.snapshot[newKey as ConfigKey]?.value;
+    }
+    return this.snapshot?.[legacyKey as ConfigKey]?.value;
+  }
+
   /**
    * 抽档比例（有序对；`RobotPool.pickSkillLevel()` 下一拍抽档时现读）。
    * 快照值（JSON 对象）⇒ 有序对；缺失/非法 ⇒ 解析默认串（`'15,35,50' ≡ .15/.35/.5` 口径）。
    */
   skillDistribution(): ReadonlyArray<readonly [SkillLevel, number]> {
-    const value = this.snapshot?.['robot.skillDistribution']?.value;
+    const value = this.readWithLegacy(
+      'game.doudizhu.robot.skillDistribution',
+      'robot.skillDistribution',
+    );
     return (
       toSkillPairs(value) ??
-      parseSkillDistribution(ROBOT_CONFIG_DEFAULTS['robot.skillDistribution'])
+      parseSkillDistribution(ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.skillDistribution'])
     );
   }
 
@@ -164,8 +175,13 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
    * 规则兜底开着的旧世界是兼容面，见 design D3）。
    */
   ruleFallback(): boolean {
-    const value = this.snapshot?.['robot.ruleFallback']?.value;
-    return typeof value === 'boolean' ? value : ROBOT_CONFIG_DEFAULTS['robot.ruleFallback'];
+    const value = this.readWithLegacy(
+      'game.doudizhu.robot.ruleFallback',
+      'robot.ruleFallback',
+    );
+    return typeof value === 'boolean'
+      ? value
+      : ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.ruleFallback'];
   }
 
   /**
@@ -173,8 +189,11 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
    * 缺失/非法（键缺、值不在 `sl|douzero_WP|douzero_ADP`）⇒ `models.ts` 的默认映射。
    */
   modelBySkill(): Record<SkillLevel, DouZeroModel> {
-    const value = this.snapshot?.['robot.modelBySkill']?.value;
-    return toModelMapping(value) ?? ROBOT_CONFIG_DEFAULTS['robot.modelBySkill'];
+    const value = this.readWithLegacy(
+      'game.doudizhu.robot.modelBySkill',
+      'robot.modelBySkill',
+    );
+    return toModelMapping(value) ?? ROBOT_CONFIG_DEFAULTS['game.doudizhu.robot.modelBySkill'];
   }
 
   /**

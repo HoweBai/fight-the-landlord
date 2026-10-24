@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Redis } from 'ioredis';
-import type { ConfigSnapshot } from '@fight-the-landlord/protocol';
+import type { ConfigKey, ConfigSnapshot } from '@fight-the-landlord/protocol';
 import { runWithTrace } from '@fight-the-landlord/shared';
 import { ConfigClient } from './config.client';
 
@@ -241,12 +241,23 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   // （= 种子值）——绝不把坏值透传进判定/清理面。消费方在**每轮/每次用时**重读本组方法
   // ⇒「改了下一轮生效」（当前一轮按旧值跑完）。范围与 `parseConfigValue` 逐值同口径。
 
+  /** 平行化（2026-10-24）：新键存在性优先，缺失回退旧键。 */
+  private readWithLegacy(newKey: string, legacyKey: string): unknown {
+    if (this.snapshot !== null && Object.hasOwn(this.snapshot, newKey)) {
+      return this.snapshot[newKey as ConfigKey]?.value;
+    }
+    return this.snapshot?.[legacyKey as ConfigKey]?.value;
+  }
+
   /**
    * 胜率扫描阈值（第 20 键，种子 0.8；`0.5 ≤ n ≤ 1.0`、≤2 位小数 —— 两位小数口径与
    * `parseWinRateThreshold` 同式：`Math.round(n*100)/100 === n`）。消费方 = T5 扫描 hit1。
    */
   riskWinRateThreshold(): number {
-    const value = this.snapshot?.['risk.winRateThreshold']?.value;
+    const value = this.readWithLegacy(
+      'game.doudizhu.risk.winRateThreshold',
+      'risk.winRateThreshold',
+    );
     return typeof value === 'number' &&
       Number.isFinite(value) &&
       value >= RISK_WIN_RATE_THRESHOLD_MIN &&
@@ -258,7 +269,7 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
 
   /** 扫描最少局数（第 21 键，种子 100；int、`1 ≤ n ≤ 100000`）。命中口径 = `games > minGames`（T5）。 */
   riskMinGames(): number {
-    const value = this.snapshot?.['risk.minGames']?.value;
+    const value = this.readWithLegacy('game.doudizhu.risk.minGames', 'risk.minGames');
     return typeof value === 'number' &&
       Number.isInteger(value) &&
       value >= RISK_MIN_GAMES_MIN &&
