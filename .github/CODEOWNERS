@@ -1,0 +1,13 @@
+# 公开仓库的「secret 外泄面」守卫。
+#
+# 只有能被 workflow 读取的 Secrets 才是真正的风险面：一个 PR 只要改了
+# `.github/workflows/**`，就能在拿到 SSH_KEY/GITHUB_TOKEN 的 job 里把值带出去。
+# 用 CODEOWNERS 把这些路径全部挂到仓库所有者名下 —— 外部 PR 触及它们时
+# GitHub 会自动请求所有者审阅，合并前一眼可见。
+#
+# ⚠️ CODEOWNERS 只是「自动请求审阅」，真正的合并权仍由 write 权限兜底
+#    （公开仓库的外部贡献者没有 write 权限，合不进来）。
+
+/.github/          @HoweBai
+/scripts/deploy/   @HoweBai
+/scripts/security/ @HoweBai
