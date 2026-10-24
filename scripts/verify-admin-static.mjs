@@ -196,11 +196,23 @@ const collect = (block) => {
   return out;
 };
 const protoSet = new Set(collect(protocolBlock));
+const legacyProtoBlock = balancedBlock(read('packages/protocol/src/config.ts'), 'LEGACY_CONFIG_KEYS = [');
+const legacyAdminBlock = balancedBlock(app, 'const LEGACY_CONFIG_KEYS = [');
+const legacyProtoSet = new Set(collect(legacyProtoBlock));
+const legacyAdminSet = new Set(collect(legacyAdminBlock));
+const activeProtoSet = new Set([...protoSet].filter((k) => !legacyProtoSet.has(k)));
 const iaKeySet = new Set(collect(iaBlock));
-ok(protoSet.size === 65, `protocol CONFIG_KEYS 恰 65 键（实测 ${protoSet.size}）`);
-ok(iaKeySet.size === 65, `CONFIG_IA 覆盖 65 键（实测 ${iaKeySet.size}）`);
-ok([...protoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏键');
-ok([...iaKeySet].every((k) => protoSet.has(k)), 'CONFIG_IA 无表外键');
+ok(legacyProtoSet.size === 16, `protocol LEGACY_CONFIG_KEYS 恰 16 键（实测 ${legacyProtoSet.size}）`);
+ok(
+  [...legacyProtoSet].every((k) => legacyAdminSet.has(k)) &&
+    [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
+  'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
+);
+ok(protoSet.size === 89, `protocol CONFIG_KEYS 恰 89 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 73, `active = CONFIG_KEYS − LEGACY 恰 73 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 73, `CONFIG_IA 覆盖 73 键（实测 ${iaKeySet.size}）`);
+ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
+ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
 /* 2026-10-21 IA 合并：客户端接入两键归入 risk 域末尾页签（不新增独立域）。 */
 ok(!/id:\s*'client'/.test(iaBlock), 'CONFIG_IA 无独立 client 域');
@@ -217,24 +229,30 @@ const pdkEnd = pdkStart >= 0 ? iaBlock.indexOf("group: '通用设置'", pdkStart
 const pdkDomainBlock =
   pdkStart >= 0 ? iaBlock.slice(pdkStart, pdkEnd >= 0 ? pdkEnd : undefined) : '';
 ok(pdkDomainBlock !== '', '找到 pdk 域块');
-ok(pdkDomainBlock.includes("id: 'rules'") && pdkDomainBlock.includes("id: 'scoring'") && pdkDomainBlock.includes("id: 'switches'"), 'pdk 域含 规则/计分/开关 三页签');
-ok(pdkDomainBlock.includes("'game.levels.paodekuai'"), 'pdk 档位表在 pdk 域（ddz 继续旧键）');
+ok(
+  ['rules', 'scoring', 'switches', 'rooms', 'goldEconomy'].every((id) =>
+    pdkDomainBlock.includes(`id: '${id}'`),
+  ),
+  'pdk 域含 规则/计分/开关/场次开关/金币场经济 五页签',
+);
+ok(pdkDomainBlock.includes("'game.levels.paodekuai'"), 'pdk 档位表在 pdk 域');
+ok(iaBlock.includes("'game.levels.doudizhu'"), 'ddz 档位表用新键 game.levels.doudizhu');
 
 /* ── 5. CONFIG_CONTROLS：47 简单键 + 4 结构化键 = 51；定稿表 ─── */
 const STRUCT_KEYS = [
-  'game.baseScoreLevels',
+  'game.levels.doudizhu',
   'game.levels.paodekuai',
   'pay.rechargePackages',
-  'robot.skillDistribution',
-  'robot.modelBySkill',
+  'game.doudizhu.robot.skillDistribution',
+  'game.doudizhu.robot.modelBySkill',
 ];
 const BOOL_KEYS = [
-  'robot.ruleFallback',
-  'room.freeRoomEnabled',
-  'room.goldRoomEnabled',
-  'room.friendRoomEnabled',
-  'room.freeBotFillEnabled',
-  'room.goldBotFillEnabled',
+  'game.doudizhu.robot.ruleFallback',
+  'game.doudizhu.freeRoomEnabled',
+  'game.doudizhu.goldRoomEnabled',
+  'game.doudizhu.friendRoomEnabled',
+  'game.doudizhu.freeBotFillEnabled',
+  'game.doudizhu.goldBotFillEnabled',
   'currency.reliefEnabled',
   'risk.predicate.sameDevice',
   'risk.predicate.sameIp',
@@ -245,7 +263,13 @@ const BOOL_KEYS = [
   'client.appEnabled',
   'client.h5Enabled',
   'risk.withdrawReAuthEnabled',
-  'game.cardCounterEnabled',
+  'game.doudizhu.cardCounterEnabled',
+  // 跑得快 5 个场次/好友房/补位开关
+  'game.paodekuai.freeRoomEnabled',
+  'game.paodekuai.goldRoomEnabled',
+  'game.paodekuai.friendRoomEnabled',
+  'game.paodekuai.freeBotFillEnabled',
+  'game.paodekuai.goldBotFillEnabled',
   // 多玩法（S7.1）：跑得快 11 个布尔键
   'game.paodekuai.enabled',
   'game.paodekuai.nonThreePlayerEnabled',
@@ -278,19 +302,22 @@ const NUMBER_SUFFIX = {
   'record.retentionDays': '天',
   'risk.deviceWindowDays': '天',
   'risk.deviceRetentionDays': '天',
-  'currency.rakePercent': '%',
-  'currency.entryMultiplier': '倍',
+  'game.doudizhu.rakePercent': '%',
+  'game.doudizhu.entryMultiplier': '倍',
+  'game.paodekuai.rakePercent': '%',
+  'game.paodekuai.entryMultiplier': '倍',
+  'currency.reliefThresholdCoins': '金币',
   'currency.signupGrant': '金币',
   'currency.reliefAmount': '金币',
   'pay.withdrawMinCoins': '金币',
   'pay.withdrawMaxCoinsPerOrder': '金币',
   'pay.withdrawDailyMaxCoins': '金币',
   'pay.coinPerYuan': '金币/元',
-  'risk.winRateThreshold': '',
-  'risk.minGames': '',
+  'game.doudizhu.risk.winRateThreshold': '',
+  'game.doudizhu.risk.minGames': '',
   'risk.deviceLimit': '',
-  'game.cardCounterPricePerGameCoins': '金币/局',
-  'game.cardCounterPricePerHourCoins': '金币/小时',
+  'game.doudizhu.cardCounterPricePerGameCoins': '金币/局',
+  'game.doudizhu.cardCounterPricePerHourCoins': '金币/小时',
   'game.paodekuai.multiplierCap': '倍',
 };
 
@@ -304,15 +331,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 60, `CONFIG_CONTROLS 恰 60 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 68, `CONFIG_CONTROLS 恰 68 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...protoSet].every((k) => entries.has(k) || structSet.has(k)), '65 键 = 60 简单 ∪ 5 结构化（无遗漏）');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '73 键 = 68 简单 ∪ 5 结构化（无遗漏）');
 ok(BOOL_KEYS.every((k) => entries.has(k)), '17 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 28 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '28 布尔键 type=bool');
+ok(BOOL_KEYS.length === 33 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '33 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 30, `数字键定论表 30 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 33, `数字键定论表 33 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);
@@ -321,8 +348,8 @@ for (const k of numberKeys) {
   const suffix = suffixM ? suffixM[1] : '';
   ok(suffix === NUMBER_SUFFIX[k], `${k} 后缀=${JSON.stringify(NUMBER_SUFFIX[k])}（实测 ${JSON.stringify(suffix)}）`);
 }
-ok(!/suffix/.test(entries.get('risk.winRateThreshold') ?? ''), 'risk.winRateThreshold 不带后缀（0.50–1.00 比率）');
-ok(/step:\s*0\.01/.test(entries.get('risk.winRateThreshold') ?? ''), 'risk.winRateThreshold step=0.01');
+ok(!/suffix/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''), '胜率阈值不带后缀（0.50–1.00 比率）');
+ok(/step:\s*0\.01/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''), '胜率阈值 step=0.01');
 // 每条目必须有非空中文 label。
 for (const [k, body] of entries) {
   const labelM = /label:\s*'([^']+)'/.exec(body);
@@ -330,8 +357,8 @@ for (const [k, body] of entries) {
 }
 // 简单/布尔/文本/数字分类合计 = 60（防清单漂移）。
 ok(
-  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === 60,
-  `控件分类合计 28+2+30=60（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
+  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === 68,
+  `控件分类合计 33+2+33=68（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
 );
 
 /* ── 6. 零外链 ───────────────────────────────────────────────── */
@@ -369,8 +396,17 @@ ok(!levelsFn.includes('percent > 50'), '档位表 getter 不再使用 50 上限'
 ok(levelsFn.includes('0–100'), '档位表台费文案为 0–100');
 ok(!levelsFn.includes('0–50'), '档位表不再出现 0–50');
 ok(!app.includes('0–50'), 'app.js 不再出现 0–50（旧键/抽水用语是 0 ≤ n ≤ 50）');
-const notesStart = app.indexOf("'game.baseScoreLevels': [");
-const notesEnd = app.indexOf("'game.cardCounterEnabled': [");
+ok(
+  app.includes("key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai'"),
+  'buildStructCard 的 levels 编辑器分派覆盖斗地主与跑得快两键',
+);
+ok(
+  app.includes("key === 'game.doudizhu.robot.skillDistribution'") &&
+    app.includes("key === 'game.doudizhu.robot.modelBySkill'"),
+  'buildStructCard 的机器人编辑器分派用新键',
+);
+const notesStart = app.indexOf("'game.levels.doudizhu': [");
+const notesEnd = app.indexOf("'game.doudizhu.cardCounterEnabled': [");
 ok(
   notesStart !== -1 && notesEnd > notesStart,
   'CONFIG_NOTES 档位表切片锚点存在（起/止）',

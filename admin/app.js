@@ -150,19 +150,19 @@ const PAGE_LIMIT = 20;
  *    客户端接入片 T3 加第 43/44 键（`client.appEnabled` / `client.h5Enabled`）、机器人补位开关片加第 45–47 键后 **47 条对 47 键**；提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 **48 条对 48 键**；设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 **49 条对 49 键**；记牌器片加第 50 键（game.cardCounterEnabled，归「斗地主 → 对局辅助」）后 **50 条对 50 键**；记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 **52 条对 52 键**；阶段 2 删除旧费率键后 **65 条对 65 键**。
  */
 const CONFIG_NOTES = {
-  'robot.skillDistribution': [
+  'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}，各 ≥ 0，合计须 > 0；可写权重（如 15 / 35 / 50），保存时按合计归一化成占比。默认 0.15 / 0.35 / 0.5。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
     ['注意', '难度在机器人入座绑定时抽取 ⇒ 改动只影响之后的补位，已在局中的不受影响。'],
   ],
-  'robot.ruleFallback': [
+  'game.doudizhu.robot.ruleFallback': [
     ['作用', 'DouZero（AI 模型服务）不可用时，匹配还补不补机器人 —— 开 ⇒ 照补；关 ⇒ 不补。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开）。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
     ['注意', '关 ⇒ 仅当 DouZero 不可用时，匹配玩家等满 30s 收到「当前无匹配的玩家」；只管匹配路径，好友房 / 自动开局与已入座对局不受影响。'],
   ],
-  'robot.modelBySkill': [
+  'game.doudizhu.robot.modelBySkill': [
     ['作用', '弱 / 中 / 高三档机器人各用哪个 DouZero 模型（玩家感知为出牌强弱）。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}；取值只能是 sl / douzero_WP / douzero_ADP。默认 sl / douzero_WP / douzero_ADP。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
@@ -192,31 +192,31 @@ const CONFIG_NOTES = {
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。当前一轮按旧值跑完，下一轮起用新值。'],
     ['注意', '玩家感知 = 过期房间多快从大厅列表消失；改小 = 回收更勤。'],
   ],
-  'room.friendRoomEnabled': [
+  'game.doudizhu.friendRoomEnabled': [
     ['作用', '好友房总开关。开 ⇒ 大厅显示入口、可创建 / 加入；关 ⇒ 入口隐藏、创建 / 加入被拒（12006「好友房暂未开放」）、房间列表为空。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（默认关）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新值（已打开的页面刷新一次最快拿到）。'],
     ['注意', '上线要开放好友房 ⇒ 第一件事就是打开它；已在途的好友房不受影响（切换前开的房可正常打完）。'],
   ],
-  'game.baseScoreLevels': [
+  'game.levels.doudizhu': [
     ['作用', '底分档位表（大厅的底分卡）—— 建房与匹配可选底分都出自这张表。'],
     ['取值', '非空数组，每项 {name, baseScore, entryFeePercent}：name 非空字符串、baseScore 正整数且 ≤ 8191（上限 = 金币金额列 int 的容量上界，超出会被拒绝）、档位值不得重复；entryFeePercent 为 0–100 的整数百分比（0 = 不收台费，100 = 入场费等于底分，缺省即 0）；省略底分时取表内最低档。默认 15 / 80 / 480 / 1200（台费全 0）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新表（已打开的页面刷新一次最快拿到）。'],
     ['注意', '**台费就在本表第三列**（旧「台费费率表」键已删除）；档位可自由增删（含 15）；省略底分时取表内最低档。改动只影响之后的新开局，已在途房间不受影响。'],
   ],
-  'game.cardCounterEnabled': [
+  'game.doudizhu.cardCounterEnabled': [
     ['作用', '记牌器总开关（客户端）。开 ⇒ 牌桌左上角显示记牌器入口与横条；关 ⇒ 入口不渲染、记牌累积器不启动。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开 —— 保持现状）。'],
     ['生效', '保存后玩家端下次进大厅取到新值；已打开的牌桌不热更新。'],
     ['注意', '客户端软门控：旧版客户端不认识该键，仍会显示记牌器。收费与购买由下面两个价格键控制（另立片）。'],
   ],
-  'game.cardCounterPricePerGameCoins': [
+  'game.doudizhu.cardCounterPricePerGameCoins': [
     ['作用', '记牌器「单局卡」单价（金币/局）。玩家开局前购买；进入金币场对局时自动消耗 1 张。'],
     ['取值', '整数 0..1,000,000；0 = 该商品隐藏（不售）。默认 10。'],
     ['生效', '保存后玩家端下次进大厅取到新价；改价只影响之后的购买，已购权益不受影响。'],
     ['注意', '仅金币场收费；免费场/好友房不消耗权益。两个价格都为 0 ⇒ 金币场免费（不消费、不显示购买）。旧版客户端仍免费显示。'],
   ],
-  'game.cardCounterPricePerHourCoins': [
+  'game.doudizhu.cardCounterPricePerHourCoins': [
     ['作用', '记牌器「包时卡」每小时单价（金币/小时）。购买后自购买时刻起顺延；包时内每局不再扣单局卡。'],
     ['取值', '整数 0..1,000,000；0 = 该商品隐藏（不售）。默认 100。'],
     ['生效', '保存后玩家端下次进大厅取到新价；改价只影响之后的购买，已在包时中的玩家不受影响。'],
@@ -234,25 +234,25 @@ const CONFIG_NOTES = {
     ['生效', '只影响之后注册的新用户（注册那一刻取一次快照）；已在册玩家不受影响。'],
     ['注意', '赠送与注册捆在同一条链路上：赠送失败会让这次注册整体失败（玩家可稍后重试；重试不会重复发放）。'],
   ],
-  'room.freeRoomEnabled': [
+  'game.doudizhu.freeRoomEnabled': [
     ['作用', '免费场（随机匹配）开关。开 ⇒ 大厅显示「免费场」入口、可匹配；关 ⇒ 入口隐藏、匹配被拒（12010「该场次暂未开放」）。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开 —— 保持现状）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新值（已打开的页面刷新一次最快拿到）。'],
-    ['注意', '与金币场开关（room.goldRoomEnabled）各管一场；两个都关 ⇒ 大厅没有可玩的场次（空态）。'],
+    ['注意', '与金币场开关（game.doudizhu.goldRoomEnabled）各管一场；两个都关 ⇒ 大厅没有可玩的场次（空态）。'],
   ],
-  'room.goldRoomEnabled': [
+  'game.doudizhu.goldRoomEnabled': [
     ['作用', '金币场开关。开 ⇒ 大厅显示「金币场」入口、可按门槛（余额 ≥ 底分 × entryMultiplier）匹配；关 ⇒ 入口隐藏、匹配被拒（12010「该场次暂未开放」）。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（默认开 —— 2026-10-04 用户裁决，原默认关/暗上线）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新值（已打开的页面刷新一次最快拿到）。'],
     ['注意', '默认开；首次开放前先把机器人虚拟池种上（见手册「虚拟池：种子与充值」）；要暂缓开放 ⇒ 改这里为 false。已在途的金币局不受影响。'],
   ],
-  'room.freeBotFillEnabled': [
+  'game.doudizhu.freeBotFillEnabled': [
     ['作用', '免费场「缺人补机器人」开关。开 ⇒ 匹配缺人时等待 30 秒后用机器人补位开局（现状）；关 ⇒ 绝不补机器人，30 秒后给玩家弹「重新匹配 / 继续等待」提示，真人凑齐 3 人才开局。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开 —— 保持现状）。'],
     ['生效', '保存后 room-service 下一轮扫描（≤5s）即按新开关分流。只影响之后的匹配；已在途的局不受影响。'],
-    ['注意', '与金币场补位开关（room.goldBotFillEnabled）各管一场；关闭后的最长等待由 room.matchNoBotMaxWaitMs 兜底（到点 12007）；好友房（practice）不受这两个开关管控，缺人仍补机器人。'],
+    ['注意', '与金币场补位开关（game.doudizhu.goldBotFillEnabled）各管一场；关闭后的最长等待由 room.matchNoBotMaxWaitMs 兜底（到点 12007）；好友房（practice）不受这两个开关管控，缺人仍补机器人。'],
   ],
-  'room.goldBotFillEnabled': [
+  'game.doudizhu.goldBotFillEnabled': [
     ['作用', '金币场「缺人补机器人」开关。开 ⇒ 匹配缺人时等待 30 秒后用机器人补位开局（现状）；关 ⇒ 绝不补机器人，30 秒后给玩家弹「重新匹配 / 继续等待」提示，真人凑齐 3 人才开局。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开 —— 保持现状）。'],
     ['生效', '保存后 room-service 下一轮扫描（≤5s）即按新开关分流。只影响之后的匹配；已在途的金币局不受影响。'],
@@ -264,13 +264,13 @@ const CONFIG_NOTES = {
     ['生效', '保存后 room-service 下一轮扫描（≤5s）即按新值判超时；只影响仍在等待中的票。'],
     ['注意', '仅在免费场/金币场补位开关关闭时有意义；开关开着时走原有 30 秒补位流程，本键不参与。'],
   ],
-  'currency.entryMultiplier': [
+  'game.doudizhu.entryMultiplier': [
     ['作用', '金币场入场门槛倍率：入队要求余额 ≥ 所选底分 × 本值（如底分 1200 × 10 = 12,000）；也是「每日救助」的判定倍率（余额 < 档位表最低档 × 本值才能领）。'],
     ['取值', '整数，1 ≤ n ≤ 100。默认 10。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。玩家端进大厅时取新值（门槛提示与救助按钮点亮条件用它）。'],
     ['注意', '改动同时影响门槛与机器人水位（补线 / 目标 / 回收线随 max 底分 × 本值联动）；调高 = 门槛更贵、机器人携带更多钱。'],
   ],
-  'currency.rakePercent': [
+  'game.doudizhu.rakePercent': [
     ['作用', '抽水：从每局赢家的所得里扣一笔归系统（销毁，不进任何账户）—— 调高 = 玩家赢面变小。'],
     ['取值', '整数百分比，0 ≤ n ≤ 50。默认 0（不抽水）。'],
     ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。只影响之后结算的局。'],
@@ -300,13 +300,13 @@ const CONFIG_NOTES = {
     ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。只影响之后的撮合抽取。'],
     ['注意', '先观察同设备谓词再评估本键；运营商大内网（CGNAT）下大量玩家同 IP ⇒ 开启前先看拒绝率告警，误伤明显就回关。'],
   ],
-  'risk.winRateThreshold': [
+  'game.doudizhu.risk.winRateThreshold': [
     ['作用', '胜率阈值 —— 扫描命中条件之一：对局局数超过「扫描最少局数」且胜率严格高于本值的账号进 / 更新审核队列。'],
     ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数（如 0.8）。默认 0.8。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。当前一轮扫描按旧值跑完，下一轮起用新值。'],
     ['注意', '两个检测项各记 25 分；≥50 分且「命中自动限流」开时自动进限流档（可自动恢复）。改小 = 更敏感（误报更多）。'],
   ],
-  'risk.minGames': [
+  'game.doudizhu.risk.minGames': [
     ['作用', '扫描最少局数 —— 对局局数必须「大于」本值才参与胜率命中判定（防小样本误判）。'],
     ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。下一轮扫描起用新值。'],
@@ -346,10 +346,10 @@ const CONFIG_NOTES = {
   // 节奏/清理旋钮管理化片 T16 加六键（35–40）后 40 条对 40 键；广告片 T9 加第 41 键（ad.reliefAdpid）
   // 后 41 条对 41 键；台费片 T8 加第 42 键（currency.entryFeePercents）后 42 条对 42 键；
   // 客户端接入片 T3 加第 43/44 键（client.appEnabled / client.h5Enabled）；机器人补位开关片加第
-  // 45–47 键（room.freeBotFillEnabled / room.goldBotFillEnabled / room.matchNoBotMaxWaitMs）后 47 条对 47 键；
+  // 45–47 键（game.doudizhu.freeBotFillEnabled / game.doudizhu.goldBotFillEnabled / room.matchNoBotMaxWaitMs）后 47 条对 47 键；
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
-  // 记牌器片加第 50 键（game.cardCounterEnabled，归「斗地主 → 对局辅助」）后 50 条对 50 键
+  // 记牌器片加第 50 键（game.doudizhu.cardCounterEnabled，归「斗地主 → 对局辅助」）后 50 条对 50 键
   // 记牌器收费片加第 51/52 键（两价格，同归「斗地主 → 对局辅助」）后 52 条对 52 键；阶段 2 删旧费率键后 65 条对 65 键
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
@@ -469,7 +469,56 @@ const CONFIG_NOTES = {
     ['生效', '保存后 api-gateway 秒级生效（推送正常时）；最晚 ≤60s（安全网兜底）。'],
     ['注意', '软开关（非安全边界）：未带端标识的请求永远放行 —— 缓存/未刷新的旧 H5 页面（旧 bundle 无标识头）不受控 ⇒ 验证「关 h5 生效」须硬刷新或新开页。'],
   ],
+  'game.paodekuai.freeRoomEnabled': [
+    ['作用', '跑得快免费场开关。开 ⇒ 大厅的跑得快玩法显示「免费场」、可匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（保守灰度：先开放免费场）。'],
+    ['生效', '保存后 room-service 下一轮扫描即生效；玩家端进大厅时取新值。'],
+    ['注意', '与金币场、好友房开关各自独立；三个都关 ⇒ 大厅不显示跑得快玩法卡。'],
+  ],
+  'game.paodekuai.goldRoomEnabled': [
+    ['作用', '跑得快金币场开关。开 ⇒ 显示「金币场」、可按门槛匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],
+    ['取值', '严格 true / false。默认 false（保守灰度：先不碰真钱）。'],
+    ['生效', '保存后 room-service 下一轮扫描即生效；玩家端进大厅时取新值。'],
+    ['注意', '开放前先确认机器人资金池已种好；已在途的金币局不受影响。'],
+  ],
+  'game.paodekuai.friendRoomEnabled': [
+    ['作用', '跑得快好友房开关。开 ⇒ 显示好友房入口、可创建/加入；关 ⇒ 入口隐藏、创建/加入被拒（12006）、列表为空。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后 room-service 秒级生效；玩家端进大厅/玩法页时取新值。'],
+    ['注意', '只影响跑得快；斗地主好友房用 game.doudizhu.friendRoomEnabled。'],
+  ],
+  'game.paodekuai.freeBotFillEnabled': [
+    ['作用', '跑得快免费场缺人时是否补机器人。开 ⇒ 等待 30 秒后补位开局；关 ⇒ 只等真人，到上限 12007。'],
+    ['取值', '严格 true / false。默认 true。'],
+    ['生效', '保存后 room-service 下一轮扫描（≤5s）生效。'],
+    ['注意', '跑得快机器人是规则机器人，不依赖 DouZero 模型。'],
+  ],
+  'game.paodekuai.goldBotFillEnabled': [
+    ['作用', '跑得快金币场缺人时是否补机器人。语义同免费场补位。'],
+    ['取值', '严格 true / false。默认 true。'],
+    ['生效', '保存后 room-service 下一轮扫描（≤5s）生效。'],
+    ['注意', '金币场开放前先确认机器人资金池；关掉后真人不足时金币局开不起来。'],
+  ],
+  'game.paodekuai.rakePercent': [
+    ['作用', '跑得快金币场结算抽水：从赢家所得扣一笔销毁。'],
+    ['取值', '整数百分比，0 ≤ n ≤ 50。默认 0。'],
+    ['生效', '保存后 room-service 秒级生效；只影响之后结算的局。'],
+    ['注意', '与斗地主抽水各自独立；抽水额可用 currency_flows 按局核对。'],
+  ],
+  'game.paodekuai.entryMultiplier': [
+    ['作用', '跑得快金币场入场门槛倍率：余额 ≥ 所选底分 × 本值。'],
+    ['取值', '整数，1 ≤ n ≤ 100。默认 10。'],
+    ['生效', '保存后 room-service 秒级生效；玩家端进大厅时取新值。'],
+    ['注意', '同时影响跑得快机器人水位（该玩法最高档 × 本值）；与斗地主门槛独立。'],
+  ],
+  'currency.reliefThresholdCoins': [
+    ['作用', '每日广告救助的平台级绝对门槛：余额低于该金币数才能领取。'],
+    ['取值', '整数金币，1 ≤ n ≤ 1,000,000。默认 150（迁移时按旧档位最低档 × 旧门槛倍率现算）。'],
+    ['生效', '保存后 currency-service 秒级生效；最晚 ≤60s。'],
+    ['注意', '不随任何玩法档位/倍率变化；缺失/坏值 ⇒ 救助端点 fail-closed（503），客户端回退旧算法。'],
+  ],
 };
+
 
 /**
  * 配置中心 IA 归属表（1a 纯展示映射；键集合真源仍是 GET /api/admin/config 快照与
@@ -484,6 +533,26 @@ const CONFIG_NOTES = {
  * 上述两族的数据面归属（若新玩法记录进同表/共用胜负面则可反向复用）。
  * 快照中存在但本表未收录的键 ⇒ 自动落入「未分组」桶（见 ungroupedKeys）。
  */
+const LEGACY_CONFIG_KEYS = [
+  'room.freeRoomEnabled',
+  'room.goldRoomEnabled',
+  'room.friendRoomEnabled',
+  'room.freeBotFillEnabled',
+  'room.goldBotFillEnabled',
+  'currency.rakePercent',
+  'currency.entryMultiplier',
+  'game.baseScoreLevels',
+  'game.cardCounterEnabled',
+  'game.cardCounterPricePerGameCoins',
+  'game.cardCounterPricePerHourCoins',
+  'robot.skillDistribution',
+  'robot.ruleFallback',
+  'robot.modelBySkill',
+  'risk.winRateThreshold',
+  'risk.minGames',
+];
+const LEGACY_KEY_SET = new Set(LEGACY_CONFIG_KEYS);
+
 const CONFIG_IA = [
   {
     group: '玩法',
@@ -492,37 +561,45 @@ const CONFIG_IA = [
         id: 'ddz',
         name: '斗地主',
         tabs: [
-          { id: 'rules', name: '玩法规则', keys: ['game.baseScoreLevels'] },
-          { id: 'assist', name: '对局辅助', keys: ['game.cardCounterEnabled', 'game.cardCounterPricePerGameCoins', 'game.cardCounterPricePerHourCoins'] },
+          { id: 'rules', name: '玩法规则', keys: ['game.levels.doudizhu'] },
+          {
+            id: 'assist',
+            name: '对局辅助',
+            keys: [
+              'game.doudizhu.cardCounterEnabled',
+              'game.doudizhu.cardCounterPricePerGameCoins',
+              'game.doudizhu.cardCounterPricePerHourCoins',
+            ],
+          },
           {
             id: 'rooms',
             name: '场次开关',
-            keys: ['room.freeRoomEnabled', 'room.goldRoomEnabled', 'room.friendRoomEnabled', 'room.freeBotFillEnabled', 'room.goldBotFillEnabled'],
-          },
-          {
-            id: 'pace',
-            name: '房间节奏',
-            keys: ['room.matchScanIntervalMs', 'room.autostartIntervalMs', 'room.reapIntervalMs', 'room.matchNoBotMaxWaitMs'],
+            keys: [
+              'game.doudizhu.freeRoomEnabled',
+              'game.doudizhu.goldRoomEnabled',
+              'game.doudizhu.friendRoomEnabled',
+              'game.doudizhu.freeBotFillEnabled',
+              'game.doudizhu.goldBotFillEnabled',
+            ],
           },
           {
             id: 'robots',
             name: 'AI 机器人',
-            keys: ['robot.skillDistribution', 'robot.ruleFallback', 'robot.modelBySkill', 'robot.reclaimIntervalMs'],
+            keys: [
+              'game.doudizhu.robot.skillDistribution',
+              'game.doudizhu.robot.ruleFallback',
+              'game.doudizhu.robot.modelBySkill',
+            ],
           },
           {
             id: 'goldEconomy',
             name: '金币场经济',
-            keys: ['currency.entryMultiplier', 'currency.rakePercent'],
+            keys: ['game.doudizhu.entryMultiplier', 'game.doudizhu.rakePercent'],
           },
           {
             id: 'ddzRisk',
             name: '风控检测',
-            keys: ['risk.winRateThreshold', 'risk.minGames'],
-          },
-          {
-            id: 'ddzRecords',
-            name: '对局记录',
-            keys: ['record.retentionDays', 'record.cleanupIntervalMs'],
+            keys: ['game.doudizhu.risk.winRateThreshold', 'game.doudizhu.risk.minGames'],
           },
         ],
       },
@@ -559,6 +636,22 @@ const CONFIG_IA = [
             name: '开关',
             keys: ['game.paodekuai.enabled', 'game.paodekuai.nonThreePlayerEnabled'],
           },
+          {
+            id: 'rooms',
+            name: '场次开关',
+            keys: [
+              'game.paodekuai.freeRoomEnabled',
+              'game.paodekuai.goldRoomEnabled',
+              'game.paodekuai.friendRoomEnabled',
+              'game.paodekuai.freeBotFillEnabled',
+              'game.paodekuai.goldBotFillEnabled',
+            ],
+          },
+          {
+            id: 'goldEconomy',
+            name: '金币场经济',
+            keys: ['game.paodekuai.entryMultiplier', 'game.paodekuai.rakePercent'],
+          },
         ],
       },
     ],
@@ -578,7 +671,11 @@ const CONFIG_IA = [
           {
             id: 'relief',
             name: '每日救助',
-            keys: ['currency.reliefEnabled', 'currency.reliefAmount'],
+            keys: [
+              'currency.reliefEnabled',
+              'currency.reliefAmount',
+              'currency.reliefThresholdCoins',
+            ],
           },
         ],
       },
@@ -652,6 +749,38 @@ const CONFIG_IA = [
           },
         ],
       },
+      {
+        id: 'roomOps',
+        name: '房间与机器人',
+        tabs: [
+          {
+            id: 'pace',
+            name: '房间节奏',
+            keys: [
+              'room.matchScanIntervalMs',
+              'room.autostartIntervalMs',
+              'room.reapIntervalMs',
+              'room.matchNoBotMaxWaitMs',
+            ],
+          },
+          {
+            id: 'reclaim',
+            name: '机器人回收',
+            keys: ['robot.reclaimIntervalMs'],
+          },
+        ],
+      },
+      {
+        id: 'records',
+        name: '对局记录',
+        tabs: [
+          {
+            id: 'all',
+            name: '保留与清理',
+            keys: ['record.retentionDays', 'record.cleanupIntervalMs'],
+          },
+        ],
+      },
     ],
   },
 ];
@@ -686,23 +815,52 @@ const CFG_NAV = [
  * label = 行卡片中文短名（效果图评审基线，改名须同步改方案与探针）。
  */
 const CONFIG_CONTROLS = {
-  'room.freeRoomEnabled': { label: '免费场', type: 'bool' },
-  'room.goldRoomEnabled': { label: '金币场', type: 'bool' },
-  'room.friendRoomEnabled': { label: '好友房', type: 'bool' },
-  'room.freeBotFillEnabled': { label: '免费场缺人补机器人', type: 'bool' },
-  'room.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
+  // 斗地主（13 简单键；档位/机器人三键是结构化键）
+  'game.doudizhu.freeRoomEnabled': { label: '免费场', type: 'bool' },
+  'game.doudizhu.goldRoomEnabled': { label: '金币场', type: 'bool' },
+  'game.doudizhu.friendRoomEnabled': { label: '好友房', type: 'bool' },
+  'game.doudizhu.freeBotFillEnabled': { label: '免费场缺人补机器人', type: 'bool' },
+  'game.doudizhu.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
+  'game.doudizhu.cardCounterEnabled': { label: '记牌器', type: 'bool' },
+  'game.doudizhu.robot.ruleFallback': { label: '模型故障兜底补人', type: 'bool' },
+  'game.doudizhu.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
+  'game.doudizhu.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
+  'game.doudizhu.cardCounterPricePerGameCoins': { label: '记牌器单局价', type: 'number', suffix: '金币/局' },
+  'game.doudizhu.cardCounterPricePerHourCoins': { label: '记牌器包时价', type: 'number', suffix: '金币/小时' },
+  'game.doudizhu.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
+  'game.doudizhu.risk.minGames': { label: '扫描最少局数', type: 'number' },
+  // 跑得快（20 简单键；档位表是结构化键）
+  'game.paodekuai.freeRoomEnabled': { label: '免费场', type: 'bool' },
+  'game.paodekuai.goldRoomEnabled': { label: '金币场', type: 'bool' },
+  'game.paodekuai.friendRoomEnabled': { label: '好友房', type: 'bool' },
+  'game.paodekuai.freeBotFillEnabled': { label: '免费场缺人补机器人', type: 'bool' },
+  'game.paodekuai.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
+  'game.paodekuai.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
+  'game.paodekuai.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
+  'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
+  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 2/4 人', type: 'bool' },
+  'game.paodekuai.bareTrioEnabled': { label: '裸三张', type: 'bool' },
+  'game.paodekuai.trioWithPairEnabled': { label: '三带二', type: 'bool' },
+  'game.paodekuai.bareAirplaneEnabled': { label: '裸飞机', type: 'bool' },
+  'game.paodekuai.fourWithTwoEnabled': { label: '四带二', type: 'bool' },
+  'game.paodekuai.fourWithTwoPairKickerAllowed': { label: '四带二允许对子', type: 'bool' },
+  'game.paodekuai.airplaneWings': { label: '飞机翅膀', type: 'text' },
+  'game.paodekuai.bombMultiplierEnabled': { label: '炸弹翻倍', type: 'bool' },
+  'game.paodekuai.guanMultiplierEnabled': { label: '关牌翻倍', type: 'bool' },
+  'game.paodekuai.springMultiplierEnabled': { label: '春天翻倍', type: 'bool' },
+  'game.paodekuai.multiplierCap': { label: '倍数封顶', type: 'number', suffix: '倍' },
+  'game.paodekuai.baobenEnabled': { label: '保本', type: 'bool' },
+  // 平台级
   'room.matchNoBotMaxWaitMs': { label: '无机器人匹配等待上限', type: 'number', suffix: '毫秒' },
   'room.matchScanIntervalMs': { label: '匹配扫描周期', type: 'number', suffix: '毫秒' },
   'room.autostartIntervalMs': { label: '自动开局扫描周期', type: 'number', suffix: '毫秒' },
   'room.reapIntervalMs': { label: '房间回收周期', type: 'number', suffix: '毫秒' },
-  'robot.ruleFallback': { label: '模型故障兜底补人', type: 'bool' },
   'robot.reclaimIntervalMs': { label: '机器人回收周期', type: 'number', suffix: '毫秒' },
   'currency.signupGrant': { label: '注册赠送金币', type: 'number', suffix: '金币' },
-  'currency.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
-  'currency.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
   'currency.reconcileIntervalMs': { label: '货币对账周期', type: 'number', suffix: '毫秒' },
   'currency.reliefEnabled': { label: '每日救助开关', type: 'bool' },
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
+  'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },
@@ -714,8 +872,6 @@ const CONFIG_CONTROLS = {
   'pay.orderExpireMinutes': { label: '充值订单有效期', type: 'number', suffix: '分钟' },
   'pay.scanIntervalMs': { label: '支付扫描周期', type: 'number', suffix: '毫秒' },
   'pay.reconcileIntervalMs': { label: '支付日自检周期', type: 'number', suffix: '毫秒' },
-  'risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
-  'risk.minGames': { label: '扫描最少局数', type: 'number' },
   'risk.deviceLimit': { label: '单账号设备数上限', type: 'number' },
   'risk.deviceWindowDays': { label: '设备计数窗口', type: 'number', suffix: '天' },
   'risk.predicate.sameDevice': { label: '同设备防同桌', type: 'bool' },
@@ -730,40 +886,23 @@ const CONFIG_CONTROLS = {
   'ad.reliefAdpid': { label: '救助广告位 ID', type: 'text' },
   'client.appEnabled': { label: 'App 端', type: 'bool' },
   'client.h5Enabled': { label: 'H5 端', type: 'bool' },
-  'game.cardCounterEnabled': { label: '记牌器', type: 'bool' },
-  'game.cardCounterPricePerGameCoins': { label: '记牌器单局价', type: 'number', suffix: '金币/局' },
-  'game.cardCounterPricePerHourCoins': { label: '记牌器包时价', type: 'number', suffix: '金币/小时' },
-  // 多玩法（S7.1）：跑得快 13 个简单键（档位表是结构化键）。
-  'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
-  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 2/4 人', type: 'bool' },
-  'game.paodekuai.bareTrioEnabled': { label: '裸三张', type: 'bool' },
-  'game.paodekuai.trioWithPairEnabled': { label: '三带二', type: 'bool' },
-  'game.paodekuai.bareAirplaneEnabled': { label: '裸飞机', type: 'bool' },
-  'game.paodekuai.fourWithTwoEnabled': { label: '四带二', type: 'bool' },
-  'game.paodekuai.fourWithTwoPairKickerAllowed': { label: '四带二允许对子', type: 'bool' },
-  'game.paodekuai.airplaneWings': { label: '飞机翅膀', type: 'text' },
-  'game.paodekuai.bombMultiplierEnabled': { label: '炸弹翻倍', type: 'bool' },
-  'game.paodekuai.guanMultiplierEnabled': { label: '关牌翻倍', type: 'bool' },
-  'game.paodekuai.springMultiplierEnabled': { label: '春天翻倍', type: 'bool' },
-  'game.paodekuai.multiplierCap': { label: '倍数封顶', type: 'number', suffix: '倍' },
-  'game.paodekuai.baobenEnabled': { label: '保本', type: 'bool' },
 };
 
-/** 4 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
+/** 5 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
 const STRUCT_KEYS = new Set([
-  'game.baseScoreLevels',
+  'game.levels.doudizhu',
   'game.levels.paodekuai',
   'pay.rechargePackages',
-  'robot.skillDistribution',
-  'robot.modelBySkill',
+  'game.doudizhu.robot.skillDistribution',
+  'game.doudizhu.robot.modelBySkill',
 ]);
 /** 结构化键标题（其余展示信息仍取自 CONFIG_NOTES）。 */
 const STRUCT_META = {
-  'game.baseScoreLevels': { label: '底分档位表' },
+  'game.levels.doudizhu': { label: '斗地主档位表' },
   'game.levels.paodekuai': { label: '跑得快档位表' },
   'pay.rechargePackages': { label: '充值档位表' },
-  'robot.skillDistribution': { label: '机器人技能分布' },
-  'robot.modelBySkill': { label: '各档模型' },
+  'game.doudizhu.robot.skillDistribution': { label: '机器人技能分布' },
+  'game.doudizhu.robot.modelBySkill': { label: '各档模型' },
 };
 
 /** 当前全量快照（登录后 loadAll 填充）：key -> {value, version}。 */
@@ -1069,7 +1208,7 @@ function snapshotKeys() {
 
 /** 快照中存在但 IA 表未收录的键（未来新增键的兜底桶；字母序）。 */
 function ungroupedKeys() {
-  return snapshotKeys().filter((k) => !IA_KEY_SET.has(k));
+  return snapshotKeys().filter((k) => !IA_KEY_SET.has(k) && !LEGACY_KEY_SET.has(k));
 }
 
 /** 某域在当前快照中的键数（= 其各页签已下发键的并集计数）。 */
@@ -1169,7 +1308,9 @@ function renderConfigRows({ preserve = false } = {}) {
   let sections;
   if (q) {
     const keys = snapshotKeys().filter(
-      (k) => k.toLowerCase().includes(q) || notesHaystack(k).includes(q),
+      (k) =>
+        !LEGACY_KEY_SET.has(k) &&
+        (k.toLowerCase().includes(q) || notesHaystack(k).includes(q)),
     );
     sections = [{ name: `搜索结果（${keys.length}）`, keys }];
   } else {
@@ -1420,10 +1561,10 @@ function buildStructCard(key) {
     reset = resetter;
   };
 
-  if (key === 'game.baseScoreLevels') buildLevelsEditor(body, ctx);
+  if (key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai') buildLevelsEditor(body, ctx);
   else if (key === 'pay.rechargePackages') buildPackagesEditor(body, ctx);
-  else if (key === 'robot.skillDistribution') buildDistributionEditor(body, ctx);
-  else if (key === 'robot.modelBySkill') buildModelEditor(body, ctx);
+  else if (key === 'game.doudizhu.robot.skillDistribution') buildDistributionEditor(body, ctx);
+  else if (key === 'game.doudizhu.robot.modelBySkill') buildModelEditor(body, ctx);
 
   revertBtn.addEventListener('click', () => {
     reset();
