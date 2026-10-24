@@ -410,7 +410,7 @@ pnpm exec turbo run test lint --force
 
 - T1–T8 全部按 TDD 红→绿→提交完成；T9 全量验证与代码审查完成。
 - 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
-  protocol 290 / config-service 478 / user-service 356 / client 1485 passed（2 skipped）。
+  protocol 290 / config-service 478 / user-service 357 / client 1485 passed（2 skipped）。
 - `pnpm verify:admin` ⇒ **373 checks passed**。
 - `pnpm -C tools/conformance lint` ⇒ 通过。
 - **未跑**：真 MySQL 迁移冒烟（Docker Desktop 处于手动暂停态，`docker info` 报
