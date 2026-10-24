@@ -1207,9 +1207,15 @@ describe('ConfigCacheService：多玩法配置（Task 2.2）', () => {
     const off = await bootCache({});
     expect(off.paodekuaiEnabled()).toBe(false);
     expect(off.paodekuaiNonThreePlayerEnabled()).toBe(false);
+    expect(off.doudizhuEnabled()).toBe(true); // 缺键 ⇒ true（旧库兼容）
     expect(off.gameEnabled('doudizhu')).toBe(true);
     expect(off.gameEnabled('paodekuai')).toBe(false);
     off.onApplicationShutdown();
+
+    const ddzOff = await bootCache({ 'game.doudizhu.enabled': false });
+    expect(ddzOff.doudizhuEnabled()).toBe(false);
+    expect(ddzOff.gameEnabled('doudizhu')).toBe(false);
+    ddzOff.onApplicationShutdown();
 
     const on = await bootCache({
       'game.paodekuai.enabled': true,

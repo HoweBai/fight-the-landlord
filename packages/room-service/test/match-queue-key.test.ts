@@ -269,6 +269,8 @@ describe('服务层：真实键透传（不得用解析值重建新键）', () =
 
   it('扫描按**实际键**读队列：跑得快 5 段键被 zrange，旧 3 段键不被触碰', async () => {
     const { service, redis, configCache } = make();
+    // 玩法开着（2026-10-24 起关闭玩法会在 processQueue 顶部暂停扫描）
+    configCache.paodekuaiEnabled.mockReturnValue(true);
     // 关补机器人：2 人队列停在等待提示路径，不触发（本任务尚未支持的）pdk 开局。
     configCache.freeBotFillEnabled.mockReturnValue(false);
     service.setClock(() => 1_700_000_000_000);
@@ -292,6 +294,7 @@ describe('服务层：真实键透传（不得用解析值重建新键）', () =
 
   it('failMatch 按**实际键** ZREM（跑得快队列超时 ⇒ 只清 5 段键）', async () => {
     const { service, redis, configCache } = make();
+    configCache.paodekuaiEnabled.mockReturnValue(true);
     configCache.freeBotFillEnabled.mockReturnValue(false);
     service.setClock(() => 1_700_000_000_000);
     await service.addToQueue('u1', 'random', 15, undefined, undefined, {
@@ -312,5 +315,26 @@ describe('服务层：真实键透传（不得用解析值重建新键）', () =
     expect(events).toEqual([
       { event: 'match.timeout', playerIds: ['u1'], code: 12007, message: expect.any(String) },
     ]);
+  });
+
+  it('玩法关闭 ⇒ 扫描暂停：不建组、不抛错、票保留；重开后恢复（D11）', async () => {
+    const { service, redis, configCache, rooms } = make();
+    configCache.paodekuaiEnabled.mockReturnValue(false);
+    service.setClock(() => 1_700_000_000_000);
+    for (const u of ['u1', 'u2', 'u3']) {
+      await service.addToQueue(u, 'random', 15, undefined, undefined, {
+        gameType: 'paodekuai',
+        playerCount: 3,
+      });
+    }
+    service.setClock(() => 1_700_000_100_000);
+
+    await expect(service.scanOnce()).resolves.toBeUndefined();
+    expect(rooms.createGameRoom).not.toHaveBeenCalled();
+    expect(redis._zsets.get('match:queue:random:paodekuai:3:15:global')?.size).toBe(3);
+
+    configCache.paodekuaiEnabled.mockReturnValue(true);
+    await service.scanOnce();
+    expect(rooms.createGameRoom).toHaveBeenCalledTimes(1);
   });
 });

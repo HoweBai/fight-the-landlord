@@ -59,8 +59,10 @@ export interface ConfigCacheStub {
   paodekuaiNonThreePlayerEnabled: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：本局跑得快规则快照。 */
   pdkRules: ReturnType<typeof vi.fn>;
-  /** 多玩法（Task 2.2）：玩法是否开放（ddz 恒 true；pdk 读开关）。 */
+  /** 多玩法（Task 2.2）：玩法是否开放（2026-10-24 起两个玩法都读开关）。 */
   gameEnabled: ReturnType<typeof vi.fn>;
+  /** 玩法开放开关（2026-10-24）：斗地主总开关（缺省 true）。 */
+  doudizhuEnabled: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：房间人数是否可开（含 nonThree 收窄）。 */
   supportsRoomPlayerCount: ReturnType<typeof vi.fn>;
   baseScoreLevels: ReturnType<typeof vi.fn>;
@@ -83,6 +85,7 @@ export function makeConfigCache(
   // `supportsRoomPlayerCount` 才能跟随用例对两个开关的 mockReturnValue。
   const paodekuaiEnabled = vi.fn(() => false);
   const paodekuaiNonThreePlayerEnabled = vi.fn(() => false);
+  const doudizhuEnabled = vi.fn(() => true);
   return {
     friendRoomEnabled: vi.fn(() => false),
     freeRoomEnabled: vi.fn(() => true),
@@ -107,9 +110,17 @@ export function makeConfigCache(
     paodekuaiEnabled,
     paodekuaiNonThreePlayerEnabled,
     pdkRules: vi.fn(() => ({ ...DEFAULT_PDK_RULES })),
-    gameEnabled: vi.fn((gameType: GameType) =>
-      gameType === 'paodekuai' ? paodekuaiEnabled() : true,
-    ),
+    doudizhuEnabled,
+    gameEnabled: vi.fn((gameType: GameType) => {
+      switch (gameType) {
+        case 'doudizhu':
+          return doudizhuEnabled();
+        case 'paodekuai':
+          return paodekuaiEnabled();
+        default:
+          return true;
+      }
+    }),
     supportsRoomPlayerCount: vi.fn((gameType: GameType, playerCount: number) => {
       if (!supportsPlayerCount(gameType, playerCount)) return false;
       return gameType !== 'paodekuai' || playerCount === 3 || paodekuaiNonThreePlayerEnabled();
