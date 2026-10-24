@@ -197,7 +197,7 @@ function duplicateKeyError(key: string): Error {
  * 夹具与种子
  * ------------------------------------------------------------------ */
 
-/** §2.2 + 记录片 + 货币核心 + ② 金币场 + 风控片 + 支付片 + 节奏/清理片 + 广告片 + 客户端接入片 + 机器人补位开关片 + 设备绑定片 + 记牌器片六十五键种子（值逐字 = 迁移种子；第 10 键 `record.retentionDays`
+/** §2.2 + 记录片 + 货币核心 + ② 金币场 + 风控片 + 支付片 + 节奏/清理片 + 广告片 + 客户端接入片 + 机器人补位开关片 + 设备绑定片 + 记牌器片六十六键种子（值逐字 = 迁移种子；第 10 键 `record.retentionDays`
  *  来自记录片种子迁移、第 11 键 `currency.signupGrant` 来自货币核心种子迁移、第 12–17 键来自
  *  `1789800000000-GoldRoom.ts`、风控第 18–25 键来自 `1790000001000-RiskConfigSeed.ts`、
  *  支付第 26–34 键来自 `1791000001000-PayConfigSeed.ts`、节奏/清理第 35–40 键来自 `1794000000000-IntervalConfigSeed.ts`、
@@ -341,7 +341,7 @@ afterEach(() => {
  * ------------------------------------------------------------------ */
 
 describe('PlatformConfigService（规格 §2.1 / A6）', () => {
-  it('① list() 首查命中六十五键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
+  it('① list() 首查命中六十六键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
     const { svc, db, repo } = makeService(new FakeDb());
     seed(db);
 

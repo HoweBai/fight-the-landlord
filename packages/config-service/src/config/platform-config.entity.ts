@@ -7,7 +7,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
  */
 @Entity('platform_config')
 export class PlatformConfig {
-  /** 配置键（protocol `CONFIG_KEYS` 六十五键之一；写入口的合法性由 `parseConfigValue` 拦）。 */
+  /** 配置键（protocol `CONFIG_KEYS` 六十六键之一；写入口的合法性由 `parseConfigValue` 拦）。 */
   @PrimaryColumn({ type: 'varchar', length: 64 })
   key!: string;
 
