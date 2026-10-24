@@ -1595,6 +1595,15 @@ describe('SplitGameConfig1796500000000：配置平行化迁移', () => {
     expect(new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]))).toEqual(snapshot);
   });
 
+  it('预置新键（值与旧值不同）⇒ up() 保留，不覆盖运营已改的值', async () => {
+    const db = seeded();
+    db.rows.set('game.doudizhu.friendRoomEnabled', { value: true, version: 9 });
+    await new SplitGameConfig1796500000000().up(asRunner(db));
+    expect(db.rows.get('game.doudizhu.friendRoomEnabled')).toEqual({ value: true, version: 9 });
+    // 未预置的新键仍按旧值复制
+    expect(db.rows.get('game.doudizhu.freeRoomEnabled')).toEqual({ value: false, version: 7 });
+  });
+
   it('旧行缺失：新键用 spec §4.3 兜底默认；不因缺失而漏种', async () => {
     const db = new SplitFakeRunner();
     await new SplitGameConfig1796500000000().up(asRunner(db));
