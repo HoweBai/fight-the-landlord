@@ -1032,7 +1032,7 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 | `game.doudizhu.freeBotFillEnabled` | **免费场缺人补机器人开关**：**开** ⇒ 匹配缺人时等 30s 后补机器人开局（现状）；**关** ⇒ 绝不补机器人，缺人时弹「重新匹配 / 继续等待」提示，凑齐 3 真人才开局。好友房不受本键影响（缺人仍补机器人） | **开**（保持现状） |
 | `game.doudizhu.goldBotFillEnabled` | **金币场缺人补机器人开关**：同上，管金币场。关 ⇒ 真人不足时金币局开不起来（玩家持续等待或到上限超时），请结合在线高峰评估 | **开**（保持现状） |
 | `room.matchNoBotMaxWaitMs` | **无机器人匹配等待上限**（毫秒，30000–1800000）：仅在上面两个补位开关**关闭**时有效 —— 真人间匹配到点仍未凑齐 3 人 ⇒ 判超时（`12007`），玩家出队并提示「匹配超时」。玩家点「继续等待」只平移提示窗口、**不重置**本上限 | 300000（5 分钟） |
-| `game.doudizhu.entryMultiplier` | **金币场门槛倍率**：入队要求余额 ≥ 所选底分 × 本值（大厅的门槛提示与救助按钮条件都随它变）；也影响机器人携带额度的水位 | 10 |
+| `game.doudizhu.entryMultiplier` | **斗地主金币场门槛倍率**：入队要求余额 ≥ 所选底分 × 本值（大厅的门槛提示随它变）；也影响机器人携带额度的水位。救助门槛已改为 `currency.reliefThresholdCoins` | 10 |
 | `game.doudizhu.rakePercent` | **抽水百分比**：每局从赢家所得里按此比例扣一笔销毁（>0 ⇒ 玩家赢面变小） | 0 |
 | `currency.reliefEnabled` | **每日救助开关**：关 ⇒ 玩家端不显示「领取救助」入口、领取被拒（提示「救助暂未开放」） | **关** |
 | `currency.reliefAmount` | **每日救助金额**：可领玩家每次领到的金币数（建议 ≥ `currency.reliefThresholdCoins`，否则领完回不了桌） | 200 |
