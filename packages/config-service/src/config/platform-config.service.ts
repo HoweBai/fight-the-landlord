@@ -42,7 +42,7 @@ export interface PlatformConfigRow {
 /**
  * 派生**全局版本**（规格 §2.1/§2.3："全局 = MAX(每键)"）—— 快照与管理读共用。
  *
- * 空行集 ⇒ 0（中性值；九十二键齐全由迁移种子保证，空表只可能出现在建库事故里，
+ * 空行集 ⇒ 0（中性值；九十三键齐全由迁移种子保证，空表只可能出现在建库事故里，
  * 此时给 0 比给 `-Infinity` 诚实，也不让响应形状随行数变化）。
  */
 export function maxVersion(rows: PlatformConfigRow[]): number {
@@ -54,7 +54,7 @@ export function maxVersion(rows: PlatformConfigRow[]): number {
  * 管理读（`GET /api/admin/config`）与 RPC（`config.snapshot`）都经它组装 —— 两处若各写一份，
  * 就是「同一事实两处实现」。
  *
- * ⚠️ `ConfigSnapshot` 类型上是 `Record<ConfigKey, …>`（九十二键齐全）——这是**数据不变量**
+ * ⚠️ `ConfigSnapshot` 类型上是 `Record<ConfigKey, …>`（九十三键齐全）——这是**数据不变量**
  * （迁移种子），不是本函数的运行时承诺：行缺了就少那个键，消费侧（T6 的 getter）按 D2
  * 逐键兜底默认值。这里**不伪造**缺行（伪造会把「配置中心数据不完整」这条事故伪装成正常）。
  */

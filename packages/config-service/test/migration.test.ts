@@ -65,6 +65,7 @@ import {
 import { computeReliefThreshold } from '../src/migration-support/relief-threshold';
 import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
+import { PdkTwoPlayerSeed1796800000000 } from '../src/migrations/1796800000000-PdkTwoPlayerSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -1921,5 +1922,89 @@ describe('PdkRiskConfigSeed1796700000000：跑得快风控种子', () => {
       }
     }
     expect(hits).toEqual(['config-service/PdkRiskConfigSeed1796700000000']);
+  });
+});
+
+describe('PdkTwoPlayerSeed1796800000000：跑得快 2 人闸种子', () => {
+  class TwoPlayerSeedRunner {
+    readonly rows = new Map<string, { value: unknown; version: number }>();
+    readonly statements: string[] = [];
+    readonly params: unknown[][] = [];
+
+    async query(sql: string, params: unknown[] = []): Promise<unknown> {
+      this.statements.push(sql);
+      this.params.push(params);
+      if (sql.startsWith('SELECT MAX')) {
+        const max = Math.max(0, ...[...this.rows.values()].map((r) => r.version));
+        return [{ maxVersion: max === 0 ? null : max }];
+      }
+      if (sql.startsWith('INSERT IGNORE')) {
+        const [key, valueJson, version] = params as [string, string, number];
+        if (!this.rows.has(key)) this.rows.set(key, { value: JSON.parse(valueJson), version });
+        return undefined;
+      }
+      if (sql.startsWith('DELETE')) {
+        for (const key of params as string[]) this.rows.delete(key);
+        return undefined;
+      }
+      throw new Error(`unexpected SQL: ${sql}`);
+    }
+  }
+
+  const asRunner = (db: TwoPlayerSeedRunner): QueryRunner => db as unknown as QueryRunner;
+  const KEY = 'game.paodekuai.twoPlayerEnabled';
+
+  it('up()：单键 false、version = 全表 MAX、updated_by=seed；单值 INSERT IGNORE', async () => {
+    const db = new TwoPlayerSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 7 });
+
+    await new PdkTwoPlayerSeed1796800000000().up(asRunner(db));
+
+    expect(db.rows.get(KEY)).toEqual({ value: false, version: 7 });
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 7 });
+    const insertAt = db.statements.findIndex((s) => s.startsWith('INSERT IGNORE'));
+    expect(insertAt).toBeGreaterThanOrEqual(0);
+    expect(db.statements[insertAt]).toContain(
+      'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
+    );
+    expect(db.statements[insertAt]).toContain('VALUES (?, ?, ?, NOW(3), ?)');
+    expect(db.params[insertAt]).toEqual([KEY, JSON.stringify(false), 7, 'seed']);
+  });
+
+  it('空表 ⇒ version 1；重放不改值；down 只删本键', async () => {
+    const db = new TwoPlayerSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 3 });
+    const migration = new PdkTwoPlayerSeed1796800000000();
+    await migration.up(asRunner(db));
+    expect(db.rows.get(KEY)).toEqual({ value: false, version: 3 });
+    await migration.up(asRunner(db));
+    expect(db.rows.get(KEY)).toEqual({ value: false, version: 3 });
+
+    await migration.down(asRunner(db));
+    expect(db.rows.has(KEY)).toBe(false);
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 3 });
+  });
+
+  it('形状（name/up/down）；迁移号晚于 1796700000000 且全仓唯一', () => {
+    const migration = new PdkTwoPlayerSeed1796800000000();
+    expect(migration.name).toBe('PdkTwoPlayerSeed1796800000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new PdkRiskConfigSeed1796700000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796800000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/PdkTwoPlayerSeed1796800000000']);
   });
 });

@@ -98,7 +98,7 @@ const LOGIN_DISABLED_MESSAGE = '账号已停用';
  *  - `POST /api/admin/login`：**七步处理序逐字**（启用 404 → 形状 400 → 归一 → 查行 401 →
  *    scrypt 401 → 停用 403 → 成功 200 带 `{token, expiresIn, username, role}`）；事件只在
  *    形状合法后的 ④–⑦ 分支落行（⚙️3）；
- *  - `GET  /api/admin/config`：全量九十二键 + 每键 version + 全局 MAX；
+ *  - `GET  /api/admin/config`：全量九十三键 + 每键 version + 全局 MAX；
  *  - `PUT  /api/admin/config/:key`：`X-Admin-Actor` 缺失/非法 ⇒ **401 fail-closed**（§2.6）；
  *    非法值 ⇒ **400 + 原因**且**不落库**（连锁定读都不发生）；成功 ⇒
  *    `{saved:true, announced, version}`（`announced` 如实透传 —— publish 失败不拦写，C12），

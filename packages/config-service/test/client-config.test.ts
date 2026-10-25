@@ -86,6 +86,15 @@ describe('GET /api/config（C7 半边）', () => {
 
       // 打开玩法与 2/4 人闸 ⇒ supportedPlayerCounts 收窄/放开的唯一真源是配置
       db.rows.set('game.paodekuai.enabled', { value: true, version: 2, updatedAt: 'admin', updatedBy: 'admin' });
+      db.rows.set('game.paodekuai.twoPlayerEnabled', {
+        value: true,
+        version: 2,
+        updatedAt: 'admin',
+        updatedBy: 'admin',
+      });
+      const { body: afterTwo } = await probe.get('/api/config');
+      expect(afterTwo.data.games.paodekuai.supportedPlayerCounts).toEqual([2, 3]);
+
       db.rows.set('game.paodekuai.nonThreePlayerEnabled', {
         value: true,
         version: 2,
@@ -95,6 +104,16 @@ describe('GET /api/config（C7 半边）', () => {
       const { body: after } = await probe.get('/api/config');
       expect(after.data.games.paodekuai.enabled).toBe(true);
       expect(after.data.games.paodekuai.supportedPlayerCounts).toEqual([2, 3, 4]);
+
+      // 只开 4 人：2 人仍收窄（两键互不影响）
+      db.rows.set('game.paodekuai.twoPlayerEnabled', {
+        value: false,
+        version: 3,
+        updatedAt: 'admin',
+        updatedBy: 'admin',
+      });
+      const { body: afterFour } = await probe.get('/api/config');
+      expect(afterFour.data.games.paodekuai.supportedPlayerCounts).toEqual([3, 4]);
       // 旧字段仍是斗地主档位（不迁移、不双写）
       expect(after.data.baseScoreLevels).toEqual(body.data.baseScoreLevels);
 
@@ -248,7 +267,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何 92 键键名（外层恰好二十一键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何 93 键键名（外层恰好二十一键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);
