@@ -486,7 +486,7 @@ export const riskScanSqlFailuresTotal = createCounter(
 - ⓪ 配置快照/开启：pdk enabled/two/nonThree/gold；`game.levels.paodekuai` 15 档台费 10%；
   `game.paodekuai.rakePercent=10`；`player2/3/4.*` 阈值 0.5/1；
   **DDZ 风控 `game.doudizhu.risk.minGames=1` / `winRateThreshold=0.5`（mixed 组需要）**；
-  `autoThrottleScore=25`；`risk.scanIntervalMs=5000`。
+  `risk.autoThrottle=true`；`autoThrottleScore=25`；`risk.scanIntervalMs=5000`。
 - ① 14003（2/4 各一）：0 余额 ⇒ 14003 + 消息含 needed（15×10=150）；补足 150 ⇒ 入队。
 - ② PDK gold 2 人：两真人匹配、开局、打到终局；断言 2 座结算零和、rake>0、
   `game.balances` 2 座、余额不为负；记录 `player_count=2`、`mode='gold'`。
