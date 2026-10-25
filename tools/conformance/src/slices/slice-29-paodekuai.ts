@@ -397,20 +397,36 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
         await putConfigOrThrow(admin, RISK_SCAN_INTERVAL, 5_000, '⑥ 缩扫描间隔 ');
         await restartUserService();
 
+        // ⚠️ 规格 §7 步骤 6 写的是 `entries[0].reasons`，但**详情响应面并不回 reasons**
+        //    （`RISK_ENTRIES_SQL` 只选 id/score/status/handled_*/created_at），而同一份规格
+        //    §7 又明确「**不改生产代码**」—— 两者冲突。取证改走**审核队列**：
+        //    `GET /api/admin/risk/reviews` 的行形状逐字含 `reasons`（§2.8 第一行，队列 SQL 选了它），
+        //    且按 id DESC ⇒ 本轮新条目在最前。判据本身（PDK reason + 分玩法战绩）一字不变。
         const riskDeadline = Date.now() + 90_000;
         let detail: any = null;
         let reason: any = null;
+        let lastWinnerItems: unknown = null;
         while (Date.now() < riskDeadline) {
-          const res = await getJson<any>(
-            `/api/admin/risk/users/${encodeURIComponent(winnerUser.id)}`,
-            admin,
+          const queue = await getJson<any>('/api/admin/risk/reviews?status=open&limit=100', admin);
+          const items = Array.isArray(queue.body?.data?.items) ? queue.body.data.items : [];
+          const winnerItems = items.filter((it: any) => it?.userId === winnerUser.id);
+          lastWinnerItems = winnerItems;
+          const item = winnerItems.find(
+            (it: any) =>
+              Array.isArray(it?.reasons) &&
+              it.reasons.some(
+                (r: any) => r?.check === 'winRate' && r?.detail?.gameType === 'paodekuai',
+              ),
           );
-          const entries = Array.isArray(res.body?.data?.entries) ? res.body.data.entries : [];
-          reason =
-            (entries[0]?.reasons ?? []).find(
-              (r: any) => r?.check === 'winRate' && r?.detail?.gameType === 'paodekuai',
-            ) ?? null;
-          if (reason !== null) {
+          if (item !== undefined) {
+            reason =
+              (item.reasons as any[]).find(
+                (r: any) => r?.check === 'winRate' && r?.detail?.gameType === 'paodekuai',
+              ) ?? null;
+            const res = await getJson<any>(
+              `/api/admin/risk/users/${encodeURIComponent(winnerUser.id)}`,
+              admin,
+            );
             detail = res.body?.data ?? null;
             break;
           }
@@ -418,7 +434,7 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
         }
         checks.that(
           reason !== null,
-          `⑥ ≤90s 内 winner 详情出现 paodekuai winRate reason —— 实际 entries[0]=${JSON.stringify(detail?.entries?.[0] ?? null)}`,
+          `⑥ ≤90s 内审核队列出现 winner 的 paodekuai winRate reason —— 实际 winner 条目=${JSON.stringify(lastWinnerItems)}`,
         );
         checks.eq(reason?.detail?.gameType, 'paodekuai', '⑥ reason.detail.gameType=paodekuai');
         checks.eq(reason?.detail?.games, 2, '⑥ reason.detail.games=2（真实 1 + 直投 1）');
