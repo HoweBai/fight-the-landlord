@@ -43,6 +43,8 @@ interface PdkPlayerRow {
   nickname: string | null;
   hand: string;
   played_count: number;
+  score_change: number;
+  won: number | string;
   money_delta: number | null;
   ended_at: number;
 }
@@ -109,6 +111,8 @@ class FakePdkDb {
         nickname: seat === opts.ownerSeat ? null : `玩家${seat}`,
         hand: '0f'.repeat(playerCount === 4 ? 12 : 16),
         played_count: seat === winnerSeat ? 16 : 12,
+        score_change: delta(seat),
+        won: seat === winnerSeat ? 1 : 0,
         money_delta: seat === opts.ownerSeat ? (opts.moneyDelta ?? null) : null,
         ended_at: opts.endedAtMs ?? T0,
       });
@@ -185,6 +189,8 @@ class FakePdkDb {
         nickname: p.nickname,
         hand: p.hand,
         played_count: p.played_count,
+        score_change: p.score_change,
+        won: p.won,
       }));
   }
 }
@@ -230,6 +236,24 @@ describe('S7.2：pdk 战绩查询（单独两表）', () => {
     const pageQuery = db.queries.find((q) => q.sql.includes('FROM `game_record_players_pdk` mine'))!;
     expect(pageQuery.params[0]).toBe('u1');
     expect(pageQuery.params).toContain('u1');
+  });
+
+  it('A2：players[].scoreChange/won 读玩家列（不读父 JSON）；won 字符串 0/1 也认', async () => {
+    const db = new FakePdkDb();
+    db.addGame({ roomCode: 'PDKCOLS', ownerId: 'u1', ownerSeat: 1, winnerSeat: 0 });
+    // 把父 JSON 改成与列不同的值：DTO 若仍从 JSON 派生就会红。
+    db.records[0]!.score_changes = [
+      { seat: 0, delta: 999 },
+      { seat: 1, delta: 999 },
+      { seat: 2, delta: 999 },
+    ];
+    db.players[0]!.won = '1';
+    db.players[1]!.won = '0';
+
+    const page = await makeService(db).getMyPdkRecords('u1');
+    const record = page.items[0]!;
+    expect(record.players.map((p) => p.scoreChange)).toEqual([30, -15, -15]);
+    expect(record.players.map((p) => p.won)).toEqual([true, false, false]);
   });
 
   it('4 人局：初始手牌按 12 张解码', async () => {
