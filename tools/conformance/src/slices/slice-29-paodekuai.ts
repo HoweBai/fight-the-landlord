@@ -3,7 +3,7 @@
  *
  * 覆盖：开关（管理面）→ 匹配（gameType/playerCount）→ 开局视图（16 张/规则快照/无泄漏）→
  * 出牌/过牌（独立 oracle，单张策略）→ 终局（winnerSeats）→ 结算（零和向量）→
- * 记录（单独两表；旧查询不含 pdk）→ 房间列表按 gameType 过滤 → 2 人场（闸负对照/成局/零和/记录）。
+ * 记录（单独两表；旧查询不含 pdk）→ 房间列表按 gameType 过滤 → 2 人场与 4 人场（闸负对照/成局/零和/记录）。
  *
  * ⚠️ **独立 oracle**：`pdk-driver` 只打单张，且不 import 服务端跑得快规则（见其文件头）。
  * ⚠️ 前置：`game.paodekuai.enabled=true`（本切片经管理面开启并轮询至建房生效，收尾还原）。
@@ -206,10 +206,14 @@ async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
   }
   return {
     disable: async () => {
-      // 2 人闸先还原（幂等；放在这里 ⇒ registerUser/startPdkRoom 抛错时也一定复位）。
+      // 2/4 人闸先还原（幂等；放在这里 ⇒ registerUser/startPdkRoom 抛错时也一定复位）。
       const twoOff = await adminPutConfig(PDK_TWO_PLAYER_KEY, false, admin);
       if (twoOff.body?.code !== ErrCode.OK) {
         throw new ConformanceError(`还原 2 人闸失败：${JSON.stringify(twoOff.body)}`);
+      }
+      const fourOff = await adminPutConfig('game.paodekuai.nonThreePlayerEnabled', false, admin);
+      if (fourOff.body?.code !== ErrCode.OK) {
+        throw new ConformanceError(`还原 4 人闸失败：${JSON.stringify(fourOff.body)}`);
       }
       const off = await adminPutConfig(PDK_ENABLED_KEY, false, admin);
       if (off.body?.code !== ErrCode.OK) {
@@ -589,6 +593,133 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
       );
     } finally {
       for (const c of room2.clients) c.close();
+    }
+
+    step('⑧ 4 人场：闸负对照 → 开闸 → 4 人成局/12 张/零和/记录');
+    const admin4p = await adminLogin();
+    await putConfigOrThrow(
+      admin4p,
+      'game.paodekuai.nonThreePlayerEnabled',
+      false,
+      '4 人闸置 false ',
+    );
+    const neg4User = await registerUser(96);
+    const neg4Client = await HarnessClient.connect('S29NEG4', neg4User);
+    let neg4Code: number | null = null;
+    let neg4Message = '';
+    try {
+      const neg4Deadline = Date.now() + 60_000;
+      for (;;) {
+        const ack = await neg4Client.send('room.match', {
+          mode: 'random',
+          baseScore: 15,
+          gameType: 'paodekuai',
+          playerCount: 4,
+        });
+        neg4Code = ack.code;
+        neg4Message = String(ack.message ?? '');
+        if (neg4Code === ErrCode.GAME_UNAVAILABLE) break;
+        await neg4Client.send('room.unmatch', {});
+        if (Date.now() >= neg4Deadline) {
+          throw new ConformanceError(
+            `nonThreePlayerEnabled=false 60s 内未生效（最后一次 code=${neg4Code}）`,
+          );
+        }
+        await sleep(1000);
+      }
+    } finally {
+      neg4Client.close();
+    }
+    checks.eq(neg4Code, ErrCode.GAME_UNAVAILABLE, '⑧ 4 人闸关 ⇒ 匹配 12012');
+    checks.that(
+      neg4Message.includes('人数'),
+      '⑧ 12012 message 含「人数」（与「玩法未开放」区分）',
+    );
+
+    await putConfigOrThrow(
+      admin4p,
+      'game.paodekuai.nonThreePlayerEnabled',
+      true,
+      '4 人闸置 true ',
+    );
+    const probe4p = await registerUser(97);
+    const enable4pDeadline = Date.now() + 60_000;
+    for (;;) {
+      const probe = await postJson(
+        '/api/rooms',
+        { mode: 'random', gameType: 'paodekuai', playerCount: 4 },
+        probe4p.accessToken,
+      );
+      if (probe.body?.code === ErrCode.OK) break;
+      if (Date.now() >= enable4pDeadline) {
+        throw new ConformanceError(
+          `nonThreePlayerEnabled=true 60s 内未生效（最后一次 ${JSON.stringify(probe.body)}）`,
+        );
+      }
+      await sleep(1000);
+    }
+
+    const users4p = [
+      await registerUser(98),
+      await registerUser(99),
+      await registerUser(100),
+      await registerUser(101),
+    ];
+    const room4 = await startPdkRoom('S29C', { playerCount: 4, users: users4p });
+    try {
+      checks.eq(room4.matched[0]?.playerCount, 4, '⑧ room.matched 带 playerCount=4');
+      for (const [i, view] of room4.deals.entries()) {
+        checks.eq(view.playerCount, 4, `⑧ deal[${i}] playerCount=4`);
+        checks.eq(view.hand.length, 12, `⑧ deal[${i}] 手牌 12 张`);
+        checks.eq(view.cardCounts.length, 4, `⑧ deal[${i}] cardCounts 长度=4`);
+        checks.that(
+          !('unusedCards' in (view as unknown as Record<string, unknown>)),
+          `⑧ deal[${i}] 无扣牌字段`,
+        );
+        assertNoLeak(view, `⑧ deal[${i}]`);
+      }
+      const outcome4 = await playPdkToEnd(room4, 'slice-29-4p');
+      checks.eq(outcome4.winnerSeats.length, 1, '⑧ 终局恰一名赢家');
+      const s4 = outcome4.settlement;
+      checks.eq(s4?.playerCount, 4, '⑧ settlement.playerCount=4');
+      checks.that(
+        Array.isArray(s4?.scoreChanges) && s4.scoreChanges.length === 4,
+        '⑧ settlement.scoreChanges 恰 4 条',
+      );
+      checks.eq(
+        (s4?.scoreChanges ?? []).reduce(
+          (sum: number, c: { delta: number }) => sum + c.delta,
+          0,
+        ),
+        0,
+        '⑧ settlement 零和',
+      );
+      checks.that(
+        Array.isArray(s4?.remaining) && s4.remaining.length === 4,
+        '⑧ settlement.remaining 恰 4 条',
+      );
+
+      const user4 = room4.clients[0]!.user as HarnessUser;
+      let rec4: any = null;
+      const rec4Deadline = Date.now() + 30_000;
+      while (Date.now() < rec4Deadline && rec4 === null) {
+        const page = await getJson<any>('/api/records/mine?gameType=paodekuai', user4.accessToken);
+        rec4 =
+          (page.body?.data?.items ?? []).find((r: any) => r.roomCode === room4.roomCode) ?? null;
+        if (rec4 === null) await sleep(500);
+      }
+      checks.that(rec4 !== null, '⑧ 4 人记录可查（GET /api/records/mine?gameType=paodekuai）');
+      if (rec4 !== null) {
+        checks.eq(rec4.playerCount, 4, '⑧ 记录 playerCount=4');
+        checks.eq(rec4.players?.length, 4, '⑧ 记录 players 恰 4 条');
+      }
+      const legacy4 = await getJson<any>('/api/records/mine', user4.accessToken);
+      checks.that(
+        !(legacy4.body?.data?.items ?? []).some((r: any) => r.roomCode === room4.roomCode),
+        '⑧ 旧查询（无 gameType）只查斗地主表 ⇒ 不含 4 人 pdk 记录',
+      );
+    } finally {
+      for (const c of room4.clients) c.close();
     }
     } finally {
       for (const c of room.clients) c.close();
