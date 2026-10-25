@@ -182,7 +182,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
   - C11：在 `room.match` **之前**取 `gamesStartedBefore`（精确标签 `{game_type:"doudizhu"}`），局内用**标签感知的有界轮询**（新增 `pollSeriesValue`，不能用现有 `pollRead` 的 `sumMetric`）断言增量 ≥1；**不**断言 `games_ended_total`（C11 不打完）。
 - `slice-18-gold-room.ts`：
   - `:1575` 条件+消息 27→31；
-  - 在 E 组 `runGoldGame` **之前**取 `gamesEndedBefore = seriesValue(roomMetrics, 'games_ended_total', {game_type:'doudizhu'}) ?? 0`；F 组金币局结束（`game.settlement`）后有界轮询断言 `>= gamesEndedBefore + 1`；
+  - 在 **F 组 `runGoldGame` 之前（E 组结束后）**取 `gamesEndedBefore = seriesValue(roomMetrics, 'games_ended_total', {game_type:'doudizhu'}) ?? 0`；F 组金币局结束（`game.settlement`）后有界轮询断言 `>= gamesEndedBefore + 1`（E 自己也会结束一局，基线必须在 E 之后）；
   - outbox 读数从 `seriesValue(...,{})` 改为 `sumMetric(roomMetrics, ...)`（跨玩法合计）；`oldest` 当前只断言 0，sum 可用（未来断言非零时改 max）；
   - `terminalSettles`（ok|replayed）改为按 `result` 对多序列求和（`sumMetricWhere`），不得用 `seriesValue` 首条；
   - `baselines.json` slice-18 `150 → 151`。
