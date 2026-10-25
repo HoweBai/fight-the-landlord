@@ -10,6 +10,10 @@ import type { PdkSettlementResult } from '@fight-the-landlord/protocol';
 import type { Room } from '../../src/rooms/rooms.service';
 import { computeSettlement } from '../../src/currency/settle.service';
 import { applyOk, makeHarness, resultFixture, validInput } from './helpers';
+import { exactSeriesValue } from '../helpers/metric-readout';
+import {
+  currencySettleResultTotal, currencySettleResidueTotal, recordWriteFailuresTotal,
+} from '../../src/metrics/room.metrics';
 
 const pdkResult = (
   playerCount: 2 | 3 | 4,
@@ -175,5 +179,53 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
         { seat: 2, delta: -15 },
       ],
     });
+  });
+
+  it('A1：PDK 结算 ok 与残差按 game_type 计数', async () => {
+    const h = makeHarness();
+    const input = validInput({ room: pdkRoom(3), result: pdkResult(3, [30, -15, -15]) });
+    h.currency.get.mockResolvedValue({
+      balances: ['u0', 'u1', 'u2'].map((ownerId) => ({ ownerId, balance: 1000, exists: true })),
+    });
+    h.currency.apply.mockImplementation(async (req: { actionId: string; entries: Array<{ ownerId: string; delta: number }> }) =>
+      applyOk(req.actionId, req.entries, { u0: 1000, u1: 1000, u2: 1000 }),
+    );
+    const okBefore = (await exactSeriesValue(currencySettleResultTotal, {
+      result: 'ok', game_type: 'paodekuai',
+    })) ?? 0;
+    const residueBefore = (await exactSeriesValue(currencySettleResidueTotal, {
+      game_type: 'paodekuai',
+    })) ?? 0;
+
+    await h.svc.settle(input);
+
+    expect(await exactSeriesValue(currencySettleResultTotal, {
+      result: 'ok', game_type: 'paodekuai',
+    })).toBe(okBefore + 1);
+    const residueAfter = (await exactSeriesValue(currencySettleResidueTotal, {
+      game_type: 'paodekuai',
+    })) ?? 0;
+    expect(residueAfter - residueBefore).toBe(0);
+  });
+
+  it('A1：moneyDelta 失败/部分计 kind=money_delta', async () => {
+    const h = makeHarness();
+    const input = validInput({ room: pdkRoom(3), result: pdkResult(3, [30, -15, -15]) });
+    h.currency.get.mockResolvedValue({
+      balances: ['u0', 'u1', 'u2'].map((ownerId) => ({ ownerId, balance: 1000, exists: true })),
+    });
+    h.currency.apply.mockImplementation(async (req: { actionId: string; entries: Array<{ ownerId: string; delta: number }> }) =>
+      applyOk(req.actionId, req.entries, { u0: 1000, u1: 1000, u2: 1000 }),
+    );
+    h.record.moneyDelta.mockRejectedValueOnce(new Error('down'));
+    const before = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })) ?? 0;
+
+    await h.svc.settle(input);
+
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })).toBe(before + 1);
   });
 });

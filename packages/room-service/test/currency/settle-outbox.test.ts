@@ -20,8 +20,10 @@ import {
   currencySettleOutboxOldestSeconds,
   currencySettleOutboxSize,
   currencySettleResidueTotal,
+  currencySettleResultTotal,
+  recordWriteFailuresTotal,
 } from '../../src/metrics/room.metrics';
-import { metricValue } from '../helpers/metric-readout';
+import { exactSeriesValue, metricValue } from '../helpers/metric-readout';
 import { asRedis } from '../helpers/fake-redis';
 import {
   applyOk,
@@ -353,5 +355,25 @@ describe('自重排链：10s 常量周期 + 关停闸（照 rooms.reaper 成例�
       sweeper.onApplicationShutdown();
       vi.useRealTimers();
     }
+  });
+
+  it('A1：recordmoney 超龄放弃计 money_delta + dropped{game_type}', async () => {
+    const h = makeHarness();
+    const entry = moneyEntry({ gameType: 'paodekuai', createdAt: 0 });
+    const beforeDropped = (await exactSeriesValue(currencySettleResultTotal, {
+      result: 'dropped', game_type: 'paodekuai',
+    })) ?? 0;
+    const beforeMoney = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })) ?? 0;
+
+    await h.svc.resendRecordMoneyOutboxEntry('f1', entry as never, Date.now());
+
+    expect(await exactSeriesValue(currencySettleResultTotal, {
+      result: 'dropped', game_type: 'paodekuai',
+    })).toBe(beforeDropped + 1);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })).toBe(beforeMoney + 1);
   });
 });
