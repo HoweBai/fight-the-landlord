@@ -1125,7 +1125,7 @@ const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet'
 /** 财务视图状态（③ T10）。 */
 const fin = {
   /** 已生效的过滤（epoch ms 边界缺省 = 不传该参数）。 */
-  filter: { source: '', actor: '', ownerId: '', from: undefined, to: undefined },
+  filter: { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined },
   /** 已累计的流水行（新 → 旧；keyset 追加）。 */
   rows: [],
   nextCursor: null,
@@ -2388,6 +2388,7 @@ async function showOwnerIdentity(userId, elId) {
 function opsQuery(filter, cursor, limit) {
   const p = new URLSearchParams();
   if (filter.source) p.set('source', filter.source);
+  if (filter.gameType) p.set('gameType', filter.gameType);
   if (filter.actor) p.set('actor', filter.actor);
   if (filter.ownerId) p.set('ownerId', filter.ownerId);
   if (filter.from !== undefined) p.set('from', String(filter.from));
@@ -2608,6 +2609,7 @@ async function financeSearch() {
   const bounds = rangeBounds($('fin-range').value, $('fin-from'), $('fin-to'));
   fin.filter = {
     source: $('fin-source').value,
+    gameType: $('fin-game-type').value,
     actor: $('fin-actor').value.trim(),
     ownerId: owner ?? '',
     from: bounds.from,
@@ -2621,6 +2623,7 @@ async function financeSearch() {
 /** 过滤控件复位（不含数据面；登出与「重置」共用）。 */
 function resetFinControls() {
   $('fin-source').value = '';
+  $('fin-game-type').value = '';
   $('fin-actor').value = '';
   $('fin-owner').value = '';
   $('fin-owner-info').textContent = '';
@@ -2671,13 +2674,21 @@ function textCell(value, { num = false } = {}) {
   return td;
 }
 
-/** 流水行（财务视图：11 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
+/** A2：玩法中文标签（null/undefined = 未标注/非游戏流水）。 */
+function gameLabelText(gameType) {
+  if (gameType === 'doudizhu') return '斗地主';
+  if (gameType === 'paodekuai') return '跑得快';
+  return '—';
+}
+
+/** 流水行（财务视图：12 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
 function buildFinFlowRow(row) {
   const tr = document.createElement('tr');
   tr.append(
     textCell(row.flowId),
     timeCell(row.createdAt),
     textCell(row.source),
+    textCell(gameLabelText(row.gameType)),
     textCell(row.actor),
     textCell(row.ownerId),
     textCell(row.nickname),
@@ -2721,7 +2732,7 @@ async function toggleFinDetail(tr, row) {
   const detail = document.createElement('tr');
   detail.className = 'detail-row';
   const td = document.createElement('td');
-  td.colSpan = 11;
+  td.colSpan = 12;
   td.textContent = '详情加载中…';
   detail.append(td);
   tr.after(detail);
@@ -2750,8 +2761,8 @@ function renderFinDetail(td, rows) {
   const info = document.createElement('p');
   info.className = 'hint';
   info.textContent =
-    `op #${first.opId} · actionId=${first.actionId} · refId=${first.refId ?? '—'} · ` +
-    `traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
+    `op #${first.opId} · actionId=${first.actionId} · 玩法=${gameLabelText(first.gameType)} · ` +
+    `refId=${first.refId ?? '—'} · traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
   td.append(info);
   if (
     first.burnedResidue !== null &&
@@ -2853,8 +2864,8 @@ function renderFinSummary(data) {
   const hr = document.createElement('tr');
   const labels =
     fin.summaryGroupBy === 'day'
-      ? ['日期（北京）', '金额合计', '流水笔数']
-      : ['来源', '金额合计', '流水笔数'];
+      ? ['日期（北京）', '玩法', '金额合计', '流水笔数']
+      : ['来源', '玩法', '金额合计', '流水笔数'];
   for (const label of labels) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -2865,14 +2876,19 @@ function renderFinSummary(data) {
   if (rows.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 3;
+    td.colSpan = 4;
     td.textContent = '（无数据）';
     tr.append(td);
     body.append(tr);
   } else {
     for (const row of rows) {
       const tr = document.createElement('tr');
-      tr.append(textCell(row.k), textCell(row.delta, { num: true }), textCell(row.flowCount, { num: true }));
+      tr.append(
+        textCell(row.k),
+        textCell(gameLabelText(row.gameType)),
+        textCell(row.delta, { num: true }),
+        textCell(row.flowCount, { num: true }),
+      );
       body.append(tr);
     }
   }
@@ -2884,7 +2900,13 @@ function renderFinSummary(data) {
     burnLine.textContent = '';
   } else {
     const note = burn.unrecordedOps > 0 ? `（含 ${burn.unrecordedOps} 条历史未记录）` : '';
-    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}`;
+    const byGame = Array.isArray(data?.burnByGame) ? data.burnByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((b) => `${gameLabelText(b.gameType)} 残差 ${b.residue}/抽水 ${b.rake}`)
+          .join(' · ')}`
+      : '';
+    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}${detail}`;
   }
   const skips =
     data && typeof data.entryFeeSkips === 'object' && data.entryFeeSkips !== null ? data.entryFeeSkips : null;
@@ -2893,7 +2915,13 @@ function renderFinSummary(data) {
     skipLine.textContent = '';
   } else {
     // 恒显（照 burn 行先例；0/0/0 也是有效读数——「本周零漏收」是运维要看的信息）。
-    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}`;
+    const byGame = Array.isArray(data?.entryFeeSkipsByGame) ? data.entryFeeSkipsByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((s) => `${gameLabelText(s.gameType)} 笔数 ${s.cnt}/人数 ${s.players}/金额 ${s.amount}`)
+          .join(' · ')}`
+      : '';
+    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}${detail}`;
   }
   // 记牌器收费片：购买（收入；正）/ 使用（含 none = 未开通局次）。
   const purchases = Array.isArray(data?.cardCounterPurchases) ? data.cardCounterPurchases : null;
