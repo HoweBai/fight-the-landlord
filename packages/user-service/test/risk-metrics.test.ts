@@ -12,16 +12,18 @@ import {
   riskScanLastSuccessTimestampSeconds,
   riskReviewsOpen,
   riskActionsTotal,
+  riskScanHitsTotal,
   riskScanSqlFailuresTotal,
 } from '../src/risk/risk.metrics';
 
-describe('风控指标定义（T4 只建文件；写点 T5/T6）', () => {
-  it('四个指标名逐字进 shared registry（§2.12：risk_scan_runs_total / risk_scan_last_success_timestamp_seconds / risk_reviews_open / risk_actions_total）', () => {
+describe('风控指标定义（T4 只建文件；写点 T5/T6/A1/B）', () => {
+  it('六个指标名逐字进 shared registry（runs / last_success / reviews_open / actions / hits / sql_failures）', () => {
     for (const name of [
       'risk_scan_runs_total',
       'risk_scan_last_success_timestamp_seconds',
       'risk_reviews_open',
       'risk_actions_total',
+      'risk_scan_hits_total',
       'risk_scan_sql_failures_total',
     ]) {
       expect(metricsRegistry().getSingleMetric(name), `registry 里没有 ${name}`).toBeDefined();
@@ -39,15 +41,20 @@ describe('风控指标定义（T4 只建文件；写点 T5/T6）', () => {
     expect(metricsRegistry().getSingleMetric('risk_scan_sql_failures_total')).toBe(
       riskScanSqlFailuresTotal,
     );
+    expect(metricsRegistry().getSingleMetric('risk_scan_hits_total')).toBe(riskScanHitsTotal);
 
     // 标签维度用**输出面**钉（prom-client 的 .d.ts 不公开 labelNames ⇒ 读文本才是真断言）：
     // 打得进 result/action 维度 ⇒ 标签面与规格 `{result}` / `{action}` 逐字同形。
     riskScanRunsTotal.inc({ result: 'ok' });
     riskActionsTotal.inc({ action: 'ban' });
+    riskScanHitsTotal.inc({ game_type: 'paodekuai' });
     riskScanSqlFailuresTotal.inc({ scope: 'paodekuai' });
     const text = await metricsRegistry().metrics();
     expect(text, 'result 维度').toMatch(/^risk_scan_runs_total\{result="ok"\} \d+$/m);
     expect(text, 'action 维度').toMatch(/^risk_actions_total\{action="ban"\} \d+$/m);
+    expect(text, 'game_type 维度').toMatch(
+      /^risk_scan_hits_total\{game_type="paodekuai"\} \d+$/m,
+    );
     expect(text, 'scope 维度').toMatch(
       /^risk_scan_sql_failures_total\{scope="paodekuai"\} \d+$/m,
     );
