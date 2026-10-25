@@ -356,6 +356,31 @@ stats: {
   `admin/app.js:120/1230`。
   历史迁移里“五十一键之一”一类过往表述保留不动。
 
+### 5.9 PDK 真栈 conformance 补强（2026-10-25 追加）
+
+> 动因：slice-20 不造 PDK 对局，PDK 扫描 SQL 目前只有假库单测；补一条真栈断言。
+
+- **扩展现有 `slice-29-paodekuai`**（不新造数据）：它已经用 `room.match mode:'random'`
+  打完一局真实 PDK 并等到 `/api/records/mine?gameType=paodekuai` 可见，正好满足
+  “mode ∈ random/gold + 有记录”的扫描条件。
+- 步骤：
+  1. 记录断言补 `record.mode === 'random'`（证明进入扫描 mode 过滤面）；
+  2. 管理面 PUT `game.paodekuai.risk.minGames=1`、`winRateThreshold=0.5`、
+     `risk.scanIntervalMs=5000`；
+  3. `docker restart ftl-user-service` + 轮询 healthy（首轮 30s、其后 5s 一轮）；
+  4. 以 `winnerSeats[0]` 映射到 `room.bySeat` 的 winner user，轮询
+     `GET /api/admin/risk/users/:winnerId` ≤90s；
+  5. 断言 `entries[0].reasons` 含
+     `{check:'winRate',detail:{gameType:'paodekuai',games:1,wins:1,winRate:1}}`；
+     `stats.byGame.paodekuai = {games:1,wins:1}`、`stats.byGame.doudizhu.games=0`、
+     顶层 `stats.games=1`、`entries[0].score=25`；
+  6. dismiss 该条目（清理）；`finally` 还原三键（`minGames=100`、`winRateThreshold=0.8`、
+     `scanIntervalMs=3600000`）。扫描间隔回 1h 由下一轮重排自愈，**无需再重启**。
+- **不改生产代码**；新增 13 条断言，`baselines.json` 的 `full['slice-29-paodekuai']`
+  55 → 68（静态核算；CI 权威轮复核实测值）。
+- 真栈执行证据来自 master 推送的 conformance（或部署后的本机跑）；本机 Docker paused
+  时只做 `tsc` lint/build。
+
 ## 6. 错误处理与边界
 
 | 场景 | 行为 |
@@ -499,6 +524,8 @@ stats: {
 - `packages/robot-service/src/config/config.client.ts`（仅计数注释）
 - `admin/app.js`、`scripts/verify-admin-static.mjs`
 - `tools/conformance/src/slices/slice-20-risk-control.ts`
+- `tools/conformance/src/slices/slice-29-paodekuai.ts`、`tools/conformance/src/run.ts`、
+  `tools/conformance/baselines.json`（2026-10-25 追加深栈断言）
 - `docs/design.md`、`docs/games/paodekuai.md`、`docs/ops/first-deploy.md`、
   `docs/client-protocol.md`、`docs/superpowers/plans/2026-10-24-multi-game-rollback-runbook.md`
 - 本 spec 的「审查记录」

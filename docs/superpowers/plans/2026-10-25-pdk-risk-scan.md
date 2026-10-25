@@ -343,6 +343,31 @@ grep -rn "90 键\|90键\|74 active\|74 个 active\|74 键\|89 键\|73 active\|73
    **重跑全量**；工作区干净后 push `dev`（不 push master、不部署）。
 8. 交付报告：变更、验证证据、提交范围、已知边界。
 
+### T10 PDK 真栈 conformance 断言（2026-10-25 追加）
+
+**Files**：`tools/conformance/src/slices/slice-29-paodekuai.ts`、
+`tools/conformance/src/run.ts`、`tools/conformance/baselines.json`
+
+**背景**：slice-20 不造 PDK 记录；slice-29 已打完真实 `mode:'random'` PDK 对局并等到记录可见。
+
+**Implement**：
+1. slice-29 记录断言补 `record.mode === 'random'`。
+2. 新增 step ⑥：
+   - 管理面 PUT `game.paodekuai.risk.minGames=1`、`winRateThreshold=0.5`、
+     `risk.scanIntervalMs=5000`；
+   - `docker restart ftl-user-service` + 90s 内 healthy；
+   - `winnerSeats[0]` → `room.bySeat` → winner user；轮询
+     `GET /api/admin/risk/users/:winnerId` ≤90s；
+   - 断言 reason `gameType:'paodekuai'`、games=1/wins=1/winRate=1；
+     `stats.byGame.paodekuai=1/1`、`byGame.doudizhu.games=0`、`stats.games=1`、score=25；
+   - dismiss 条目；finally 还原三键（minGames=100 / winRate=0.8 / scanInterval=3600000）。
+3. `run.ts` 的 slice-29 标题补“风控真栈”。
+4. `baselines.json` `full['slice-29-paodekuai']` 55 → 68（新增 13 条，静态核算）。
+
+**验证**：`pnpm -C tools/conformance lint` + `build`；真栈执行由 master conformance
+（或 Docker 恢复后的本机 slice-29）承担——本机 Docker paused 时不跑真栈。
+**Commit**：`test(conformance): slice-29 增加跑得快风控真栈断言`。
+
 ## 回归命令
 
 ```bash
