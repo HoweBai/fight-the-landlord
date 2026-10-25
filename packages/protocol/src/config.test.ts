@@ -53,9 +53,10 @@ describe('完整键清单与客户端子集', () => {
       // 记牌器收费片（第 51/52 键；客户端可见——裸名两价格）
       'game.cardCounterPricePerGameCoins',
       'game.cardCounterPricePerHourCoins',
-      // 多玩法片（跑得快 14 键；斗地主档位继续用旧 game.baseScoreLevels）
+      // 多玩法片（跑得快 15 键；斗地主档位继续用旧 game.baseScoreLevels）
       'game.levels.paodekuai',
       'game.paodekuai.enabled',
+      'game.paodekuai.twoPlayerEnabled',
       'game.paodekuai.nonThreePlayerEnabled',
       'game.paodekuai.bareTrioEnabled',
       'game.paodekuai.trioWithPairEnabled',
@@ -522,9 +523,10 @@ describe('跑得快配置键（多玩法片）', () => {
     ).toThrow(ProtocolError);
   });
 
-  it('12 个 boolean 键严格 boolean', () => {
+  it('13 个 boolean 键严格 boolean', () => {
     for (const key of [
       'game.paodekuai.enabled',
+      'game.paodekuai.twoPlayerEnabled',
       'game.paodekuai.nonThreePlayerEnabled',
       'game.paodekuai.bareTrioEnabled',
       'game.paodekuai.trioWithPairEnabled',
