@@ -49,17 +49,18 @@ export interface PdkRoom {
 }
 
 /**
- * 起一局真实的 3 人跑得快：入队（带 gameType/playerCount）→ `room.matched` →
- * `room.join`（带 gameType）→ `game.deal`。
+ * 起一局真实的跑得快：入队（带 gameType/playerCount）→ `room.matched` →
+ * `room.join`（带 gameType）→ `game.deal`。默认 3 人（2 人场传 `playerCount: 2`）。
  */
 export async function startPdkRoom(
   labelPrefix: string,
-  options: { baseScore?: number; users?: HarnessUser[] } = {},
+  options: { baseScore?: number; users?: HarnessUser[]; playerCount?: 2 | 3 | 4 } = {},
 ): Promise<PdkRoom> {
   const baseScore = options.baseScore ?? 15;
+  const playerCount = options.playerCount ?? 3;
   const clients: HarnessClient[] = [];
   try {
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < playerCount; i += 1) {
       const user = options.users?.[i] ?? (await registerUser(i));
       clients.push(await HarnessClient.connect(`${labelPrefix}${i}`, user));
     }
@@ -68,7 +69,7 @@ export async function startPdkRoom(
         mode: 'random',
         baseScore,
         gameType: 'paodekuai',
-        playerCount: 3,
+        playerCount,
       });
       if (ack.code !== ErrCode.OK) {
         throw new ConformanceError(
