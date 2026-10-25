@@ -107,6 +107,7 @@ describe('S6.3：历史页跑得快战绩', () => {
     expect(flat(card.text())).toContain('负');
     expect(flat(card.text())).toContain('剩余 4 张');
     expect(flat(card.text())).toContain('倍数 2');
+    expect(flat(card.text())).toContain('3 人局');
   });
 
   it('展开：每座 playedCount / 剩余张数与初始手牌（复用 Hand）', async () => {

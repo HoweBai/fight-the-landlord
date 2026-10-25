@@ -84,6 +84,28 @@ describe('S6.1：PdkBoard', () => {
     expect(wrapper.text()).toContain('底分 15');
   });
 
+  it('3 人布局：两个对手座 + 右列在场', () => {
+    const wrapper = mount(PdkBoard, { props: boardProps() });
+    expect(wrapper.findAll('.pdk__seat')).toHaveLength(2);
+    expect(wrapper.find('.pdk__play-col--right').exists()).toBe(true);
+  });
+
+  it('2 人布局：单对手座、无右座/右列/右计时器', () => {
+    const wrapper = mount(PdkBoard, {
+      props: boardProps({
+        view: pdkView({ playerCount: 2, cardCounts: [3, 16], trustees: [false, false] }),
+        seatNames: { 1: '甲' },
+        balances: [null, null],
+      }),
+    });
+
+    expect(wrapper.findAll('.pdk__seat')).toHaveLength(1);
+    expect(wrapper.find('.pdk__seat--right').exists()).toBe(false);
+    expect(wrapper.find('.pdk__play-col--right').exists()).toBe(false);
+    expect(wrapper.find('.pdk__mid--two').exists()).toBe(true);
+    expect(wrapper.findAll('.pdk__me .card')).toHaveLength(3);
+  });
+
   it('动作栏：首出不可过（无「不出」）；跟牌 canPass=true 时有「不出」', () => {
     const lead = mount(PdkBoard, { props: boardProps() });
     expect(lead.find('.pdk__pass').exists()).toBe(false);
@@ -199,5 +221,33 @@ describe('S6.1：壳对 2/4 人的处置', () => {
     expect(store.view, '不支持的人数必须复位（不渲染成 3 人桌）').toBeNull();
     expect(auth.page).toBe('lobby');
     expect(wrapper.text()).toContain('当前客户端暂不支持该人数的跑得快');
+    const leaves = socket.emittedOf('room.leave');
+    expect(leaves, '退房必须带 roomCode').toHaveLength(1);
+    expect(leaves[0]!.env.payload).toEqual({ roomCode: 'PDK1' });
+  });
+
+  it('收到 2 人 pdk 视图 ⇒ 正常渲染（不再回大厅）', async () => {
+    const socket = new FakeSocket();
+    startGameSession(() => socket);
+    const auth = useAuthStore();
+    auth.enterAsDevUser();
+    auth.navigate('table');
+    const store = useGameStore();
+
+    store.applySnapshot(
+      pdkView({
+        playerCount: 2,
+        hand: makeCards(3, 4, 5),
+        cardCounts: [3, 16],
+        trustees: [false, false],
+      }),
+    );
+    const wrapper = mount(TablePage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(store.view).not.toBeNull();
+    expect(auth.page).toBe('table');
+    expect(wrapper.findAll('.pdk__seat')).toHaveLength(1);
+    expect(socket.emittedOf('room.leave')).toHaveLength(0);
   });
 });

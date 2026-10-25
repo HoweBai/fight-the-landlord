@@ -26,6 +26,7 @@ import PdkSettlement from "../../components/PdkSettlement.vue";
 import DdzBoard from "../../components/table/ddz/DdzBoard.vue";
 import PdkBoard from "../../components/table/pdk/PdkBoard.vue";
 import { useGameStore } from "../../stores/game";
+import { CLIENT_TABLE_PLAYER_COUNTS } from "../../gameModes";
 import { useAuthStore } from "../../stores/auth";
 import { currentSession, getGameSession } from "../../composables/useGameSession";
 import { useCountdown } from "../../composables/useCountdown";
@@ -143,13 +144,30 @@ const pdkSettlement = computed(() =>
 );
 
 /**
- * S6.1：首版客户端只支持 3 人跑得快。收到 2/4 人视图 ⇒ 提示并回大厅
- * （不得把不支持的人数渲染成 3 人牌桌 —— 座位/牌数都会说谎）。
+ * `room.leave` 的本地超时（本片 §0.3-7）：发送层对 leave 没有安全时钟。
+ * 定义在首个使用点（人数闸 watch，immediate）之前 —— 否则 immediate 回调会撞 TDZ。
+ */
+const LEAVE_TIMEOUT_MS = 5000;
+
+/**
+ * S6.1：客户端只实现 3 人跑得快 + 2 人（2026-10-25）。
+ * 收到客户端未实现的人数（4）⇒ 尽力退房（必须带 roomCode，且不阻塞导航）→ 提示 → 回大厅
+ *（不得把不支持的人数渲染成 3 人牌桌 —— 座位/牌数都会说谎）。
  */
 watch(
   pdkView,
   (v) => {
-    if (!v || v.playerCount === 3) return;
+    if (!v) return;
+    if (CLIENT_TABLE_PLAYER_COUNTS.paodekuai.includes(v.playerCount)) return;
+    const roomCode = store.roomCode;
+    if (roomCode) {
+      void raceTimeout(
+        getGameSession()
+          .client.sendQueued("room.leave", { roomCode }, 5)
+          .catch(() => null),
+        LEAVE_TIMEOUT_MS,
+      );
+    }
     notices.setNotice("pdk-unsupported", "当前客户端暂不支持该人数的跑得快，已返回大厅", {
       level: "warn",
     });
@@ -322,11 +340,6 @@ function onAgain() {
   store.requestRematch();
   auth.navigate("game");
 }
-
-/**
- * `room.leave` 的本地超时（本片 §0.3-7）：发送层对 leave 没有安全时钟。
- */
-const LEAVE_TIMEOUT_MS = 5000;
 
 /**
  * 顶栏「返回大厅」的唯一处理体（K1/K3）：等待房/结算只导航；进行中确认后 `room.leave`。

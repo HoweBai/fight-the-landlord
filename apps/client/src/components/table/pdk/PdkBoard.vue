@@ -71,10 +71,14 @@ const myTrustee = computed<boolean>(() => {
 /** 末 5 秒紧迫态（A 档；与 DdzBoard 同款）。 */
 const clockUrgent = computed(() => props.seconds > 0 && props.seconds <= 5);
 
-/** 两个对手方位（逆时针；与 ddz 同款：下家在右、上家在左）。 */
-const seats = computed<[number, number]>(() => {
+/** 本局人数（牌桌**只信视图**；旧服务端缺省 3）。 */
+const playerCount = computed(() => props.view?.playerCount ?? 3);
+
+/** 对手方位（逆时针；3 人：下家右、上家左；2 人：唯一对手在左）。 */
+const seats = computed<readonly number[]>(() => {
   const me = props.mySeat;
-  if (me === null) return [0, 1];
+  if (me === null) return playerCount.value === 2 ? [1] : [0, 1];
+  if (playerCount.value === 2) return [(me + 1) % 2];
   return [(me + 2) % 3, (me + 1) % 3];
 });
 
@@ -84,7 +88,9 @@ function actionOf(seat: number) {
   return null;
 }
 const leftAction = computed(() => actionOf(seats.value[0]!));
-const rightAction = computed(() => actionOf(seats.value[1]!));
+const rightAction = computed(() =>
+  seats.value.length > 1 ? actionOf(seats.value[1]!) : null,
+);
 const myAction = computed(() =>
   props.mySeat === null ? null : actionOf(props.mySeat),
 );
@@ -285,7 +291,7 @@ function onTrustee(on: boolean): void {
 
     <view v-if="waitingForDeal" class="pdk__waiting">已进房，等待服务端发牌…</view>
     <template v-else>
-      <view class="pdk__mid">
+      <view class="pdk__mid" :class="{ 'pdk__mid--two': seats.length === 1 }">
         <Seat v-bind="seatProps(seats[0]!)" class="pdk__seat" />
         <view class="pdk__play-col">
           <TurnTimer v-bind="timerProps(seats[0]!)" />
@@ -296,7 +302,7 @@ function onTrustee(on: boolean): void {
           <text v-if="levelName && !isPlaying" class="pdk__scene-name">{{ levelName }}</text>
           <text v-if="sceneBase !== null" class="pdk__scene-base">底分 {{ sceneBase }}</text>
         </view>
-        <view class="pdk__play-col pdk__play-col--right">
+        <view v-if="seats.length > 1" class="pdk__play-col pdk__play-col--right">
           <TurnTimer v-bind="timerProps(seats[1]!)" />
           <PlayArea
             v-if="rightAction && rightAction.cards"
@@ -306,7 +312,12 @@ function onTrustee(on: boolean): void {
           />
           <text v-else-if="rightAction && rightAction.cards === null" class="pdk__play-pass anim-toast-in">不出</text>
         </view>
-        <Seat v-bind="seatProps(seats[1]!)" class="pdk__seat pdk__seat--right" :mirror="true" />
+        <Seat
+          v-if="seats.length > 1"
+          v-bind="seatProps(seats[1]!)"
+          class="pdk__seat pdk__seat--right"
+          :mirror="true"
+        />
       </view>
 
       <view class="pdk__action-bar">
@@ -566,6 +577,11 @@ function onTrustee(on: boolean): void {
   align-items: stretch;
   flex: 1 1 0;
   min-height: 0;
+}
+/** 2 人：唯一对手在左；右列不渲染，出牌列与中央区均衡占宽。 */
+.pdk__mid--two .pdk__play-col,
+.pdk__mid--two .pdk__center {
+  flex: 1 1 0;
 }
 /** 对手座位：无白底板浮动组，沉到中段带底。 */
 .pdk__seat {

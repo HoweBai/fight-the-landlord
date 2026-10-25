@@ -517,6 +517,7 @@ onMounted(() => {
                   <text class="history__time">{{ formatTime(card.record.endedAt) }}</text>
                   <text class="history__mode">{{ MODE_LABEL[card.record.mode] }}</text>
                   <text class="history__mode">跑得快</text>
+                  <text class="history__mode">{{ card.record.playerCount }} 人局</text>
                 </view>
                 <view class="history__row">
                   <text
