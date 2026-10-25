@@ -699,3 +699,14 @@
 6. **§0 的总览统计必须用 `node scripts/ledger-counts.mjs` 校验**（§1.x 是真源，§0 是手抄）：
    切片 7.2 收口时实测过一次漂移 —— C 区实际 27 行（C1–C28 去掉已撤销的 C21），§0 却写 26，
    连带「合计 61 / 仍开放 21」全错（真实 62 / 22）。脚本不一致就退出码 1，`--write` 打印可粘贴的建议行。
+
+## 6. B 组（2026-10-26）
+
+- **slice-32 / 全量真栈**：**部分关闭** —— 本机 Docker 不可用，slice-32/16/18/20/24/29/31
+  只做了 tsc/lint 与静态闸；待权威轮按 `tools/conformance` 实跑并回填实测条数
+  （`slice-32-pdk-risk-gold` 基线初值 = 源内逐点枚举 60）。
+- **机器人低档房资金水位**：**仍开放** —— 规划期已核对：bot 按全局最高档
+  `max(baseScoreLevels) × entryMultiplier` 充值，低档房人类可从 bot 提取其全部余额；
+  与 DDZ 同构，B 组按 D29 不改，经济面/反洗钱另立片。
+- **旧 `risk_reviews` 行 `game_type` 默认 ddz**：**文档过期/已知限制** —— U5 显式选择；
+  旧行的 `paodekuai`/`mixed`/`platform` 筛选可能漏，冻结保护用 reasons 兜底。

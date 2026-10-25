@@ -96,7 +96,7 @@ const PLAYERS_FROM_SQL = `
  * 口径（spec D18）：
  *  - `lastActiveAt = max(user_devices.last_seen_at, DDZ 最近一局 ended_at, PDK 最近一局 ended_at)`；
  *    三者都无 ⇒ null；
- *  - 对局/胜场统一 `mode IN ('random','gold')`、`is_robot=0`（与风控详情同口径）；
+ *  - 对局/胜场统一 `mode IN ('random','gold')`、`is_robot=0`（**行级**；风控详情为整局剔除机器人局，口径不同）；
  *  - 设备数统一 `risk.deviceWindowDays` 窗口（与风控详情同口径）。
  *
  * 在线：Redis ZSET `presence:online`（room-service 写）；Redis 失败降级为全员离线。

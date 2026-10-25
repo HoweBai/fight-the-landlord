@@ -113,7 +113,7 @@ function isDeadlockError(err: unknown): boolean {
 
 /** 单命中项分值（规格 §2.5-2：`score = 命中项数 × 25` ∈ {25,50}）。 */
 const SINGLE_HIT_SCORE = 25;
-/** 自动限流线（规格 §2.5-3：score ≥ 50 且 `risk.autoThrottle` 才武装）。 */
+/** 账号级自动限流线（规格 §2.5-3：score ≥ 50 且 `risk.autoThrottle` 才武装）；PDK 命中可被 autoThrottleScore 下调至 25–50。 */
 const AUTO_THROTTLE_SCORE = 50;
 
 /** 自动解除的审计 reason（规格 §2.5-3 逐字；`<25 ⇒ dismissed` 分支的语义标签）。 */
@@ -239,13 +239,14 @@ interface LatestReviewRow {
  *
  * ─── 状态机（规格 §2.5-3 全行；分支对象 = ⚙️10 锁定读的「最新一行（任意 status）」）──
  *  - **无行**：score ≥ 25 ⇒ INSERT open；< 25 ⇒ 无操作（并集里的低分用户只是回落通道）。
- *  - **open**：score ≥ 25 ⇒ UPDATE score/reasons；其中 score ≥ 50 且 `risk.autoThrottle`
+ *  - **open**：score ≥ 25 ⇒ UPDATE score/reasons；其中 score ≥ 有效自动限流线（账号 50；
+ *    PDK 命中可 25–50）且 `risk.autoThrottle`
  *    ⇒ **先读 `risk:limit` 现值**（终审 F1）：旗不存在/auto ⇒ 置旗 auto（7d）+ 迁
  *    `throttled`（handled_by='system'）+ `auto_throttle` 审计；**旗=manual ⇒ 仅迁条目
  *    （`handled_by`/`handled_at` **保持不动**）、旗**不动**、**无任何审计行**（无实际变更）
  *    ——防「人工旗被自动逻辑改写为 auto、再被下轮 release 静默删掉」的漂移链。
  *    ⚙️20：自动限流**只对已有 open 条目**发生 —— 本轮新建的行不武装（下一轮 open 分支才武装）。
- *  - **throttled(auto)**（`handled_by='system'` 判别）：score ≥ 50 ⇒ 旗**续期**（SET 重发
+ *  - **throttled(auto)**（`handled_by='system'` 判别）：score ≥ 有效自动限流线 ⇒ 旗**续期**（SET 重发
  *    EX 7d、**不刷审计**）；score < 50 ⇒ 删旗 + `unthrottle`(system) 审计 + 回迁
  *    （score ≥ 25 ⇒ open；< 25 ⇒ dismissed + reason「指标回落，自动解除」）。
  *  - **throttled(manual)**：一律**不动旗**（人工解除是唯一通道）；score ≥ 25 仅 UPDATE。

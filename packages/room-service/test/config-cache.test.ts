@@ -82,7 +82,7 @@ function makeClient(): { client: ConfigClient; snapshot: ReturnType<typeof vi.fn
   return { client: { snapshot } as unknown as ConfigClient, snapshot };
 }
 
-/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整九十三键由 config-service 保证）。 */
+/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整一百键由 config-service 保证）。 */
 function snapshotWith(
   over: Partial<Record<ConfigKey, unknown>> = {},
   version = 1,

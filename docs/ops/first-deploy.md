@@ -1013,7 +1013,7 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 **上线第一个动作（重要）**：**好友房默认是关闭的**（玩家端不显示「好友房」入口，服务端也拒绝创建/加入）。
 **要开放好友房 ⇒ 上线后第一件事就是来这里把它打开**：找到 `game.doudizhu.friendRoomEnabled`，把值改成 `true` 保存；想再关掉同理。
 
-**93 键配置（77 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
+**100 键配置（84 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
 
 > 2026-10-24 配置平行化：斗地主与跑得快各有一套场次/好友房/补位/金币经济键。下表列斗地主与平台级键；跑得快对应键见 `docs/games/paodekuai.md` §7.1。旧平台键（`room.*` / `currency.entryMultiplier` / `currency.rakePercent` 等）只读保留，回滚前按 runbook 回填。
 
@@ -1041,8 +1041,15 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 | `risk.predicate.sameIp` | **同 IP 谓词**：同上，按公网 IP 判 —— ⚠️ 公司 / 学校 / 网吧共用出口 IP 会互相拒配（**误伤面大**），评估过再开 | **关** |
 | `game.doudizhu.risk.winRateThreshold` | **胜率检测阈值**（0.5–1.0）：对局数超过下面那个门槛后，胜率**高于**此值的账号进风控审核队列 | 0.8 |
 | `game.doudizhu.risk.minGames` | **胜率检测的最少局数**：对局数**超过**这个数才参与胜率判定（防小样本误报） | 100 |
-| `game.paodekuai.risk.winRateThreshold` | **跑得快胜率检测阈值**（0.5–1.0）：跑得快对局数超过下面那个门槛后，胜率**高于**此值的账号进风控审核队列。与斗地主阈值独立；两个玩法同时命中只记一项胜率分 | 0.8 |
-| `game.paodekuai.risk.minGames` | **跑得快胜率检测的最少局数**：跑得快对局数**超过**这个数才参与胜率判定（防小样本误报） | 100 |
+| `game.paodekuai.risk.winRateThreshold` | **跑得快胜率检测阈值（回退键）**：仅当对应人数键缺失时生效；与斗地主阈值独立；两个玩法同时命中只记一项胜率分 | 0.8 |
+| `game.paodekuai.risk.minGames` | **跑得快胜率检测的最少局数（回退键）**：仅当对应人数键缺失时生效 | 100 |
+| `game.paodekuai.risk.player2.winRateThreshold` | **2 人跑得快胜率阈值**（2 人基准约 50%；样本按人数独立；含机器人座整局剔除） | 0.8 |
+| `game.paodekuai.risk.player2.minGames` | **2 人桶最少局数**（严格 `games >` 本值） | 100 |
+| `game.paodekuai.risk.player3.winRateThreshold` | **3 人跑得快胜率阈值**（3 人基准约 33%） | 0.8 |
+| `game.paodekuai.risk.player3.minGames` | **3 人桶最少局数** | 100 |
+| `game.paodekuai.risk.player4.winRateThreshold` | **4 人跑得快胜率阈值**（4 人基准约 25%；建议按实际下调） | 0.8 |
+| `game.paodekuai.risk.player4.minGames` | **4 人桶最少局数** | 100 |
+| `game.paodekuai.risk.autoThrottleScore` | **PDK 单玩法自动限流阈值**：25=PDK 单命中即自动限流；26–49 与 50 同效（PDK 单命中不自动限流；PDK+设备 50 仍限流） | 50 |
 | `risk.deviceLimit` | **多设备阈值**：统计窗口内同一账号用过的设备数**超过**此值 ⇒ 进审核队列 | 3 |
 | `risk.deviceWindowDays` | **设备统计窗口（天）**：设备数只数最近这些天出现过的 | 30 |
 | `risk.autoThrottle` | **自动限流总开关**：命中两项（评分 ≥50）时自动给账号上「3 次/秒」限流档；关 ⇒ 只进队列、等人工处置（**封禁永远是人工动作**，没有自动封禁） | 开 |

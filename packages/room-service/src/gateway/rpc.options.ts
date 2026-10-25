@@ -32,7 +32,7 @@ export const robotClientOptions = (): TcpClientOptions => ({
  * §2.3：`CONFIG_SERVICE_RPC_HOST` / `CONFIG_SERVICE_RPC_PORT`（默认 `config-service` / `3106`）。
  *
  * 片⑦ 规格 §2.7：本边由旧的 room → user `config.baseScoreLevels` 改为
- * room → config-service 的 `config.snapshot`（配置中心统一提供九十三键；user-service 退场）。
+ * room → config-service 的 `config.snapshot`（配置中心统一提供一百键；user-service 退场）。
  */
 export const configClientOptions = (): TcpClientOptions => ({
   transport: Transport.TCP,

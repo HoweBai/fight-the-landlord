@@ -149,16 +149,24 @@
 | `game.paodekuai.goldBotFillEnabled` | `true` | 金币场缺人是否补机器人 |
 | `game.paodekuai.rakePercent` | `0` | 金币场结算抽水（0–50%） |
 | `game.paodekuai.entryMultiplier` | `10` | 金币场入场门槛倍率（入场需余额 ≥ 底分 × 本值） |
-| `game.paodekuai.risk.winRateThreshold` | `0.8` | 胜率风控阈值（与斗地主独立；有对局记录即自动纳入扫描，无 enabled 键） |
-| `game.paodekuai.risk.minGames` | `100` | 胜率风控最少局数（判定 `games >` 本值；与斗地主独立） |
+| `game.paodekuai.risk.winRateThreshold` | `0.8` | 胜率风控阈值回退键（对应人数键缺失时生效；与斗地主独立） |
+| `game.paodekuai.risk.minGames` | `100` | 胜率风控最少局数回退键（对应人数键缺失时生效） |
+| `game.paodekuai.risk.player2.winRateThreshold` | `0.8` | 2 人桶胜率阈值（2 人基准约 50%；样本按人数独立） |
+| `game.paodekuai.risk.player2.minGames` | `100` | 2 人桶扫描最少局数（严格 `games >` 本值） |
+| `game.paodekuai.risk.player3.winRateThreshold` | `0.8` | 3 人桶胜率阈值（3 人基准约 33%） |
+| `game.paodekuai.risk.player3.minGames` | `100` | 3 人桶扫描最少局数 |
+| `game.paodekuai.risk.player4.winRateThreshold` | `0.8` | 4 人桶胜率阈值（4 人基准约 25%） |
+| `game.paodekuai.risk.player4.minGames` | `100` | 4 人桶扫描最少局数 |
+| `game.paodekuai.risk.autoThrottleScore` | `50` | PDK 单玩法自动限流阈值：25=单命中即限流；26–49 与 50 同效 |
 
 > 2026-10-24 起跑得快的场次/好友房/补位/抽水/门槛与斗地主**平行独立**；
 > 旧平台键（`room.*` / `currency.rakePercent` / `currency.entryMultiplier` 等）
 > 只读保留，供回滚回填，不再由管理面写入。
 >
-> 2026-10-25 起跑得快的对局记录进入胜率风控扫描：**有对局记录即自动纳入**（没有
-> `enabled` 键）；阈值/最少局数与斗地主各自独立；两个玩法同时命中只记一项胜率分
-> （不叠加）。2/4 人局的胜率期望与 3 人不同，本实现不做归一化，按玩法调阈值即可。
+> 2026-10-26 起跑得快风控样本按 2/3/4 人拆分，且**整局剔除含机器人座的记录**；
+> 旧两键降为回退键。PDK 单玩法自动限流阈值 `autoThrottleScore` 默认 50（可调 25）。
+> 两个玩法同时命中只记一项胜率分（不叠加）；2/4 人胜率期望与 3 人不同，本实现不做归一化，
+> 按人数调阈值即可。
 
 ## 8. 超时与托管
 

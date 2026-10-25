@@ -2,7 +2,7 @@
 import { createCounter, createGauge } from '@fight-the-landlord/shared';
 
 /**
- * 风控片 user-service 的**四个指标定义**（规格 §2.12 逐字；设计 Y4/§2.4bis —— 面板
+ * 风控片 user-service 的**风控指标定义**（规格 §2.12 + A1 hits + B SQL 失败；设计 Y4/§2.4bis —— 面板
  * 「风控 / Risk」与 `RiskScanStalled` 告警的读面）。
  *
  * 🔴 **写点在别的文件**（`scan.service.ts` / `reviews.service.ts` / `admin-risk.controller.ts`，
