@@ -21,3 +21,21 @@ export async function labeledValue(
     Object.entries(labels).every(([name, expected]) => String(v.labels[name]) === expected),
   )?.value;
 }
+
+/** 标签集**完全相等**才命中；不存在 ⇒ undefined（防子集首条假绿）。 */
+export async function exactSeriesValue(
+  metric: { get(): Promise<unknown> },
+  labels: Record<string, string>,
+): Promise<number | undefined> {
+  const { values } = (await metric.get()) as {
+    values: Array<{ labels: Record<string, string>; value: number }>;
+  };
+  const wantKeys = Object.keys(labels).sort();
+  const hits = values.filter(
+    (v) =>
+      Object.keys(v.labels).sort().join('\u0000') === wantKeys.join('\u0000') &&
+      wantKeys.every((k) => String(v.labels[k]) === labels[k]),
+  );
+  if (hits.length > 1) throw new Error(`exactSeriesValue 命中多条：${JSON.stringify(labels)}`);
+  return hits[0]?.value;
+}

@@ -41,13 +41,15 @@ export const wsConnections: GaugeOf = createGauge(
 /** 开局计数（规格 §2.2）：`RoomStartService` 的「确实开起来了」点 —— `game.start` 成功且房间已写 `playing`。 */
 export const gamesStartedTotal: CounterOf = createCounter(
   'games_started_total',
-  '已开局的对局数（room-service 开局成功点计数；game.start 失败的假开局不计入）。',
+  '已开局的对局数（按玩法；room-service 开局成功点计数；game.start 失败的假开局不计入）。',
+  ['game_type'],
 );
 
 /** 结算计数（规格 §2.2）：`WsGateway.onGameEvent` 的 `game.ended` 处理点，每条事件恰一次。 */
 export const gamesEndedTotal: CounterOf = createCounter(
   'games_ended_total',
-  '已结束的对局数（room-service 收到 game.ended 事件计数）。',
+  '已结束的对局数（按玩法；room-service 收到 game.ended 事件计数）。',
+  ['game_type'],
 );
 
 /**
@@ -59,7 +61,8 @@ export const gamesEndedTotal: CounterOf = createCounter(
  */
 export const roomsActive: GaugeOf = createGauge(
   'rooms_active',
-  '活跃房间数（全栈口径：Redis SCAN 聚合 room:* 非派生键；单实例部署下与全局等价）。',
+  '活跃房间数（全栈口径：Redis SCAN 聚合 room:* 非派生键；按玩法）。',
+  ['game_type'],
 );
 
 /**
@@ -87,8 +90,8 @@ export const matchQueueLength: GaugeOf = createGauge(
  */
 export const matchPredicateRejectionsTotal: CounterOf = createCounter(
   'match_predicate_rejections_total',
-  '匹配谓词拒绝计数（随机抽取中每对谓词拒绝计一次，按 predicate 分；记忆拒绝不计）。',
-  ['predicate'],
+  '匹配谓词拒绝计数（随机抽取中每对谓词拒绝计一次，按 predicate/玩法；记忆拒绝不计）。',
+  ['predicate', 'game_type'],
 );
 
 /**
@@ -97,7 +100,8 @@ export const matchPredicateRejectionsTotal: CounterOf = createCounter(
  */
 export const matchSelectionRoundsTotal: CounterOf = createCounter(
   'match_selection_rounds_total',
-  '匹配随机抽选的轮次计数（每轮每个 ≥3 真人的队列桶计一次；谓词拒绝率告警的分母）。',
+  '匹配随机抽选的轮次计数（每轮每个 ≥3 真人的队列桶计一次，按玩法；谓词拒绝率告警的分母）。',
+  ['game_type'],
 );
 
 /**
@@ -107,7 +111,8 @@ export const matchSelectionRoundsTotal: CounterOf = createCounter(
  */
 export const matchNoLegalGroupTotal: CounterOf = createCounter(
   'match_no_legal_group_total',
-  '≥3 人但本轮随机贪心未凑出合法三人组的桶次计数（可观测定义：不做组合搜索）。',
+  '≥3 人但本轮随机贪心未凑出合法三人组的桶次计数（按玩法；可观测定义：不做组合搜索）。',
+  ['game_type'],
 );
 
 // ─── ② 金币场 T5（规格 §11.1 逐字；偏差登记：结果标签按处置分流）──────────────
@@ -132,8 +137,8 @@ export const matchNoLegalGroupTotal: CounterOf = createCounter(
  */
 export const currencySettleResultTotal: CounterOf = createCounter(
   'currency_settle_result_total',
-  '金币场结算处置计数（ok|replayed|retried|r2|outboxed|dropped；终态看 ok|replayed）。',
-  ['result'],
+  '金币场结算处置计数（按玩法；ok|replayed|retried|r2|outboxed|dropped；终态看 ok|replayed）。',
+  ['result', 'game_type'],
 );
 
 /**
@@ -142,7 +147,8 @@ export const currencySettleResultTotal: CounterOf = createCounter(
  */
 export const currencySettleResidueTotal: CounterOf = createCounter(
   'currency_settle_residue_total',
-  '金币场结算的截断残差销毁总额（floor 分摊余数；无截断时为 0）。',
+  '金币场结算的截断残差销毁总额（按玩法；floor 分摊余数；无截断时为 0）。',
+  ['game_type'],
 );
 
 /**
@@ -154,7 +160,8 @@ export const currencySettleResidueTotal: CounterOf = createCounter(
  */
 export const currencySettleOutboxSize: GaugeOf = createGauge(
   'currency_settle_outbox_size',
-  '金币场结算补偿队列条目数（settle:outbox + recordmoney:outbox 之和；sweeper 每轮刷新）。',
+  '金币场结算补偿队列条目数（settle:outbox + recordmoney:outbox，按玩法；sweeper 每轮刷新）。',
+  ['game_type'],
 );
 
 /**
@@ -164,7 +171,8 @@ export const currencySettleOutboxSize: GaugeOf = createGauge(
  */
 export const currencySettleOutboxOldestSeconds: GaugeOf = createGauge(
   'currency_settle_outbox_oldest_seconds',
-  '金币场结算补偿队列最老条目的年龄（秒；空队列为 0；告警阈值 >300s）。',
+  '金币场结算补偿队列最老条目的年龄（秒，按玩法；空队列为 0；告警阈值 >300s）。',
+  ['game_type'],
 );
 
 /**
@@ -173,8 +181,8 @@ export const currencySettleOutboxOldestSeconds: GaugeOf = createGauge(
  */
 export const currencyRobotTopupTotal: CounterOf = createCounter(
   'currency_robot_topup_total',
-  '机器人虚拟币补款/回收动作计数（action=refill|recall；写点 T6）。',
-  ['action'],
+  '机器人虚拟币补款/回收动作计数（action=refill|recall，按玩法）。',
+  ['action', 'game_type'],
 );
 
 /**
@@ -182,7 +190,8 @@ export const currencyRobotTopupTotal: CounterOf = createCounter(
  */
 export const currencyRobotEnsureFailedTotal: CounterOf = createCounter(
   'currency_robot_ensure_failed_total',
-  '机器人 ensure（补给观测 → 注资）失败计数（写点 T6；失败走既有补位失败路径）。',
+  '机器人 ensure（补给观测 → 注资）失败计数（按玩法；失败走既有补位失败路径）。',
+  ['game_type'],
 );
 
 // ─── 台费片（规格 §2.4a 逐字；写点全在 rooms.start.ts 的收费块）────────────
@@ -195,14 +204,15 @@ export const currencyRobotEnsureFailedTotal: CounterOf = createCounter(
  */
 export const entryFeeSkippedTotal: CounterOf = createCounter(
   'entry_fee_skipped_total',
-  '台费免单计数（按 reason：insufficient_funds|unknown_outcome|internal_error；同房重复免单不重复计）。',
-  ['reason'],
+  '台费免单计数（reason=insufficient_funds|unknown_outcome|internal_error，按玩法；同房重复免单不重复计）。',
+  ['reason', 'game_type'],
 );
 
 /** 台费 14002 冲突计数（本片；无标签）：同锚已有成功提交（视为已收）——不记 skips、不计漏收。 */
 export const entryFeeConflictTotal: CounterOf = createCounter(
   'entry_fee_conflict_total',
-  '台费 op 冲突计数（14002：同锚已有成功提交，台费已收——不是漏收）。',
+  '台费 op 冲突计数（14002：同锚已有成功提交，台费已收——不是漏收；按玩法）。',
+  ['game_type'],
 );
 
 // ─── 记牌器收费片（写点 = rooms.start.ts 状态块）────────────────────────────
@@ -221,4 +231,27 @@ export const cardCounterConsumedTotal: CounterOf = createCounter(
 export const cardCounterConsumeErrorTotal: CounterOf = createCounter(
   'card_counter_consume_error_total',
   '记牌器消费 RPC 失败/未知态计数（fail-open：本局仍开通）。',
+);
+
+// ─── A1 异常监控（2026-10-25）：按玩法的失败/跳过计数 ─────────────────────────
+
+/** 开局失败（按玩法 + 有界 reason）。 */
+export const gameStartFailuresTotal: CounterOf = createCounter(
+  'game_start_failures_total',
+  '开局失败计数（reason=start_rpc|pending_write|bot_fill|rules|on_seats|cancelled，按玩法）。',
+  ['game_type', 'reason'],
+);
+
+/** 记录写失败/丢失（按玩法 + 有界 kind）。 */
+export const recordWriteFailuresTotal: CounterOf = createCounter(
+  'record_write_failures_total',
+  '对局记录写失败/丢失计数（kind=record|money_delta|record_lost，按玩法）。',
+  ['game_type', 'kind'],
+);
+
+/** 记录写跳过（预期窗口，仅诊断，不告警）。 */
+export const recordWriteSkipsTotal: CounterOf = createCounter(
+  'record_write_skips_total',
+  '对局记录写跳过计数（reason=room_ttl；预期窗口，仅诊断，不告警）。',
+  ['game_type', 'reason'],
 );
