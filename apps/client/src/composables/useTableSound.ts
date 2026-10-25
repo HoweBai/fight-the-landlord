@@ -4,8 +4,8 @@
  * ## ⚠️ 这里没有任何规则判定（§12 哑终端）
  *
  * 全部输入都是服务端已经下发的数字 / 字段，本 composable 只做「与上一版比，谁变了」
- * 这一件事。牌型识别只用于**选哪条音效**（`cueForPlay` → `protocol.parseHand`），
- * 不判断合法性 / 胜负 / 倍数。
+ * 这一件事。牌型识别只用于**选哪条音效**（斗地主 `cueForPlay`、跑得快
+ * `cueForPdkPlay`），不判断合法性 / 胜负 / 倍数。
  *
  * ## 两个来源要分清
  *
@@ -21,13 +21,12 @@
  */
 import { watch } from 'vue';
 import {
-  PdkHandType,
   isPdkSettlementResult,
-  parsePdkHand,
 } from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { playCue, cueForBid, cueForPass } from '../audio';
 import { cueForPlay } from '../audio/play-cues';
+import { cueForPdkPlay } from '../audio/pdk-play-cues';
 import { haptic } from '../feedback/haptics';
 
 export function useTableSound(): void {
@@ -77,15 +76,12 @@ export function useTableSound(): void {
       return;
     }
     /**
-     * 跑得快（S6.2）：只播出牌/过牌/输赢，不播斗地主的牌型播报。
-     * 素材里没有「通用出牌」音效 ⇒ 首版只给炸弹播 `Bomb`，其余出牌静音（登记为素材缺口）。
+     * 跑得快（2026-10-25）：复用斗地主素材的牌型播报
+     *（点数/三带一/顺子/连对/飞机/四带二/炸弹）；王/王炸/叫抢不接。
      */
     if (store.gameType === 'paodekuai') {
-      const rules = store.pdkRules;
-      if (rules) {
-        const parsed = parsePdkHand([...newest.cards], rules);
-        if (parsed.type === PdkHandType.Bomb) playCue('Bomb');
-      }
+      const cue = cueForPdkPlay([...newest.cards], store.pdkRules);
+      if (cue) playCue(cue);
       return;
     }
     const cue = cueForPlay(newest.cards);
@@ -98,8 +94,8 @@ export function useTableSound(): void {
     () => store.cardCounts.join(','),
     () => {
       const now = [...store.cardCounts];
-      // 跑得快首版不播报单/报双（spec：只播出牌/过牌/输赢）。
-      if (store.settlement || store.gameType === 'paodekuai') {
+      // 结算锁：终局后不再播报单/报双（与牌型播报同一锁）。
+      if (store.settlement) {
         lastCounts = now;
         return;
       }
