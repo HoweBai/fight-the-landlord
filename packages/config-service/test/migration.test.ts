@@ -31,7 +31,7 @@
  * 真镜像对真 MySQL 跑 `migrationsRun` ⇒ `SELECT \`key\`,version FROM platform_config` 九行）。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { QueryRunner } from 'typeorm';
@@ -61,8 +61,8 @@ import {
   RELIEF_THRESHOLD_KEY,
   SPLIT_CONFIG_PAIRS,
   SPLIT_PDK_SEEDS,
-  computeReliefThreshold,
 } from '../src/migrations/1796600000000-SplitGameConfig';
+import { computeReliefThreshold } from '../src/migration-support/relief-threshold';
 import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
@@ -98,6 +98,63 @@ function fakeRunner(statements: string[]): QueryRunner {
 
 /** 断言用：把多行 SQL 折成单空格形态，免去对换行/缩进的脆断言。 */
 const flatten = (sql: string): string => sql.replace(/\s+/g, ' ');
+
+/**
+ * 🔴 TypeORM 的迁移发现**不是「只看类」**：`DirectoryExportedClassesLoader.loadFileClasses`
+ * 把模块里**每一个函数型导出**（`typeof exported === 'function'`；数组/普通对象还会递归展开）
+ * 都收进迁移列表，随后 `MigrationExecutor.getMigrations` 要求名字**末 13 位**是数字时间戳，
+ * 否则连接初始化直接抛：
+ *
+ *   `TypeORMError: <name> migration name is wrong. Migration class name should have a
+ *    JavaScript timestamp appended.`
+ *
+ * ⇒ 服务在真栈里**永远起不来**（2026-10-25 首次合 master 实测：config-service 因此 unhealthy）。
+ * 典型踩法 = 在迁移文件里 `export function` 一个辅助函数 —— 它会被当成迁移。
+ *
+ * 本用例按**同一谓词**扫源码目录：任何函数型导出（含对象/数组内嵌）名字末 13 位不是数字 ⇒ 红。
+ */
+describe('迁移发现判据（TypeORM DirectoryExportedClassesLoader 同谓词）', () => {
+  it('migrations/*.ts 的函数型导出必须是带 13 位时间戳的迁移类', async () => {
+    const files = readdirSync(MIGRATIONS_DIR).filter(
+      (name) => name.endsWith('.ts') && !name.endsWith('.d.ts'),
+    );
+    // 防空测：目录搬家 / 后缀变化时，不许「一个文件都没扫到」而静默变绿。
+    expect(files.length).toBeGreaterThan(0);
+
+    const collect = (value: unknown, where: string, out: Array<{ where: string; fn: unknown }>) => {
+      if (typeof value === 'function') {
+        out.push({ where, fn: value });
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => collect(item, `${where}[${index}]`, out));
+        return;
+      }
+      if (value !== null && typeof value === 'object') {
+        for (const [key, item] of Object.entries(value)) collect(item, `${where}.${key}`, out);
+      }
+    };
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const mod = (await import(pathToFileURL(join(MIGRATIONS_DIR, file)).href)) as Record<
+        string,
+        unknown
+      >;
+      const found: Array<{ where: string; fn: unknown }> = [];
+      for (const [exportName, value] of Object.entries(mod)) {
+        collect(value, `${file} → ${exportName}`, found);
+      }
+      for (const { where, fn } of found) {
+        const name = (fn as { name?: string }).name ?? '';
+        if (!/^\d{13}$/.test(name.slice(-13))) {
+          offenders.push(`${where}（实际名字 "${name}"）`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
 
 /** §2.2 九键种子（**属 `1789200000000` 那个迁移**；第 10 键见下方记录片种子用例）。 */
 const EXPECTED_SEED: ReadonlyArray<readonly [string, string]> = [
