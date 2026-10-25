@@ -31,6 +31,20 @@ describe('HTTP_STATUS 映射表（§2.9 / C15）', () => {
     }
   });
 
+  it('代理六码：邀请码/比例 400、冻结 403、结算三态 409', () => {
+    for (const [code, status] of [
+      [ErrCode.AGENT_INVITE_INVALID, 400],
+      [ErrCode.AGENT_RATE_INVALID, 400],
+      [ErrCode.AGENT_FROZEN, 403],
+      [ErrCode.AGENT_SETTLEMENT_MIN, 409],
+      [ErrCode.AGENT_SETTLEMENT_PENDING, 409],
+      [ErrCode.AGENT_SETTLEMENT_STATE, 409],
+    ] as const) {
+      expect(HTTP_STATUS[code], String(code)).toBe(status);
+      expect(httpException(code, 'x').getStatus()).toBe(status);
+    }
+  });
+
   it('httpException 的 status 走表：14001/14002 ⇒ 409、10001 ⇒ 400、10002 ⇒ 401', () => {
     expect(httpException(ErrCode.E_INSUFFICIENT_FUNDS, '余额不足').getStatus()).toBe(409);
     expect(httpException(ErrCode.E_ACTION_CONFLICT, '同 id 不同内容').getStatus()).toBe(409);

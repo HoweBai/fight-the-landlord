@@ -15,6 +15,8 @@ import { AgentAuthService } from './agent-auth.service';
 import { AgentGuard } from './agent.guard';
 import { AgentPortalService } from './agent-portal.service';
 import { AgentPortalController } from './agent-portal.controller';
+import { AgentReconcileService } from './agent-reconcile.service';
+import { AgentAdminController } from './agent-admin.controller';
 import { AgentBindRpcController } from './agent-bind.rpc.controller';
 import {
   AGENT_USER_RPC_PROXY,
@@ -38,7 +40,7 @@ import {
     // currency → user 的只读边（昵称/单玩家 profile）。与 config 边各自一条 TCP。
     ClientsModule.register([{ name: AGENT_USER_RPC_PROXY, ...agentUserClientOptions() }]),
   ],
-  controllers: [AgentBindRpcController, AgentPortalController],
+  controllers: [AgentBindRpcController, AgentPortalController, AgentAdminController],
   providers: [
     AgentSettingsService,
     AgentQuotaService,
@@ -51,6 +53,7 @@ import {
     AgentAdjustmentService,
     AgentAuthService,
     AgentPortalService,
+    AgentReconcileService,
     AgentGuard,
     AgentLedgerService,
     {
