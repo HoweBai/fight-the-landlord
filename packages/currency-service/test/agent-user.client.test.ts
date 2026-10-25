@@ -59,10 +59,20 @@ describe('AgentUserClient（currency → user 只读边）', () => {
     });
   });
 
-  it('nicknames 超过 50 截断', async () => {
-    const { client, send } = makeClient({ ok: true, data: { nicknames: [] } });
-    await client.nicknames(Array.from({ length: 60 }, (_, i) => `u${i}`));
-    const payload = send.mock.calls[0]![1] as { userIds: string[] };
-    expect(payload.userIds).toHaveLength(50);
+  it('nicknames 超过 50 分批拉取（60 ⇒ 50+10），结果合并（r3 Minor #5）', async () => {
+    const send = vi.fn((_pattern: string, payload: { userIds: string[] }) =>
+      of({
+        ok: true,
+        data: { nicknames: payload.userIds.map((id) => ({ userId: id, nickname: id })) },
+      }),
+    );
+    const client = new AgentUserClient({ send } as never);
+    const ids = Array.from({ length: 60 }, (_, i) => `u${i}`);
+    const out = await client.nicknames(ids);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((send.mock.calls[0]![1] as { userIds: string[] }).userIds).toHaveLength(50);
+    expect((send.mock.calls[1]![1] as { userIds: string[] }).userIds).toHaveLength(10);
+    expect(out).toHaveLength(60);
+    expect(out[59]).toEqual({ userId: 'u59', nickname: 'u59' });
   });
 });

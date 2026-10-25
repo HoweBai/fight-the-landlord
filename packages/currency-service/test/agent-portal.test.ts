@@ -21,6 +21,8 @@ const AGENT_ROW = {
 };
 
 function makeDb(opts: {
+  agentRow?: Record<string, unknown>;
+  unsettledMicro?: number;
   players?: Array<Record<string, unknown>>;
   revenue?: Array<Record<string, unknown>>;
   playerCommission?: Array<Record<string, unknown>>;
@@ -30,7 +32,7 @@ function makeDb(opts: {
 } = {}) {
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     void params;
-    if (sql.includes('FROM `agent_accounts` WHERE `id` = ?')) return [AGENT_ROW];
+    if (sql.includes('FROM `agent_accounts` WHERE `id` = ?')) return [opts.agentRow ?? AGENT_ROW];
     if (sql.includes('FROM `agent_bindings` WHERE `owner_id` IN')) return opts.bindings ?? [];
     if (sql.includes('COUNT(*) AS `cnt` FROM `agent_bindings`')) return [{ cnt: 2 }];
     if (sql.includes('COUNT(DISTINCT `owner_id`)')) return [{ cnt: 1 }];
@@ -50,7 +52,9 @@ function makeDb(opts: {
     }
     if (sql.includes('SUM(`total_coins`)')) return [{ coins: 50 }];
     if (sql.includes('SUM(`commission_micro`)') && sql.includes('`level` > 0')) return [{ micro: 2000 }];
-    if (sql.includes('SUM(`commission_micro`)') && sql.includes('`id` > ?')) return [{ micro: 6000 }];
+    if (sql.includes('SUM(`commission_micro`)') && sql.includes('`id` > ?')) {
+      return [{ micro: opts.unsettledMicro ?? 6000 }];
+    }
     if (sql.includes('SUM(`commission_micro`)')) return [{ micro: 9000 }];
     if (sql.includes('SELECT `id`, `parent_id` FROM `agent_accounts`')) return [];
     throw new Error(`fake portal DB 未识别 SQL：${sql.slice(0, 80)}`);
@@ -157,5 +161,14 @@ describe('AgentPortalService：可见性/脱敏/级差隐藏', () => {
       overrideMicro: 2000,
       subtree: null,
     });
+  });
+
+  it('overview：负 carry + 未结 0 ⇒ unsettledCoins = 0（不显示 -1；r3 Minor #6）', async () => {
+    const svc = makeService(
+      makeDb({ agentRow: { ...AGENT_ROW, micro_carry: -5000 }, unsettledMicro: 0 }),
+    );
+    const o = await svc.overview('ag_1');
+    expect(o.carryMicro).toBe(-5000);
+    expect(o.unsettledCoins).toBe(0);
   });
 });

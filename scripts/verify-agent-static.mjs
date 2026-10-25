@@ -22,6 +22,35 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(resolve(REPO_ROOT, p), 'utf8');
 const safeRead = (p) => (existsSync(resolve(REPO_ROOT, p)) ? read(p) : '');
 
+/** 跳过参数表再配平函数体（照 verify-admin-static 的同一手法；防注释假绿）。 */
+function functionBody(src, signature) {
+  const start = src.indexOf(signature);
+  if (start === -1) return '';
+  let i = src.indexOf('(', start);
+  let depth = 0;
+  for (; i < src.length; i += 1) {
+    if (src[i] === '(') depth += 1;
+    else if (src[i] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        i += 1;
+        break;
+      }
+    }
+  }
+  const open = src.indexOf('{', i);
+  if (open === -1) return '';
+  depth = 0;
+  for (let j = open; j < src.length; j += 1) {
+    if (src[j] === '{') depth += 1;
+    else if (src[j] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(open, j + 1);
+    }
+  }
+  return '';
+}
+
 const failures = [];
 let checks = 0;
 const ok = (cond, label) => {
@@ -135,7 +164,13 @@ ok(!/JSON\.stringify\([^)]*agentId/.test(app), '请求体不带 agentId');
 ok(app.includes('status === 401'), '401 有统一处置');
 ok(app.includes('clearSession()'), '401 清会话');
 ok(app.includes('mustChangePassword'), '登录响应 mustChangePassword 驱动改密页');
-ok(app.includes('首次登录'), '403「首次登录」文案进改密页');
+const mustChangeBlock = functionBody(app, 'function maybeMustChange');
+ok(
+  mustChangeBlock !== '' &&
+    mustChangeBlock.includes('首次登录') &&
+    mustChangeBlock.includes("showScreen('change')"),
+  '403「首次登录」在 maybeMustChange 函数体内切改密页（防注释假绿）',
+);
 ok(app.includes('relogin') || app.includes('密码已修改'), '改密后强制重新登录');
 for (const text of [
   '邀请码无效，请确认后重试',

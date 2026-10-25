@@ -1134,8 +1134,20 @@ const agentsState = {
   detailId: null,
   detail: null,
   bindings: [],
-  settlements: { status: '', rows: [], loading: false, loaded: false, detailId: null, detail: null },
-  adjustments: { status: '', rows: [], loading: false, loaded: false },
+  settlements: {
+    // 默认只看待处理（r3 I1：积压时「全部」会把 pending 挤出前 50 条）；
+    // 分页保证任何一条都可到达。
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  },
+  adjustments: { status: '', page: 0, pageSize: 20, rows: [], loading: false, loaded: false, done: true },
   recon: { loading: false, summary: null },
   audit: { page: 0, rows: [], loading: false, loaded: false },
   loading: false,
@@ -6002,6 +6014,9 @@ async function openAgentDetail(id) {
     api(`/api/admin/agents/${encoded}/bindings?page=0&pageSize=50`),
   ]);
   if (handleAuth(detail.status)) return;
+  // r3 Critical #2：两次 await 期间用户可能已点了另一个代理；旧响应不得覆盖新面板
+  //（否则「保存资料」会把 A 的资料/收款写进 B）。
+  if (agentsState.detailId !== id) return;
   if (detail.status !== 200 || !detail.body?.data?.account) {
     $('ag-detail-body').textContent =
       detail.status === 0 ? '无法连接服务端' : `加载代理详情失败（HTTP ${detail.status}）`;
@@ -6049,7 +6064,9 @@ function renderAgentDetail() {
     input.autocomplete = 'off';
     if (type === 'number') {
       input.min = '0';
-      input.step = '1';
+      // 比例按 bp 存储：12.5% = 1250bp —— step=1 会让预填值 "12.5" 触发原生校验、
+      // 整张「保存资料」表单连提交事件都到不了（r3 M7）。
+      input.step = id === 'ag-e-rate' ? '0.01' : '1';
     }
     wrap.append(input);
     return wrap;
@@ -6064,10 +6081,12 @@ function renderAgentDetail() {
   parentSel.append(none);
   for (const candidate of agentsState.tree) {
     if (candidate.id === a.id) continue;
+    // 只列 active；当前上级即使已冻结也保留（否则下拉无法回显现状）。
+    if (candidate.status !== 'active' && candidate.id !== a.parentId) continue;
     const opt = el(
       'option',
       '',
-      `${candidate.depth ? '　'.repeat(candidate.depth) : ''}${candidate.name}（${candidate.phone}）`,
+      `${candidate.depth ? '　'.repeat(candidate.depth) : ''}${candidate.name}（${candidate.phone}）${candidate.status === 'active' ? '' : '（已冻结）'}`,
     );
     opt.value = candidate.id;
     parentSel.append(opt);
@@ -6120,8 +6139,9 @@ function renderAgentDetail() {
 }
 
 async function saveAgentDetail() {
-  const id = agentsState.detailId;
-  if (!id || !agentsState.detail?.account) return;
+  // 以**当前渲染的面板**为准（不是点击顺序的 detailId）：两者不同时绝不能写。
+  const id = agentsState.detail?.account?.id;
+  if (!id) return;
   if (!canAgentWrite()) return showMsg('当前角色无权修改代理', 'err');
   const rateBp = percentToBp($('ag-e-rate').value);
   if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) {
@@ -6136,9 +6156,14 @@ async function saveAgentDetail() {
     contactName: $('ag-e-contact').value.trim() || null,
   };
   // 树未加载成功时（下拉只剩「无上级」）**不得提交 parentId**：否则会把上级静默清空。
-  // 只有树非空才把下拉值（含空 = 无上级）写进 PATCH。
+  // 树已加载但当前上级不在下拉里（旧快照/刚被别人改挂）同样不提交，避免误摘上级（r3 M8）。
   if (agentsState.tree.length > 0) {
-    payload.parentId = $('ag-e-parent').value || null;
+    const parentSel = $('ag-e-parent');
+    const currentParent = agentsState.detail?.account?.parentId ?? '';
+    const currentPresent = [...parentSel.options].some((o) => o.value === currentParent);
+    if (currentParent === '' || currentPresent) {
+      payload.parentId = parentSel.value || null;
+    }
   }
   // updatePayout 的 PATCH 省略字段会置 NULL ⇒ 三收款字段必须同笔提交（空串 ⇒ null）。
   const payout = {
@@ -6356,10 +6381,13 @@ async function bulkRebindAgent(fromAgentId, toAgentId, dryRun) {
 
 /* ── 结算队列 ──────────────────────────────────────────────────── */
 
-async function loadAgentSettlements() {
+async function loadAgentSettlements(page = agentsState.settlements.page) {
   if (agentsState.settlements.loading) return;
   agentsState.settlements.loading = true;
-  const p = new URLSearchParams({ page: '0', pageSize: '50' });
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.settlements.pageSize),
+  });
   if (agentsState.settlements.status) p.set('status', agentsState.settlements.status);
   const { status, body } = await api(`/api/admin/agent-settlements?${p.toString()}`);
   agentsState.settlements.loading = false;
@@ -6367,7 +6395,9 @@ async function loadAgentSettlements() {
   if (status !== 200 || !Array.isArray(body?.data)) {
     return showMsg(`加载结算队列失败（HTTP ${status}）`, 'err');
   }
+  agentsState.settlements.page = page;
   agentsState.settlements.rows = body.data;
+  agentsState.settlements.done = body.data.length < agentsState.settlements.pageSize;
   agentsState.settlements.loaded = true;
   renderAgentSettlements();
 }
@@ -6394,6 +6424,10 @@ function renderAgentSettlements() {
   }
   $('ag-settle-empty').textContent =
     agentsState.settlements.rows.length === 0 ? '（没有结算单）' : '';
+  const sp = agentsState.settlements.page;
+  $('ag-settle-page-info').textContent = `第 ${sp + 1} 页`;
+  $('ag-settle-prev-btn').disabled = sp <= 0;
+  $('ag-settle-next-btn').disabled = agentsState.settlements.done;
 }
 
 async function openAgentSettlement(id) {
@@ -6482,10 +6516,13 @@ async function rejectAgentSettlement(settlement) {
 
 /* ── 人工调账 ──────────────────────────────────────────────────── */
 
-async function loadAgentAdjustments() {
+async function loadAgentAdjustments(page = agentsState.adjustments.page) {
   if (agentsState.adjustments.loading) return;
   agentsState.adjustments.loading = true;
-  const p = new URLSearchParams({ page: '0', pageSize: '50' });
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.adjustments.pageSize),
+  });
   if (agentsState.adjustments.status) p.set('status', agentsState.adjustments.status);
   const { status, body } = await api(`/api/admin/agent-adjustments?${p.toString()}`);
   agentsState.adjustments.loading = false;
@@ -6493,7 +6530,9 @@ async function loadAgentAdjustments() {
   if (status !== 200 || !Array.isArray(body?.data)) {
     return showMsg(`加载调账失败（HTTP ${status}）`, 'err');
   }
+  agentsState.adjustments.page = page;
   agentsState.adjustments.rows = body.data;
+  agentsState.adjustments.done = body.data.length < agentsState.adjustments.pageSize;
   agentsState.adjustments.loaded = true;
   renderAgentAdjustments();
 }
@@ -6525,6 +6564,10 @@ function renderAgentAdjustments() {
   }
   $('ag-adjust-empty').textContent =
     agentsState.adjustments.rows.length === 0 ? '（没有调账记录）' : '';
+  const ap = agentsState.adjustments.page;
+  $('ag-adjust-page-info').textContent = `第 ${ap + 1} 页`;
+  $('ag-adjust-prev-btn').disabled = ap <= 0;
+  $('ag-adjust-next-btn').disabled = agentsState.adjustments.done;
 }
 
 async function createAgentAdjustment(ev) {
@@ -6685,8 +6728,26 @@ function resetAgents() {
   agentsState.detailId = null;
   agentsState.detail = null;
   agentsState.bindings = [];
-  agentsState.settlements = { status: '', rows: [], loading: false, loaded: false, detailId: null, detail: null };
-  agentsState.adjustments = { status: '', rows: [], loading: false, loaded: false };
+  agentsState.settlements = {
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  };
+  agentsState.adjustments = {
+    status: '',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+  };
   agentsState.recon = { loading: false, summary: null };
   agentsState.audit = { page: 0, rows: [], loading: false, loaded: false };
   agentsState.loading = false;
@@ -6704,14 +6765,16 @@ function resetAgents() {
   $('ag-create-result').textContent = '';
   $('ag-settings-form').reset();
   $('ag-settings-state').textContent = '';
-  $('ag-settle-status').value = '';
+  $('ag-settle-status').value = 'pending';
   $('ag-settle-body').textContent = '';
   $('ag-settle-empty').textContent = '';
+  $('ag-settle-page-info').textContent = '';
   $('ag-settle-detail').hidden = true;
   $('ag-settle-detail-body').textContent = '';
   $('ag-adjust-form').reset();
   $('ag-adjust-body').textContent = '';
   $('ag-adjust-empty').textContent = '';
+  $('ag-adjust-page-info').textContent = '';
   $('ag-recon-from').value = '';
   $('ag-recon-to').value = '';
   $('ag-recon-body').textContent = '';
@@ -6777,15 +6840,31 @@ function wireAgents() {
   });
   $('ag-settle-status').addEventListener('change', () => {
     agentsState.settlements.status = $('ag-settle-status').value;
-    loadAgentSettlements();
+    loadAgentSettlements(0);
   });
-  $('ag-settle-refresh-btn').addEventListener('click', () => loadAgentSettlements());
+  $('ag-settle-refresh-btn').addEventListener('click', () =>
+    loadAgentSettlements(agentsState.settlements.page),
+  );
+  $('ag-settle-prev-btn').addEventListener('click', () => {
+    if (agentsState.settlements.page > 0) loadAgentSettlements(agentsState.settlements.page - 1);
+  });
+  $('ag-settle-next-btn').addEventListener('click', () => {
+    if (!agentsState.settlements.done) loadAgentSettlements(agentsState.settlements.page + 1);
+  });
   $('ag-adjust-form').addEventListener('submit', createAgentAdjustment);
   $('ag-adjust-status').addEventListener('change', () => {
     agentsState.adjustments.status = $('ag-adjust-status').value;
-    loadAgentAdjustments();
+    loadAgentAdjustments(0);
   });
-  $('ag-adjust-refresh-btn').addEventListener('click', () => loadAgentAdjustments());
+  $('ag-adjust-refresh-btn').addEventListener('click', () =>
+    loadAgentAdjustments(agentsState.adjustments.page),
+  );
+  $('ag-adjust-prev-btn').addEventListener('click', () => {
+    if (agentsState.adjustments.page > 0) loadAgentAdjustments(agentsState.adjustments.page - 1);
+  });
+  $('ag-adjust-next-btn').addEventListener('click', () => {
+    if (!agentsState.adjustments.done) loadAgentAdjustments(agentsState.adjustments.page + 1);
+  });
   $('ag-recon-run-btn').addEventListener('click', () => loadAgentReconciliation());
   $('ag-audit-refresh-btn').addEventListener('click', () => loadAgentAudit());
   $('ag-audit-prev-btn').addEventListener('click', () => {

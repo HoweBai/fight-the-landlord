@@ -80,7 +80,7 @@ describe('AgentAdminController', () => {
     expect(accounts.list).toHaveBeenCalledWith({ status: 'frozen', q: undefined, page: 1, pageSize: 10 });
   });
 
-  it('创建代理：解析 body、actor；rateBp 字符串转数字', async () => {
+  it('创建代理：解析 body、actor；rateBp 字符串转数字；null/空串/数组 ⇒ 400（r3 Minor #4）', async () => {
     const { ctl, accounts } = makeController();
     const res = await ctl.createAgent(req, {
       name: ' 总代 ',
@@ -93,12 +93,23 @@ describe('AgentAdminController', () => {
       expect.objectContaining({ name: '总代', phone: '13800000001', rateBp: 8000, parentId: null }),
       'admin1',
     );
+    for (const bad of [null, '', '  ', [], {}]) {
+      expect(
+        await statusOf(() =>
+          ctl.createAgent(req, { name: 'x', phone: '13800000002', rateBp: bad as never }),
+        ),
+        `rateBp=${JSON.stringify(bad)}`,
+      ).toBe(400);
+    }
   });
 
-  it('设置更新：boolean/非负整数校验；actor + reason', async () => {
+  it('设置更新：boolean/非负整数校验；逐键上下界（r3 Minor #3）', async () => {
     const { ctl, settings } = makeController();
     expect(await statusOf(() => ctl.updateSettings(req, { enabled: 'true' }))).toBe(400);
     expect(await statusOf(() => ctl.updateSettings(req, { defaultRateBp: -1 }))).toBe(400);
+    expect(await statusOf(() => ctl.updateSettings(req, { defaultRateBp: 10001 }))).toBe(400);
+    expect(await statusOf(() => ctl.updateSettings(req, { coinPerYuan: 0 }))).toBe(400);
+    expect(await statusOf(() => ctl.updateSettings(req, { quotaHoldDays: 366 }))).toBe(400);
     await ctl.updateSettings(req, { enabled: true, defaultRateBp: 5000, reason: '上线' });
     expect(settings.update).toHaveBeenCalledWith(
       { enabled: true, defaultRateBp: 5000 },

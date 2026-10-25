@@ -116,8 +116,38 @@ describe('➊ 登录/注册屏', () => {
     expect(signUp).toHaveBeenCalledWith('13800000010', 'secret123', '阿豆', 'ABCD2345');
   });
 
+  it('r3 C1：注册态懒拉**公开** /api/config/boot ⇒ 邀请码字段出现（新用户无令牌路径）', async () => {
+    const { wrapper } = mountLogin();
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: { headers: Record<string, string> }) => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ code: 0, data: { version: 3, agentInviteEnabled: true } }),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await flushPromises();
+
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/config/boot');
+    const init = fetchMock.mock.calls[0]![1] as { headers: Record<string, string> };
+    expect(init.headers.Authorization).toBeUndefined();
+    expect(wrapper.find('.login__field--invite').exists()).toBe(true);
+  });
+
   it('邀请码开关关：注册态仍 4 个输入框；提交不带第 4 参', async () => {
     const { wrapper, auth } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ code: 0, data: { version: 1, agentInviteEnabled: false } }),
+      })),
+    );
     useGameStore().$patch({ agentInviteEnabled: false, clientConfigVersion: 1 });
     const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
     await wrapper.find('.login__field--phone input').setValue('13800000011');

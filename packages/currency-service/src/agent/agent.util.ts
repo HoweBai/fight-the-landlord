@@ -9,9 +9,26 @@ export function toSafeInt(value: unknown, context: string): number {
   return n;
 }
 
-/** 手机号归一化的**唯一实现**（bind/rebind/profile 三处共用）。 */
+/**
+ * 手机号归一化的**唯一实现**（bind/rebind/profile 三处共用）。
+ *
+ * 2026-10-26 r3 审查 Important #2：只 trim 会让 `+86 138…` / `138-…` 等**同一手机号的不同写法**
+ * 产生不同 HMAC ⇒ 代理可用变体号注册玩家绕过「自玩不拿佣金」特判。这里做**有限**数字归一：
+ *  - 全角数字 → 半角；去掉所有非数字（空格/`+`/`-`/括号）；
+ *  - 去 `0086` / `86` 国家码前缀；
+ *  - 结果必须恰为 `^1\d{10}$`，否则**保留 trim 原值**（不认识的格式不擅自改写）。
+ * 归一后的值同时用于代理手机号存储/登录与绑定 HMAC（两侧同式）。
+ */
 export function normalizePhone(phone: string): string {
-  return phone.trim();
+  const trimmed = phone.trim();
+  const halfWidth = trimmed.replace(/[０-９]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+  const digits = halfWidth.replace(/\D/g, '');
+  let local = digits;
+  if (/^0086\d{11}$/.test(local)) local = local.slice(4);
+  else if (/^86\d{11}$/.test(local)) local = local.slice(2);
+  return /^1\d{10}$/.test(local) ? local : trimmed;
 }
 
 /** 门户展示用脱敏：前 3 后 4；不足 7 位 → 原样（不编造）。 */

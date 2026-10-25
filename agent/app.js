@@ -236,8 +236,8 @@ async function submitPasswordChange(oldId, newId, confirmId, errorId) {
   const confirmValue = $(confirmId).value;
   showPasswordError(errorId, '');
   if (!oldPassword || !newPassword) return showPasswordError(errorId, '请填写完整');
-  if (newPassword.length < 10 || newPassword.length > 72) {
-    return showPasswordError(errorId, '新密码长度须为 10–72 字符');
+  if (newPassword.length < 6 || newPassword.length > 64) {
+    return showPasswordError(errorId, '新密码长度须为 6–64 字符');
   }
   if (newPassword !== confirmValue) return showPasswordError(errorId, '两次输入的新密码不一致');
   const res = await api('/api/agent/password', {

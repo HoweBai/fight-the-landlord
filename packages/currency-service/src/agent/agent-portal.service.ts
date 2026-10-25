@@ -179,7 +179,8 @@ export class AgentPortalService {
       commissionMicro: commission,
       unsettledMicro: unsettled,
       carryMicro: carry,
-      unsettledCoins: Math.floor((carry + unsettled) / 10_000),
+      // 负 manual 可让 carry 为负；门户只展示可得金额（结算侧 total<=0 会拒绝申请）。
+      unsettledCoins: Math.max(0, Math.floor((carry + unsettled) / 10_000)),
       paidCoins: paid,
       overrideMicro: override,
       subtree,

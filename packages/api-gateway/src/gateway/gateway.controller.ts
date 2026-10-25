@@ -124,6 +124,22 @@ export class GatewayController {
   // **随片⑦退役**（底分档位表并入 config-service 的 `GET /api/config` 子集 —— 它的
   // 「路由名与目标服务不一致」是上一个形态的刻意选择，本片把这个理由连同端点一起删掉）。
 
+  /**
+   * `GET /api/config/boot`：**登录前**公开启动配置（代理分润 r3 Critical #1）。
+   * 只回 `{version, agentInviteEnabled}`；公开白名单精确条目在 `public-paths.ts`。
+   * ⚠️ 必须声明在 `@Get('config')` 之前（Nest 按声明序匹配；两者本不冲突，但保持字面路由在前）。
+   */
+  @Get('config/boot')
+  async getConfigBoot(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToConfigSvc(
+      'GET',
+      '/api/config/boot',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
   /** `GET /api/config`：玩家面配置**子集**（§2.4：恰好七键），经玩家验签（不在公开白名单里）。 */
   @Get('config')
   async getConfig(@Res() res: any, @Req() req: any) {

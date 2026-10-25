@@ -1117,7 +1117,7 @@
           </label>
           <label class="field" for="ag-settings-default-rate">
             <span class="field-label">默认比例（%）</span>
-            <input id="ag-settings-default-rate" type="number" min="0" max="100" step="1" />
+            <input id="ag-settings-default-rate" type="number" min="0" max="100" step="0.01" />
           </label>
           <label class="field" for="ag-settings-min-yuan">
             <span class="field-label">最低结算（元）</span>
@@ -1215,7 +1215,7 @@
           </label>
           <label class="field" for="ag-create-rate">
             <span class="field-label">比例（%，留空取默认）</span>
-            <input id="ag-create-rate" type="number" min="0" max="100" step="1" />
+            <input id="ag-create-rate" type="number" min="0" max="100" step="0.01" />
           </label>
           <label class="field" for="ag-create-region">
             <span class="field-label">片区</span>
@@ -1259,8 +1259,8 @@
           <label class="field" for="ag-settle-status">
             <span class="field-label">状态</span>
             <select id="ag-settle-status">
+              <option value="pending" selected>pending</option>
               <option value="">全部</option>
-              <option value="pending">pending</option>
               <option value="paid">paid</option>
               <option value="rejected">rejected</option>
               <option value="cancelled">cancelled</option>
@@ -1285,6 +1285,11 @@
           <tbody id="ag-settle-body"></tbody>
         </table>
         <p id="ag-settle-empty" class="hint"></p>
+        <div class="panel-foot players-pager">
+          <button id="ag-settle-prev-btn" type="button" class="btn">上一页</button>
+          <span id="ag-settle-page-info" class="hint"></span>
+          <button id="ag-settle-next-btn" type="button" class="btn">下一页</button>
+        </div>
         <div id="ag-settle-detail" class="agents-settle-detail" hidden>
           <h3 class="panel-title sub">结算单详情</h3>
           <div id="ag-settle-detail-body" class="player-detail"></div>
@@ -1336,6 +1341,11 @@
           <tbody id="ag-adjust-body"></tbody>
         </table>
         <p id="ag-adjust-empty" class="hint"></p>
+        <div class="panel-foot players-pager">
+          <button id="ag-adjust-prev-btn" type="button" class="btn">上一页</button>
+          <span id="ag-adjust-page-info" class="hint"></span>
+          <button id="ag-adjust-next-btn" type="button" class="btn">下一页</button>
+        </div>
       </section>
 
       <section class="panel">

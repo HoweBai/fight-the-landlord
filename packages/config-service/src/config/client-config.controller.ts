@@ -108,6 +108,28 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
 export class ClientConfigController {
   constructor(private readonly config: PlatformConfigService) {}
 
+  /**
+   * 代理分润（2026-10-26，r3 Critical #1）：**登录前**公开启动配置。
+   *
+   * 登录页在无令牌时无法调用 `GET /api/config`（需玩家验签）⇒ 注册页的邀请码输入框
+   * 永远拿不到开关。本端点只回两个字段（`version` + `agentInviteEnabled`），
+   * 由网关 `PUBLIC_PATHS` 精确放行；**不得**把其余配置键顺手塞进来。
+   */
+  @Get('boot')
+  async boot(): Promise<{
+    code: ErrCode;
+    data: { version: number; agentInviteEnabled: boolean };
+  }> {
+    const full = await this.get();
+    return {
+      code: full.code,
+      data: {
+        version: full.data.version,
+        agentInviteEnabled: full.data.agentInviteEnabled,
+      },
+    };
+  }
+
   @Get()
   async get(): Promise<{ code: ErrCode; data: ClientConfig }> {
     const rows = await this.config.list();

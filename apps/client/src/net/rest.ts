@@ -319,6 +319,29 @@ export function fetchClientConfig(): Promise<RestResponse<ClientConfig>> {
   return authedGet<ClientConfig>('/config');
 }
 
+/** 代理分润（r3 Critical #1）：登录前的公开启动配置（只有两键）。 */
+export interface BootClientConfig {
+  version: number;
+  agentInviteEnabled: boolean;
+}
+
+/** 公开 GET（**不带** `Authorization`；仅用于公开白名单里的启动面）。 */
+async function publicGet<T>(path: string): Promise<RestResponse<T>> {
+  return request<T>({
+    url: `${resolveApiBase()}${path}`,
+    method: 'GET',
+    headers: {},
+  });
+}
+
+/**
+ * `GET /api/config/boot` —— 登录页在**无令牌**时判断是否渲染邀请码输入框。
+ * 只回 `{version, agentInviteEnabled}`；不得用它冒充全量配置（不写 `clientConfigVersion`）。
+ */
+export function fetchBootClientConfig(): Promise<RestResponse<BootClientConfig>> {
+  return publicGet<BootClientConfig>('/config/boot');
+}
+
 /**
  * §7.1 / N30③（R454）：`POST /api/rooms` → `{ code, message?, data: RoomInfo }`。
  *

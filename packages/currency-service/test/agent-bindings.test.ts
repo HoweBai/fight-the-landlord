@@ -14,7 +14,11 @@ interface BindRow {
   bound_at: Date;
 }
 
-function makeDb(initial: Record<string, BindRow> = {}, agentStatus = 'active') {
+function makeDb(
+  initial: Record<string, BindRow> = {},
+  agentStatus: string | { value: string } = 'active',
+) {
+  const statusRef = typeof agentStatus === 'string' ? { value: agentStatus } : agentStatus;
   const bindings = new Map(Object.entries(initial));
   const history: Array<Record<string, unknown>> = [];
   const audit: Array<Record<string, unknown>> = [];
@@ -22,7 +26,7 @@ function makeDb(initial: Record<string, BindRow> = {}, agentStatus = 'active') {
     query: async (sql: string, params?: unknown[]) => {
       const p = params ?? [];
       if (sql.includes('FROM `agent_accounts` WHERE `id`')) {
-        return [{ status: agentStatus }];
+        return [{ status: statusRef.value }];
       }
       if (sql.includes('INSERT IGNORE INTO `agent_bindings`')) {
         const owner = String(p[0]);
@@ -243,5 +247,47 @@ describe('AgentBindingsService：管理改绑/解绑/批量', () => {
     await expect(
       svc.bulkRebind({ fromAgentId: 'a', toAgentId: 'a', dryRun: true, actor: 'admin', reason: 'r' }),
     ).rejects.toThrow(/不能相同/);
+  });
+
+  it('批量改绑：目标在**批次之间**被冻结 ⇒ 后续批次拒绝（r3 Minor #7）', async () => {
+    const initial: Record<string, BindRow> = {};
+    for (let i = 0; i < 501; i += 1) {
+      initial[`u${String(i).padStart(4, '0')}`] = {
+        agent_id: 'from',
+        phone_hash: 'x',
+        phone_masked: '138****0000',
+        source: 'signup',
+        bound_at: new Date(),
+      };
+    }
+    const statusRef = { value: 'active' };
+    const db = makeDb(initial, statusRef);
+    const { svc } = makeService(db);
+    // 第一批 500 条完成后把目标冻结 ⇒ 第二批的批次内复核必须拒绝。
+    const originalQuery = db.manager.query;
+    let chunkQueries = 0;
+    db.manager.query = (async (sql: string, params?: unknown[]) => {
+      const out = await originalQuery(sql, params);
+      if (sql.includes('SELECT `owner_id` FROM `agent_bindings` WHERE `agent_id`')) {
+        chunkQueries += 1;
+        if (chunkQueries === 1) statusRef.value = 'frozen';
+      }
+      return out;
+    }) as typeof db.manager.query;
+
+    await expect(
+      svc.bulkRebind({
+        fromAgentId: 'from',
+        toAgentId: 'to',
+        dryRun: false,
+        actor: 'admin',
+        reason: 'r',
+        limit: 1000,
+      }),
+    ).rejects.toThrow(/已冻结/);
+    const moved = [...db.bindings.values()].filter((b) => b.agent_id === 'to').length;
+    const left = [...db.bindings.values()].filter((b) => b.agent_id === 'from').length;
+    expect(moved).toBe(500);
+    expect(left).toBe(1);
   });
 });

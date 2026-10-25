@@ -24,7 +24,7 @@ import {
   type SettlementStatus,
 } from './agent-settlement.service';
 import { AgentUserClient } from './agent-user.client';
-import type { AgentStatus } from './agent.constants';
+import { RATE_BP_MAX, type AgentStatus } from './agent.constants';
 
 function pageOf(query: Record<string, unknown>): { page: number; pageSize: number } {
   const page = Number(query.page ?? 0);
@@ -58,6 +58,24 @@ function idOf(raw: string): number {
 function reasonOf(body: Record<string, unknown>): string {
   const reason = optionalString(body.reason, 'reason');
   return typeof reason === 'string' && reason.trim() !== '' ? reason.trim() : 'admin';
+}
+
+/**
+ * `rateBp` 解析：接受 0–10000 的整数或非空数字串（兼容既有管理端表单），
+ * 但**拒绝** null/空串/数组/对象 —— 那些会经 `Number()` 静默变成 0%（r3 审查 Minor #4）。
+ */
+function rateBpOf(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  if (!Number.isSafeInteger(n)) {
+    throw new DomainError(ErrCode.BAD_PARAM, 'rateBp 必须是整数');
+  }
+  return n;
 }
 
 function dateOf(value: unknown, name: string, fallback: Date): Date {
@@ -123,12 +141,7 @@ export class AgentAdminController {
       const name = stringOf(body.name, 'name');
       const phone = stringOf(body.phone, 'phone');
       const parentId = optionalString(body.parentId, 'parentId');
-      const rateBp =
-        body.rateBp === undefined
-          ? undefined
-          : typeof body.rateBp === 'number'
-            ? body.rateBp
-            : Number(body.rateBp);
+      const rateBp = rateBpOf(body.rateBp);
       const password = optionalString(body.password, 'password');
       return {
         code: ErrCode.OK,
@@ -195,6 +208,15 @@ export class AgentAdminController {
             const n = Number(body[key]);
             if (!Number.isSafeInteger(n) || n < 0) {
               throw new DomainError(ErrCode.BAD_PARAM, `${key} 必须是非负整数`);
+            }
+            if (key === 'defaultRateBp' && n > RATE_BP_MAX) {
+              throw new DomainError(ErrCode.BAD_PARAM, `defaultRateBp 不能超过 ${RATE_BP_MAX}`);
+            }
+            if (key === 'coinPerYuan' && n < 1) {
+              throw new DomainError(ErrCode.BAD_PARAM, 'coinPerYuan 必须 ≥ 1');
+            }
+            if (key === 'quotaHoldDays' && n > 365) {
+              throw new DomainError(ErrCode.BAD_PARAM, 'quotaHoldDays 不能超过 365');
             }
             patch[key] = n;
           }
@@ -296,12 +318,7 @@ export class AgentAdminController {
           {
             name: optionalString(body.name, 'name') ?? undefined,
             parentId: optionalString(body.parentId, 'parentId'),
-            rateBp:
-              body.rateBp === undefined
-                ? undefined
-                : typeof body.rateBp === 'number'
-                  ? body.rateBp
-                  : Number(body.rateBp),
+            rateBp: rateBpOf(body.rateBp),
             region: optionalString(body.region, 'region'),
             contactName: optionalString(body.contactName, 'contactName'),
             payoutName: optionalString(body.payoutName, 'payoutName'),

@@ -27,7 +27,7 @@ import { computed, ref, watch } from 'vue';
 import { useAuthStore } from '../../stores/auth';
 import { useGameStore } from '../../stores/game';
 import { restartGameSession } from '../../composables/useGameSession';
-import { refreshClientConfig } from '../../composables/useClientConfig';
+import { refreshInviteBootConfig } from '../../composables/useClientConfig';
 import { usePageAlignment } from '../../composables/usePageAlignment';
 /** 片①：横屏画布（R710）。 */
 import LandscapeStage from '../../components/LandscapeStage.vue';
@@ -80,15 +80,18 @@ const busy = ref(false);
 const isRegister = computed(() => mode.value === 'register');
 /**
  * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**首次切到注册**时懒拉一次
- * `/api/config`（不阻塞；失败 ⇒ 不渲染，注册照常）。
+ * `GET /api/config/boot`（公开白名单；只回 version + agentInviteEnabled）——
+ * 不阻塞；失败 ⇒ 不渲染，注册照常。
  */
 const showInviteCode = computed(() => isRegister.value && game.agentInviteEnabled === true);
 let inviteLoading = false;
 async function ensureInviteConfig(): Promise<void> {
-  if (game.clientConfigVersion > 0 || inviteLoading) return;
+  // 全量配置已加载且**开关为开** ⇒ 无需再拉；否则拉公开启动面（后台可能刚开启，
+  // 旧快照的 false 不应把字段永久藏住）。
+  if ((game.clientConfigVersion > 0 && game.agentInviteEnabled === true) || inviteLoading) return;
   inviteLoading = true;
   try {
-    await refreshClientConfig();
+    await refreshInviteBootConfig();
   } finally {
     inviteLoading = false;
   }

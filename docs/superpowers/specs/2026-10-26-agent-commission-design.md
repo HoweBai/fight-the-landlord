@@ -372,7 +372,7 @@ for agent in chain:
 5. 绑定已在第 2 步完成；若第 3/4 步失败，可能留下**孤儿绑定**（uuid 永不复用；日志 + 指标；提供按 owner 清理的运维 SQL）。
 - **TOCTOU 消除**：`bind` 用 code 而非 agentId，在同一事务内重新解析/校验。
 - **开关矩阵**：两个开关都开才 `bound`；任一关 ⇒ `ignored`。2×2 测试。
-- **phone_hash**：`HMAC-SHA256(normalizePhone(phone), AGENT_PHONE_HMAC_KEY)`；`normalizePhone = trim`（唯一实现，bind/rebind/profile 三处共用；三处同值用例）。`AGENT_PHONE_HMAC_KEY` 在 **production 缺失 ⇒ `main.ts` 启动 `process.exit(1)`**（照 `INTERNAL_SERVICE_TOKEN`；加源码级闸）；v1 不支持轮换（文档写明；轮换需全量重算）。
+- **phone_hash**：`HMAC-SHA256(normalizePhone(phone), AGENT_PHONE_HMAC_KEY)`；`normalizePhone` = **trim + 数字归一**（去空格/`+`/`-`/括号、全角数字转半角、去 `86`/`0086` 国家码前缀；结果必须 `^1\d{10}$`，否则保留 trim 原值；唯一实现，bind/rebind/profile 三处共用；三处同值用例）。⚠️ 2026-10-26 r3 代码审订正：原写 `trim` 会被 `+86…`/分隔符变体绕过自玩特判（Important #2）。`AGENT_PHONE_HMAC_KEY` 在 **production 缺失 ⇒ `main.ts` 启动 `process.exit(1)`**（照 `INTERNAL_SERVICE_TOKEN`；加源码级闸）；v1 不支持轮换（文档写明；轮换需全量重算）。
 
 ### 5.3 改绑/解绑/批量
 
@@ -530,10 +530,11 @@ for agent in chain:
 
 - 注册页（`apps/client/src/pages/login/login.vue`）注册态增加**可选**「邀请码」输入：
   - 仅当 `config.agentInviteEnabled === true` 时渲染；
+  - ⚠️ **2026-10-26 r3 代码审 Critical #1 订正**：原方案「注册态懒拉 `GET /api/config`」**永远失败**——该路径需玩家令牌，新用户没有 ⇒ 字段永不出现。改为登录前拉**公开启动面** `GET /api/config/boot`（网关 `PUBLIC_PATHS` 第 6 条精确条目，只回 `{version, agentInviteEnabled}` 两键）；失败 ⇒ 仍不渲染、注册照常；
   - trim + uppercase；空 ⇒ 不发字段；
   - `AGENT_INVITE_INVALID` ⇒ 展示「邀请码无效，请确认后重试」；其它错误沿用既有文案。
 - `net/rest.ts` `register(phone, password, nickname, inviteCode?)`；`stores/auth.ts` `signUp` 透传。
-- 客户端配置类型/存储增加 `agentInviteEnabled`。
+- 客户端配置类型/存储增加 `agentInviteEnabled`；启动面只写该开关，**不**冒充全量配置（不写 `clientConfigVersion`）。
 - 老客户端不带该字段 ⇒ 服务端正常注册（未归属），不影响登录/对局。
 
 ---
@@ -753,15 +754,32 @@ for agent in chain:
 | 高 H9 | 密钥链两侧不同形 | 逐字常量 + 跨服务源码闸 + production fail-closed |
 | 高 H10 | compose env 无任务 | 新增依赖/env 任务（gateway/currency 两处） |
 | 高 H11 | 客户端 6 码文案 | 任务 1 补 `net/copy.ts` + 逐码断言 |
-| 高 H12 | 登录页无配置来源 | 注册态懒拉 `/api/config`，失败不渲染不阻塞 + 用例 |
+| 高 H12 | 登录页无配置来源 | 注册态懒拉**公开** `GET /api/config/boot`（r3 审订正：原 `/api/config` 需令牌，新用户永远拉不到），失败不渲染不阻塞 + 用例 |
 | 高 H13 | config 测试/CFG_NAV 漏改 | 任务 2 补 `platform-config.service.test.ts`、`admin/index.html`、`CFG_NAV` + verifier 自证 |
 | 高 H14 | conformance 无 run/baseline | 任务 15 补 `run.ts` + `baselines.json`（CI 回填） |
 | 高 H15 | 「零查询」矛盾/无 opCreatedAt | 改为「一次 settings 读」；钩子读 `currency_ops.created_at` |
 | 高 H16 | 应收台账无表 | v1 明确不做（线下应收，后台显示负余额） |
-| 高 H17 | 手机号归一/HMAC fail-closed | `normalizePhone=trim` 唯一实现；`main.ts` production fail-closed + 源码闸 |
+| 高 H17 | 手机号归一/HMAC fail-closed | `normalizePhone=trim+数字归一`（r3 代码审订正：trim-only 可被 `+86`/分隔符变体绕过自玩特判）唯一实现；`main.ts` production fail-closed + 源码闸 |
 | 低 10 条 | 登录页 4 框锚点、PUBLIC_PATHS 5 条、重试丢码、单号生成、bind 状态、VIEW_ORDER/锚点、文档/脚本、N+1、gap 假 DB、maturity 注册 | 已并入计划任务与测试判据 |
 
 **结论**：计划修订后开工；每一任务独立 commit，先红后绿。
+
+### 17.2 代码对抗审查记录（r3，2026-10-26）
+
+审查方式：两个**独立** reviewer 子代理（后端/数据面、前端/edge 面），审 `12f29c9d..HEAD`（任务 0–15 全部提交），对照 spec/plan 逐条攻击；Critical/Important 必须修。
+
+| 级别 | 发现 | 处置 |
+|---|---|---|
+| Critical C1 | 注册页懒拉 `GET /api/config` 需玩家令牌 ⇒ **新用户永远看不到邀请码输入框**（任务 12 对目标人群失效；测试直接 patch store 造成假绿） | 新增**公开**启动面 `GET /api/config/boot`（只回 `{version, agentInviteEnabled}`）：config-service `@Get('boot')`、网关精确路由、`PUBLIC_PATHS` 第 6 条、`CLIENT_CONFIG_PATHS` 同步；客户端 `refreshInviteBootConfig()` 只落开关（不冒充全量配置）；单测 + slice-30 无令牌断言 |
+| Critical C2 | 管理页详情响应乱序：先点 A 再点 B，A 后到会覆盖 B 的面板，而「保存资料」只认点击序 ⇒ **把 A 的资料/收款写进 B** | `openAgentDetail` await 后复核 `detailId`；`saveAgentDetail` 以**当前渲染的** `detail.account.id` 为准 |
+| Important B1 | `buildEnabledPeriods` 用全局 `effective_from` 开新启用段 ⇒ 关→开后区间回卷覆盖关闭窗口（幻影缺口/重复计数）；单测编码了错行为 | 每段从该行 `changed_at` 起；单测改为 `{T0,T1},{T2,T3}` |
+| Important B2 | `normalizePhone` 仅 trim ⇒ `+86`/分隔符/全角变体绕过「自玩不拿佣金」 | 扩为数字归一（全角→半角、去非数字、去 `86`/`0086` 前缀；须 `^1\d{10}$` 否则保留 trim 原值）；新增 `agent-phone.test.ts` 六例（含 HMAC 变体相等） |
+| Important I1 | 结算队列/调账列表写死 `page=0&pageSize=50` 无翻页 ⇒ pending >50 时财务不可达 | 两侧补上一页/下一页 + 页码；结算默认筛选 `pending`；状态切换回第 1 页 |
+| Minor（已修） | 设置项无逐键上下界；`rateBp` 把 null/`''`/`[]` 静默转 0；昵称 RPC 截断 50 vs 门户一页 100；负 carry 使 `unsettledCoins` 显示 -1；批量改绑只在开始时校验目标 active；门户改密长度 10–72 与服务端 6–64 不一致；`verify:agent` 的「首次登录」可被注释满足；`verify:agent` 未接 CI；详情上级下拉含冻结代理；比例 `step=1` 导致非整百分比预填无法提交；树旧快照可能误摘上级 | 全部修复：逐键 bounds（`defaultRateBp≤10000`/`coinPerYuan≥1`/`quotaHoldDays≤365`）；`rateBpOf()` 仅收整数/非空数字串；昵称按 50 分批；`Math.max(0,…)`；每批复核目标 active；门户改 6–64；verifier 改函数体断言 + `showScreen('change')`；`ci.sh` 第 7 阶段加 `verify:agent`；下拉只列 active（保留当前上级回显）；比例 step 0.01；当前上级不在下拉则不提交 `parentId` |
+| Minor（登记） | 详情绑定玩家只取前 50 无翻页（批量改绑兜底）；门户 token 存 localStorage（本页零 HTML 注入，作为可接受加固项） | 登记入交付报告已知边界；后续可补 |
+| slice-30 观察 | 并发组无 barrier（可能串行通过）；低 id 构造用「删行+显式插回」等价最终态 | 注释已写明构造；并发组保留（两连接同时发起，服务端调度即真实并发）；低 id 行改为与删除行**同额**，不再留 +1 micro 偏差 |
+
+**结论**：Critical/Important 全部修复并补测；Minor 修复 10 项、登记 2 项。
 
 ---
 

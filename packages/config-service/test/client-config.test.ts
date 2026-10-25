@@ -15,8 +15,25 @@ import { makeService, seedDb, startHttpProbe } from './helpers/config-probe';
  */
 
 describe('GET /api/config（C7 半边）', () => {
-  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十二键）；200 + code 0', async () => {
+  /**
+   * 代理分润（r3 Critical #1）：登录前公开启动配置。只允许两个键——不得把其余配置
+   * 顺手暴露进无令牌面（网关 PUBLIC_PATHS 精确放行）。
+   */
+  it('GET /api/config/boot：只回 version + agentInviteEnabled（公开启动面）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
+    try {
+      const res = await probe.get('/api/config/boot');
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(ErrCode.OK);
+      expect(Object.keys(res.body.data).sort()).toEqual(['agentInviteEnabled', 'version']);
+      expect(typeof res.body.data.version).toBe('number');
+      expect(typeof res.body.data.agentInviteEnabled).toBe('boolean');
+    } finally {
+      await probe.close();
+    }
+  }, 20000);
+
+  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十二键）；200 + code 0', async () => {    const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const res = await probe.get('/api/config');
 

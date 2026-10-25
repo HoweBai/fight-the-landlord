@@ -335,6 +335,22 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
       'GET /api/config agentInviteEnabled=true（客户端可见裸名）',
     );
 
+    // r3 Critical #1：未登录的注册页必须能拿到邀请码开关（公开 /api/config/boot）。
+    const bootCfg = await getJson<{ version: number; agentInviteEnabled: boolean }>(
+      '/api/config/boot',
+    );
+    checks.that(
+      bootCfg.status === 200 &&
+        bootCfg.body?.code === ErrCode.OK &&
+        bootCfg.body.data?.agentInviteEnabled === true,
+      `无令牌 GET /api/config/boot ⇒ 200/true —— 实际 HTTP ${bootCfg.status} ${JSON.stringify(bootCfg.body)}`,
+    );
+    checks.eq(
+      Object.keys(bootCfg.body?.data ?? {}).sort().join(','),
+      'agentInviteEnabled,version',
+      'boot 面只回两键（不暴露其余配置）',
+    );
+
     // ══════════════════════════════════════════════════════════════════════
     // ① 树/比例/邀请码
     // ══════════════════════════════════════════════════════════════════════
@@ -789,11 +805,11 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
       `已有 pending ⇒ 14012 —— 实际 HTTP ${s1Again.status} ${JSON.stringify(s1Again.body)}`,
     );
 
-    // 低 id 晚提交：显式插回低 id 佣金行（micro 多 1 ⇒ SUM/hash 必不一致）。
+    // 低 id 晚提交：显式插回低 id 佣金行（与删除行同额；快照后出现 ⇒ SUM/hash 必不一致）。
     mysqlExec(
       'INSERT INTO `agent_commission_entries` ' +
         '(`id`, `agent_id`, `owner_id`, `revenue_event_id`, `source_op_id`, `kind`, `level`, `rate_bp`, `paid_bp`, `commission_micro`, `reason`) ' +
-        `VALUES (${lowId}, '${agentB.account.id}', NULL, NULL, NULL, 'manual', 0, 0, 0, ${lowMicro + 1}, 's30 low-id late commit')`,
+        `VALUES (${lowId}, '${agentB.account.id}', NULL, NULL, NULL, 'manual', 0, 0, 0, ${lowMicro}, 's30 low-id late commit')`,
     );
     const payStale = await postJson(
       `/api/admin/agent-settlements/${s1Id}/pay`,
@@ -832,9 +848,9 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
     checks.that(s2Res.status === 200, `重新申请 S2 ⇒ 200 —— 实际 ${JSON.stringify(s2Res.body)}`);
     if (s2?.id === undefined) throw new ConformanceError('S2 未返回 id');
     const s2Id = s2.id;
-    checks.eq(s2?.totalMicro, 120001, 'S2 totalMicro = 120001（高 id 60000 + 低 id 60001）');
+    checks.eq(s2?.totalMicro, 120000, 'S2 totalMicro = 120000（高 id 60000 + 低 id 60000）');
     checks.eq(s2?.itemsCount, 2, 'S2 itemsCount = 2');
-    checks.eq(s2?.totalCoins, 12, 'S2 totalCoins = floor(120001/10000) = 12');
+    checks.eq(s2?.totalCoins, 12, 'S2 totalCoins = floor(120000/10000) = 12');
     const pay2 = await postJson(
       `/api/admin/agent-settlements/${s2Id}/pay`,
       { voucherNo: `S30-V-${RUN_TAG}-2` },
@@ -846,8 +862,8 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
         `SELECT CONCAT(\`status\`, ':', \`settled_watermark\`, ':', \`micro_carry\`, ':', COALESCE(\`pending_settlement_id\`, 'NULL')) ` +
           `FROM \`agent_accounts\` WHERE \`id\` = '${agentB.account.id}'`,
       ),
-      `active:${s2?.toEntryId}:1:NULL`,
-      '打款后：watermark=to / carry=1 / pending=NULL',
+      `active:${s2?.toEntryId}:0:NULL`,
+      '打款后：watermark=to / carry=0 / pending=NULL',
     );
 
     // 撤回：A 新增一笔佣金 → 申请 → 撤回（水位不推进）

@@ -50,13 +50,20 @@ export class AgentUserClient {
   constructor(private readonly proxy: ClientProxy) {}
 
   async nicknames(userIds: readonly string[]): Promise<UserNicknameEntry[]> {
-    const ids = [...userIds].slice(0, AGENT_NICKNAMES_MAX_BATCH);
+    // 门户一页最多 100 人，而 RPC 单批上限 50（r3 审查 Minor #5：原实现直接 slice(0,50)
+    // ⇒ 第 51 人以后昵称静默变 null）。按 50 分批顺序拉取；去重后仍保持原顺序。
+    const ids = [...new Set(userIds)];
     if (ids.length === 0) return [];
-    const res = await this.send<UserNicknamesGetResponse>(RPC_PATTERNS.userNicknamesGet, {
-      userIds: ids,
-    });
-    if (!res.ok) throw new AgentUserRpcError(res.code, res.message);
-    return res.data.nicknames;
+    const out: UserNicknameEntry[] = [];
+    for (let i = 0; i < ids.length; i += AGENT_NICKNAMES_MAX_BATCH) {
+      const batch = ids.slice(i, i + AGENT_NICKNAMES_MAX_BATCH);
+      const res = await this.send<UserNicknamesGetResponse>(RPC_PATTERNS.userNicknamesGet, {
+        userIds: batch,
+      });
+      if (!res.ok) throw new AgentUserRpcError(res.code, res.message);
+      out.push(...res.data.nicknames);
+    }
+    return out;
   }
 
   async profile(userId: string): Promise<UserAgentProfileData> {

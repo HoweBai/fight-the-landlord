@@ -1161,7 +1161,7 @@ socket.emit(type, { version: number, payload: unknown });
 
 ### 7.1 api-gateway `[部分实现]`
 
-> ⚠️ **P12 裁决（R473）· R1210 更新：标记保留 `[部分实现]`** —— TLS 终止已**产物化**进本仓：门口 `edge`（`Dockerfile.edge` + `deploy/Caddyfile`，生产形态编排第 18 个服务〔支付片后总数；原「第 10 个」为上线运营层片时计数〕）**就是**本仓的 TLS 终结者（编排里**有**终结者了；`.worktrees/**` 的旧快照不计）。⚠️ 这不推翻 R473 的「TLS 终止由部署层承担」—— 本仓只是把部署层的那段**产物化**。保留 `[部分实现]` 的理由改为：**真证书（ACME）签发路径未验证**（本机无域名，只验过自签 `tls internal` 那条路）。②-⑥ 全绿（含白名单恰好五条精确匹配、`GET /api/games/:roomCode` 走裁剪视图）。
+> ⚠️ **P12 裁决（R473）· R1210 更新：标记保留 `[部分实现]`** —— TLS 终止已**产物化**进本仓：门口 `edge`（`Dockerfile.edge` + `deploy/Caddyfile`，生产形态编排第 18 个服务〔支付片后总数；原「第 10 个」为上线运营层片时计数〕）**就是**本仓的 TLS 终结者（编排里**有**终结者了；`.worktrees/**` 的旧快照不计）。⚠️ 这不推翻 R473 的「TLS 终止由部署层承担」—— 本仓只是把部署层的那段**产物化**。保留 `[部分实现]` 的理由改为：**真证书（ACME）签发路径未验证**（本机无域名，只验过自签 `tls internal` 那条路）。②-⑥ 全绿（含白名单**恰好五条**精确匹配、`GET /api/games/:roomCode` 走裁剪视图；代理分润 2026-10-26 起新增 `/api/config/boot` ⇒ 现为六条）。
 >
 > **对外语义（R1210）**：门口 `edge` = **唯一对外入口**（宿主只发布 `80` / `443`）；`api-gateway` 退为**内部服务**（不发布，`expose: 3000` —— 即 §2.1 的「对外 = 门口」）。明文 HTTP 只在 compose 网络 `ftl-platform` 内。⚠️ **不得为凑 0 而改标题** —— 真证书路径未验证前，仍算**部分实现**（R473）。
 
@@ -1175,6 +1175,7 @@ socket.emit(type, { version: number, payload: unknown });
   （直连可达，conformance `slice-07.2-boundary` 覆盖的正是直连面），只是**网关不代理它**。
   客户端顶栏昵称因此改走**登录响应**里的 `user.nickname`（本地持久化））；`/api/health` 本地
 - `GET /api/config` → 转发 **config-service**（玩家可见子集，**恰好**十五键：`baseScoreLevels` / `friendRoomEnabled` / `freeRoomEnabled` / `goldRoomEnabled` / `reliefEnabled` / `entryMultiplier` / `rechargeEnabled` / `withdrawEnabled` / `coinPerYuan` / `rechargePackages` / `withdrawMinCoins` / `withdrawMaxCoinsPerOrder` / `withdrawDailyMaxCoins` / `reliefAdpid` / `version`，§7.5/§7.7；经网关**验签**、不在白名单）。
+- `GET /api/config/boot` → 转发 **config-service**（**登录前**公开启动配置；只回 `{version, agentInviteEnabled}` 两键 —— 代理分润 2026-10-26 新增，注册页邀请码门控；**精确**进公开白名单）。
 - `/api/admin/*` → **管理面路由族**（③ 起：**多账号 + 四角色**，§7.5），按路由分派三个下游 —— 登录 / 账号 CRUD / 三审计读口 / 配置读/写 → **config-service**；钱包读口、冲正、对账 → **currency-service**（`CURRENCY_SERVICE_URL`，§2.3）；用户详情 `GET /api/admin/users/:id` → **user-service**。**独立鉴权**（管理令牌，与玩家令牌两套）；⚠️ 它**不进**下面的五条公开白名单 —— 走的是 `public-paths.ts` 的另一条**前缀**条目 `isAdminPath()`（语义是「**不适用**玩家凭据」，不是「**无需**凭据」，与五条**精确**条目**分列**）。
 - **旧端点已退役**（片⑦）：`GET /api/base-score-levels`（网关路由 + user-service 控制器 + 客户端调用）随底分档位收编**一并删除**；原先关于「`@Get('rooms')` 声明顺序」的那条复核订正**随之作废**（该路径已不存在）。
 - `GET /api/rooms` → 返回 `RoomInfo[]`（§3.1）；`POST /api/rooms` → 返回 `RoomInfo`
@@ -1182,11 +1183,11 @@ socket.emit(type, { version: number, payload: unknown });
 - **对外保留** `GET /api/games/:roomCode`，但语义与内部 RPC 严格区分：它**必须鉴权**，且**只返回调用者的裁剪视图**（§6.4）。
   **实现上必须调用 §4.2 的 `game.view`（按 seat 裁剪）；严禁复用 `game.snapshot` 的返回值**——后者返回完整 `GameSession`（含三家手牌与底牌），复用会直接复现 S2/S8 的泄漏。对局的推进也不经过此路由：推进走 WS，服务间查询才用 `game.snapshot`。
   `[已实现]`（**S2/S8/R74**）：该路由**必须鉴权**（不在白名单里，匿名 401），且只返回调用者的裁剪视图 —— `game-service/src/game/game.controller.ts:55,62-68` 的座位**只**由 `X-User-Id` 定位（**不接受** `?seat=` 覆盖），`game.service.ts:214-222` 的 `getViewForUser` → `findSeatByUserId` + `buildPlayerView`。
-- 公开路径白名单：**仅** `/api/auth/login`、`/api/auth/register`、`/api/auth/refresh`、`/api/health`、`/api/health/live`
+- 公开路径白名单：**仅** `/api/auth/login`、`/api/auth/register`、`/api/auth/refresh`、`/api/health`、`/api/health/live`、`/api/config/boot`（**六条**；最后一条 = 代理分润 2026-10-26 新增的登录前启动配置，只回 `{version, agentInviteEnabled}`）
   （第 5 条为 P5 新增，R267/R293。⚠️ 必须是**精确**条目，**不得**把 `/api/health` 改成前缀 ——
   那会让 `/api/healthz` 一类路径静默变公开；`container-assembly.gate.test.ts` 与 conformance 的近邻负对照都钉住这一点。）
-  `[已实现]`（**A6/S6/R138/R141**）：白名单是上表**恰好五条**的**精确**匹配（`jwt.middleware.ts:72-78`、`:175-178` 的 `publicPaths.includes(path)`）；`'/'` 早已剔除 —— 源码注释逐字写着「The public-path whitelist must **never** contain `'/'`」。
-- ⚠️ **另有**一条**不是白名单**的「整段跳过玩家验签」：`/api/admin/*`（**片⑦**，管理面走**独立鉴权**，§7.5）—— 挂点同样在 `public-paths.ts`（R462 单一真源），但**分列**：它是 `isAdminPath()` 的**前缀**语义，与上面五条**精确**条目不是一类（语义 = 「**不适用**玩家凭据」，不是「**无需**凭据」——理由见上一条）。
+  `[已实现]`（**A6/S6/R138/R141**）：白名单是上表**恰好六条**的**精确**匹配（`jwt.middleware.ts:72-78`、`:175-178` 的 `publicPaths.includes(path)`）；`'/'` 早已剔除 —— 源码注释逐字写着「The public-path whitelist must **never** contain `'/'`」。
+- ⚠️ **另有**一条**不是白名单**的「整段跳过玩家验签」：`/api/admin/*`（**片⑦**，管理面走**独立鉴权**，§7.5）—— 挂点同样在 `public-paths.ts`（R462 单一真源），但**分列**：它是 `isAdminPath()` 的**前缀**语义，与上面六条**精确**条目不是一类（语义 = 「**不适用**玩家凭据」，不是「**无需**凭据」——理由见上一条）。
 - WS 代理：客户端连接 api-gateway，由 gateway 反向代理到 room-service（每客户端一条下游连接）
   `[已实现]`：`api-gateway/src/gateway/proxy.gateway.ts:82` 有 `@WebSocketGateway({…})`（含 R293 的 `allowRequest` 委派），不再死代码。
 - `[已实现]`（**S6/R30/R141**）：§5.4 的两个维度都已落地 —— `http/rate-limit.ts:4` 的 `HTTP_RATE_LIMIT = { max: 20, windowMs: 5000 }` 与 `:15` 的 `WS_CONN_LIMIT = { max: 5, ttlSeconds: 60 }`，由 `app.module.ts:31` 的 `consumer.apply(JwtMiddleware, HttpRateLimitMiddleware).forRoutes('*')` 挂载；`docker-compose.yml:226` 已给网关 `REDIS_URL=redis://redis:6379`。

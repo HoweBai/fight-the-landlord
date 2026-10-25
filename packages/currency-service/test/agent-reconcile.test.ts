@@ -16,7 +16,7 @@ describe('buildEnabledPeriods：启用区间', () => {
     expect(buildEnabledPeriods([], { enabled: false, effectiveFrom: T0 }, T3)).toEqual([]);
   });
 
-  it('enable → disable → enable ⇒ 两段；disable 结束于 changed_at', () => {
+  it('enable → disable → enable ⇒ 两段；第二段从**本次** changed_at 起（不回卷覆盖关闭窗口）', () => {
     expect(
       buildEnabledPeriods(
         [
@@ -29,7 +29,7 @@ describe('buildEnabledPeriods：启用区间', () => {
       ),
     ).toEqual([
       { start: T0, end: T1 },
-      { start: T0, end: T3 },
+      { start: T2, end: T3 },
     ]);
   });
 });

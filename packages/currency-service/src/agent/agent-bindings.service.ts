@@ -234,6 +234,8 @@ export class AgentBindingsService {
     let last = '';
     while (moved < max) {
       const chunk = await this.dataSource.transaction(async (manager) => {
+        // spec §5.3：**每批执行时**重新校验目标 active（批量跑到一半被冻结 ⇒ 后续批次拒绝）。
+        await this.assertAgentActive(manager, input.toAgentId);
         const rows = (await manager.query(BIND_CHUNK_SQL, [input.fromAgentId, last])) as Array<
           Record<string, unknown>
         >;

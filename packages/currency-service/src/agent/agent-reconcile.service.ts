@@ -56,6 +56,11 @@ interface Period {
  * 启用区间（spec §12.2）：`agent_settings_history` 的 enabled=1 段；
  * 没有 history 时回落当前 settings（enabled + effective_from → to）。
  * 对账只统计这些区间内的 entry_fee op，避免关闭期历史被误报为缺口。
+ *
+ * ⚠️ 每段从**该行自己的 changed_at** 开始（不是全局 `effective_from`）：`effective_from`
+ * 只在首次启用时写一次、之后永不重置（spec D16），拿它当后续每段的起点会让
+ * 「关→开」后的新区间**回卷覆盖关闭窗口** ⇒ 关闭期的台费被误报为缺口、区间重叠还会重复计数。
+ * （r3 审查 Important #1，2026-10-26。）
  */
 export function buildEnabledPeriods(
   history: ReadonlyArray<{ enabled: boolean; effectiveFrom: Date | null; changedAt: Date | null }>,
@@ -68,7 +73,7 @@ export function buildEnabledPeriods(
     const at = row.changedAt ?? row.effectiveFrom;
     if (at === null) continue;
     if (row.enabled) {
-      if (openStart === null) openStart = row.effectiveFrom ?? at;
+      if (openStart === null) openStart = at;
     } else if (openStart !== null) {
       periods.push({ start: openStart, end: at });
       openStart = null;
