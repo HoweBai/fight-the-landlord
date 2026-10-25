@@ -16,8 +16,7 @@ name: conformance
 
 on:
   push:
-    # ⚠️ 2026-10-26 临时：全序真库轮；跑完 revert。
-    branches: [master, dev]
+    branches: [master]
     tags-ignore: ['**']
   workflow_call:
     inputs:

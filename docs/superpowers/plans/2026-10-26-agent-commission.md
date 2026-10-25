@@ -15,8 +15,9 @@
 - ✅ 任务 14：代理门户静态站 + edge（`dc5e6aaf`；`verify:agent` 104 条 + jsdom 冒烟）。
 - ✅ 任务 15（代码）：slice-32 真库 + design.md env 表（`56f84133`）；r3 独立审查 Critical/Important
   修复（`324d6442` / `71be4070`）；本机全量绿（`pnpm test` 29/29、`pnpm lint` 18/18）。
-- 🔸 任务 15（真库）：slice-30 由 GitHub CI 跑；`baselines.json` 已静态回填 136，待 CI 复核。
-- dev 尚未推送；master / tag / 部署未动（等用户发话）。
+- ✅ 任务 15（真库）：slice-32 由 GitHub CI 全序跑通（`40232890418`，45 片全绿；
+  `slice-32-agent=137`）；`baselines.json` 已按 CI 实测回填 137。
+- dev 已推送（CI 绿、真库绿）；master / tag / 部署未动（等用户发话）。
 
 ## 全局约束
 

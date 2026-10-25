@@ -131,15 +131,24 @@ pnpm lint                                      # turbo 18/18
 - currency 538 / config 484 / gateway 500 / client 1525（2 skipped）/ shared 399 /
   protocol 300 / user 377 / room 917；`verify:admin` 476；`verify:agent` 104；conformance tsc 通过。
 - jsdom 冒烟：管理页 super_admin/finance 各 14+ 项；门户 26 项（首登改密/五页签/结算/401）。
-- **真库 slice-30 未在本机跑**（Docker daemon 不可用）⇒ 由 GitHub CI 跑；`baselines.json`
-  已按源码静态计数回填 `slice-32-agent = 136`（CI 实测复核）。
+- **真库轮（GitHub CI）**：全序 **45 片全绿**（run `40232890418`），`slice-32-agent 通过：137 项断言`
+  （含额度首建并发/SAVEPOINT/水位低 id 晚提交/调账双人复核/关闭期对账/鉴权矩阵）；
+  `slice-17-currency=187`、`slice-07.3-edge=41` 等均 ≥ 基线。`baselines.json` 已按 CI 实测
+  回填 `slice-32-agent = 137`。
 
-### 5.3 GitHub CI 运行方式
+### 5.3 GitHub CI 运行方式（已执行）
 
-- 推 `dev` 不触发 CI；手动：`gh workflow run ci.yml --ref dev`。
-- `conformance.yml` 现行只认 push→master / release 复用，**没有 dispatch**；临时在 dev 上跑需
-  一次性提交把 `push.branches` 扩为 `[master, dev]` 并同步 `slice-07.4-pipeline` 的期望集合，
-  跑完 **revert**（用户已授权 dev 跑 CI；master/tag 不动）。
+- CI（六阶段 + render + security）：`gh workflow run ci.yml --ref dev` ⇒ run **`40222597118` 成功**。
+- conformance 真库：`conformance.yml` 没有 dispatch，临时把 `push.branches` 扩为 `[master, dev]`
+  并同步 `slice-07.4-pipeline` 期望集合（含排序后的 `['dev','master']`），跑完已 revert；
+  **master/tag 触发面保持原样**。
+- 真库轮次：
+  1. `40222686014` 红：既有切片未同步 22 键/8 迁移、slice-32 首建组缺余额、edge 收尾未复原
+     ⇒ 全部修复（见下）。
+  2. `40228822084` 红：仅剩 slice-17 迁移名单少 AgentDomain、slice-07.3 旧「门口无残留」断言
+     ⇒ 修复。
+  3. **`40232890418` 全绿**：45 片通过；slice-32=137。
+- 一次性 `conformance-slice32.yml` 单独取证 run `40228073011`（137/137）后已删除。
 
 ### 5.4 合并 `origin/dev`（2026-10-26，A1/A2 PDK 并行片）
 
@@ -166,7 +175,7 @@ pnpm lint                                      # turbo 18/18
 
 - **r3 已修**：公开启动配置 `/api/config/boot`（第 6 条公开路径；只两键）；管理页详情竞态；
   对账启用区间从 changed_at 起；手机号数字归一（自玩特判）；结算/调账分页。
-- **仍需 CI 真库证明**：slice-32 的并发/SAVEPOINT/水位/低 id 晚提交（本机无 Docker）。
+- **真库已证明**：slice-32 的并发/SAVEPOINT/水位/低 id 晚提交已在 GitHub 真栈全绿（run `40232890418`）。
 - **真库并发未证明**：假 DB 只钉控制流；SAVEPOINT/死锁/水位/额度首建必须 slice-32 真 MySQL。
 - **`ApplyService` 钩子失败的生产行为**：语句级错误 → 保存点回滚 + `agent_ledger_gaps` + 指标，主事务继续；1213/1205/连接错误 → 重抛让 apply 失败（room-service 幂等重试）。
 - **结算水位**：申请后低 id 晚提交会让打款 SUM/hash 不一致 → 409；恢复 = 撤回/驳回后重新申请。
