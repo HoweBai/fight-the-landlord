@@ -133,9 +133,11 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
         <text class="pdk-settlement__row-name">{{ nameOf(row.seat) }}</text>
         <text class="pdk-settlement__row-rank">第 {{ ranks.get(row.seat) }} 名</text>
         <text class="pdk-settlement__row-remaining">{{ settlement.remaining[row.seat] ?? 0 }} 张</text>
-        <text class="pdk-settlement__delta">{{
-          row.delta > 0 ? `+${row.delta}` : String(row.delta)
-        }}</text>
+        <text
+          class="pdk-settlement__delta"
+          :class="row.delta >= 0 ? 'pdk-settlement__delta--pos' : 'pdk-settlement__delta--neg'"
+          >{{ row.delta > 0 ? `+${row.delta}` : String(row.delta) }}</text
+        >
         <text v-if="showGold" class="pdk-settlement__gold">{{ goldCell(row.seat) }}</text>
       </view>
     </view>
@@ -232,11 +234,14 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 }
 .pdk-settlement__tr--head {
   padding: $ftl-space-3 $ftl-space-5;
+  border-radius: $ftl-radius-sm $ftl-radius-sm 0 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.15);
 }
 /* 表头：全部 flex:1 等分，按列与内容共享 text-align */
 .pdk-settlement__th {
   flex: 1 1 0;
-  color: $ftl-color-text;
+  color: rgba($ftl-color-on-primary, 0.85);
   font-size: $ftl-font-sm;
   font-weight: 600;
 }
@@ -268,9 +273,16 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
   gap: $ftl-space-4;
   align-items: center;
   padding: $ftl-space-4 $ftl-space-5;
-  border-radius: $ftl-radius-sm;
-  background: $ftl-color-surface-muted;
+  background: rgba(255, 255, 255, 0.06);
   font-size: $ftl-font-md;
+  border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.08);
+}
+.pdk-settlement__row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 $ftl-radius-sm $ftl-radius-sm;
+}
+.pdk-settlement__row:first-of-type {
+  border-radius: 0;
 }
 /* 各列 flex:1 等分 */
 .pdk-settlement__row-name,
@@ -280,16 +292,16 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 .pdk-settlement__gold {
   flex: 1 1 0;
 }
-/** 我的行：警示底 + 强调色描边（同 Settlement.vue 的 --me） */
+/** 我的行：半透金底 + 金边（深色面板上的"我"视觉锚点） */
 .pdk-settlement__row--me {
-  background: $ftl-color-warn-bg;
-  box-shadow: inset 0 0 0 $ftl-hairline $ftl-color-accent;
+  background: rgba($ftl-color-gold, 0.12);
+  box-shadow: inset 0 0 0 $ftl-hairline $ftl-color-gold-deep;
 }
 .pdk-settlement__row--winner .pdk-settlement__row-name {
   color: $ftl-color-gold-light;
 }
 .pdk-settlement__row-name {
-  color: $ftl-color-text;
+  color: $ftl-color-on-primary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -300,14 +312,19 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 }
 .pdk-settlement__row-remaining {
   font-size: $ftl-font-sm;
-  color: $ftl-color-text-secondary;
+  color: rgba($ftl-color-on-primary, 0.6);
 }
 .pdk-settlement__delta {
-  color: $ftl-color-primary;
   font-weight: 600;
 }
+.pdk-settlement__delta--pos {
+  color: $ftl-color-gold;
+}
+.pdk-settlement__delta--neg {
+  color: $ftl-color-danger;
+}
 .pdk-settlement__gold {
-  color: $ftl-color-primary;
+  color: $ftl-color-on-primary;
   font-weight: 600;
 }
 
