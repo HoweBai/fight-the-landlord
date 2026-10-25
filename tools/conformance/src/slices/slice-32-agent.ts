@@ -660,6 +660,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     step('⑥ 并发：同 owner 两条 entry_fee 并发（额度行首建原子 upsert，无 1213/gap）；SAVEPOINT 语句级失败');
     const freshReg = await register({ inviteCode: agentA.inviteCode, nickname: `s30-fresh-${RUN_TAG}` });
     const fresh = asUser(freshReg.status, freshReg.body, '并发首建玩家注册');
+    // 钱包需要余额（否则 apply 先撞 14001，测不到额度首建）；再删掉 recharge 建出的额度行，
+    // 让两条并发 entry_fee 真正走「额度行首建」路径（base=0，但 upsert/FOR UPDATE 全套执行）。
+    await recharge(fresh, 100, 'fresh');
+    mysqlExec(`DELETE FROM \`agent_player_quota\` WHERE \`owner_id\` = '${fresh.id}'`);
     checks.eq(
       mysqlNum(`SELECT COUNT(*) FROM \`agent_player_quota\` WHERE \`owner_id\` = '${fresh.id}'`),
       0,

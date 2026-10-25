@@ -597,6 +597,25 @@ export async function runSlice073Edge(): Promise<Checks> {
     if ((restore.status ?? -1) !== 0) {
       info(`复原输出（尾部 400 字）：${`${restore.stdout ?? ''}${restore.stderr ?? ''}`.slice(-400)}`);
     }
+
+    // ⚠️ **必须把门口起回来**：本片按契约只测生命周期（起/删），但删完之后
+    //    `slice-16-monitoring`（C4 经门口）/`slice-19`/`slice-24` 都要 `ftl-edge` 在场。
+    //    2026-10-26 dev 全序实测：只复原 api-gateway ⇒ 后续三片全部 `No such object: ftl-edge`。
+    //    用同一个 `compose()` 助手（带 EDGE_HTTPS_PORT/EDGE_HTTP_PORT/TRUST_PROXY 与 profile）。
+    const restoreEdge = compose(
+      { timeout: 120_000 },
+      '--profile',
+      'edge',
+      'up',
+      '-d',
+      '--no-deps',
+      '--wait',
+      '--wait-timeout',
+      '120',
+      'edge',
+    );
+    info(`收尾 docker compose --profile edge up -d --no-deps edge（复原常态化门口）⇒ exit ${restoreEdge.code}`);
+    if (restoreEdge.code !== 0) info(`复原门口输出（尾部 400 字）：${restoreEdge.out.slice(-400)}`);
   }
   // ⚠️ 判"无残留"用**精确名**（订正，实测 2026-09-24）：`--filter name=` 是**子串**匹配 ——
   //    B5 探针叫 `ftl-edge-probe-*`，上一轮失败的残留会被它命中 ⇒ 本轮以"门口有残留"的

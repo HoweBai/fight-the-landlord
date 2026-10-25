@@ -686,7 +686,7 @@ export async function runSlice17(): Promise<Checks> {
       'game_type,created_at',
       '③ C2：idx_ops_game_created = (game_type,created_at)（A2）',
     );
-    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 7, '③ C2：migrations_currency 恰 7 行（真库读过，不钉平台现象）');
+    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 8, '③ C2：migrations_currency 恰 8 行（AgentDomain 迁移 +1；真库读过）');
     checks.eq(
       mysqlText(`SELECT GROUP_CONCAT(name ORDER BY id) FROM migrations_currency`),
       'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002',
@@ -1407,7 +1407,7 @@ export async function runSlice17(): Promise<Checks> {
     checks.that(c12Page.body.includes('/api/admin/wallet/adjust'), '⑪ C12 app.js 含 adjust 端点串');
     checks.that(c12Page.body.includes('销毁：残差 '), '⑪ C12 app.js 含销毁行文案针脚（本片）');
 
-    step('⑪ C14 负对照：/api/config 键集 = 客户端 21 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
+    step('⑪ C14 负对照：/api/config 键集 = 客户端 22 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
     const c14Config = await getJson<Record<string, unknown>>('/api/config', userP.accessToken);
     checks.eq(c14Config.body?.code, ErrCode.OK, '⑪ C14 /api/config code 0');
     const c14Keys = Object.keys(c14Config.body?.data ?? {});
@@ -1415,8 +1415,8 @@ export async function runSlice17(): Promise<Checks> {
     // （§2.5/⚙️11；逐字名单，不随协议常量漂）。
     checks.eq(
       c14Keys.sort().join(','),
-      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      '⑪ C14 键集（排序后）恰好客户端 21 键',
+      'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      '⑪ C14 键集（排序后）恰好客户端 22 键',
     );
     // 内部键**显式名单**（T12 起含 rakePercent/reliefAmount；前缀兜底断言在 slice-18 A 组）。
     const c14InternalLeaks = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'].filter((key) =>

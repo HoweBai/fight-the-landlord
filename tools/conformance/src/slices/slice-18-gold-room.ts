@@ -5,7 +5,7 @@
  *  ⓪ 起手自证 + 清源：五个容器 healthy（room/user/currency/gateway/config）+ **金币队列清源**
  *     （`match:queue:gold:*` 与 gold 票的 `match:meta:*`——E 组的补位谓词是「队里恰好这两个
  *     真人」，任何上一轮崩溃留下的陈旧票都会把第三个座位吃掉）；
- *  A 配置：`/api/config` 恰 21 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
+ *  A 配置：`/api/config` 恰 22 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
  *  B 开关：gold 关 ⇒ 12010、开 ⇒ 不再 12010；free 关 ⇒ random 12010、恢复；
  *  C 门槛：0 余额 ⇒ 14003（含所需金额）→ 管理面补足 ⇒ 入队成功；
  *  D 取消排队（C21）：入队 → 探针（ZSCORE/meta 指纹，`slice-12:438-473` 先例）→ unmatch →
@@ -133,7 +133,7 @@ const adSecret = (): string => (cachedAdSecret ??= loadAdCallbackSecret());
  *  阶段 2 已删除派生字段 `entryFeePercents`；
  *  `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间，UTF-16 `'A'<'E'`）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 
 /** §12.1 A 组：内部键零泄漏的**显式名单**（+ 全量 `currency.` 前缀扫描兜底）。 */
 const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'] as const;
@@ -993,12 +993,12 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // A 配置
     // ══════════════════════════════════════════════════════════════════════
-    step('A：/api/config 恰 21 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
+    step('A：/api/config 恰 22 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
     const uCfg = await registerUser(2);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     checks.eq(cfgA.body?.code, ErrCode.OK, 'A /api/config code 0');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 21 键');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 22 键');
     checks.that(
       Array.isArray((cfgA.body?.data as any)?.baseScoreLevels) &&
         ((cfgA.body!.data as any).baseScoreLevels as unknown[]).length > 0,
