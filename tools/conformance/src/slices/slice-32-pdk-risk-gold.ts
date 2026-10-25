@@ -53,6 +53,7 @@ const PDK_ENABLED = 'game.paodekuai.enabled';
 const PDK_TWO = 'game.paodekuai.twoPlayerEnabled';
 const PDK_NONTHREE = 'game.paodekuai.nonThreePlayerEnabled';
 const PDK_GOLD = 'game.paodekuai.goldRoomEnabled';
+const PDK_FRIEND = 'game.paodekuai.friendRoomEnabled';
 const PDK_LEVELS = 'game.levels.paodekuai';
 const PDK_RAKE = 'game.paodekuai.rakePercent';
 const PDK_ENTRY = 'game.paodekuai.entryMultiplier';
@@ -443,6 +444,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       PDK_TWO,
       PDK_NONTHREE,
       PDK_GOLD,
+      PDK_FRIEND,
       PDK_LEVELS,
       PDK_RAKE,
       PDK_ENTRY,
@@ -469,6 +471,8 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     await put(admin, PDK_TWO, true, '⓪ pdk two');
     await put(admin, PDK_NONTHREE, true, '⓪ pdk nonThree');
     await put(admin, PDK_GOLD, true, '⓪ pdk gold');
+    // REST `POST /api/rooms` 探测有好友房闸；本片临时开 PDK 好友房，收尾按原值还原。
+    await put(admin, PDK_FRIEND, true, '⓪ pdk friend probe');
     await put(admin, PDK_LEVELS, LEVELS, '⓪ pdk levels');
     await put(admin, PDK_RAKE, 10, '⓪ pdk rake');
     await put(admin, PDK_ENTRY, 10, '⓪ pdk entry');
