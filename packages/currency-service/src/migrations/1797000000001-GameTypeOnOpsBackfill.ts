@@ -41,7 +41,7 @@ export class GameTypeOnOpsBackfill1797000000001 implements MigrationInterface {
     }
   }
 
-  public async down(): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // no-op：回填数据由 DDL down 与列一起删除。
   }
 }

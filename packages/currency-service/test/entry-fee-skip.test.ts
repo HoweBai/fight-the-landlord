@@ -30,11 +30,28 @@ describe('EntryFeeSkipService（本片：INSERT IGNORE / affectedRows 0/1 / {ins
 
     await expect(svc.record(REQ)).resolves.toEqual({ ok: true, data: { inserted: true } });
     expect(db.skips).toEqual([
-      { id: 1, roomCode: 'ABC123', ownerId: 'u-1', seat: 1, baseScore: 15, feeAmount: 1, reason: 'insufficient_funds', traceId: null },
+      { id: 1, roomCode: 'ABC123', ownerId: 'u-1', seat: 1, gameType: 'doudizhu', baseScore: 15, feeAmount: 1, reason: 'insufficient_funds', traceId: null },
     ]);
 
     await expect(svc.record(REQ)).resolves.toEqual({ ok: true, data: { inserted: false } });
     expect(db.skips).toHaveLength(1); // 幂等键：不重复行
+  });
+
+  it('A2：gameType 落库（缺席=doudizhu；显式 pdk=paodekuai）', async () => {
+    const db = new FakeCurrencyDb();
+    const svc = new EntryFeeSkipService(db.dataSource as unknown as DataSource);
+
+    await expect(svc.record({ ...REQ, roomCode: 'GTDDZ' })).resolves.toEqual({
+      ok: true,
+      data: { inserted: true },
+    });
+    expect(db.skips[0]!.gameType).toBe('doudizhu');
+
+    await expect(svc.record({ ...REQ, roomCode: 'GTPDK', gameType: 'paodekuai' })).resolves.toEqual({
+      ok: true,
+      data: { inserted: true },
+    });
+    expect(db.skips[1]!.gameType).toBe('paodekuai');
   });
 
   it('meta.traceId ⇒ trace_id 列；seat 缺席 ⇒ NULL', async () => {
