@@ -706,7 +706,7 @@ export async function runSlice24(): Promise<Checks> {
     checks.that(ruleNames0.length === 32, `⓪ Prometheus /api/v1/rules 恰 32 条（29 既有 + 2 救助 + 1 B 组 SQL 失败；A1 同步面）—— 实际 ${ruleNames0.length}`);
     checks.that(
       AD_ALERT_RULES.every((n) => ruleNames0.includes(n)),
-      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 31 条错规则也绿）`,
+      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 32 条错规则也绿）`,
     );
     const A1_ALERT_RULES = [
       'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
