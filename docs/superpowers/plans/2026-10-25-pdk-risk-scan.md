@@ -452,3 +452,16 @@ pnpm exec turbo run test lint --force
   把 winner 抬到 2 局 2 胜以越过严格 `games > minGames`）；`baselines.json` 55 → 69。
 - 本地：`pnpm -C tools/conformance lint` + `build` + `check-baselines.mjs --self-test` 绿；
   **真栈未跑**（Docker paused）——执行证据待 master conformance 或 Docker 恢复后的本机 slice-29。
+
+### 真栈执行与执行期订正（2026-10-25，master conformance）
+
+- 首次真栈（`68dbca3`）：`encodeHand` 缺省 17 张（斗地主）⇒ slice-29 静态造数直接抛
+  「收到 16 张」；已改为显式传 `16`（提交 `6e22ce5`）。
+- 第二次真栈（`6e22ce5`）：slice-29 其余断言全绿，仅 ⑥ 取证面红 ——
+  规格 §7 步骤 6 写 `entries[0].reasons`，但**详情响应面并不回 `reasons`**
+  （`RISK_ENTRIES_SQL` 只选 `id/score/status/handled_*/created_at`），
+  与同一节「**不改生产代码**」相互冲突。
+  **处置**：取证改走**审核队列** `GET /api/admin/risk/reviews` ——
+  其行形状逐字含 `reasons`（spec §2.8 第一行，队列 SQL 选了该列），
+  且按 id DESC ⇒ 本轮新条目在最前。判据本身（PDK reason + 分玩法战绩）与断言条数不变
+  （`baselines.json` 的 69 仍成立）。

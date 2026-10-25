@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：九十二键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：九十三键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -132,7 +132,7 @@ const PAGE_LIMIT = 20;
 
 /**
  * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
- * **76 个 active 键全覆盖**（2026-10-25 补齐跑得快规则/计分/开关 13 键；无备注条目时展示通用说明）。
+ * **77 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
@@ -151,8 +151,8 @@ const PAGE_LIMIT = 20;
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
- *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键后 **63 条备注 / 76 个 active 键**；
- *    2026-10-25 补齐跑得快规则/计分/开关 13 键后 **76 条备注 / 76 个 active 键（全覆盖）**
+ *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
+ *    **77 条备注 / 77 个 active 键（全覆盖）**
  *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
@@ -362,7 +362,7 @@ const CONFIG_NOTES = {
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
   // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
-  // 2026-10-25 跑得快风控两键后 63 条备注 / 76 个 active 键。
+  // 2026-10-25 跑得快风控两键后 63 条备注 / 76 个 active 键；2 人闸片后 65 条备注 / 77 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -559,11 +559,17 @@ const CONFIG_NOTES = {
     ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
     ['注意', '所有输家都保本时赢家本局所得为 0（对局记录照写）；与倍数无关（直接免单）。'],
   ],
+  'game.paodekuai.twoPlayerEnabled': [
+    ['作用', '跑得快 2 人场开关 —— 关 ⇒ 2 人匹配 / 新建房被拒（12012）；进行中的对局不受影响。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。玩家端的人数选项来自 /api/config。'],
+    ['注意', '与 4 人闸（game.paodekuai.nonThreePlayerEnabled）各自独立；3 人场恒开。关闸时在队的 2 人票会被判失败（12007），不会静默留队。'],
+  ],
   'game.paodekuai.nonThreePlayerEnabled': [
-    ['作用', '是否对生产开放跑得快的 2/4 人匹配与建房。开 ⇒ 服务端按 2/3/4 人受理、客户端可选人数随之放开；关 ⇒ 只允许 3 人（其它人数 12012）。'],
-    ['取值', '严格 true / false。默认 false（生产只开 3 人；引擎与测试始终支持 2/4 人）。'],
-    ['生效', '保存后服务端秒级生效（推送正常时）；最晚 ≤60s。已有房间与进行中的对局不受影响。'],
-    ['注意', '玩家端首版仍按 3 人发起匹配；开放前确认结算 / 记录 / 机器人的 2/4 人链路已上线。'],
+    ['作用', '跑得快 4 人场开关（键名为历史命名，2026-10-25 起只影响 4 人）—— 关 ⇒ 4 人匹配 / 新建房被拒（12012）。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
+    ['注意', '2 人场用 game.paodekuai.twoPlayerEnabled；3 人场恒开。客户端已支持 4 人牌桌。'],
   ],
   'game.paodekuai.freeRoomEnabled': [
     ['作用', '跑得快免费场开关。开 ⇒ 大厅的跑得快玩法显示「免费场」、可匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],
@@ -741,7 +747,10 @@ const CONFIG_IA = [
           {
             id: 'switches',
             name: '开关',
-            keys: ['game.paodekuai.nonThreePlayerEnabled'],
+            keys: [
+              'game.paodekuai.twoPlayerEnabled',
+              'game.paodekuai.nonThreePlayerEnabled',
+            ],
           },
           {
             id: 'rooms',
@@ -949,7 +958,7 @@ const CFG_NAV = [
 ];
 
 /**
- * v2.1 简单键控件定稿表（71 键；其余 5 键由结构化编辑器承接，见 STRUCT_KEYS）。
+ * v2.1 简单键控件定稿表（72 键；其余 5 键由结构化编辑器承接，见 STRUCT_KEYS）。
  * type：'bool' 开关 | 'number' 数字行 | 'text' 文本行；suffix 仅当 CONFIG_NOTES
  * 「取值」原文有量词时出现（无量词不给后缀，范围由详情行展示，勿臆造）。
  * label = 行卡片中文短名（效果图评审基线，改名须同步改方案与探针）。
@@ -969,7 +978,7 @@ const CONFIG_CONTROLS = {
   'game.doudizhu.cardCounterPricePerHourCoins': { label: '记牌器包时价', type: 'number', suffix: '金币/小时' },
   'game.doudizhu.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
   'game.doudizhu.risk.minGames': { label: '扫描最少局数', type: 'number' },
-  // 跑得快（22 简单键；档位表是结构化键）
+  // 跑得快（23 简单键；档位表是结构化键）
   'game.paodekuai.freeRoomEnabled': { label: '免费场', type: 'bool' },
   'game.paodekuai.goldRoomEnabled': { label: '金币场', type: 'bool' },
   'game.paodekuai.friendRoomEnabled': { label: '好友房', type: 'bool' },
@@ -980,7 +989,8 @@ const CONFIG_CONTROLS = {
   'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
   'game.paodekuai.risk.minGames': { label: '扫描最少局数', type: 'number' },
   'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
-  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 2/4 人', type: 'bool' },
+  'game.paodekuai.twoPlayerEnabled': { label: '开放 2 人', type: 'bool' },
+  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 4 人', type: 'bool' },
   'game.paodekuai.bareTrioEnabled': { label: '裸三张', type: 'bool' },
   'game.paodekuai.trioWithPairEnabled': { label: '三带二', type: 'bool' },
   'game.paodekuai.bareAirplaneEnabled': { label: '裸飞机', type: 'bool' },
@@ -1329,7 +1339,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量九十二键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量九十三键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;

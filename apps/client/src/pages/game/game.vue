@@ -109,6 +109,8 @@ const ROOM_LOCAL_CODES = new Set([
   ErrCode.ROOM_FULL,
   ErrCode.NOT_IN_ROOM,
   ErrCode.ROOM_ALREADY_STARTED,
+  /** 12012（玩法未开放 / 暂不支持该人数）：REST 建房/占座被拒时就地提示。 */
+  ErrCode.GAME_UNAVAILABLE,
 ]);
 
 /**
@@ -601,9 +603,10 @@ async function match() {
     const outcome = await getGameSession().client.send("room.match", {
       mode: store.roomMode,
       baseScore,
-      // 多玩法（S5.4）：玩法 + 人数随匹配上行；客户端首版只发 3 人。
+      // 多玩法（S5.4）：玩法 + 人数随匹配上行。人数来自 store 的有效值
+      //（客户端能力 ∩ 服务端开放）。模板写 `@click="match()"`，避免 MouseEvent 被当成人数。
       gameType: store.activeGameType,
-      playerCount: GAME_META[store.activeGameType].defaultPlayerCount,
+      playerCount: store.effectivePlayerCount,
       // 风控 T8：设备指纹随行（服务器可见、玩家面永不出站 —— K3）
       deviceId: getDeviceId(),
     });
@@ -859,7 +862,7 @@ async function createAndJoin(replayed = false) {
     const res = await rest.createRoom({
       mode: "practice",
       gameType: store.activeGameType,
-      playerCount: GAME_META[store.activeGameType].defaultPlayerCount,
+      playerCount: store.effectivePlayerCount,
       ...(store.selectedBaseScore === null ? {} : { baseScore: store.selectedBaseScore }),
     });
     if (res.code !== 0) {
@@ -921,7 +924,11 @@ onMounted(() => {
    * ⚠️ 意向兑现用的是**当时选中的底分**（`selectedBaseScore` 跨页存活，`reset()` 不动它）
    * ⇒ 「再来一局」不需要用户重选。
    */
-  if (store.consumeRematch()) void match();
+  if (store.consumeRematch()) {
+    // 上一局人数回写到选择（闸已关时 setter 拒绝，`effectivePlayerCount` 自动回落）。
+    store.setSelectedPlayerCount(store.playerCount);
+    void match();
+  }
 });
 
 /**
@@ -982,13 +989,29 @@ onUnmounted(() => stopBgm());
           >
         </view>
 
+        <!-- 跑得快 2 人场：人数选择（仅当客户端能力 ∩ 服务端开放 > 1 时出现）。
+             ⚠️ 刻意放在 `.game__match` **之外**：既有探针按 `.game__match button`
+             取唯一的「开始游戏」，控件不得挤进那条选择器。 -->
+        <view v-if="!matching && store.activePlayerCounts.length > 1" class="game__players">
+          <button
+            v-for="n in store.activePlayerCounts"
+            :key="n"
+            type="button"
+            class="game__player-option"
+            :class="{ 'game__player-option--active': store.effectivePlayerCount === n }"
+            @click="store.setSelectedPlayerCount(n)"
+          >
+            {{ n }} 人
+          </button>
+        </view>
+
         <view class="game__match">
           <button
             v-if="!matching && store.activeHasSessions"
             type="button"
             class="btn btn--primary"
             :disabled="busy || selectedBaseScore === null"
-            @click="match"
+            @click="match()"
           >
             开始游戏
           </button>
@@ -1395,6 +1418,25 @@ onUnmounted(() => stopBgm());
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
   background: rgba($ftl-color-night, 0.62);
+}
+/** 人数分段（跑得快 2 人场；仅 >1 个可选人数时渲染）。 */
+.game__players {
+  display: flex;
+  gap: $ftl-space-3;
+}
+.game__player-option {
+  padding: $ftl-space-2 $ftl-space-5;
+  border: $ftl-hairline solid $ftl-color-night-deep;
+  border-radius: $ftl-radius-pill;
+  background: rgba($ftl-color-night, 0.62);
+  color: $ftl-color-text-muted;
+  font-size: $ftl-font-sm;
+  line-height: 1.2;
+}
+.game__player-option--active {
+  border-color: $ftl-color-gold-deep;
+  background: rgba($ftl-color-night-deep, 0.85);
+  color: $ftl-color-gold-light;
 }
 /**
  * 中央大标题：白字 + **多层 `text-shadow`** 深色描边（§5.2.1 定稿的排版手法）。

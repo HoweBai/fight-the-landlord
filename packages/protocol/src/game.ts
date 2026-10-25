@@ -5,7 +5,8 @@
  *  - 规范 id 只有 `doudizhu` / `paodekuai`；`ddz` 仅作为机器人池旧键别名，不在此处。
  *  - 只有 `undefined` / `null`（字段缺失）才缺省斗地主；空串/未知/`ddz` 一律抛错。
  *  - `supportedPlayerCounts` 是协议/房间/匹配的共用能力表；生产是否暴露 2/4 由
- *    配置 `game.paodekuai.nonThreePlayerEnabled` 闸住，不在这里硬编码。
+ *    配置 `game.paodekuai.twoPlayerEnabled` / `game.paodekuai.nonThreePlayerEnabled`
+ *    分别闸住，不在这里硬编码。
  */
 import { ProtocolError } from './validate';
 
@@ -55,7 +56,7 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
       cardCounter: false,
       bots: true,
       goldRoom: true,
-      voiceAnnouncements: false,
+      voiceAnnouncements: true,
     },
   },
 };

@@ -25,7 +25,7 @@ import { DomainError } from '../http/errors';
  *  - **epoch ms**：`ended_at`/`started_at` 是 `datetime(3)` ⇒ 出站前一律转毫秒整数
  *    （不接受 Date 对象直接进 JSON —— 那会变成 ISO 字符串，形状漂移）。
  *  - `mySeat`：**自 JOIN 命中行**（`mine.seat`）——我那一行的座位，不是「猜」出来的。
- *  - `players`：按 `seat` 升序恰 3 条（行由写入侧事务保证成套；这里只组装 + 排序）。
+ *  - `players`：按 `seat` 升序恰 playerCount 条（行由写入侧事务保证成套；这里只组装 + 排序）。
  *
  * ⚠️ `DataSource` 是**值导入**（DI 陷阱：`import type` 会让真容器解析不到 token，而
  * 单测与 tsc 都看不见）。

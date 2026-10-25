@@ -12,7 +12,7 @@ export * from './core/governance';
 export * from './ddz/features';
 export * from './ddz/bid';
 export * from './ddz/play';
-// 协议 ④：`recentActions` 的**唯一**投影实现（窗口 2、旧 → 新、「不出」是 `cards: null`）。
+// 协议 ④：`recentActions` 的**唯一**投影实现（默认窗口 2；跑得快按人数传 3、旧 → 新、「不出」是 `cards: null`）。
 export * from './ddz/recent';
 export * from './ddz/settle';
 export * from './core/timer';

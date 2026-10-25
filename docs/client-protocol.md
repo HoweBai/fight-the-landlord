@@ -55,7 +55,7 @@
 牌桌展示回落「玩家N」。`room.join` ack / `room.state_update` 的 `RoomPlayer` 可带可选 `nickname`；
 机器人展示昵称由 room-service 分配（2026-10-22 拟人昵称片），与人类同样下发。
 
-⚠️ **第 8 条由网关转发到 `config-service`（配置中心）**（底分档位是它管的 92 键之一（2026-10-25 起） —— 路由名与
+⚠️ **第 8 条由网关转发到 `config-service`（配置中心）**（底分档位是它管的 93 键之一（2026-10-25 起） —— 路由名与
 目标服务不一致的旧形态已随收编消失）。数组顺序 = 配置里的**展示顺序**，**不是**「取第一档」的指令
 —— 底分要由**用户从这张表里选一档**：参考客户端把整张表渲染成大厅的底分卡，并把**选中的那一档**
 用于 `room.match` 与 `POST /api/rooms`）。
@@ -90,7 +90,7 @@
 ### 跑得快（多玩法，S4/S5/S6）
 
 - `room.match` 增 `gameType?: "doudizhu" | "paodekuai"`、`playerCount?: number`（缺省斗地主/3）；
-  跑得快首版客户端只发 `playerCount: 3`。
+  跑得快客户端按人数发 2/3/4（可用集合由 `/api/config` 与服务端闸决定）。
 - `room.join` 增 `gameType?`（缺省斗地主）；REST `POST /api/rooms/:code/join` body 为
   `{ gameType? }`。旧客户端进跑得快房 ⇒ `12012`，且 REST 不占座。
 - `room.matched` / `room.state_update` 增 `gameType?` / `playerCount?`；客户端自动 join 原样回传。

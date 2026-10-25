@@ -1161,7 +1161,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
    * 记录片 T5（规格 C1 / 设计 D2）：组装 `RecordWriteRequest` 并投递 `record.write`。
    *
    * 组装真源（逐字段，设计 D2 写死）：
-   *  - `seats[]` 按**座位序**、恰 3 条：`isRobot`/`userId` 真源 = room `Seat`
+   *  - `seats[]` 按**座位序**、恰 playerCount 条：`isRobot`/`userId` 真源 = room `Seat`
    *    （**机器人座 `userId=null`，绝不写 displayId**）；`robotId` 自 bots Hash
    *    **按座位号对齐**（人类座恒 `null`）；
    *  - `hand`/`bottomCards` **原样透传**信封里的 T1 hex 串（room **不重编码**）；

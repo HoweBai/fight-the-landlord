@@ -303,7 +303,13 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return typeof value === 'boolean' ? value : false;
   }
 
-  /** 跑得快 2/4 人闸（Task 2.2 / D20）：种子 `false` ⇒ 只开放 3 人。 */
+  /** 跑得快 2 人闸（2026-10-25）：种子 `false` ⇒ 只开放 3（和 4 人闸各自独立）。 */
+  paodekuaiTwoPlayerEnabled(): boolean {
+    const value = this.snapshot?.['game.paodekuai.twoPlayerEnabled']?.value;
+    return typeof value === 'boolean' ? value : false;
+  }
+
+  /** 跑得快 4 人闸：种子 `false`；键名 `nonThreePlayerEnabled` 为历史命名，现只关 4 人。 */
   paodekuaiNonThreePlayerEnabled(): boolean {
     const value = this.snapshot?.['game.paodekuai.nonThreePlayerEnabled']?.value;
     return typeof value === 'boolean' ? value : false;
@@ -331,12 +337,14 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
 
   /**
    * 房间人数是否可开（Task 2.2 / spec §4.6.2）：先查 `GameMeta.supportedPlayerCounts`，
-   * 再按 `game.paodekuai.nonThreePlayerEnabled` 把跑得快收窄为 `[3]`（D20）。
-   * 斗地主只支持 3（`GameMeta` 单一真源）。
+   * 再按 2/4 两闸分别收窄跑得快（3 人恒开）。斗地主只支持 3（`GameMeta` 单一真源）。
    */
   supportsRoomPlayerCount(gameType: GameType, playerCount: number): boolean {
     if (!supportsPlayerCount(gameType, playerCount)) return false;
-    return gameType !== 'paodekuai' || playerCount === 3 || this.paodekuaiNonThreePlayerEnabled();
+    if (gameType !== 'paodekuai' || playerCount === 3) return true;
+    if (playerCount === 2) return this.paodekuaiTwoPlayerEnabled();
+    if (playerCount === 4) return this.paodekuaiNonThreePlayerEnabled();
+    return false;
   }
 
   /**

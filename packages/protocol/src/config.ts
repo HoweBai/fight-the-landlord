@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （九十二键清单、校验函数、客户端子集）。
+ * （九十三键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -115,7 +115,9 @@ export const CONFIG_KEYS = [
   'game.levels.paodekuai',
   /** 跑得快总开关（种子 false，暗上线）。客户端可见（裸名 `games.paodekuai.enabled`）。 */
   'game.paodekuai.enabled',
-  /** 跑得快 2/4 人是否对生产开放（种子 false；引擎/测试始终支持 2/4）。 */
+  /** 跑得快 2 人场开关（种子 false；2026-10-25 起与 4 人分键）。 */
+  'game.paodekuai.twoPlayerEnabled',
+  /** 跑得快 4 人场开关（种子 false；键名为历史命名，语义已收窄为只关 4 人）。 */
   'game.paodekuai.nonThreePlayerEnabled',
   /** 跑得快牌型/计分开关（12 键；默认值见 shared/src/pdk/rules.ts）。 */
   'game.paodekuai.bareTrioEnabled',
@@ -349,6 +351,7 @@ const PAY_MINUTES_KEYS: readonly ConfigKey[] = [
 /** 多玩法片：跑得快 boolean 键（严格 boolean）。 */
 const PDK_BOOLEAN_KEYS: readonly ConfigKey[] = [
   'game.paodekuai.enabled',
+  'game.paodekuai.twoPlayerEnabled',
   'game.paodekuai.nonThreePlayerEnabled',
   'game.paodekuai.bareTrioEnabled',
   'game.paodekuai.trioWithPairEnabled',

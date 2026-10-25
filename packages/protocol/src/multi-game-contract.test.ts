@@ -12,6 +12,7 @@ import {
 } from './validate';
 import { decodeHand, encodeCards, encodeHand } from './records';
 import { PdkHandType, type PdkPlayerView } from './pdk/types';
+import { pdkRecentActionsWindow } from './pdk/window';
 import type { Card, PlayerView } from './views';
 
 const c = (r: number, s = 0): Card => ({ r, s });
@@ -196,5 +197,84 @@ describe('pdk 类型', () => {
       },
     };
     expect(pdk.pdkRules.multiplierCap).toBe(64);
+  });
+});
+
+describe('pdk recentActions 窗口按人数（2026-10-25 4 人场）', () => {
+  const rules = {
+    bareTrioEnabled: true,
+    trioWithPairEnabled: false,
+    bareAirplaneEnabled: false,
+    fourWithTwoEnabled: true,
+    fourWithTwoPairKickerAllowed: false,
+    airplaneWings: 'pairs' as const,
+    bombMultiplierEnabled: true,
+    guanMultiplierEnabled: true,
+    springMultiplierEnabled: true,
+    multiplierCap: 64,
+    baobenEnabled: true,
+  };
+
+  function pdkView(over: Partial<PdkPlayerView> = {}): PdkPlayerView {
+    const pc = (over.playerCount ?? 4) as 2 | 3 | 4;
+    const perSeat = pc === 4 ? 12 : 16;
+    return {
+      roomCode: 'PDK04',
+      gameType: 'paodekuai',
+      playerCount: pc,
+      version: 1,
+      state: 'playing',
+      baseScore: 15,
+      seat: 0,
+      hand: [c(3)],
+      cardCounts: Array.from({ length: pc }, (_, i) => (i === 0 ? 1 : perSeat)),
+      trustees: Array.from({ length: pc }, () => false),
+      currentPlayer: 0,
+      recentActions: [],
+      turnDeadlineAt: 1,
+      canPass: false,
+      bombCount: 0,
+      pdkRules: rules,
+      ...over,
+    };
+  }
+
+  const actions = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ seat: i, cards: i === 0 ? [c(3)] : null }));
+
+  it('窗口函数：2/3 人 2、4 人 3', () => {
+    expect(pdkRecentActionsWindow(2)).toBe(2);
+    expect(pdkRecentActionsWindow(3)).toBe(2);
+    expect(pdkRecentActionsWindow(4)).toBe(3);
+  });
+
+  it('4 人视图 3 条通过、4 条拒绝', () => {
+    expect(() =>
+      validateOutbound({
+        type: 'game.state_update',
+        version: 1,
+        payload: pdkView({ recentActions: actions(3) as PdkPlayerView['recentActions'] }),
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateOutbound({
+        type: 'game.state_update',
+        version: 1,
+        payload: pdkView({ recentActions: actions(4) as PdkPlayerView['recentActions'] }),
+      }),
+    ).toThrow(ProtocolError);
+  });
+
+  it('3 人/2 人视图 3 条拒绝（窗口仍 2）', () => {
+    for (const pc of [2, 3] as const) {
+      expect(() =>
+        validateOutbound({
+          type: 'game.state_update',
+          version: 1,
+          payload: pdkView({ playerCount: pc, recentActions: actions(3) as PdkPlayerView['recentActions'] }),
+        }),
+        String(pc),
+      ).toThrow(ProtocolError);
+    }
   });
 });

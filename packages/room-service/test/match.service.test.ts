@@ -852,6 +852,38 @@ describe('MatchService', () => {
     expect(parseMatchQueueKey('match:meta:u1')).toBeNull();
   });
 
+  it('人数闸在扫描轮关闭：在队 2 人票整桶 failMatch（实际 5 段键），不建房、不抛', async () => {
+    const T0 = 1_700_000_000_000;
+    configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(false);
+    configCache.freeBotFillEnabled.mockReturnValue(false);
+    service.setClock(() => T0);
+    for (const id of ['u1', 'u2']) {
+      await service.addToQueue(id, 'random', 15, undefined, undefined, {
+        gameType: 'paodekuai',
+        playerCount: 2,
+      });
+    }
+    service.setClock(() => T0 + 1_000);
+    const publishMock = redis.publish as unknown as {
+      mockClear(): void;
+      mock: { calls: unknown[][] };
+    };
+    publishMock.mockClear();
+
+    await expect(service.scanOnce()).resolves.toBeUndefined();
+
+    const key = 'match:queue:random:paodekuai:2:15:global';
+    expect(redis.zrem).toHaveBeenCalledWith(key, 'u1');
+    expect(redis.zrem).toHaveBeenCalledWith(key, 'u2');
+    expect(redis._zsets.get(key)?.size ?? 0).toBe(0);
+    expect(redis._hashes.has('match:meta:u1')).toBe(false);
+    expect(redis._hashes.has('match:meta:u2')).toBe(false);
+    expect(roomsService.createGameRoom, '闸关不得建房').not.toHaveBeenCalled();
+    const published = publishMock.mock.calls.map((c) => String(c[1]));
+    expect(published.some((p) => p.includes('"code":12007') && p.includes('u1'))).toBe(true);
+  });
+
   it('starts the scan loop exactly once, on module init (§7.3 偏差 A4)', () => {
     const spy = vi.spyOn(service, 'startMatchingLoop');
     service.onModuleInit();

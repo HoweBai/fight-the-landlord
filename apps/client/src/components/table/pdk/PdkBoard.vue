@@ -4,7 +4,7 @@
  *
  * 与 `DdzBoard` 同一套边界：只收 props、只 emit（不读 store）；服务端权威 ——
  * `canPass`/`bombCount`/`cardCounts` 全部来自 `PdkPlayerView`，客户端不判规则。
- * 首版只做 **3 人**（`playerCount !== 3` 由壳提示并回大厅）。
+ * 已实现 **2/3/4 人**（4 人 = 顶部对家 + 左右对手；>4 由壳提示并回大厅）。
  *
  * 无叫抢 / 无底牌 / 无地主徽标 / 无记牌器；动作栏 = 出牌 / 不出（服务端 `canPass`）/ 提示。
  * 提示用本局 `view.pdkRules` + `protocol/pdk/rule` 枚举（S6.2）。
@@ -71,11 +71,27 @@ const myTrustee = computed<boolean>(() => {
 /** 末 5 秒紧迫态（A 档；与 DdzBoard 同款）。 */
 const clockUrgent = computed(() => props.seconds > 0 && props.seconds <= 5);
 
-/** 两个对手方位（逆时针；与 ddz 同款：下家在右、上家在左）。 */
-const seats = computed<[number, number]>(() => {
+/** 本局人数（牌桌**只信视图**；旧服务端缺省 3）。 */
+const playerCount = computed(() => props.view?.playerCount ?? 3);
+
+/** 对手方位（逆时针；3 人：下家右、上家左；2 人：唯一对手在左；4 人：左/右 + 顶部对家）。 */
+const seats = computed<readonly number[]>(() => {
   const me = props.mySeat;
-  if (me === null) return [0, 1];
+  if (me === null) {
+    if (playerCount.value === 2) return [1];
+    if (playerCount.value === 4) return [3, 1];
+    return [0, 1];
+  }
+  if (playerCount.value === 2) return [(me + 1) % 2];
+  if (playerCount.value === 4) return [(me + 3) % 4, (me + 1) % 4];
   return [(me + 2) % 3, (me + 1) % 3];
+});
+
+/** 顶部对家（仅 4 人）。 */
+const topSeat = computed<number | null>(() => {
+  if (playerCount.value !== 4) return null;
+  const me = props.mySeat;
+  return me === null ? 2 : (me + 2) % 4;
 });
 
 function actionOf(seat: number) {
@@ -84,7 +100,12 @@ function actionOf(seat: number) {
   return null;
 }
 const leftAction = computed(() => actionOf(seats.value[0]!));
-const rightAction = computed(() => actionOf(seats.value[1]!));
+const rightAction = computed(() =>
+  seats.value.length > 1 ? actionOf(seats.value[1]!) : null,
+);
+const topAction = computed(() =>
+  topSeat.value !== null ? actionOf(topSeat.value) : null,
+);
 const myAction = computed(() =>
   props.mySeat === null ? null : actionOf(props.mySeat),
 );
@@ -234,7 +255,7 @@ function onTrustee(on: boolean): void {
 </script>
 
 <template>
-  <view class="pdk">
+  <view class="pdk" :class="{ 'pdk--four': playerCount === 4 }">
     <view class="pdk__bar">
       <view class="pdk__bar-left">
         <button
@@ -285,7 +306,23 @@ function onTrustee(on: boolean): void {
 
     <view v-if="waitingForDeal" class="pdk__waiting">已进房，等待服务端发牌…</view>
     <template v-else>
-      <view class="pdk__mid">
+      <view v-if="topSeat !== null" class="pdk__top">
+        <Seat v-bind="seatProps(topSeat ?? 0)" class="pdk__seat pdk__seat--top" />
+        <view class="pdk__play-col pdk__play-col--top">
+          <TurnTimer v-bind="timerProps(topSeat ?? 0)" />
+          <PlayArea
+            v-if="topAction && topAction.cards"
+            class="pdk__played-slot"
+            :cards="topAction.cards"
+          />
+          <text v-else-if="topAction && topAction.cards === null" class="pdk__play-pass anim-toast-in">不出</text>
+        </view>
+      </view>
+
+      <view
+        class="pdk__mid"
+        :class="{ 'pdk__mid--two': seats.length === 1, 'pdk__mid--four': playerCount === 4 }"
+      >
         <Seat v-bind="seatProps(seats[0]!)" class="pdk__seat" />
         <view class="pdk__play-col">
           <TurnTimer v-bind="timerProps(seats[0]!)" />
@@ -296,7 +333,7 @@ function onTrustee(on: boolean): void {
           <text v-if="levelName && !isPlaying" class="pdk__scene-name">{{ levelName }}</text>
           <text v-if="sceneBase !== null" class="pdk__scene-base">底分 {{ sceneBase }}</text>
         </view>
-        <view class="pdk__play-col pdk__play-col--right">
+        <view v-if="seats.length > 1" class="pdk__play-col pdk__play-col--right">
           <TurnTimer v-bind="timerProps(seats[1]!)" />
           <PlayArea
             v-if="rightAction && rightAction.cards"
@@ -306,7 +343,12 @@ function onTrustee(on: boolean): void {
           />
           <text v-else-if="rightAction && rightAction.cards === null" class="pdk__play-pass anim-toast-in">不出</text>
         </view>
-        <Seat v-bind="seatProps(seats[1]!)" class="pdk__seat pdk__seat--right" :mirror="true" />
+        <Seat
+          v-if="seats.length > 1"
+          v-bind="seatProps(seats[1]!)"
+          class="pdk__seat pdk__seat--right"
+          :mirror="true"
+        />
       </view>
 
       <view class="pdk__action-bar">
@@ -541,6 +583,10 @@ function onTrustee(on: boolean): void {
   text-shadow: 0 2px 8px rgba($ftl-color-night-deep, 0.6);
   white-space: nowrap;
 }
+/** 4 人：顶部对家占了下半屏上方，阶段遮罩下移避让。 */
+.pdk--four .pdk__phase-overlay {
+  top: 40%;
+}
 
 /* —— 等待 / 静音 / 终局文字 —— */
 .pdk__waiting {
@@ -559,6 +605,28 @@ function onTrustee(on: boolean): void {
 }
 
 /* —— 中段 —— */
+/** 4 人：顶部对家一行（.pdk 的直接子项，不塞进 row flex 的 .pdk__mid）。 */
+.pdk__top {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: center;
+  gap: $ftl-space-4;
+  min-height: 0;
+}
+.pdk__seat--top {
+  align-self: flex-end;
+  margin-bottom: 0;
+}
+.pdk__play-col--top {
+  flex: 0 1 auto;
+  max-width: 60%;
+  justify-content: center;
+  padding-top: 0;
+}
+.pdk__mid--four {
+  gap: $ftl-space-4;
+}
 .pdk__mid {
   display: flex;
   flex-direction: row;
@@ -566,6 +634,11 @@ function onTrustee(on: boolean): void {
   align-items: stretch;
   flex: 1 1 0;
   min-height: 0;
+}
+/** 2 人：唯一对手在左；右列不渲染，出牌列与中央区均衡占宽。 */
+.pdk__mid--two .pdk__play-col,
+.pdk__mid--two .pdk__center {
+  flex: 1 1 0;
 }
 /** 对手座位：无白底板浮动组，沉到中段带底。 */
 .pdk__seat {

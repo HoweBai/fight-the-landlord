@@ -23,7 +23,7 @@ describe('GameType / GameMeta', () => {
     expect(GAME_META.paodekuai.supportedPlayerCounts).toEqual([2, 3, 4]);
     expect(GAME_META.paodekuai.defaultPlayerCount).toBe(3);
     expect(GAME_META.paodekuai.capabilities.cardCounter).toBe(false);
-    expect(GAME_META.paodekuai.capabilities.voiceAnnouncements).toBe(false);
+    expect(GAME_META.paodekuai.capabilities.voiceAnnouncements).toBe(true);
   });
 
   it('isGameType 只认规范 id', () => {

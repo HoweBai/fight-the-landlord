@@ -1,5 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
+import { computeReliefThreshold } from '../migration-support/relief-threshold';
+
 /**
  * 配置平行化（2026-10-24）：把平台级/斗地主专属键复制到 `game.doudizhu.*`，
  * 并种下跑得快 7 键与平台级救助绝对门槛。
@@ -67,31 +69,6 @@ export const RELIEF_THRESHOLD_KEY = 'currency.reliefThresholdCoins';
 export const RELIEF_THRESHOLD_FALLBACK = 150;
 
 type SqlRow = { key: string; value: unknown; version: number };
-
-/**
- * 迁移时现算救助门槛：`MIN(斗地主档位 baseScore) × 斗地主 entryMultiplier`。
- * 旧键缺失/非法 ⇒ 15 × 10 = 150（正常种子）。
- */
-export function computeReliefThreshold(levels: unknown, multiplier: unknown): number {
-  const m =
-    typeof multiplier === 'number' &&
-    Number.isInteger(multiplier) &&
-    multiplier >= 1 &&
-    multiplier <= 100
-      ? multiplier
-      : 10;
-  if (Array.isArray(levels)) {
-    const scores = levels
-      .map((item) =>
-        item !== null && typeof item === 'object' && 'baseScore' in item
-          ? (item as { baseScore?: unknown }).baseScore
-          : undefined,
-      )
-      .filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0);
-    if (scores.length > 0) return Math.min(...scores) * m;
-  }
-  return 15 * m;
-}
 
 /** mysql2 对 json 列可能返回字符串；统一还原成 JS 值后再 stringify 回写。 */
 function normalizeDbJson(value: unknown): unknown {

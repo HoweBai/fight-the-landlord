@@ -86,6 +86,20 @@ describe('projectRecentActions（协议 ④ / 上位 §4.4）', () => {
    * 它是一条**导出性质**、不是规格条文 ⇒ 一旦不成立，探针的 `canPass` 会**静默走错分支**
    * （表现为 30 秒超时，而不是红）。所以必须在这里钉死。
    */
+  it('窗口可按人数放大：传 3 时「A 出 + B/C 过」保留目标；默认仍 2', () => {
+    let s = playingSession();
+    s = handlePlayCards(s, 'u0', [c(3)]);
+    s = handlePass(s, 'u1');
+    s = handlePass(s, 'u2');
+
+    expect(projectRecentActions(s, 3)).toEqual([
+      { seat: 0, cards: [c(3)] },
+      { seat: 1, cards: null },
+      { seat: 2, cards: null },
+    ]);
+    expect(projectRecentActions(s)).toHaveLength(RECENT_ACTIONS_WINDOW);
+  });
+
   it('不变式②：窗口里有非 null ⟺ lastPlayedHand !== null（穷举一局的每个中间态）', () => {
     const steps: Array<(s: ReturnType<typeof playingSession>) => ReturnType<typeof playingSession>> = [
       (s) => handlePlayCards(s, 'u0', [c(3)]),

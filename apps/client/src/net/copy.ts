@@ -42,7 +42,6 @@ const FIXED_COPY: Partial<Record<number, string>> = {
   [ErrCode.MATCH_TIMEOUT]: '当前无匹配的玩家',
   [ErrCode.ROOM_ALREADY_STARTED]: '房间已经开始，无法加入',
   [ErrCode.ALREADY_IN_GAME]: '你还有未结束的对局或房间',
-  [ErrCode.GAME_UNAVAILABLE]: '这个玩法暂未开放，请稍后再试',
   [ErrCode.ILLEGAL_ACTION]: '服务端判定这手牌不合法，换一手再试',
   [ErrCode.VERSION_CONFLICT]: '牌局状态有更新，正在同步…',
   [ErrCode.GAME_OVER]: '本局已经结束',
@@ -60,6 +59,8 @@ const FALLBACK_COPY: Partial<Record<number, string>> = {
   [ErrCode.USER_NOT_FOUND]: '该账号不存在，请先注册',
   [ErrCode.DEVICE_MISMATCH]: '账号已绑定其他设备，如需在本机使用请联系管理员解绑',
   [ErrCode.ROOM_MODE_DISABLED]: '该场次暂未开放',
+  /** 12012 改为 message-first：服务端的「玩法未开放 / 暂不支持该人数」都直接可见。 */
+  [ErrCode.GAME_UNAVAILABLE]: '这个玩法暂未开放，请稍后再试',
   [ErrCode.E_INSUFFICIENT_FUNDS]: '操作未成功，请稍后重试',
   [ErrCode.E_ACTION_CONFLICT]: '操作未成功，请稍后重试',
   [ErrCode.E_ENTRY_THRESHOLD]: '金币不足，无法进入该场次',

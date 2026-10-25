@@ -28,10 +28,24 @@ import {
 } from '@fight-the-landlord/protocol';
 import type { ReconnectReason } from '../net/socket';
 import type { BaseScoreLevel } from '../net/rest';
-import { DEFAULT_MODE_ID } from '../gameModes';
+import { CLIENT_TABLE_PLAYER_COUNTS, DEFAULT_MODE_ID } from '../gameModes';
 
 /** 快照类消息的处置结果。 */
 export type SnapshotOutcome = 'applied' | 'discarded' | 'rollback';
+
+/**
+ * 当前玩法可显示的人数 = 客户端 UI 能力 ∩ 服务端开放。旧服务端无 `games` ⇒ 只有 3。
+ * 空交集（异常配置）回落 `[3]`，保证 3 人牌桌永远可选。
+ */
+function resolveActivePlayerCounts(
+  activeMode: string,
+  games: Partial<Record<GameType, ClientGameConfig>>,
+): number[] {
+  const id = isGameType(activeMode) ? activeMode : 'doudizhu';
+  const server = games[id]?.supportedPlayerCounts ?? [3];
+  const counts = CLIENT_TABLE_PLAYER_COUNTS[id].filter((n) => server.includes(n));
+  return counts.length > 0 ? [...counts].sort((a, b) => a - b) : [3];
+}
 
 /** 事件类消息（不按 version 丢弃）。 */
 export type PlayerEvent = Extract<
@@ -295,6 +309,11 @@ export const useGameStore = defineStore('game', {
      */
     selectedBaseScore: null as number | null,
     /**
+     * 开始游戏页选中的**人数**（跑得快 2 人场）：与 `selectedBaseScore` 同族 ——
+     * 是页面的选择，不是对局状态，`reset()` 不动它。牌桌渲染**只读** `view.playerCount`。
+     */
+    selectedPlayerCount: 3,
+    /**
      * **大厅选中的场次**（② 金币场 §14）：大厅的场次切换写它、开始游戏页的 `room.match`
      * 读它（替换此前硬编码的 `'random'`）。
      *
@@ -446,6 +465,14 @@ export const useGameStore = defineStore('game', {
       if (cfg) return cfg.baseScoreLevels;
       return id === 'doudizhu' ? s.baseScoreLevels : [];
     },
+    /** 客户端实际展示的人数 = UI 能力 ∩ 服务端开放（4 人片落地前恒不含 4）。 */
+    activePlayerCounts: (s): number[] => resolveActivePlayerCounts(s.activeMode, s.games),
+    /** 上行实际使用的人数：选中值合法则用之，否则回落 3（再否则交集首项）。 */
+    effectivePlayerCount: (s): number => {
+      const counts = resolveActivePlayerCounts(s.activeMode, s.games);
+      if (counts.includes(s.selectedPlayerCount)) return s.selectedPlayerCount;
+      return counts.includes(3) ? 3 : counts[0]!;
+    },
     /** 跑得快视图（窄化；非 pdk ⇒ null）。 */
     pdkView: (s): Extract<GameView, { gameType: 'paodekuai' }> | null =>
       s.view && s.view.gameType === 'paodekuai' ? s.view : null,
@@ -475,7 +502,7 @@ export const useGameStore = defineStore('game', {
     bottomCards: (s): Card[] | null =>
       s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).bottomCards : null,
     /**
-     * 桌面历史牌（协议 ④）：窗口 2、旧 → 新、「不出」是显式的 `cards: null`。
+     * 桌面历史牌（协议 ④）：斗地主窗口 2；跑得快按人数（2/3→2、4→3）；旧 → 新、「不出」是显式的 `cards: null`。
      * ⚠️ 缺字段（真浏览器探针的 `seedFinishedGame` 注入的残缺视图）⇒ `[]`，**不抛错**（R661）。
      *
      * ⚠️ **这里是窗口的唯一出口**（Task B2 起）：页面按座位从这个窗口分派到各槽
@@ -785,6 +812,11 @@ export const useGameStore = defineStore('game', {
       this.selectedBaseScore = baseScore;
     },
 
+    /** 写选中的人数（仅接受当前交集内的值；非法值不写入，由 effective 回落）。 */
+    setSelectedPlayerCount(count: number) {
+      if (this.activePlayerCounts.includes(count)) this.selectedPlayerCount = count;
+    },
+
     /**
      * 写入房间状态 / 校正自己的座位。**不缓存成员列表** ——
      * 牌桌渲染用的张数来源是 `PlayerView.cardCounts`（`store.cardCounts`），
@@ -824,7 +856,7 @@ export const useGameStore = defineStore('game', {
      *  ② `seatBalances`：牌桌座位余额跟着刷成结算时刻值（同一份事实的更新，不造第二份）；
      *  ③ `walletBalance`：我那一座的值**本地更新余额 chip**（§14 逐字；后续拉取仍是权威）。
      *
-     * ⚠️ 载荷形状由协议校验器钉死（恰 3 条、座位升序），这里不再复核 —— 哑终端。
+     * ⚠️ 载荷形状由协议校验器钉死（长度 = playerCount、座位升序），这里不再复核 —— 哑终端。
      */
     applyBalances(payload: { balances: { seat: number; balance: number }[] }) {
       const map: Record<number, number> = {};

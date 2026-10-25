@@ -86,7 +86,7 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
  *  - 每次请求都查库（`list()` 不缓存）—— 缓存会把「后台改了要生效」变成「改了要重启」。
  *
  * ⚠️ 缺行的兜底（**只在这里**，RPC 快照不兜）：子集形状恒二十一键、缺行取**与种子一致的默认**
- * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；92 键齐全由迁移
+ * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；93 键齐全由迁移
  * 种子保证，缺行只可能是建库事故 —— 此时「空档位 + 入口按种子」的既有客户端 fail-safe
  * 语义（§2.8）比 500 更稳。值的**合法性**由写入口的 `parseConfigValue` 保证；档位表在读取时
  * 复用同一个 parser 复核（坏值 ⇒ 空表，不 500）。
@@ -125,7 +125,8 @@ export class ClientConfigController {
      */
     const pdkLevels = readLevels(byKey, 'game.levels.paodekuai');
     const pdkEnabled = readBoolean(byKey, 'game.paodekuai.enabled', undefined, false);
-    const pdkNonThree = readBoolean(
+    const pdkTwo = readBoolean(byKey, 'game.paodekuai.twoPlayerEnabled', undefined, false);
+    const pdkFour = readBoolean(
       byKey,
       'game.paodekuai.nonThreePlayerEnabled',
       undefined,
@@ -176,10 +177,13 @@ export class ClientConfigController {
       },
       paodekuai: {
         enabled: pdkEnabled,
-        // 2/4 人由 `nonThreePlayerEnabled` 收窄（引擎/协议始终支持 2/3/4）。
-        supportedPlayerCounts: pdkNonThree
-          ? [...GAME_META.paodekuai.supportedPlayerCounts]
-          : [3],
+        // 2/4 人分别由 `twoPlayerEnabled` / `nonThreePlayerEnabled` 收窄
+        //（引擎/协议始终支持 2/3/4）。
+        supportedPlayerCounts: [
+          ...(pdkTwo ? [2] : []),
+          3,
+          ...(pdkFour ? [4] : []),
+        ],
         defaultPlayerCount: GAME_META.paodekuai.defaultPlayerCount,
         baseScoreLevels: pdkLevels,
         freeRoomEnabled: pdkFree,

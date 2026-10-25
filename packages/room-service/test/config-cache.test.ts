@@ -82,7 +82,7 @@ function makeClient(): { client: ConfigClient; snapshot: ReturnType<typeof vi.fn
   return { client: { snapshot } as unknown as ConfigClient, snapshot };
 }
 
-/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整九十二键由 config-service 保证）。 */
+/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整九十三键由 config-service 保证）。 */
 function snapshotWith(
   over: Partial<Record<ConfigKey, unknown>> = {},
   version = 1,
@@ -1219,15 +1219,24 @@ describe('ConfigCacheService：多玩法配置（Task 2.2）', () => {
 
     const on = await bootCache({
       'game.paodekuai.enabled': true,
-      'game.paodekuai.nonThreePlayerEnabled': true,
+      'game.paodekuai.twoPlayerEnabled': true,
     });
     expect(on.paodekuaiEnabled()).toBe(true);
-    expect(on.paodekuaiNonThreePlayerEnabled()).toBe(true);
+    expect(on.paodekuaiTwoPlayerEnabled()).toBe(true);
+    expect(on.paodekuaiNonThreePlayerEnabled()).toBe(false);
     expect(on.gameEnabled('paodekuai')).toBe(true);
     on.onApplicationShutdown();
+
+    const onFour = await bootCache({
+      'game.paodekuai.enabled': true,
+      'game.paodekuai.nonThreePlayerEnabled': true,
+    });
+    expect(onFour.paodekuaiTwoPlayerEnabled()).toBe(false);
+    expect(onFour.paodekuaiNonThreePlayerEnabled()).toBe(true);
+    onFour.onApplicationShutdown();
   });
 
-  it('supportsRoomPlayerCount：pdk nonThree=false 收窄为 [3]；开后可 2/4；ddz 恒 3', async () => {
+  it('supportsRoomPlayerCount：2/4 分键；3 恒开；ddz 恒 3', async () => {
     const narrow = await bootCache({ 'game.paodekuai.enabled': true });
     expect(narrow.supportsRoomPlayerCount('paodekuai', 3)).toBe(true);
     expect(narrow.supportsRoomPlayerCount('paodekuai', 2)).toBe(false);
@@ -1237,12 +1246,26 @@ describe('ConfigCacheService：多玩法配置（Task 2.2）', () => {
     expect(narrow.supportsRoomPlayerCount('doudizhu', 4)).toBe(false);
     narrow.onApplicationShutdown();
 
-    const wide = await bootCache({ 'game.paodekuai.nonThreePlayerEnabled': true });
-    expect(wide.supportsRoomPlayerCount('paodekuai', 2)).toBe(true);
-    expect(wide.supportsRoomPlayerCount('paodekuai', 3)).toBe(true);
-    expect(wide.supportsRoomPlayerCount('paodekuai', 4)).toBe(true);
-    expect(wide.supportsRoomPlayerCount('paodekuai', 5)).toBe(false);
-    wide.onApplicationShutdown();
+    const two = await bootCache({ 'game.paodekuai.twoPlayerEnabled': true });
+    expect(two.supportsRoomPlayerCount('paodekuai', 2)).toBe(true);
+    expect(two.supportsRoomPlayerCount('paodekuai', 3)).toBe(true);
+    expect(two.supportsRoomPlayerCount('paodekuai', 4)).toBe(false);
+    two.onApplicationShutdown();
+
+    const four = await bootCache({ 'game.paodekuai.nonThreePlayerEnabled': true });
+    expect(four.supportsRoomPlayerCount('paodekuai', 2)).toBe(false);
+    expect(four.supportsRoomPlayerCount('paodekuai', 3)).toBe(true);
+    expect(four.supportsRoomPlayerCount('paodekuai', 4)).toBe(true);
+    expect(four.supportsRoomPlayerCount('paodekuai', 5)).toBe(false);
+    four.onApplicationShutdown();
+
+    const both = await bootCache({
+      'game.paodekuai.twoPlayerEnabled': true,
+      'game.paodekuai.nonThreePlayerEnabled': true,
+    });
+    expect(both.supportsRoomPlayerCount('paodekuai', 2)).toBe(true);
+    expect(both.supportsRoomPlayerCount('paodekuai', 4)).toBe(true);
+    both.onApplicationShutdown();
   });
 });
 
