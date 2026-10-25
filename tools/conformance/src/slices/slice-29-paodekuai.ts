@@ -8,7 +8,15 @@
  * ⚠️ **独立 oracle**：`pdk-driver` 只打单张，且不 import 服务端跑得快规则（见其文件头）。
  * ⚠️ 前置：`game.paodekuai.enabled=true`（本切片经管理面开启并轮询至建房生效，收尾还原）。
  */
-import { ErrCode } from '@fight-the-landlord/protocol';
+import { spawnSync } from 'node:child_process';
+import {
+  ErrCode,
+  RPC_PATTERNS,
+  encodeHand,
+  type Card,
+  type PdkSettlementResult,
+  type RecordWriteRequest,
+} from '@fight-the-landlord/protocol';
 import { assertNoLeak, Checks, ConformanceError, info, sleep, step } from '../lib/assert';
 import {
   adminLogin,
@@ -20,8 +28,139 @@ import {
   type HarnessUser,
 } from '../lib/http';
 import { playPdkToEnd, startPdkRoom } from '../lib/pdk-driver';
+import { rpcCall, type RpcEndpoint } from '../lib/rpc';
 
 const PDK_ENABLED_KEY = 'game.paodekuai.enabled';
+
+/* ── 风控真栈（2026-10-25）：复用本片已打完的 random 模式 PDK 对局 ───────────── */
+const USER_SERVICE_CONTAINER = 'ftl-user-service';
+const PDK_RISK_MIN_GAMES = 'game.paodekuai.risk.minGames';
+const PDK_RISK_WIN_RATE = 'game.paodekuai.risk.winRateThreshold';
+const RISK_SCAN_INTERVAL = 'risk.scanIntervalMs';
+/** `record.write` 的 TCP 监听（宿主直投 = compose override 的 3101；照 slice-20）。 */
+const USER_RPC: RpcEndpoint = {
+  host: process.env.USER_RPC_HOST ?? 'localhost',
+  port: Number(process.env.USER_RPC_PORT ?? 3101),
+};
+
+/** 从 codec 合法集取牌（固定遍历序 ⇒ 可复读；只用于造记录，不模拟牌堆）。 */
+function sampleCards(offset: number, count: number): Card[] {
+  const ranks = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 20, 30];
+  const pool: Card[] = [];
+  for (const r of ranks) for (let s = 0; s < 5; s += 1) pool.push({ r, s });
+  const out: Card[] = [];
+  for (let i = 0; i < count; i += 1) out.push(pool[(offset + i) % pool.length]!);
+  return out;
+}
+
+/**
+ * 造一条合法的 PDK 胜局记录（`record.write` 直投；校验面同 `record.rpc.controller`）。
+ * 真实对局只有 1 局，而风控命中是严格 `games > minGames` ⇒ 用第二条胜局把 winner
+ * 抬到 2 局 2 胜（minGames=1 才可命中）。
+ */
+function craftPdkWinningRecord(
+  roomCode: string,
+  winnerUserId: string,
+  endedAt: number,
+): RecordWriteRequest {
+  const baseScore = 15;
+  const remaining = [0, 4, 7];
+  const result: PdkSettlementResult = {
+    roomCode,
+    gameType: 'paodekuai',
+    playerCount: 3,
+    baseScore,
+    winnerSeats: [0],
+    scoreChanges: [
+      { seat: 0, delta: 30 },
+      { seat: 1, delta: -15 },
+      { seat: 2, delta: -15 },
+    ],
+    remaining,
+    multiplier: 1,
+    bombCount: 0,
+    guan: false,
+    spring: false,
+    baobenSeats: [],
+  };
+  return {
+    roomCode,
+    gameVersion: 1,
+    mode: 'random',
+    baseScore,
+    gameType: 'paodekuai',
+    playerCount: 3,
+    result,
+    seats: [
+      {
+        seat: 0,
+        userId: winnerUserId,
+        isRobot: false,
+        robotId: null,
+        hand: encodeHand(sampleCards(0, 16)),
+        playedCount: 16,
+      },
+      {
+        seat: 1,
+        userId: null,
+        isRobot: true,
+        robotId: 'bot-s29-pdk-1',
+        hand: encodeHand(sampleCards(16, 16)),
+        playedCount: 12,
+      },
+      {
+        seat: 2,
+        userId: null,
+        isRobot: true,
+        robotId: 'bot-s29-pdk-2',
+        hand: encodeHand(sampleCards(32, 16)),
+        playedCount: 9,
+      },
+    ],
+    startedAt: endedAt - 60_000,
+    endedAt,
+  };
+}
+
+/** 管理面 PUT 并对 code 断言（失败即抛，带键名与响应）。 */
+async function putConfigOrThrow(
+  admin: string,
+  key: string,
+  value: unknown,
+  label: string,
+): Promise<void> {
+  const res = await adminPutConfig(key, value, admin);
+  if (res.body?.code !== ErrCode.OK) {
+    throw new ConformanceError(`${label}失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
+  }
+}
+
+/** 重起 user-service 并等 healthy（缩间隔后让扫描循环按 5s 重排；首轮仍 30s）。 */
+async function restartUserService(): Promise<void> {
+  const r = spawnSync('docker', ['restart', USER_SERVICE_CONTAINER], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  if (r.status !== 0) {
+    throw new ConformanceError(
+      `重启 ${USER_SERVICE_CONTAINER} 失败：${(r.stdout ?? '') + (r.stderr ?? '')}`,
+    );
+  }
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    const h = spawnSync(
+      'docker',
+      ['inspect', USER_SERVICE_CONTAINER, '--format', '{{.State.Health.Status}}'],
+      { encoding: 'utf8', timeout: 20_000 },
+    );
+    const status = `${h.stdout ?? ''}${h.stderr ?? ''}`.trim();
+    if (status === 'healthy') return;
+    if (Date.now() >= deadline) {
+      throw new ConformanceError(`${USER_SERVICE_CONTAINER} 90s 内未 healthy：${status}`);
+    }
+    await sleep(1000);
+  }
+}
 
 /** 等待开关在 room-service 的配置缓存里生效（观测点 = 建房行为）。 */
 async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
@@ -193,6 +332,7 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
       checks.that(record !== null, `GET /api/records/mine?gameType=paodekuai 命中本房（${room.roomCode}）`);
       if (record !== null) {
         checks.eq(record.gameType, 'paodekuai', '记录 gameType=paodekuai');
+        checks.eq(record.mode, 'random', '记录 mode=random（进入风控扫描的 mode 过滤面）');
         checks.eq(record.playerCount, 3, '记录 playerCount=3');
         checks.eq(record.players?.length, 3, '记录 players 恰 3 条');
         checks.that(
@@ -217,6 +357,101 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
         !(legacy.body?.data?.items ?? []).some((r: any) => r.roomCode === room.roomCode),
         '旧查询（无 gameType）只查斗地主表 ⇒ 不含 pdk 记录（D11 零破坏）',
       );
+
+      step('⑥ 风控真栈：PDK 记录进入胜率扫描（降阈 + 缩间隔 + 重起 user-service）');
+      const admin = await adminLogin();
+      const winnerSeat = outcome.finishedPayload?.winnerSeats?.[0] as number | undefined;
+      const winnerClient =
+        typeof winnerSeat === 'number' ? room.bySeat.get(winnerSeat) : undefined;
+      const winnerUser = winnerClient?.user;
+      checks.that(
+        winnerUser !== undefined,
+        `⑥ winnerSeats[0]=${String(winnerSeat)} 能映射到玩家（userId=${winnerUser?.id ?? '—'}）`,
+      );
+      if (winnerUser === undefined) {
+        throw new ConformanceError('⑥ 无法从 winnerSeats 映射到玩家，后续风控断言无从谈起');
+      }
+      // 真实对局只有 1 局；命中是严格 `games > minGames` ⇒ 直投第二条胜局到 2 局 2 胜。
+      const craftedRoom = `P2${Date.now().toString(36).slice(-6).toUpperCase()}`;
+      const crafted = craftPdkWinningRecord(craftedRoom, winnerUser.id, Date.now());
+      const writeRes = await rpcCall<{ written: boolean }>(
+        USER_RPC,
+        RPC_PATTERNS.recordWrite,
+        crafted,
+        5_000,
+      );
+      const written = writeRes.ok ? writeRes.data.written : false;
+      checks.eq(written, true, '⑥ 直投第二条 PDK 胜局 written=true（满足严格 games > minGames）');
+      if (!writeRes.ok || !writeRes.data.written) {
+        throw new ConformanceError(`⑥ 造数失败：${JSON.stringify(writeRes)}`);
+      }
+      const restoreConfig = async (): Promise<void> => {
+        await putConfigOrThrow(admin, PDK_RISK_MIN_GAMES, 100, '⑥ 还原 pdk minGames ');
+        await putConfigOrThrow(admin, PDK_RISK_WIN_RATE, 0.8, '⑥ 还原 pdk winRate ');
+        await putConfigOrThrow(admin, RISK_SCAN_INTERVAL, 3_600_000, '⑥ 还原扫描间隔 ');
+      };
+      let primaryError: unknown = null;
+      try {
+        await putConfigOrThrow(admin, PDK_RISK_MIN_GAMES, 1, '⑥ 降 pdk minGames ');
+        await putConfigOrThrow(admin, PDK_RISK_WIN_RATE, 0.5, '⑥ 降 pdk winRate ');
+        await putConfigOrThrow(admin, RISK_SCAN_INTERVAL, 5_000, '⑥ 缩扫描间隔 ');
+        await restartUserService();
+
+        const riskDeadline = Date.now() + 90_000;
+        let detail: any = null;
+        let reason: any = null;
+        while (Date.now() < riskDeadline) {
+          const res = await getJson<any>(
+            `/api/admin/risk/users/${encodeURIComponent(winnerUser.id)}`,
+            admin,
+          );
+          const entries = Array.isArray(res.body?.data?.entries) ? res.body.data.entries : [];
+          reason =
+            (entries[0]?.reasons ?? []).find(
+              (r: any) => r?.check === 'winRate' && r?.detail?.gameType === 'paodekuai',
+            ) ?? null;
+          if (reason !== null) {
+            detail = res.body?.data ?? null;
+            break;
+          }
+          await sleep(1000);
+        }
+        checks.that(
+          reason !== null,
+          `⑥ ≤90s 内 winner 详情出现 paodekuai winRate reason —— 实际 entries[0]=${JSON.stringify(detail?.entries?.[0] ?? null)}`,
+        );
+        checks.eq(reason?.detail?.gameType, 'paodekuai', '⑥ reason.detail.gameType=paodekuai');
+        checks.eq(reason?.detail?.games, 2, '⑥ reason.detail.games=2（真实 1 + 直投 1）');
+        checks.eq(reason?.detail?.wins, 2, '⑥ reason.detail.wins=2');
+        checks.eq(reason?.detail?.winRate, 1, '⑥ reason.detail.winRate=1');
+        checks.eq(detail?.stats?.byGame?.paodekuai?.games, 2, '⑥ stats.byGame.paodekuai.games=2');
+        checks.eq(detail?.stats?.byGame?.paodekuai?.wins, 2, '⑥ stats.byGame.paodekuai.wins=2');
+        checks.eq(detail?.stats?.byGame?.doudizhu?.games, 0, '⑥ stats.byGame.doudizhu.games=0');
+        checks.eq(detail?.stats?.games, 2, '⑥ stats.games=2（两玩法合计）');
+        checks.eq(detail?.entries?.[0]?.score, 25, '⑥ 条目 score=25（胜率一项）');
+        const reviewId = detail?.entries?.[0]?.id;
+        const dismiss = await postJson(
+          '/api/admin/risk/actions',
+          {
+            userId: winnerUser.id,
+            action: 'dismiss',
+            reviewId,
+            reason: 'slice-29 风控真栈清理',
+          },
+          admin,
+        );
+        checks.eq(dismiss.body?.code, ErrCode.OK, '⑥ dismiss 清理条目（HTTP 200/code 0）');
+      } catch (err) {
+        primaryError = err;
+        throw err;
+      } finally {
+        try {
+          await restoreConfig();
+        } catch (restoreErr) {
+          if (primaryError === null) throw restoreErr;
+          info(`⑥ 配置还原失败（保留原始错误）：${String(restoreErr)}`);
+        }
+      }
     } finally {
       for (const c of room.clients) c.close();
     }

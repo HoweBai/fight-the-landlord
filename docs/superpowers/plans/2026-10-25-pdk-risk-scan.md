@@ -353,16 +353,18 @@ grep -rn "90 键\|90键\|74 active\|74 个 active\|74 键\|89 键\|73 active\|73
 **Implement**：
 1. slice-29 记录断言补 `record.mode === 'random'`。
 2. 新增 step ⑥：
+   - **直投第二条 PDK 胜局**（`record.write` RPC；真实对局 1 局不够严格
+     `games > minGames`，需 2 局 2 胜；其余两座用机器人，扫描会过滤）；
    - 管理面 PUT `game.paodekuai.risk.minGames=1`、`winRateThreshold=0.5`、
      `risk.scanIntervalMs=5000`；
    - `docker restart ftl-user-service` + 90s 内 healthy；
    - `winnerSeats[0]` → `room.bySeat` → winner user；轮询
      `GET /api/admin/risk/users/:winnerId` ≤90s；
-   - 断言 reason `gameType:'paodekuai'`、games=1/wins=1/winRate=1；
-     `stats.byGame.paodekuai=1/1`、`byGame.doudizhu.games=0`、`stats.games=1`、score=25；
+   - 断言 reason `gameType:'paodekuai'`、games=2/wins=2/winRate=1；
+     `stats.byGame.paodekuai=2/2`、`byGame.doudizhu.games=0`、`stats.games=2`、score=25；
    - dismiss 条目；finally 还原三键（minGames=100 / winRate=0.8 / scanInterval=3600000）。
 3. `run.ts` 的 slice-29 标题补“风控真栈”。
-4. `baselines.json` `full['slice-29-paodekuai']` 55 → 68（新增 13 条，静态核算）。
+4. `baselines.json` `full['slice-29-paodekuai']` 55 → 69（新增 14 条，静态核算）。
 
 **验证**：`pnpm -C tools/conformance lint` + `build`；真栈执行由 master conformance
 （或 Docker 恢复后的本机 slice-29）承担——本机 Docker paused 时不跑真栈。
@@ -443,3 +445,10 @@ pnpm exec turbo run test lint --force
   恢复 Docker 后执行：起 MySQL → 跑迁移 → `SELECT COUNT(*) FROM platform_config` = 92
   + 抽查 `game.paodekuai.risk.winRateThreshold` = 0.8 / `minGames` = 100。
 - 推送：按用户要求只推 `dev`（推前 fetch/merge `origin/dev` 并重跑全量）；不推 master、不部署。
+
+### 追加：PDK 真栈 conformance（2026-10-25）
+
+- T10 已实现：`slice-29-paodekuai` 新增 14 条断言（含直投第二条 `record.write` 胜局，
+  把 winner 抬到 2 局 2 胜以越过严格 `games > minGames`）；`baselines.json` 55 → 69。
+- 本地：`pnpm -C tools/conformance lint` + `build` + `check-baselines.mjs --self-test` 绿；
+  **真栈未跑**（Docker paused）——执行证据待 master conformance 或 Docker 恢复后的本机 slice-29。

@@ -118,7 +118,7 @@ const CASES: Record<string, Case> = {
   'slice-28-card-counter': { title: '记牌器收费（真栈：购买/重放/改价重试/并发/包时/不足/金币局消费）', run: runSlice28 },
   // 多玩法片（S7.3）：追加在末尾（顺序即 CI 切片循环与 full 回填顺序）。
   // 本片经管理面开启跑得快（收尾还原），用独立 oracle 打完整一局并核对结算/记录。
-  'slice-29-paodekuai': { title: '跑得快（真栈：匹配/开局/出牌过牌/结算/记录/房间过滤）', run: runSlice29 },
+  'slice-29-paodekuai': { title: '跑得快（真栈：匹配/开局/出牌过牌/结算/记录/房间过滤/风控扫描）', run: runSlice29 },
 };
 
 function printUsage(): void {
