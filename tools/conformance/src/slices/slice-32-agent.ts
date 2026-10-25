@@ -1057,6 +1057,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // ⑩ 鉴权交叉 / policy 矩阵
     // ══════════════════════════════════════════════════════════════════════
     step('⑩ 鉴权交叉：agent↔player/admin；viewer/operator/finance；agent.inviteEnabled 写闸');
+    // 本片至此已发 >120 个 HTTP 请求（网关 IP 桶 = 120/min，R453）。等一个窗口再跑鉴权矩阵，
+    // 否则创建角色账号会撞 429（首轮实测：finance 账号创建 HTTP 429）。
+    info('等待 61s 让网关 IP 桶窗口清零（本片请求密度 >120/min）');
+    await sleep(61_000);
     const playerOnAgent = await getJson('/api/agent/me', u1.accessToken);
     checks.eq(playerOnAgent.status, 401, '玩家 token 调 /api/agent/me ⇒ 401');
     const agentOnAdmin = await getJson('/api/admin/agents', tokenA);
