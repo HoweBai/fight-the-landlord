@@ -81,9 +81,9 @@ const CONFLICT_PREFIX = '当前状态不允许该动作';
 /** 1213 重试再失败文案（T5 遗留裁决第 0 条逐字）。 */
 const CONCURRENCY_MESSAGE = '并发冲突，请重试';
 
-/** 2026-10-25 跑得快详情 stats SQL 逐字（spec §5.5；**测试侧独立誊写**）。 */
+/** 2026-10-26 跑得快详情 stats SQL 逐字（spec §5.6；测试侧独立誊写）。 */
 const SPEC_RISK_STATS_PDK_SQL =
-  "SELECT COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0";
+  "SELECT r.player_count AS player_count, COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY r.player_count";
 
 const AUTH_READ = { [ADMIN_HEADER]: '1' };
 const AUTH_WRITE = { [ADMIN_HEADER]: '1', [ADMIN_ACTOR_HEADER]: 'tester' };
@@ -162,6 +162,8 @@ type Predicate<R> = (row: R, value: unknown) => boolean;
 
 const REVIEW_PREDICATES: Record<string, Predicate<ReviewRow>> = {
   'status = ?': (r, v) => r.status === v,
+  'game_type = ?': (r, v) => r.game_type === v,
+  "game_type IN (?, 'mixed')": (r, v) => r.game_type === v || r.game_type === 'mixed',
   'id < ?': (r, v) => r.id < Number(v),
 };
 
@@ -192,7 +194,7 @@ class FakeRiskAdminDb {
   /** 胜率统计的定值回执（SQL 真形态的 JOIN 不在假库重演；缺省 {0,0}）。 */
   winStats = new Map<string, { games: number; wins: number }>();
   /** 跑得快详情统计的定值回执（2026-10-25；缺省 {0,0}）。 */
-  pdkWinStats = new Map<string, { games: number; wins: number }>();
+  pdkWinStats = new Map<string, Array<{ player_count: number; games: number; wins: number }>>();
   queries: Statement[] = [];
   /** `dataSource.transaction` 调用次数（1213 重试断言面）。 */
   transactions = 0;
@@ -429,8 +431,7 @@ class FakeRiskAdminDb {
     }
     if (sql === SPEC_RISK_STATS_PDK_SQL) {
       const [userId] = params as [string];
-      const s = this.pdkWinStats.get(userId) ?? { games: 0, wins: 0 };
-      return [{ games: s.games, wins: s.wins }];
+      return this.pdkWinStats.get(userId) ?? [];
     }
     if (sql === RISK_DEVICE_COUNT_WINDOW_SQL) {
       const [userId, cutoff] = params as [string, Date];
@@ -1415,6 +1416,7 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
       score: 25,
       reasons: [{ check: 'winRate', detail: { games: 101, wins: 90 } }],
       status: 'open',
+      gameType: 'doudizhu',
       createdAt: T0 - 3_600_000,
       updatedAt: T0 - 3_600_000,
       handledBy: null,
@@ -1443,6 +1445,27 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
     expect(tooBig.status).toBe(400);
     const zeroCursor = await probe.get('/api/admin/risk/reviews?cursor=0', AUTH_READ);
     expect(zeroCursor.status).toBe(400);
+  });
+
+  it('GET reviews?gameType：doudizhu/pdk 含 mixed；mixed/platform 精确；非法值 400', async () => {
+    db.addReview({ id: 1, user_id: 'u-ddz', game_type: 'doudizhu' });
+    db.addReview({ id: 2, user_id: 'u-pdk', game_type: 'paodekuai' });
+    db.addReview({ id: 3, user_id: 'u-mixed', game_type: 'mixed' });
+    db.addReview({ id: 4, user_id: 'u-plat', game_type: 'platform' });
+
+    const ids = async (query: string): Promise<string[]> => {
+      const res = await probe.get(`/api/admin/risk/reviews?${query}`, AUTH_READ);
+      expect(res.status, query).toBe(200);
+      return (res.json.data.items as Array<{ userId: string }>).map((x) => x.userId).sort();
+    };
+    expect(await ids('gameType=doudizhu')).toEqual(['u-ddz', 'u-mixed']);
+    expect(await ids('gameType=paodekuai')).toEqual(['u-mixed', 'u-pdk']);
+    expect(await ids('gameType=mixed')).toEqual(['u-mixed']);
+    expect(await ids('gameType=platform')).toEqual(['u-plat']);
+
+    const bad = await probe.get('/api/admin/risk/reviews?gameType=foo', AUTH_READ);
+    expect(bad.status).toBe(400);
+    expect(bad.json.code).toBe(ErrCode.BAD_PARAM);
   });
 
   it('GET users/:userId：404 借 11004；userId 长度闸先于 IO', async () => {
@@ -1513,7 +1536,16 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
       deviceCount: 2, // 窗口内 2 台
       byGame: {
         doudizhu: { games: 12, wins: 9, winRate: 9 / 12 },
-        paodekuai: { games: 0, wins: 0, winRate: 0 },
+        paodekuai: {
+          games: 0,
+          wins: 0,
+          winRate: 0,
+          byPlayerCount: {
+            '2': { games: 0, wins: 0, winRate: 0 },
+            '3': { games: 0, wins: 0, winRate: 0 },
+            '4': { games: 0, wins: 0, winRate: 0 },
+          },
+        },
       },
     });
     expect(data.devices).toHaveLength(3); // 原文 3 台（含窗口外）
@@ -1539,7 +1571,7 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
   it('GET users/:userId：stats 顶层 = 两玩法合计，byGame 分玩法；查询顺序 ddz → pdk → device', async () => {
     db.users.set('u-A', 'active');
     db.winStats.set('u-A', { games: 12, wins: 9 });
-    db.pdkWinStats.set('u-A', { games: 5, wins: 4 });
+    db.pdkWinStats.set('u-A', [{ player_count: 3, games: 5, wins: 4 }]);
 
     const res = await probe.get('/api/admin/risk/users/u-A', AUTH_READ);
 
@@ -1551,7 +1583,16 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
       deviceCount: 0,
       byGame: {
         doudizhu: { games: 12, wins: 9, winRate: 9 / 12 },
-        paodekuai: { games: 5, wins: 4, winRate: 4 / 5 },
+        paodekuai: {
+          games: 5,
+          wins: 4,
+          winRate: 4 / 5,
+          byPlayerCount: {
+            '2': { games: 0, wins: 0, winRate: 0 },
+            '3': { games: 5, wins: 4, winRate: 4 / 5 },
+            '4': { games: 0, wins: 0, winRate: 0 },
+          },
+        },
       },
     });
     const sqls = db.queries.map((q) => q.sql);
@@ -1561,6 +1602,32 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
     expect(iDdz).toBeGreaterThanOrEqual(0);
     expect(iPdk).toBeGreaterThan(iDdz);
     expect(iDev).toBeGreaterThan(iPdk);
+  });
+
+  it('GET users/:userId：PDK byPlayerCount 三桶恒在，byGame/顶层为三桶合计', async () => {
+    db.users.set('u-A', 'active');
+    db.pdkWinStats.set('u-A', [
+      { player_count: 2, games: 2, wins: 2 },
+      { player_count: 3, games: 1, wins: 0 },
+      { player_count: 4, games: 1, wins: 1 },
+    ]);
+
+    const res = await probe.get('/api/admin/risk/users/u-A', AUTH_READ);
+
+    expect(res.status).toBe(200);
+    const stats = res.json.data.stats;
+    expect(stats.byGame.paodekuai).toEqual({
+      games: 4,
+      wins: 3,
+      winRate: 3 / 4,
+      byPlayerCount: {
+        '2': { games: 2, wins: 2, winRate: 1 },
+        '3': { games: 1, wins: 0, winRate: 0 },
+        '4': { games: 1, wins: 1, winRate: 1 },
+      },
+    });
+    expect(stats.games).toBe(4);
+    expect(stats.wins).toBe(3);
   });
 
   it('GET users/:userId：limitSource 三态（manual / null）；旗读失败 ⇒ 按无旗（null）+ error 日志', async () => {

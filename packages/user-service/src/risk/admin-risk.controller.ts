@@ -50,7 +50,7 @@ import { DeviceBindingsService } from './device-bindings.service';
 type QueryMap = Record<string, unknown>;
 
 /** `GET reviews` 白名单（§2.8：`status&limit&cursor`）。 */
-export const REVIEWS_QUERY_KEYS: readonly string[] = ['status', 'cursor', 'limit'];
+export const REVIEWS_QUERY_KEYS: readonly string[] = ['status', 'cursor', 'limit', 'gameType'];
 /** `GET actions(.csv)` 白名单（§2.8：`userId&action&actor&from&to` + keyset 两键）。 */
 export const ACTIONS_QUERY_KEYS: readonly string[] = [
   'userId',
@@ -158,6 +158,18 @@ function parseReviewsQuery(query: QueryMap): {
   const filter: RiskReviewListFilter = {};
   const status = parseBoundedString(query, 'status', 12); // risk_reviews.status varchar(12)
   if (status !== undefined) filter.status = status;
+  const gameType = parseBoundedString(query, 'gameType', 16); // risk_reviews.game_type varchar(16)
+  if (gameType !== undefined) {
+    if (
+      gameType !== 'doudizhu' &&
+      gameType !== 'paodekuai' &&
+      gameType !== 'mixed' &&
+      gameType !== 'platform'
+    ) {
+      throw badRequest('gameType 非法：必须是 doudizhu|paodekuai|mixed|platform');
+    }
+    filter.gameType = gameType;
+  }
   return { filter, cursor: parseCursor(query), limit: parseLimit(query) };
 }
 
