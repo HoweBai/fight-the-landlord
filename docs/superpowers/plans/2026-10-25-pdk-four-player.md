@@ -166,3 +166,15 @@ node scripts/browser-e2e.mjs --scenario pdk4   # 环境可用时
 | 低 | T1 commit 名跨包 | 改为 `feat(pdk):` |
 | 低 | validate 用例无归属文件 | T1 点名 `multi-game-contract.test.ts` |
 | 低 | pdk4 只开 nonThree ⇒ 选项 3/4 | T6：按文本定位「4 人」，不断言三选项 |
+
+## 执行记录（2026-10-25）
+
+- T1–T7 完成：`75c05817`(窗口) → `c1be7cca`(PdkBoard 4 人) → `dc5ae8bc`(能力表/余额) →
+  `9b8ef604`(结算/历史/入口回归) → `ee144f5b`(conformance 4 人) →
+  `02aa5106`(e2e pdk4) → `f00df98b`(文档注释)。
+- 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
+  `pnpm verify:admin` ⇒ **377 checks passed**；conformance lint + build 通过。
+- **真栈未跑**：本机 Docker daemon 未运行 ⇒ slice-29 ⑧ 4 人组与 `--scenario pdk4`
+  只有源码级判据；`slice-29` 基线按源码静态计数 89→117 回填（零 `skip()`、固定 4 客户端循环），
+  Docker 恢复后按实测校正。
+- 代码审查结论待补。
