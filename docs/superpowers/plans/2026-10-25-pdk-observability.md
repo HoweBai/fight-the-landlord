@@ -704,6 +704,8 @@ it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {
 
 it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状不符计 record_lost', async () => {
   const { recordClient, rooms, ctx } = await makeRecordFixtures();
+  const realRoom = await rooms.findOne('ROOM1');
+  const findOne = vi.spyOn(rooms, 'findOne');
 
   const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
     game_type: 'doudizhu', kind: 'record',
@@ -717,7 +719,8 @@ it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状�
   const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
     game_type: 'doudizhu', reason: 'room_ttl',
   })) ?? 0;
-  rooms.findOne.mockResolvedValueOnce(null);
+  // 第一次 findOne 被结算读消耗 ⇒ 先给真房、第二次（记录链）给 null
+  findOne.mockResolvedValueOnce(realRoom).mockResolvedValueOnce(null);
   ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 31, result: RESULT, record: envelope() });
   await vi.waitFor(() => expect(exactSeriesValue(recordWriteSkipsTotal, {
     game_type: 'doudizhu', reason: 'room_ttl',
@@ -726,7 +729,7 @@ it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状�
   const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
     game_type: 'paodekuai', kind: 'record_lost',
   })) ?? 0;
-  rooms.findOne.mockResolvedValueOnce({ ...(await rooms.findOne()), gameType: 'doudizhu' } as never);
+  findOne.mockResolvedValueOnce(realRoom).mockResolvedValueOnce({ ...realRoom, gameType: 'doudizhu' } as never);
   ctx.gateway.onGameEvent({
     event: 'game.ended', roomCode: 'ROOM1', version: 32,
     result: { ...(RESULT as object), gameType: 'paodekuai' } as never,
@@ -884,7 +887,7 @@ it('A1：moneyDelta 失败/部分计 kind=money_delta', async () => {
 });
 ```
 
-`settle-outbox.test.ts` 追加超龄放弃用例（复用 `settleEntry/moneyEntry/makeSweeper/SettleHarness`）：
+`settle-outbox.test.ts` 追加超龄放弃用例（复用 `settleEntry/moneyEntry/makeSweeper/SettleHarness`）；顶部补 `import { exactSeriesValue } from '../helpers/metric-readout';` 与 `import { currencySettleResultTotal, recordWriteFailuresTotal } from '../../src/metrics/room.metrics';`：
 
 ```ts
 it('A1：recordmoney 超龄放弃计 money_delta + dropped{game_type}', async () => {
@@ -1003,6 +1006,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: 写失败测试**
 
 ```ts
+// 顶部补 import { exactSeriesValue } from '../helpers/metric-readout'; 与三个指标 import
 it('A1：outbox gauge 按 game_type 分组；hgetall 失败保持旧值', async () => {
   const h = makeHarness();
   const sweeper = makeSweeper(h);
@@ -1029,6 +1033,7 @@ it('A1：未知 gameType 的 outbox 条目归 ddz 并汇总 WARN', async () => {
   const h = makeHarness();
   const sweeper = makeSweeper(h);
   await seedMoney(h, moneyEntry({ gameType: 'pdk', createdAt: Date.now() }));
+  h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] }); // 部分匹配 ⇒ 留箱
   const before = (await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })) ?? 0;
 
   await sweeper.sweepOnce(Date.now());
@@ -1070,6 +1075,7 @@ private async refreshOutboxGauges(now: number): Promise<void> {
       sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
       continue;
     }
+    if (parsed.gameType !== undefined && !isGameType(parsed.gameType)) badEntries += 1;
     const gameType = normalizeGameType(parsed.gameType);
     sizes.set(gameType, (sizes.get(gameType) ?? 0) + 1);
     if (typeof parsed.createdAt === 'number') {
@@ -1254,7 +1260,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: `setGame`、`roomsActive`
 - Produces: `sampleOnce()` 用 pipeline `HGET gameType`，先读后写
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写失败测试**（顶部补 `import { exactSeriesValue } from './helpers/metric-readout';`）
 
 ```ts
 it('A1：rooms_active 按 game_type 分组；pipeline 整条失败保留旧值', async () => {
