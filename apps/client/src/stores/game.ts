@@ -28,10 +28,24 @@ import {
 } from '@fight-the-landlord/protocol';
 import type { ReconnectReason } from '../net/socket';
 import type { BaseScoreLevel } from '../net/rest';
-import { DEFAULT_MODE_ID } from '../gameModes';
+import { CLIENT_TABLE_PLAYER_COUNTS, DEFAULT_MODE_ID } from '../gameModes';
 
 /** 快照类消息的处置结果。 */
 export type SnapshotOutcome = 'applied' | 'discarded' | 'rollback';
+
+/**
+ * 当前玩法可显示的人数 = 客户端 UI 能力 ∩ 服务端开放。旧服务端无 `games` ⇒ 只有 3。
+ * 空交集（异常配置）回落 `[3]`，保证 3 人牌桌永远可选。
+ */
+function resolveActivePlayerCounts(
+  activeMode: string,
+  games: Partial<Record<GameType, ClientGameConfig>>,
+): number[] {
+  const id = isGameType(activeMode) ? activeMode : 'doudizhu';
+  const server = games[id]?.supportedPlayerCounts ?? [3];
+  const counts = CLIENT_TABLE_PLAYER_COUNTS[id].filter((n) => server.includes(n));
+  return counts.length > 0 ? [...counts].sort((a, b) => a - b) : [3];
+}
 
 /** 事件类消息（不按 version 丢弃）。 */
 export type PlayerEvent = Extract<
@@ -295,6 +309,11 @@ export const useGameStore = defineStore('game', {
      */
     selectedBaseScore: null as number | null,
     /**
+     * 开始游戏页选中的**人数**（跑得快 2 人场）：与 `selectedBaseScore` 同族 ——
+     * 是页面的选择，不是对局状态，`reset()` 不动它。牌桌渲染**只读** `view.playerCount`。
+     */
+    selectedPlayerCount: 3,
+    /**
      * **大厅选中的场次**（② 金币场 §14）：大厅的场次切换写它、开始游戏页的 `room.match`
      * 读它（替换此前硬编码的 `'random'`）。
      *
@@ -445,6 +464,19 @@ export const useGameStore = defineStore('game', {
       const cfg = s.games[id];
       if (cfg) return cfg.baseScoreLevels;
       return id === 'doudizhu' ? s.baseScoreLevels : [];
+    },
+    /** 服务端为本玩法开放的人数（旧服务端无 `games` ⇒ `[3]`）。 */
+    activeServerPlayerCounts: (s): number[] => {
+      const id = isGameType(s.activeMode) ? s.activeMode : 'doudizhu';
+      return s.games[id]?.supportedPlayerCounts ?? [3];
+    },
+    /** 客户端实际展示的人数 = UI 能力 ∩ 服务端开放（4 人片落地前恒不含 4）。 */
+    activePlayerCounts: (s): number[] => resolveActivePlayerCounts(s.activeMode, s.games),
+    /** 上行实际使用的人数：选中值合法则用之，否则回落 3（再否则交集首项）。 */
+    effectivePlayerCount: (s): number => {
+      const counts = resolveActivePlayerCounts(s.activeMode, s.games);
+      if (counts.includes(s.selectedPlayerCount)) return s.selectedPlayerCount;
+      return counts.includes(3) ? 3 : counts[0]!;
     },
     /** 跑得快视图（窄化；非 pdk ⇒ null）。 */
     pdkView: (s): Extract<GameView, { gameType: 'paodekuai' }> | null =>
@@ -783,6 +815,11 @@ export const useGameStore = defineStore('game', {
      */
     setSelectedBaseScore(baseScore: number | null) {
       this.selectedBaseScore = baseScore;
+    },
+
+    /** 写选中的人数（仅接受当前交集内的值；非法值不写入，由 effective 回落）。 */
+    setSelectedPlayerCount(count: number) {
+      if (this.activePlayerCounts.includes(count)) this.selectedPlayerCount = count;
     },
 
     /**

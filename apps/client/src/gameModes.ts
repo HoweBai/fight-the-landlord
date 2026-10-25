@@ -37,7 +37,7 @@ export interface GameMode {
  * **救不了** —— `satisfies` 不会把目标类型的可选键加进条目类型。
  * 显式写 `undefined` 正是「这一条没有图标素材」的如实声明。
  */
-import { GAME_META } from '@fight-the-landlord/protocol';
+import { GAME_META, type GameType } from '@fight-the-landlord/protocol';
 
 export const GAME_MODES = [
   {
@@ -49,7 +49,7 @@ export const GAME_MODES = [
   {
     id: GAME_META.paodekuai.id,
     name: GAME_META.paodekuai.name,
-    tagline: '三人跑得快，剩牌越少越赢',
+    tagline: '剩牌越少越赢',
     icon: undefined,
   },
 ] as const;
@@ -58,6 +58,16 @@ export type GameModeId = (typeof GAME_MODES)[number]['id'];
 
 /** 缺省玩法（`GAME_MODES` 的第一条）—— 冷启动/换页后没写过 store 时用它。 */
 export const DEFAULT_MODE_ID: GameModeId = GAME_MODES[0]!.id;
+
+/**
+ * **客户端 UI 已实现的牌桌人数**（不是规则能力 —— 规则能力在 protocol `GAME_META`）。
+ * 与服务端 `games[id].supportedPlayerCounts` 取交集后才展示：服务端开 4 人时，
+ * 客户端在 4 人牌桌片落地前仍只展示 2/3。
+ */
+export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly number[]>> = {
+  doudizhu: [3],
+  paodekuai: [2, 3],
+};
 
 /** 按 id 查玩法；查不到返回 `undefined`（**不**编一个默认对象）。 */
 export function findMode(id: string): GameMode | undefined {
