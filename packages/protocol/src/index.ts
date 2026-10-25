@@ -9,6 +9,7 @@ export * from './codec';
 export * from './game';
 export * from './pdk/rules';
 export * from './pdk/types';
+export * from './pdk/window';
 // 跑得快 S3.2：牌型解析/比较（类型仍归属 pdk/types.ts，不在此重复导出）。
 export * from './pdk/rule';
 export * from './errors';

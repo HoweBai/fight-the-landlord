@@ -15,6 +15,7 @@ import { GameModule } from '../src/game/game.module';
 import { GameRegistry } from '../src/games/registry';
 import { DdzRuntime } from '../src/games/ddz/runtime';
 import { PdkRuntime } from '../src/games/pdk/runtime';
+import { buildPdkPlayerView } from '../src/games/pdk/view';
 import { classifyRuleError } from '../src/games/pdk/rule-error.mapping';
 import { card, fullGameDeck } from './fixtures/pdk-fixtures';
 
@@ -131,6 +132,28 @@ describe('Task 4.1：PdkRuntime.create', () => {
     });
     expect(four.players.map((p) => p.hand.length)).toEqual([12, 12, 12, 12]);
     expect(four.unusedCards).toBeUndefined();
+  });
+
+  it('4 人视图：recentActions 窗口 = 3（A 出 + B/C 过仍保留目标）', () => {
+    const runtime = new PdkRuntime();
+    const session = runtime.create({
+      roomCode: 'PDK04W',
+      gameType: 'paodekuai',
+      playerCount: 4,
+      baseScore: 15,
+      players: [0, 1, 2, 3].map((seat) => ({ id: `p${seat}`, seat, isRobot: false })),
+      random: () => 0.5,
+    });
+    const lead = session.players[0]!.hand[0]!;
+    (session as unknown as { actionLog: unknown[] }).actionLog = [
+      { seat: 0, kind: 'play', cards: [lead] },
+      { seat: 1, kind: 'pass', cards: [] },
+      { seat: 2, kind: 'pass', cards: [] },
+    ];
+
+    const view = buildPdkPlayerView(session, 3);
+    expect(view.recentActions).toHaveLength(3);
+    expect(view.recentActions[0]!.cards).toEqual([lead]);
   });
 
   it('非法 rules ⇒ ProtocolError（不静默用默认值）', () => {

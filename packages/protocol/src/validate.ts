@@ -22,6 +22,7 @@ import {
 import type { Card, GameView, PlayerView, RoomPlayer } from './views';
 import type { DdzSettlementResult } from './views';
 import type { PdkPlayerView, PdkSettlementResult } from './pdk/types';
+import { pdkRecentActionsWindow } from './pdk/window';
 import type { SettlementResult } from './settlement';
 
 export class ProtocolError extends Error {
@@ -274,8 +275,13 @@ function assertPdkPlayerView(v: unknown, path: string): asserts v is PdkPlayerVi
   }
   assertNum(v.currentPlayer, `${path}.currentPlayer`);
   assertInt(v.currentPlayer, `${path}.currentPlayer`, 0, playerCount - 1);
-  if (!Array.isArray(v.recentActions) || v.recentActions.length > 2) {
-    throw new ProtocolError(`${path}.recentActions must be an array with at most 2 items`);
+  if (
+    !Array.isArray(v.recentActions) ||
+    v.recentActions.length > pdkRecentActionsWindow(playerCount)
+  ) {
+    throw new ProtocolError(
+      `${path}.recentActions must be an array with at most ${pdkRecentActionsWindow(playerCount)} items (playerCount ${playerCount})`,
+    );
   }
   v.recentActions.forEach((a, i) => {
     const p = `${path}.recentActions[${i}]`;

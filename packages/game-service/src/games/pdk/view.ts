@@ -6,7 +6,11 @@
  * `lastPlayedHand`（规则态）、`initialHands`、机器人内部字段**一律不出站**。
  * `canPass`/`bombCount` 由服务端算好（客户端是哑终端，D42）。
  */
-import { validateOutbound, type PdkPlayerView } from '@fight-the-landlord/protocol';
+import {
+  pdkRecentActionsWindow,
+  validateOutbound,
+  type PdkPlayerView,
+} from '@fight-the-landlord/protocol';
 import { projectRecentActions } from '@fight-the-landlord/shared';
 import type { PdkSession } from '@fight-the-landlord/shared';
 
@@ -46,7 +50,7 @@ export function buildPdkPlayerView(session: PdkSession, seat: number): PdkPlayer
     cardCounts,
     trustees,
     currentPlayer: session.currentPlayer,
-    recentActions: projectRecentActions(session),
+    recentActions: projectRecentActions(session, pdkRecentActionsWindow(session.playerCount)),
     turnDeadlineAt: session.turnDeadlineAt,
     // 首出（lastPlayedHand === null）或自己就是最后出牌者 ⇒ 不可过牌。
     canPass: session.lastPlayedHand !== null && session.lastPlayerIdx !== seat,
