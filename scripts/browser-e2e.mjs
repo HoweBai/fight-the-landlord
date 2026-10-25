@@ -56,7 +56,7 @@ const opt = (name, dflt) => {
 };
 
 const BASE_URL = opt('base-url', 'http://localhost:5173/');
-const SCENARIO = opt('scenario', 'gate'); // gate | minimal | second-game | full | pdk | pdk2
+const SCENARIO = opt('scenario', 'gate'); // gate | minimal | second-game | full | pdk | pdk2 | pdk4
 const NO_SERVER = flag('no-server');
 const KEEP_OPEN = flag('keep-open');
 const MATCH_TIMEOUT_MS = Number(opt('match-timeout-ms', '120000'));
@@ -1041,6 +1041,17 @@ async function setupPdkEnabled(playerCount = 3) {
       );
     }
   }
+  if (playerCount === 4) {
+    const fourPut = await gwJson('PUT', '/api/admin/config/game.paodekuai.nonThreePlayerEnabled', {
+      body: { value: true },
+      token: admin,
+    });
+    if (fourPut.body?.code !== 0) {
+      throw new Error(
+        `置 game.paodekuai.nonThreePlayerEnabled=true 失败：HTTP ${fourPut.status} ${JSON.stringify(fourPut.body)}`,
+      );
+    }
+  }
   // 建房探测需要好友房开关（POST /api/rooms 的门）；探测完立即还原。
   const friendPut = await gwJson('PUT', '/api/admin/config/game.paodekuai.friendRoomEnabled', {
     body: { value: true },
@@ -1079,6 +1090,7 @@ async function setupPdkEnabled(playerCount = 3) {
 
 /** S6.4：跑得快场景 —— 大厅切玩法 → 匹配 → 出牌/过牌 → 结算 → 重进。 */
 async function runPdkScenario(cdp, playerCount = 3) {
+  const handSize = playerCount === 4 ? 12 : 16;
   await newPageSession(cdp, 'S6.4（跑得快）');
   await registerFresh(cdp);
 
@@ -1098,14 +1110,15 @@ async function runPdkScenario(cdp, playerCount = 3) {
   const gamePage = await waitFor(cdp, 'S6.4：进入玩法页', (s) => s.page === 'game', 15000);
   check('S6.4：点跑得快档位卡进入玩法页', !gamePage.__timeout, `page=${gamePage.page}`);
   const matchReady = await waitForSelector(cdp, '.game__match .btn', 20000);
-  if (playerCount === 2) {
+  if (playerCount !== 3) {
+    const label = `${playerCount} 人`;
     const picked = await cdp.eval(`(() => {
-      const el = [...document.querySelectorAll('.game__player-option')].find((b) => b.textContent.trim() === '2 人');
+      const el = [...document.querySelectorAll('.game__player-option')].find((b) => b.textContent.trim() === '${playerCount} 人');
       if (!el) return 'not-found';
       el.click();
       return 'clicked';
     })()`);
-    check('S6.4(2p)：开始游戏页选中「2 人」', picked === 'clicked', `pick=${picked}`);
+    check(`S6.4(${playerCount}p)：开始游戏页选中「${label}」`, picked === 'clicked', `pick=${picked}`);
   }
   // 注册后客户端会用新令牌重建 WS 会话；等它落定再匹配（否则可能把请求发到匿名连接上 ⇒ 10005）。
   await sleep(2500);
@@ -1117,7 +1130,7 @@ async function runPdkScenario(cdp, playerCount = 3) {
   })()`);
   check('S6.4：点「开始游戏」发起匹配', matchReady && clickedMatch === 'clicked', `btn=${matchReady} click=${clickedMatch}`);
 
-  // ② 匹配 + 发牌（pdk 视图：16 张）
+  // ② 匹配 + 发牌（pdk 视图：2/3 人 16 张、4 人 12 张）
   const dealt = await waitFor(
     cdp,
     'S6.4：匹配并收到跑得快发牌',
@@ -1125,12 +1138,12 @@ async function runPdkScenario(cdp, playerCount = 3) {
       s.page === 'table' &&
       s.gameType === 'paodekuai' &&
       s.viewState === 'playing' &&
-      s.hand === 16 &&
+      s.hand === handSize &&
       s.pdkPlayerCount === playerCount,
     60000,
   );
   check(
-    'S6.4：进入跑得快牌桌并收到 16 张手牌',
+    `S6.4：进入跑得快牌桌并收到 ${handSize} 张手牌`,
     !dealt.__timeout,
     `gameType=${dealt.gameType} playerCount=${dealt.pdkPlayerCount} state=${dealt.viewState} hand=${dealt.hand} room=${dealt.roomCode ?? '(无)'} matching=${dealt.matching} notice=${dealt.notice ?? '(无)'}`,
   );
@@ -1140,8 +1153,25 @@ async function runPdkScenario(cdp, playerCount = 3) {
     opponentSeats === playerCount - 1,
     `.pdk__seat = ${opponentSeats}`,
   );
-  const cards = await waitForSelectorCount(cdp, '.pdk__me .card', 16, 12000);
-  check('S6.4：DOM 渲染 16 张手牌（.pdk__me .card）', cards === 16, `.pdk__me .card = ${cards}`);
+  if (playerCount === 4) {
+    const geometry = await cdp.eval(`(() => {
+      const top = document.querySelector('.pdk__seat--top');
+      const left = document.querySelector('.pdk__seat:not(.pdk__seat--top):not(.pdk__seat--right)');
+      const right = document.querySelector('.pdk__seat--right');
+      if (!top || !left || !right) return null;
+      const t = top.getBoundingClientRect();
+      const l = left.getBoundingClientRect();
+      const r = right.getBoundingClientRect();
+      return { topBottom: t.bottom, leftTop: l.top, rightTop: r.top };
+    })()`);
+    check(
+      'S6.4(4p)：顶部对家在左右座上方',
+      geometry !== null && geometry.topBottom <= Math.max(geometry.leftTop, geometry.rightTop),
+      JSON.stringify(geometry),
+    );
+  }
+  const cards = await waitForSelectorCount(cdp, '.pdk__me .card', handSize, 12000);
+  check(`S6.4：DOM 渲染 ${handSize} 张手牌（.pdk__me .card）`, cards === handSize, `.pdk__me .card = ${cards}`);
 
   // ③ 驱动到终局：轮到我时优先提示+出牌；无解（canPass）则不出。
   const deadline = Date.now() + GAME_TIMEOUT_MS;
@@ -1270,14 +1300,16 @@ async function main() {
     }
   }
 
-  if (SCENARIO === 'pdk' || SCENARIO === 'pdk2') {
-    const pdkCount = SCENARIO === 'pdk2' ? 2 : 3;
+  if (SCENARIO === 'pdk' || SCENARIO === 'pdk2' || SCENARIO === 'pdk4') {
+    const pdkCount = SCENARIO === 'pdk4' ? 4 : SCENARIO === 'pdk2' ? 2 : 3;
     try {
       await setupPdkEnabled(pdkCount);
+      const gateLabel =
+        pdkCount === 2 ? ' + twoPlayerEnabled=true' : pdkCount === 4 ? ' + nonThreePlayerEnabled=true' : '';
       check(
         'setup：经管理面开启跑得快并轮询至建房生效',
         true,
-        `PUT game.paodekuai.enabled=true${pdkCount === 2 ? ' + twoPlayerEnabled=true' : ''}（网关 ${GW_BASE}）`,
+        `PUT game.paodekuai.enabled=true${gateLabel}（网关 ${GW_BASE}）`,
       );
     } catch (err) {
       check('setup：经管理面开启跑得快', false, err?.message ?? String(err));
@@ -1293,6 +1325,9 @@ async function main() {
         await gwJson('PUT', '/api/admin/config/game.paodekuai.enabled', { body: { value: false }, token: admin });
         if (pdkCount === 2) {
           await gwJson('PUT', '/api/admin/config/game.paodekuai.twoPlayerEnabled', { body: { value: false }, token: admin });
+        }
+        if (pdkCount === 4) {
+          await gwJson('PUT', '/api/admin/config/game.paodekuai.nonThreePlayerEnabled', { body: { value: false }, token: admin });
         }
         info('跑得快开关已还原为 false');
       }
