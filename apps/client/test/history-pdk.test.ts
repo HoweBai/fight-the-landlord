@@ -70,14 +70,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mountHistory() {
+function mountHistory(over: Partial<PdkRecord> = {}) {
   const calls: Array<{ url: string }> = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       calls.push({ url });
       const body = url.includes('gameType=paodekuai')
-        ? { code: 0, data: { items: [pdkRecord()], nextCursor: null } }
+        ? { code: 0, data: { items: [pdkRecord(over)], nextCursor: null } }
         : { code: 0, data: { items: [], nextCursor: null } };
       return { ok: true, status: 200, text: async () => JSON.stringify(body) };
     }),
@@ -108,6 +108,31 @@ describe('S6.3：历史页跑得快战绩', () => {
     expect(flat(card.text())).toContain('剩余 4 张');
     expect(flat(card.text())).toContain('倍数 2');
     expect(flat(card.text())).toContain('3 人局');
+  });
+
+  it('4 人记录：显示「4 人局」', async () => {
+    const { wrapper } = mountHistory({
+      playerCount: 4,
+      remaining: [0, 1, 2, 3],
+      scoreChanges: [
+        { seat: 0, delta: 60 },
+        { seat: 1, delta: -30 },
+        { seat: 2, delta: -20 },
+        { seat: 3, delta: -10 },
+      ],
+      players: [
+        { seat: 0, nickname: '甲', scoreChange: 60, won: true, playedCount: 12, hand: hand(12) },
+        { seat: 1, nickname: null, scoreChange: -30, won: false, playedCount: 10, hand: hand(12) },
+        { seat: 2, nickname: null, scoreChange: -20, won: false, playedCount: 8, hand: hand(12) },
+        { seat: 3, nickname: null, scoreChange: -10, won: false, playedCount: 6, hand: hand(12) },
+      ],
+    });
+    await flushPromises();
+    await wrapper.findAll('.history__game')[1]!.trigger('click');
+    await flushPromises();
+
+    const card = wrapper.find('.history__card--pdk');
+    expect(flat(card.text())).toContain('4 人局');
   });
 
   it('展开：每座 playedCount / 剩余张数与初始手牌（复用 Hand）', async () => {

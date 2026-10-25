@@ -584,6 +584,25 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     expect(post, '必须真的发 POST /api/rooms').toBeDefined();
     expect(JSON.parse(String(post!.init?.body)).playerCount).toBe(2);
   });
+
+  it('好友房建房带选中人数 4', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3, 4]));
+    store.setSelectedPlayerCount(4);
+    const { wrapper, calls } = mountGame();
+    await flushPromises();
+
+    await openFriends(wrapper);
+    const create = wrapper.findAll('button').find((b) => flat(b.text()) === '创建房间');
+    expect(create).toBeDefined();
+    await create!.trigger('click');
+    await flushPromises();
+
+    const post = calls.find((c) => c.init?.method === 'POST');
+    expect(post, '必须真的发 POST /api/rooms').toBeDefined();
+    expect(JSON.parse(String(post!.init?.body)).playerCount).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------
