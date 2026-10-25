@@ -97,11 +97,12 @@ const EXPECTED_ALERTS = [
   'NotifyEmailIncomplete', 'NotifyDingtalkIncomplete',
   'ReliefCallbackBroken', 'ReliefGrantZero',
   'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
+  'RiskScanSqlFailures',
 ];
 const alertText = readFileSync(ALERT_FILE, 'utf8')
   .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
 const alertRaw = readFileSync(ALERT_FILE, 'utf8');
-ok(alertRaw.includes('**31 条**') && alertRaw.includes('31 条 = 28 类'), '告警头注释为 31 条 / 28 类');
+ok(alertRaw.includes('**32 条**') && alertRaw.includes('32 条 = 29 类'), '告警头注释为 32 条 / 29 类');
 const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
 ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
 ok(
@@ -121,6 +122,16 @@ for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
   for (const needle of needles) ok(block.includes(needle), `${name} 含关键谓词 ${needle}`);
   ok((alertText.match(new RegExp(`- alert: ${name}\\b`, 'g')) ?? []).length === 1, `${name} 规则名唯一`);
 }
+
+// B 组：SQL 失败告警按 scope 分组，不含 game_type（scope 覆盖 device）。
+const sqlFailBlock =
+  /- alert: RiskScanSqlFailures[\s\S]*?(?=\n\s*- alert:|$)/.exec(alertText)?.[0] ?? '';
+ok(sqlFailBlock !== '', '存在告警 RiskScanSqlFailures');
+ok(/^\s*expr:\s*.*sum by \(scope\).*increase\(risk_scan_sql_failures_total/m.test(sqlFailBlock),
+  'RiskScanSqlFailures expr = sum by (scope) increase(risk_scan_sql_failures_total…)');
+ok(sqlFailBlock.includes('> 0'), 'RiskScanSqlFailures 含阈值 > 0');
+ok((alertText.match(/- alert: RiskScanSqlFailures\b/g) ?? []).length === 1,
+  'RiskScanSqlFailures 规则名唯一');
 
 const dashboardTargets = [
   ['02-business.json', '匹配队列深度（按模式/档位）', 'A', 'match_queue_length', true],

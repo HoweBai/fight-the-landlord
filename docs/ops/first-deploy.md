@@ -1275,6 +1275,7 @@ https://<你的域名>/grafana/
 - **IM 群**（飞书 / 钉钉 / 企业微信）：**配了哪个发哪个**（没配的通道不存在、也不报错）。
 
 **多玩法（2026-10-25）**：新增 4 条按玩法（`game_type`）分维的告警 —— `GameStartFailuresHigh`（开局失败/取消）、`GameSettleFailures`（局终失败）、`SettleDroppedByGame`（金币结算 dropped）、`RecordWriteFailuresHigh`（记录写失败/丢失）。`currency_settle_outbox_size` / `_oldest_seconds` 现按玩法多条序列：查询/面板用 `sum by (game_type)` 或 `sum()`，不要再假设单序列。
+**B 组（2026-10-26）**：新增 `RiskScanSqlFailures`（`scope=doudizhu|paodekuai|device`，10m 任意失败即 warning）。单玩法 SQL 失败时该玩法本轮冻结、其他玩法继续；device SQL 失败会整轮失败。先查 scope 对应表/权限，再看 user-service 扫描 ERROR 日志与 `risk_scan_last_success_timestamp_seconds`。
 
 ⚠️ **心跳邮件（「监控活着」）**：邮箱配好之后，大约**每 24 小时**你会收到一封「监控活着」的邮件（内容里带 `Watchdog` 字样）—— 它证明**整条告警链**（收数据 → 判规则 → 发通知）活着。判读口径 = **「多久没收到」**：
 
