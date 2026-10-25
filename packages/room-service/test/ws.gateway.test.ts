@@ -2271,13 +2271,13 @@ describe('监控片 T3：ws_connections 恰一次升降（C10）+ games_ended_to
 
   it('games_ended_total：收到 game.ended ⇒ +1；game.started 不计（反空测）', async () => {
     const ctx = makeGateway({ redis: asRedis(createFakeRedis()) });
-    const before = await metricValue(gamesEndedTotal);
+    const before = (await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })) ?? 0;
 
     ctx.gateway.onGameEvent({ event: 'game.started', roomCode: 'MTRM1', version: 1 });
-    await expect(metricValue(gamesEndedTotal), '开局事件不得进结算计数').resolves.toBe(before);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' }), '开局事件不得进结算计数').toBe(before);
 
     ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'MTRM1', version: 2 });
-    await expect(metricValue(gamesEndedTotal)).resolves.toBe(before + 1);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })).toBe(before + 1);
   });
 
   it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {

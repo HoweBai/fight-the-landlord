@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripComments } from '@fight-the-landlord/test-utils';
 
@@ -33,7 +33,7 @@ describe('A1 源码闸：指标写点必须经 incGame/setGame', () => {
   it('src 下不得直接对目标指标 .inc()/.set()/.labels()', () => {
     const offenders: string[] = [];
     for (const file of walk(join(ROOT, 'packages'))) {
-      if (file.includes('/test/') || file.endsWith('.test.ts')) continue;
+      if (file.includes(`${sep}test${sep}`) || file.endsWith('.test.ts')) continue;
       const src = stripComments(readFileSync(file, 'utf8'));
       for (const name of TARGETS) {
         if (new RegExp(`\\b${name}\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b`).test(src)) {
@@ -42,5 +42,10 @@ describe('A1 源码闸：指标写点必须经 incGame/setGame', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('闸的正例自证：直写形态会被识别（防目标名拼错静默失效）', () => {
+    expect(new RegExp('\\bgamesStartedTotal\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b').test('gamesStartedTotal.inc();')).toBe(true);
+    expect(new RegExp('\\bgamesStartedTotal\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b').test('gamesStartedTotal?.set({});')).toBe(true);
   });
 });

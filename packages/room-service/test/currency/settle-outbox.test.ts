@@ -23,7 +23,7 @@ import {
   currencySettleResultTotal,
   recordWriteFailuresTotal,
 } from '../../src/metrics/room.metrics';
-import { exactSeriesValue, metricValue } from '../helpers/metric-readout';
+import { exactSeriesValue, metricValue, sumSeriesValue } from '../helpers/metric-readout';
 import { asRedis } from '../helpers/fake-redis';
 import {
   applyOk,
@@ -320,14 +320,14 @@ describe('指标：currency_settle_outbox_size / _oldest_seconds（每轮刷新�
 
     await sweeper.sweepOnce(NOW);
 
-    await expect(metricValue(currencySettleOutboxSize)).resolves.toBe(2);
-    await expect(metricValue(currencySettleOutboxOldestSeconds)).resolves.toBe(400);
+    await expect(sumSeriesValue(currencySettleOutboxSize)).resolves.toBe(2);
+    await expect(sumSeriesValue(currencySettleOutboxOldestSeconds)).resolves.toBe(400);
 
     await h.redis.del('settle:outbox', 'recordmoney:outbox');
     await sweeper.sweepOnce(NOW);
 
-    await expect(metricValue(currencySettleOutboxSize)).resolves.toBe(0);
-    await expect(metricValue(currencySettleOutboxOldestSeconds)).resolves.toBe(0);
+    await expect(sumSeriesValue(currencySettleOutboxSize)).resolves.toBe(0);
+    await expect(sumSeriesValue(currencySettleOutboxOldestSeconds)).resolves.toBe(0);
   });
 });
 
@@ -392,6 +392,8 @@ describe('自重排链：10s 常量周期 + 关停闸（照 rooms.reaper 成例�
     expect(pdk).toBe(1);
     expect(ddz).toBe(1);
 
+    // 先清空真值（若实现吞错后重算，会把 gauge 写成 0/0 —— 这里必须仍保持上一轮值）
+    await h.redis.del('settle:outbox', 'recordmoney:outbox');
     h.redis.hgetall.mockRejectedValueOnce(new Error('redis down'));
     await sweeper.sweepOnce(Date.now()).catch(() => undefined);
 

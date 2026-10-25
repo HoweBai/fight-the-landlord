@@ -39,3 +39,9 @@ export async function exactSeriesValue(
   if (hits.length > 1) throw new Error(`exactSeriesValue 命中多条：${JSON.stringify(labels)}`);
   return hits[0]?.value;
 }
+
+/** 某指标全部序列求和（无标签/多玩法都适用；缺席 = 0）。 */
+export async function sumSeriesValue(metric: { get(): Promise<unknown> }): Promise<number> {
+  const { values } = (await metric.get()) as { values: Array<{ value: number }> };
+  return values.reduce((acc, v) => acc + (Number.isFinite(v.value) ? v.value : 0), 0);
+}

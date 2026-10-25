@@ -139,7 +139,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: 金币结算补偿队列有条目滞留 > 5 分钟（钱没动，账面不一致可见）
+          summary: '{{ $labels.game_type }} 金币结算补偿队列有条目滞留 > 5 分钟（钱没动，账面不一致可见）'
           runbook: 看 room-service 九字段日志（含 roomCode/version/round）；核 currency-service 可用性与池；对账用 currency_flows 按 actionId 查
       - alert: CurrencyReconcileDrift
         expr: currency_reconcile_drift_accounts > 0

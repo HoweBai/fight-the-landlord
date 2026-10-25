@@ -912,6 +912,21 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     this.logger.log(`room.matched sent for ${event.roomCode} (${event.seats.length} players)`);
   }
 
+  /** A1：game.ended 的玩法归一（事件缺省 → record → ddz；非法值 WARN）。 */
+  private resolveGameEventType(event: GameEvent): GameType {
+    const raw = event.gameType;
+    const recordRaw = event.record?.gameType;
+    if (raw !== undefined && !isGameType(raw)) {
+      this.logger.warn(`game.ended carries invalid gameType ${JSON.stringify(raw)} — falling back to record/doudizhu`);
+    }
+    if (recordRaw !== undefined && !isGameType(recordRaw)) {
+      this.logger.warn(`game.ended record carries invalid gameType ${JSON.stringify(recordRaw)}`);
+    }
+    if (isGameType(raw)) return raw;
+    if (isGameType(recordRaw)) return recordRaw;
+    return 'doudizhu';
+  }
+
   /**
    * 翻译规则（§4.4 的表，**这是开局推送的唯一生产者，不可省略**）：
    *
@@ -926,21 +941,6 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
    * ⚠️ **唯一**的例外（N17/R187）：`view.state === 'ended'` 时**只发** `game.state_update`，
    * 不发 `game.current_turn` —— 终局没有「下一回合」。
    */
-  /** A1：game.ended 的玩法归一（事件缺省 → record → ddz；非法值 WARN）。 */
-  private resolveGameEventType(event: GameEvent): GameType {
-    const raw = event.gameType;
-    const recordRaw = event.record?.gameType;
-    if (raw !== undefined && !isGameType(raw)) {
-      this.logger.warn(`game.ended carries invalid gameType ${JSON.stringify(raw)} — treating as doudizhu`);
-    }
-    if (recordRaw !== undefined && !isGameType(recordRaw)) {
-      this.logger.warn(`game.ended record carries invalid gameType ${JSON.stringify(recordRaw)}`);
-    }
-    if (isGameType(raw)) return raw;
-    if (isGameType(recordRaw)) return recordRaw;
-    return 'doudizhu';
-  }
-
   onGameEvent(event: GameEvent): void {
     if (event.event === 'game.ended') {
       // 监控片（规格 §2.2）：结算计数 —— 本分支每条事件恰一次（与 ws_connections 不同，

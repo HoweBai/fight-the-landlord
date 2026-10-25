@@ -676,5 +676,10 @@ describe('A1：记录清理按玩法计数', () => {
 
     expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(beforeDdz + 2);
     expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'paodekuai' })).toBe(beforePdk);
+    const text = await metricsRegistry().metrics();
+    expect(
+      text,
+      'pdk 0 行也必须显式写出 0 序列（否则「分玩法可见」在无 pdk 清理时不成立）',
+    ).toContain('records_rows_deleted_total{game_type="paodekuai"} 0');
   });
 });

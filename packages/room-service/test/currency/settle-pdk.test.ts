@@ -202,10 +202,11 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
     expect(await exactSeriesValue(currencySettleResultTotal, {
       result: 'ok', game_type: 'paodekuai',
     })).toBe(okBefore + 1);
-    const residueAfter = (await exactSeriesValue(currencySettleResidueTotal, {
+    const residueAfter = await exactSeriesValue(currencySettleResidueTotal, {
       game_type: 'paodekuai',
-    })) ?? 0;
-    expect(residueAfter - residueBefore).toBe(0);
+    });
+    expect(residueAfter, 'pdk 残差序列必须存在（0 也写）').not.toBeUndefined();
+    expect((residueAfter ?? 0) - residueBefore).toBe(0);
   });
 
   it('A1：moneyDelta 失败/部分计 kind=money_delta', async () => {

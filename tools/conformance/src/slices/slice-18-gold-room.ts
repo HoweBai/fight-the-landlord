@@ -22,7 +22,7 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 27 条
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 31 条
  *     （13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
@@ -1591,7 +1591,7 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 31, 'H Prometheus /api/v1/rules 恰 31 条（13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 同步）');
+    checks.eq(ruleNames.length, 31, 'H Prometheus /api/v1/rules 恰 31 条（27 既有 + 4 多玩法 A1；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
 

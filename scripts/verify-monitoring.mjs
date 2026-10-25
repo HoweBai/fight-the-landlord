@@ -100,6 +100,8 @@ const EXPECTED_ALERTS = [
 ];
 const alertText = readFileSync(ALERT_FILE, 'utf8')
   .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+const alertRaw = readFileSync(ALERT_FILE, 'utf8');
+ok(alertRaw.includes('**31 条**') && alertRaw.includes('31 条 = 28 类'), '告警头注释为 31 条 / 28 类');
 const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
 ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
 ok(

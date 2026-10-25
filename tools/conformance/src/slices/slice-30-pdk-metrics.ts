@@ -59,7 +59,11 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
   const checks = new Checks();
   const disable = await enablePdk();
   try {
-    const readMetrics = () => execCurl(ROOM_SERVICE.container, ROOM_SERVICE.port, INTERNAL_TOKEN);
+    const readMetrics = () => {
+      const res = execCurl(ROOM_SERVICE.container, ROOM_SERVICE.port, INTERNAL_TOKEN);
+      if (res.status !== 200) throw new ConformanceError(`room-service /metrics HTTP ${res.status}`);
+      return res;
+    };
     const startedBefore =
       seriesValueExact(readMetrics().body, 'games_started_total', { game_type: 'paodekuai' }) ?? 0;
     const endedBefore =

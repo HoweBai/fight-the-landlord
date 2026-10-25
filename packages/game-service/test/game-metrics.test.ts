@@ -94,6 +94,7 @@ describe('GameMetricsService：games_active（15s 采样 cache.size）', () => {
         ],
       });
       expect(service.activeSessionCount(), '一场会话 ⇒ 1').toBe(1);
+      expect(service.activeSessionCountByGameType()).toEqual({ doudizhu: 1, paodekuai: 0 });
 
       await service.startGame({
         roomCode: 'GMTR1',

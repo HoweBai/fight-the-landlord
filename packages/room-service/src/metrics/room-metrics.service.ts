@@ -85,6 +85,7 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
     const pipeline = this.redis.pipeline();
     for (const key of keys) pipeline.hget(key, 'gameType');
     const results = await pipeline.exec(); // 整条失败 ⇒ 抛给 runRound，gauge 保留旧值
+    if (results === null) throw new Error('rooms_active sample: pipeline aborted (null result)');
 
     const counts = new Map<GameType, number>([
       ['doudizhu', 0],

@@ -411,9 +411,9 @@ export class RoomStartService {
     );
 
     if (attempts >= START_ATTEMPTS_MAX || expired) {
-      incGame(gameStartFailuresTotal, 'paodekuai', 1, { reason: 'cancelled' });
       const cancelled = await this.rooms.cancelIfStillWaiting(code);
       if (cancelled) {
+        incGame(gameStartFailuresTotal, 'paodekuai', 1, { reason: 'cancelled' });
         // spec §4.6.3：终局取消**要清票**（按 queueKeyOfTicket —— 由匹配侧的 onSeats 回调完成）。
         // 与 retryable 的「不取消票」相对：重试期间票必须留着，否则人票两空。
         if (onSeats) {

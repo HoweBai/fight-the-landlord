@@ -18,7 +18,7 @@ import {
 } from '../src/metrics/room-metrics.service';
 import { matchQueueLength, roomsActive } from '../src/metrics/room.metrics';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
-import { exactSeriesValue, labeledValue, metricValue } from './helpers/metric-readout';
+import { exactSeriesValue, labeledValue } from './helpers/metric-readout';
 
 describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', () => {
   it('两条房间键 + 三条派生键 ⇒ gauge=2（派生键不得计入）', async () => {
@@ -35,7 +35,7 @@ describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', ()
 
     await service.sampleOnce();
 
-    await expect(metricValue(roomsActive)).resolves.toBe(2);
+    expect(await exactSeriesValue(roomsActive, { game_type: 'doudizhu' })).toBe(2);
     expect(scan, 'SCAN 的 pattern 必须是 room:*（照 rooms.service.scanAllRooms 的同一跳）').toHaveBeenCalledWith(
       expect.anything(),
       'MATCH',

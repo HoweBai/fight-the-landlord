@@ -18,7 +18,7 @@ import {
   matchPredicateRejectionsTotal,
   matchSelectionRoundsTotal,
 } from '../src/metrics/room.metrics';
-import { labeledValue, metricValue } from './helpers/metric-readout';
+import { exactSeriesValue, labeledValue } from './helpers/metric-readout';
 import { GameClient } from '../src/gateway/game.client';
 import { RobotClient } from '../src/gateway/robot.client';
 import type { Redis } from 'ioredis';
@@ -2225,14 +2225,14 @@ describe('MatchService', () => {
       service.setRng(rngForShuffle(['u1', 'u2', 'u3'], ['u3', 'u1', 'u2']));
       service.setClock(() => T0 + 1_000);
 
-      const roundsBefore = await metricValue(matchSelectionRoundsTotal);
-      const noLegalBefore = await metricValue(matchNoLegalGroupTotal);
+      const roundsBefore = (await exactSeriesValue(matchSelectionRoundsTotal, { game_type: 'doudizhu' })) ?? 0;
+      const noLegalBefore = (await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0;
       await service.scanOnce();
 
       expect(roomsService.createGameRoom).toHaveBeenCalledWith(['u3', 'u1', 'u2'], 'random', 15, 'doudizhu', 3);
       expect(rpc.payloadsOf(RPC_PATTERNS.robotAcquire)).toHaveLength(0);
-      expect(await metricValue(matchSelectionRoundsTotal)).toBe(roundsBefore + 1);
-      expect(await metricValue(matchNoLegalGroupTotal)).toBe(noLegalBefore); // 成组 ⇒ 不计数
+      expect((await exactSeriesValue(matchSelectionRoundsTotal, { game_type: 'doudizhu' })) ?? 0).toBe(roundsBefore + 1);
+      expect((await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0).toBe(noLegalBefore); // 成组 ⇒ 不计数
     });
 
     it('谓词默认关（缺省 false）⇒ 抽取零新增读：无 GET/SET/INCR（快路径，默认生产态）', async () => {
@@ -2441,7 +2441,7 @@ describe('MatchService', () => {
       await fingerprint('C', { deviceId: 'dev-other' });
       service.setClock(() => T0 + 31_000);
 
-      const noLegalBefore = await metricValue(matchNoLegalGroupTotal);
+      const noLegalBefore = (await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0;
       await service.scanOnce();
 
       // S 从**原序最久者**（A）起算 ⇒ [A, C]（B 被拒）；2 人 + 1 机器人
@@ -2449,7 +2449,7 @@ describe('MatchService', () => {
       expect(rpc.payloadsOf(RPC_PATTERNS.robotAcquire)).toHaveLength(1);
       expect((await globalService.findOne('ABC123'))?.players.length).toBe(3);
       // 贪心未成组 ⇒ no_legal +1（可观测定义）
-      expect(await metricValue(matchNoLegalGroupTotal)).toBe(noLegalBefore + 1);
+      expect((await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0).toBe(noLegalBefore + 1);
       // B 未被选入：留队（enteredAt 不变）、本轮记账 +1、记忆已写
       expect(redis._zsets.get(Q)?.get('B')).toBe(T0 + 1);
       expect(redis._hashes.get('match:meta:B')?.attempts).toBe('1');

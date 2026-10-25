@@ -169,6 +169,9 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
     const before = (await exactSeriesValue(gameStartFailuresTotal, {
       game_type: 'paodekuai', reason: 'rules',
     })) ?? 0;
+    const cancelledBefore = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'cancelled',
+    })) ?? 0;
     for (let i = 0; i < START_ATTEMPTS_MAX; i += 1) {
       await service.startRoomOutcome('PDKM1', { strict: false });
     }
@@ -177,7 +180,7 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
     })).toBeGreaterThanOrEqual(before + START_ATTEMPTS_MAX);
     expect(await exactSeriesValue(gameStartFailuresTotal, {
       game_type: 'paodekuai', reason: 'cancelled',
-    })).toBeGreaterThanOrEqual(1);
+    })).toBe(cancelledBefore + 1);
   });
 
   it('A1：bot fill 失败计 reason=bot_fill（不出现 rules）', async () => {

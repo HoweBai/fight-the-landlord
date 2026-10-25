@@ -123,14 +123,21 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
 
     for (const raw of [...Object.values(settleRaw), ...Object.values(moneyRaw)]) {
       let parsed: { createdAt?: unknown; gameType?: unknown };
+      let rawParsed: unknown;
       try {
-        parsed = JSON.parse(raw) as { createdAt?: unknown; gameType?: unknown };
+        rawParsed = JSON.parse(raw);
       } catch {
         // 设计 §5：单条目 JSON 坏 ⇒ 归 ddz + 汇总 WARN（整条 hgetall 失败才保留旧值）
         badEntries += 1;
         sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
         continue;
       }
+      if (rawParsed === null || typeof rawParsed !== 'object') {
+        badEntries += 1;
+        sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      parsed = rawParsed as { createdAt?: unknown; gameType?: unknown };
       if (parsed.gameType !== undefined && !isGameType(parsed.gameType)) badEntries += 1;
       const gameType = isGameType(parsed.gameType) ? parsed.gameType : 'doudizhu';
       sizes.set(gameType, (sizes.get(gameType) ?? 0) + 1);

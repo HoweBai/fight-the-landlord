@@ -208,7 +208,7 @@ export const entryFeeSkippedTotal: CounterOf = createCounter(
   ['reason', 'game_type'],
 );
 
-/** 台费 14002 冲突计数（本片；无标签）：同锚已有成功提交（视为已收）——不记 skips、不计漏收。 */
+/** 台费 14002 冲突计数（本片；按玩法）：同锚已有成功提交（视为已收）——不记 skips、不计漏收。 */
 export const entryFeeConflictTotal: CounterOf = createCounter(
   'entry_fee_conflict_total',
   '台费 op 冲突计数（14002：同锚已有成功提交，台费已收——不是漏收；按玩法）。',
