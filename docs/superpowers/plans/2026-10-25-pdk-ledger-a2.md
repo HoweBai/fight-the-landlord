@@ -685,3 +685,55 @@ pnpm -C tools/conformance exec tsc --noEmit
 
 修订后无待闭合阻断；进入 TDD 实现。
 
+
+## 实施记录（2026-10-25）
+
+### 分支与提交
+
+- 分支：`feature/pdk-ledger-a2-a3`（worktree `D:\Code\ftl-pdk-ledger-a2`），基于 A1 tip
+  `27294b89`（`feature/pdk-observability-a1`）。
+- 本片提交：`1a065a41`（protocol）→ `bfb711fe`（currency 迁移）→ `bd91f06b`（apply/skip）→
+  `d668bb21`（room 写点）→ `c7820d8d`（财务读口）→ `1b9a5dad`（admin 财务 UI）→
+  `55736397`（user 迁移）→ `8cab4d23`（PDK 记录写读）→ `80856f9f`（玩家统计）→
+  `9fe3bc10`（最近对局/探针/文档）→ `7fc456de`（conformance）→ `78c51bd1`（代码审查修复）。
+- 文档提交：spec `678d50a7`、plan `624c8e97`、时间戳修订 `3a43124c`。
+
+### 最终行为
+
+- `currency_ops.game_type`：游戏相关来源缺省 `doudizhu`、非游戏来源 NULL；历史游戏相关行分批回填。
+- `currency_entry_fee_skips.game_type`：显式写入，旧载荷默认 `doudizhu`。
+- 财务列表支持 `gameType` 筛选；汇总行按 `(source|day, gameType)` 展开；burn/漏收保留总数并新增按玩法明细；
+  CSV 增“玩法”列（中文标签）。
+- 管理玩家列表 `lastActiveAt/games/wins` 纳入 PDK；最近对局两玩法合并并返回 `gameType`，PDK 身份列 `—`。
+- `game_records_pdk.game_type` + 玩家行 `score_change/won` + `(user_id,ended_at)` 索引；
+  记录 DTO 改读列，出站形状不变。
+- 新增 `slice-31-pdk-gold`；`slice-17/25` 同步；`slice-29` 与 2/4 会话零改动。
+
+### 验证证据（本机）
+
+- `pnpm exec turbo run test lint --force`：**44/44 successful，0 cached**（最终轮）。
+- 定向计数：protocol 296、currency 400、room 915、user 367、client 1488（+2 skipped）、
+  api-gateway controller 119；均全绿。
+- `node scripts/verify-admin-static.mjs`：378 checks passed；
+  `node scripts/admin-players-probe.mjs`：all checks passed（含跑得快行/身份 `—`）。
+- `pnpm -C tools/conformance exec tsc --noEmit`：通过；`check-baselines --self-test` 4/4。
+- 环境：本机 Node 24 下 bcrypt 无预编译包，已从同机既有 worktree 复制 `bcrypt_lib.node`
+  （node_modules，不入库）；非代码改动。
+
+### 代码审查（独立 reviewer，Critical/Important 已修）
+
+| 编号 | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| C1 | Critical | api-gateway `WALLET_OPS_QUERY_KEYS` 漏 `gameType` ⇒ 管理筛选取值为死控件、slice-31 400 | 已加白名单 + 网关测试（`78c51bd1`） |
+| C2 | Critical | slice-31 用不存在的 `record.recordId` 匹配 games | 改用 `gameType + endedAt`（同源 BIGINT） |
+| I3 | Important | slice-25 断言 SQL 漏选 `game_type` 而期望串已加 | 已补 SQL 列 |
+| I4 | Important | 汇总跨查询一致性守卫在写流量下抛 500 | 改为 WARN 不抛；补漂移注入单测（200） |
+| M5–M12 | Minor | 窗口 +10min 不足、finally 不查回执、死分支、文档过滤键/PDK SQL、静态闸缺“玩法”、迁移测试标题/keyset、过时注释、resetFinance 缺 gameType | 已逐条修复或登记（见 `78c51bd1` 与文档） |
+
+### 未跑 / 待权威轮
+
+- **本机无 Docker**：`slice-17` / `slice-25` / `slice-31` 真栈未跑；真库迁移
+  `up → 回填抽查 → down → 再 up` 未跑。全部登记为“待权威轮”，不得视为已通过。
+- `baselines.json` 的 `slice-31-pdk-gold = 55` 按最小分支静态计数回填，权威轮需实测校正。
+- 分支栈合并顺序：`feature/pdk-observability-a1` → 本片 → 2/4 会话；本片不改 `slice-29`、
+  不动 `apps/client/src/components/PdkSettlement.vue`。

@@ -140,7 +140,7 @@ PDK 主链路已落地，A1 补了异常监控；**资金账本与管理统计�
 | D17 | **升级顺序**：currency-service（迁移+代码）→ room-service / user-service；**回滚反向**：先回应用再 `down` | 旧 currency 不认 gameType（哈希不含它，重试仍能重放）；避免新代码跑在缺列库 |
 | D18 | 不改任何协议出站形状；`CurrencyApplyData` 不返回 gameType | 客户端零感知 |
 | D19 | 管理端玩家列表不做“按玩法分开”的列（总数即可）；详情已有 `byGame` 分玩法 | 本轮 A3 目标是“纳入” |
-| D20 | 同步管理财务旧消费者：`slice-17` 列串/迁移行、`slice-25` `summarySourceDelta` 求和、`scripts/admin-players-probe.mjs`、`docs/ops/entry-fee-reconcile.md` | 防止旧断言假红/假绿 |
+| D20 | 同步管理财务旧消费者：`slice-17` 列串/迁移行、`slice-25` `summarySourceDelta` 求和、`scripts/admin-players-probe.mjs`、`docs/ops/entry-fee-reconcile.md`、**api-gateway 的 `WALLET_OPS_QUERY_KEYS`（gameType 转发）** | 防止旧断言假红/死控件/运维口径漂移 |
 
 ## 6. 实现设计
 
@@ -561,6 +561,8 @@ const LAST_ACTIVE_MS_EXPR = `
 - `admin/app.js`
 - `scripts/verify-admin-static.mjs`
 - `scripts/admin-players-probe.mjs`
+- `packages/api-gateway/src/gateway/gateway.controller.ts`（财务 ops query 白名单加 `gameType`）
+- `packages/api-gateway/test/gateway.controller.test.ts`
 
 **conformance**
 - `tools/conformance/src/slices/slice-31-pdk-gold.ts`（新增）
