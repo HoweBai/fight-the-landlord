@@ -489,11 +489,12 @@ export const riskScanSqlFailuresTotal = createCounter(
 - ② PDK gold 2 人：两真人匹配、开局、打到终局；断言 2 座结算零和、rake>0、
   `game.balances` 2 座、余额不为负；记录 `player_count=2`、`mode='gold'`。
 - ③ PDK gold 4 人：四真人；4 座结算、12 张、记录 `player_count=4`；余额不为负。
-- ③b **真实截断**：在 2 人 gold 局开局后、终局前，把输家余额用管理面
-  `POST /api/admin/wallet/adjust` 降到 1（远低于应付）；终局后断言：
-  实际扣款 = 1、赢家池 = 实际池、rake/residue 按实际池计算、余额不为负。
-  4 人局同法降一个输家；机器人资金路径用单测覆盖（robot-funding + settle-pdk 2/4），
-  真栈若时间允许加一局 2 人真人 + 机器人补位并断言 afterSettle 补给。
+- ③b **真实截断**：2 人/4 人 gold 局 `game.deal` 后、任何出牌前，用管理面
+  `POST /api/admin/wallet/adjust` 把**所有真人余额降到 1**（保证输家必被截断；
+  游戏中途不查余额）；再驱到终局。断言：每个输家实际 delta = -1、赢家池 = 输家数、
+  rake/residue 按实际池计算、余额不为负。机器人资金路径用单测覆盖
+  （robot-funding + settle-pdk 2/4），真栈若时间允许加一局 2 人真人 + 机器人补位并断言
+  afterSettle 补给。
 - ④ 风险扫描：用 `record.write` 注入**每个 2/3/4 桶至少 2 条纯人类胜局**（严格
   `games > minGames=1` 需要 ≥2 局），另对 2 人桶加 1 条含机器人座的整局；
   设置 per-count minGames=1、threshold=0.5；重启 user-service；
