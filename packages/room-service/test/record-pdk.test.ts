@@ -47,6 +47,7 @@ function makeHarness() {
   const config = makeConfigCache();
   config.paodekuaiEnabled.mockReturnValue(true);
   config.paodekuaiNonThreePlayerEnabled.mockReturnValue(true);
+  config.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
   const rooms = new RoomsService(asRedis(redis), asConfigCache(config));
   const recordClient = { write: vi.fn().mockResolvedValue(true) };
   const settle = { settle: vi.fn().mockResolvedValue(undefined), bindBroadcast: vi.fn() };

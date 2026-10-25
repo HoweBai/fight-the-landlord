@@ -23,9 +23,10 @@ describe('2/3/4 人匹配参数化（Task 2.3）', () => {
     for (const h of harnesses.splice(0)) await h.service.onApplicationShutdown();
   });
 
-  /** 开跑得快（默认含 2/4 人；首版生产由 nonThree 闸收窄为 3）。 */
-  function enablePdk(h: MatchServiceHarness, nonThree = true): void {
+  /** 开跑得快（默认 2/3/4 全开；要测闸关闭的用例显式传 false）。 */
+  function enablePdk(h: MatchServiceHarness, nonThree = true, two = true): void {
     h.configCache.paodekuaiEnabled.mockReturnValue(true);
+    h.configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(two);
     h.configCache.paodekuaiNonThreePlayerEnabled.mockReturnValue(nonThree);
   }
 

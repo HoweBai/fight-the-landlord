@@ -943,6 +943,17 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
     if (alive.length === 0) return;
 
+    /**
+     * 人数闸在扫描轮关闭（2026-10-25）：**本桶全部失败**（12007），不留到 meta TTL 后被
+     * 静默孤儿化。为什么不走「暂停票保留」：人数闸是运营开关，关掉后该队列不再有出口；
+     * 而 `rooms.create` 的 12012 会穿透扫描轮（只有 `gameEnabled` 有早退），票会一直挂着。
+     * 玩法级 `gameEnabled=false` 的「暂停、票保留」语义**不动**（上面已早退）。
+     */
+    if (!this.configCache.supportsRoomPlayerCount(queue.gameType, queue.playerCount)) {
+      await this.failMatch(alive.map((q) => q.playerId), queue.key, '该玩法暂不支持该人数');
+      return;
+    }
+
     // ZRANGE 升序 + 逐个过滤 ⇒ `alive[0]` 是「仍在队列里」最久的那个（§8.1 先到先服务）。
     // ⚙️23：它取**原序数组** —— 洗牌只发生在其副本上（子集路径依赖这一点）。
     const oldest = alive[0]!;

@@ -242,20 +242,49 @@ describe('room.match 的玩法/人数闸（Task 2.2）', () => {
     expect(match.addToQueue).toHaveBeenCalled();
   });
 
-  it('nonThree 开 ⇒ 跑得快 2/4 人放行（首版只开 3 的闸在运营侧）', async () => {
+  it('two 开 ⇒ 跑得快 2 人放行；4 人仍拒（两闸独立）', async () => {
     const { deps, match, configCache } = makeDeps();
     configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
+    configCache.paodekuaiNonThreePlayerEnabled.mockReturnValue(false);
+
+    const two = await route(
+      deps,
+      makeSocket('alice'),
+      C('room.match', { mode: 'random', baseScore: 15, gameType: 'paodekuai', playerCount: 2 }),
+    );
+    expect(two.code).toBe(0);
+
+    const four = await route(
+      deps,
+      makeSocket('bob'),
+      C('room.match', { mode: 'random', baseScore: 15, gameType: 'paodekuai', playerCount: 4 }),
+    );
+    expect(four.code).toBe(ErrCode.GAME_UNAVAILABLE);
+    expect(match.addToQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('nonThree 开 ⇒ 跑得快 4 人放行；2 人仍拒（两闸独立）', async () => {
+    const { deps, match, configCache } = makeDeps();
+    configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(false);
     configCache.paodekuaiNonThreePlayerEnabled.mockReturnValue(true);
 
-    for (const count of [2, 4]) {
-      const ack = await route(
-        deps,
-        makeSocket('alice'),
-        C('room.match', { mode: 'random', baseScore: 15, gameType: 'paodekuai', playerCount: count }),
-      );
-      expect(ack.code, `playerCount=${count}`).toBe(0);
-    }
-    expect(match.addToQueue).toHaveBeenCalledTimes(2);
+    const four = await route(
+      deps,
+      makeSocket('alice'),
+      C('room.match', { mode: 'random', baseScore: 15, gameType: 'paodekuai', playerCount: 4 }),
+    );
+    expect(four.code).toBe(0);
+
+    const two = await route(
+      deps,
+      makeSocket('bob'),
+      C('room.match', { mode: 'random', baseScore: 15, gameType: 'paodekuai', playerCount: 2 }),
+    );
+    expect(two.code).toBe(ErrCode.GAME_UNAVAILABLE);
+    expect(two.message).toBe('该玩法暂不支持该人数');
+    expect(match.addToQueue).toHaveBeenCalledTimes(1);
   });
 
   it('斗地主 4 人（不在 supportedPlayerCounts）⇒ 12012（不得静默按 3 人入队）', async () => {
