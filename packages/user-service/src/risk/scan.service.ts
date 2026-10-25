@@ -10,6 +10,7 @@ import {
 import { DataSource } from 'typeorm';
 import type { Redis } from 'ioredis';
 import { incGame, runWithTrace } from '@fight-the-landlord/shared';
+import type { GameType } from '@fight-the-landlord/protocol';
 import { REDIS } from '../auth/token.service';
 import {
   ConfigCacheService,
@@ -28,6 +29,7 @@ import {
   riskScanHitsTotal,
   riskScanLastSuccessTimestampSeconds,
   riskScanRunsTotal,
+  riskScanSqlFailuresTotal,
 } from './risk.metrics';
 
 /**
@@ -315,20 +317,48 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     const deviceWindowDays = this.configCache.riskDeviceWindowDays();
 
     // ── 统计（SQL1 + SQL1b + SQL2；驱动对 COUNT/SUM 可能回字符串 ⇒ Number() 归一）────
-    const winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as Array<{
-      user_id: string;
-      games: number | string;
-      wins: number | string;
-    }>;
-    const pdkWinRows = (await this.dataSource.query(RISK_WIN_RATE_PDK_SQL)) as Array<{
+    type DdzWinRow = { user_id: string; games: number | string; wins: number | string };
+    type PdkWinRow = {
       user_id: string;
       player_count: number | string;
       games: number | string;
       wins: number | string;
-    }>;
-    const deviceRows = (await this.dataSource.query(RISK_DEVICE_COUNT_SQL, [
-      new Date(now - deviceWindowDays * DAY_MS),
-    ])) as Array<{ user_id: string; devices: number | string }>;
+    };
+    let winRows: DdzWinRow[] | null = null;
+    let pdkWinRows: PdkWinRow[] | null = null;
+    const degradedGames: GameType[] = [];
+    try {
+      winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as DdzWinRow[];
+    } catch (err) {
+      degradedGames.push('doudizhu');
+      riskScanSqlFailuresTotal.inc({ scope: 'doudizhu' });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `risk scan: doudizhu win-rate SQL failed (round continues with paodekuai/device): ${reason}`,
+      );
+    }
+    try {
+      pdkWinRows = (await this.dataSource.query(RISK_WIN_RATE_PDK_SQL)) as PdkWinRow[];
+    } catch (err) {
+      degradedGames.push('paodekuai');
+      riskScanSqlFailuresTotal.inc({ scope: 'paodekuai' });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `risk scan: paodekuai win-rate SQL failed (round continues with doudizhu/device): ${reason}`,
+      );
+    }
+    if (winRows === null && pdkWinRows === null) {
+      throw new Error('risk scan: both game win-rate queries failed');
+    }
+    let deviceRows: Array<{ user_id: string; devices: number | string }>;
+    try {
+      deviceRows = (await this.dataSource.query(RISK_DEVICE_COUNT_SQL, [
+        new Date(now - deviceWindowDays * DAY_MS),
+      ])) as Array<{ user_id: string; devices: number | string }>;
+    } catch (err) {
+      riskScanSqlFailuresTotal.inc({ scope: 'device' });
+      throw err;
+    }
 
     // ── 并集合并：设备-only ⇒ 两玩法均无、hit1=false；玩法间/人数间不合并样本 ─────
     const merged = new Map<string, MergedRiskStat>();
@@ -339,14 +369,14 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       merged.set(userId, created);
       return created;
     };
-    for (const row of winRows) {
+    for (const row of winRows ?? []) {
       ensure(String(row.user_id)).byGame.doudizhu = {
         games: Number(row.games),
         wins: Number(row.wins),
       };
     }
     const unknownPlayerCountRows: Array<{ userId: string; playerCount: unknown }> = [];
-    for (const row of pdkWinRows) {
+    for (const row of pdkWinRows ?? []) {
       const playerCount = Number(row.player_count);
       if (playerCount !== 2 && playerCount !== 3 && playerCount !== 4) {
         unknownPlayerCountRows.push({
@@ -423,7 +453,7 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       if (hit2) reasons.push({ check: 'devices', detail: { devices: stats.devices } });
 
       try {
-        await this.reviews.applyScanResult(userId, score, reasons, now, []);
+        await this.reviews.applyScanResult(userId, score, reasons, now, degradedGames);
       } catch (err) {
         // 单用户失败隔离：warn 留痕 + 跳过（下一轮收敛）。真库双会话的 1213 形态即由
         // 此退化路径承接（不会把整轮打红、不会丢后续用户）。

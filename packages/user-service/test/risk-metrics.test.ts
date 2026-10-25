@@ -12,6 +12,7 @@ import {
   riskScanLastSuccessTimestampSeconds,
   riskReviewsOpen,
   riskActionsTotal,
+  riskScanSqlFailuresTotal,
 } from '../src/risk/risk.metrics';
 
 describe('风控指标定义（T4 只建文件；写点 T5/T6）', () => {
@@ -21,6 +22,7 @@ describe('风控指标定义（T4 只建文件；写点 T5/T6）', () => {
       'risk_scan_last_success_timestamp_seconds',
       'risk_reviews_open',
       'risk_actions_total',
+      'risk_scan_sql_failures_total',
     ]) {
       expect(metricsRegistry().getSingleMetric(name), `registry 里没有 ${name}`).toBeDefined();
     }
@@ -34,14 +36,21 @@ describe('风控指标定义（T4 只建文件；写点 T5/T6）', () => {
     expect(metricsRegistry().getSingleMetric('risk_scan_last_success_timestamp_seconds')).toBe(
       riskScanLastSuccessTimestampSeconds,
     );
+    expect(metricsRegistry().getSingleMetric('risk_scan_sql_failures_total')).toBe(
+      riskScanSqlFailuresTotal,
+    );
 
     // 标签维度用**输出面**钉（prom-client 的 .d.ts 不公开 labelNames ⇒ 读文本才是真断言）：
     // 打得进 result/action 维度 ⇒ 标签面与规格 `{result}` / `{action}` 逐字同形。
     riskScanRunsTotal.inc({ result: 'ok' });
     riskActionsTotal.inc({ action: 'ban' });
+    riskScanSqlFailuresTotal.inc({ scope: 'paodekuai' });
     const text = await metricsRegistry().metrics();
     expect(text, 'result 维度').toMatch(/^risk_scan_runs_total\{result="ok"\} \d+$/m);
     expect(text, 'action 维度').toMatch(/^risk_actions_total\{action="ban"\} \d+$/m);
+    expect(text, 'scope 维度').toMatch(
+      /^risk_scan_sql_failures_total\{scope="paodekuai"\} \d+$/m,
+    );
     // 两个 gauge 无标签（裸 `名字 值` 行；带标签的话这两条会红）。
     expect(text, 'reviews_open 无标签').toMatch(/^risk_reviews_open \d+(\.\d+)?$/m);
     expect(text, 'last_success 无标签').toMatch(/^risk_scan_last_success_timestamp_seconds \d+(\.\d+)?$/m);

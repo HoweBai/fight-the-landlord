@@ -56,3 +56,13 @@ export const riskScanHitsTotal: ReturnType<typeof createCounter> = createCounter
   '风控胜率命中次数（按玩法；每用户每玩法命中 +1；设备命中不纳入本指标）。',
   ['game_type'],
 );
+
+/**
+ * B 组：风控扫描 SQL 失败次数（scope=doudizhu|paodekuai|device）。
+ * 单玩法失败按玩法隔离；设备 SQL 失败仍整轮失败。
+ */
+export const riskScanSqlFailuresTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_scan_sql_failures_total',
+  '风控扫描 SQL 失败次数（scope=doudizhu|paodekuai|device；单玩法失败按玩法隔离，设备 SQL 失败仍整轮失败）。',
+  ['scope'],
+);

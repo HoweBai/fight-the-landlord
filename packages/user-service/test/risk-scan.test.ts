@@ -248,10 +248,10 @@ class FakeScanDb {
   statuses = new Map<string, string>();
   openCount = 0;
   queries: Statement[] = [];
-  /** > 0 ⇒ 该次 query 直接 reject（每次消一个；库故障用例）。 */
-  failuresRemaining = 0;
-  /** true ⇒ 跑得快 SQL 直接 reject（PDK 表故障用例）。 */
+  /** true ⇒ 对应 SQL 直接 reject（单玩法/设备故障用例）。 */
+  failDdz = false;
   failPdk = false;
+  failDevice = false;
   private held: Promise<unknown> | null = null;
 
   holdNextQuery(): { resolve: (value: unknown) => void } {
@@ -263,21 +263,23 @@ class FakeScanDb {
   dataSource = {
     query: (sql: string, params: unknown[] = []): Promise<unknown> => {
       this.queries.push({ sql, params });
-      if (this.failuresRemaining > 0) {
-        this.failuresRemaining -= 1;
-        return Promise.reject(new Error('db down（仿真）'));
-      }
       if (this.held !== null) {
         const held = this.held;
         this.held = null;
         return held;
       }
-      if (sql === SPEC_RISK_WIN_RATE_SQL) return Promise.resolve(this.winRows);
+      if (sql === SPEC_RISK_WIN_RATE_SQL) {
+        if (this.failDdz) return Promise.reject(new Error('ddz db down（仿真）'));
+        return Promise.resolve(this.winRows);
+      }
       if (sql === SPEC_RISK_WIN_RATE_PDK_SQL) {
         if (this.failPdk) return Promise.reject(new Error('pdk db down（仿真）'));
         return Promise.resolve(this.pdkWinRows);
       }
-      if (sql === SPEC_RISK_DEVICE_COUNT_SQL) return Promise.resolve(this.deviceRows);
+      if (sql === SPEC_RISK_DEVICE_COUNT_SQL) {
+        if (this.failDevice) return Promise.reject(new Error('device db down（仿真）'));
+        return Promise.resolve(this.deviceRows);
+      }
       if (sql === SPEC_RISK_BANNED_USERS_SQL) {
         return Promise.resolve(this.bannedIds.map((id) => ({ id })));
       }
@@ -1457,19 +1459,97 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       ]);
     });
 
-    it('跑得快 SQL 抛 ⇒ 整轮失败（runs fail、last_success 不推进、无状态机调用、锁释放）', async () => {
+    it('PDK SQL 抛 ⇒ 单玩法隔离：DDZ 照跑、轮 ok、scope 指标 +1、状态机收到 [paodekuai]', async () => {
       riskScanLastSuccessTimestampSeconds.set(123);
       db.winRows = [{ user_id: 'u-A', games: 5, wins: 5 }];
       db.failPdk = true;
-      const failBefore = await labeledMetric('risk_scan_runs_total', '{result="fail"}');
+      const okBefore = await labeledMetric('risk_scan_runs_total', '{result="ok"}');
+      const failBefore = await labeledMetric(
+        'risk_scan_sql_failures_total',
+        '{scope="paodekuai"}',
+      );
+      vi.setSystemTime(T0);
 
-      await expect(
-        mkSvc(makeScanConfig({ minGames: 1 })).runScanOnce(T0),
-      ).rejects.toThrowError(/pdk db down/);
+      const result = await mkSvc(makeScanConfig({ minGames: 1 })).runScanOnce(T0);
+
+      expect(result).toEqual({ skipped: false, users: 1, flagged: 1 });
+      expect(await labeledMetric('risk_scan_runs_total', '{result="ok"}')).toBe(okBefore + 1);
+      expect(await labeledMetric('risk_scan_sql_failures_total', '{scope="paodekuai"}')).toBe(
+        failBefore + 1,
+      );
+      expect(await simpleMetric('risk_scan_last_success_timestamp_seconds')).toBe(T0 / 1000);
+      expect(reviews.applyScanResult).toHaveBeenCalledTimes(1);
+      expect(reviews.applyScanResult.mock.calls[0]?.[0]).toBe('u-A');
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['paodekuai']);
+      expect(redis.count('del', RISK_SCAN_LOCK_KEY)).toBe(1);
+    });
+
+    it('DDZ SQL 抛 ⇒ 单玩法隔离：PDK 照跑、scope 指标 +1、状态机收到 [doudizhu]', async () => {
+      db.pdkWinRows = [{ user_id: 'u-pdk', player_count: 2, games: 2, wins: 2 }];
+      db.failDdz = true;
+      const failBefore = await labeledMetric(
+        'risk_scan_sql_failures_total',
+        '{scope="doudizhu"}',
+      );
+
+      const result = await mkSvc(
+        makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 }),
+      ).runScanOnce(T0);
+
+      expect(result).toEqual({ skipped: false, users: 1, flagged: 1 });
+      expect(await labeledMetric('risk_scan_sql_failures_total', '{scope="doudizhu"}')).toBe(
+        failBefore + 1,
+      );
+      expect(reviews.applyScanResult.mock.calls[0]?.[0]).toBe('u-pdk');
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['doudizhu']);
+    });
+
+    it('两玩法 SQL 都抛 ⇒ 整轮失败（runs fail、last_success 不推进、锁释放）', async () => {
+      riskScanLastSuccessTimestampSeconds.set(123);
+      const failBefore = await labeledMetric('risk_scan_runs_total', '{result="fail"}');
+      const ddzBefore = await labeledMetric(
+        'risk_scan_sql_failures_total',
+        '{scope="doudizhu"}',
+      );
+      const pdkBefore = await labeledMetric(
+        'risk_scan_sql_failures_total',
+        '{scope="paodekuai"}',
+      );
+      db.failDdz = true;
+      db.failPdk = true;
+
+      await expect(mkSvc().runScanOnce(T0)).rejects.toThrowError(
+        /both game win-rate queries failed/,
+      );
 
       expect(await labeledMetric('risk_scan_runs_total', '{result="fail"}')).toBe(failBefore + 1);
       expect(await simpleMetric('risk_scan_last_success_timestamp_seconds')).toBe(123);
+      expect(await labeledMetric('risk_scan_sql_failures_total', '{scope="doudizhu"}')).toBe(
+        ddzBefore + 1,
+      );
+      expect(await labeledMetric('risk_scan_sql_failures_total', '{scope="paodekuai"}')).toBe(
+        pdkBefore + 1,
+      );
       expect(reviews.applyScanResult).not.toHaveBeenCalled();
+      expect(redis.count('del', RISK_SCAN_LOCK_KEY)).toBe(1);
+    });
+
+    it('设备 SQL 抛 ⇒ 计数 scope=device 后整轮失败', async () => {
+      riskScanLastSuccessTimestampSeconds.set(123);
+      const failBefore = await labeledMetric('risk_scan_runs_total', '{result="fail"}');
+      const devBefore = await labeledMetric(
+        'risk_scan_sql_failures_total',
+        '{scope="device"}',
+      );
+      db.failDevice = true;
+
+      await expect(mkSvc().runScanOnce(T0)).rejects.toThrowError(/device db down/);
+
+      expect(await labeledMetric('risk_scan_runs_total', '{result="fail"}')).toBe(failBefore + 1);
+      expect(await labeledMetric('risk_scan_sql_failures_total', '{scope="device"}')).toBe(
+        devBefore + 1,
+      );
+      expect(await simpleMetric('risk_scan_last_success_timestamp_seconds')).toBe(123);
       expect(redis.count('del', RISK_SCAN_LOCK_KEY)).toBe(1);
     });
 
@@ -1559,19 +1639,6 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(await labeledMetric('risk_scan_runs_total', '{result="ok"}')).toBe(okBefore + 1);
       expect(await simpleMetric('risk_scan_last_success_timestamp_seconds')).toBe(T0 / 1000);
       expect(await simpleMetric('risk_reviews_open')).toBe(7);
-    });
-
-    it('失败轮：SQL 抛 ⇒ runs{fail}+1、last_success 不擦、异常上抛、锁照常释放', async () => {
-      riskScanLastSuccessTimestampSeconds.set(123);
-      const failBefore = await labeledMetric('risk_scan_runs_total', '{result="fail"}');
-      db.failuresRemaining = 1; // SQL1 就抛
-      const svc = mkSvc();
-
-      await expect(svc.runScanOnce(T0)).rejects.toThrowError(/db down/);
-
-      expect(await labeledMetric('risk_scan_runs_total', '{result="fail"}')).toBe(failBefore + 1);
-      expect(await simpleMetric('risk_scan_last_success_timestamp_seconds')).toBe(123);
-      expect(redis.count('del', RISK_SCAN_LOCK_KEY)).toBe(1); // finally 释放照走
     });
 
     it('单用户失败不拖垮整轮：一人 applyScanResult 抛 ⇒ 其余照跑、轮记 ok、warn 留痕', async () => {
