@@ -16,6 +16,7 @@ import { UsersCreatedAtIndex1796200000000 } from '../src/migrations/179620000000
 import { PdkRecords1796300000000 } from '../src/migrations/1796300000000-PdkRecords';
 import { PdkRecordGameTypeDdl1797000000003 } from '../src/migrations/1797000000003-PdkRecordGameTypeDdl';
 import { PdkRecordPlayerBackfill1797000000004 } from '../src/migrations/1797000000004-PdkRecordPlayerBackfill';
+import { RiskReviewGameType1797000000005 } from '../src/migrations/1797000000005-RiskReviewGameType';
 
 /**
  * E7（§10.3：「`synchronize: true` **仅限开发环境**；MVP 上线前须改为显式迁移脚本」）。
@@ -903,5 +904,46 @@ describe('A2：PDK 记录玩法/逐座投影迁移（DDL 与回填分离）', ()
     } as unknown as QueryRunner;
     await new PdkRecordPlayerBackfill1797000000004().down(runner);
     expect(statements).toEqual([]);
+  });
+});
+
+describe('B：risk_reviews.game_type 迁移（2026-10-26）', () => {
+  it('类名/时间戳：晚于 1797000000004 且全仓唯一', () => {
+    expect(new RiskReviewGameType1797000000005().name).toBe(
+      'RiskReviewGameType1797000000005',
+    );
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('RiskReviewGameType1797000000005')).toBeGreaterThan(1797000000004);
+
+    const names = walk(join(SRC_DIR, 'migrations')).flatMap((file) =>
+      [...readFileSync(file, 'utf-8').matchAll(/export class (\w+)/g)].map((m) => m[1]!),
+    );
+    expect(names.filter((n) => n.includes('1797000000005'))).toEqual([
+      'RiskReviewGameType1797000000005',
+    ]);
+  });
+
+  it('up/down 精确 SQL：加列 + (game_type,status,id) 索引；down 逆序', async () => {
+    const up: string[] = [];
+    const upRunner = {
+      query: async (sql: string) => {
+        up.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new RiskReviewGameType1797000000005().up(upRunner);
+    expect(up).toEqual([
+      "ALTER TABLE `risk_reviews` ADD COLUMN `game_type` varchar(16) NOT NULL DEFAULT 'doudizhu' AFTER `status`, ADD KEY `idx_game_status_id` (`game_type`, `status`, `id`)",
+    ]);
+
+    const down: string[] = [];
+    const downRunner = {
+      query: async (sql: string) => {
+        down.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new RiskReviewGameType1797000000005().down(downRunner);
+    expect(down).toEqual([
+      'ALTER TABLE `risk_reviews` DROP KEY `idx_game_status_id`, DROP COLUMN `game_type`',
+    ]);
   });
 });

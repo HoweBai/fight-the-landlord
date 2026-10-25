@@ -19,7 +19,7 @@ import { riskActionsTotal } from './risk.metrics';
  * 跨实例由扫描锁（⚙️3）兜底、锁定读的间隙锁为第二防线（真库双会话形态见 progress 核销节）。
  */
 export const RISK_UPSERT_LOCK_SQL =
-  'SELECT id,status,score,handled_by,handled_at FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
+  'SELECT id,status,score,handled_by,handled_at,game_type,reasons FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
 
 /** `risk:limit` auto 旗的 TTL（规格 §2.3：auto=7d，每轮续期）。 */
 export const RISK_LIMIT_TTL_SECONDS = 604_800;
@@ -131,6 +131,49 @@ export interface ScanReason {
   detail: Record<string, unknown>;
 }
 
+/** 审核行的当前玩法维度（B 组 U5/D15-D16）。 */
+export type ReviewGameType = 'doudizhu' | 'paodekuai' | 'mixed' | 'platform';
+
+/** 旧行/未知值按 doudizhu 解释（U5：旧行缺省 ddz）。 */
+function normalizeReviewGameType(value: unknown): ReviewGameType {
+  return value === 'paodekuai' || value === 'mixed' || value === 'platform'
+    ? value
+    : 'doudizhu';
+}
+
+/** 锁定读的 `reasons` 可能是 JSON 字符串/对象/数组；解析失败按空。 */
+function parseReasonsValue(value: unknown): ScanReason[] {
+  if (Array.isArray(value)) return value as ScanReason[];
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as ScanReason[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 由**本次** reasons 推导审核行的 game_type：
+ * winRate 的 gameType 集合（缺省/未知 ⇒ doudizhu）；两玩法 ⇒ mixed；
+ * 无 winRate 但有 devices ⇒ platform；无 reasons ⇒ null（调用方保留最新行值）。
+ */
+function deriveReviewGameType(reasons: readonly ScanReason[]): ReviewGameType | null {
+  const games = new Set<'doudizhu' | 'paodekuai'>();
+  let hasDevices = false;
+  for (const reason of reasons) {
+    if (reason.check === 'winRate') {
+      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+    } else if (reason.check === 'devices') {
+      hasDevices = true;
+    }
+  }
+  if (games.has('doudizhu') && games.has('paodekuai')) return 'mixed';
+  if (games.has('doudizhu')) return 'doudizhu';
+  if (games.has('paodekuai')) return 'paodekuai';
+  return hasDevices ? 'platform' : null;
+}
+
 /** 本次调用落入 `risk_actions` 的系统动作（`null` = 没动作；仅用于指标写点）。 */
 export type RiskSystemAction = 'auto_throttle' | 'unthrottle' | 'reopen' | null;
 
@@ -141,13 +184,14 @@ export type RiskSystemAction = 'auto_throttle' | 'unthrottle' | 'reopen' | null;
  * 一并回滚（本轮不落库、旗不动），下一轮扫描重新定夺（收敛路径见类注）。
  */
 const REVIEW_INSERT_OPEN_SQL =
-  "INSERT INTO risk_reviews (user_id, score, reasons, status) VALUES (?, ?, ?, 'open')";
-const REVIEW_UPDATE_SCORE_SQL = 'UPDATE risk_reviews SET score = ?, reasons = ? WHERE id = ?';
+  "INSERT INTO risk_reviews (user_id, score, reasons, status, game_type) VALUES (?, ?, ?, 'open', ?)";
+const REVIEW_UPDATE_SCORE_SQL =
+  'UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ? WHERE id = ?';
 const REVIEW_UPDATE_TRANSITION_SQL =
-  "UPDATE risk_reviews SET score = ?, reasons = ?, status = ?, handled_by = 'system', handled_at = ? WHERE id = ?";
+  "UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ?, status = ?, handled_by = 'system', handled_at = ? WHERE id = ?";
 /** 终审 F1：manual 旗下 open⇒throttled 的迁移——**不写 handled_\***（处置者保持不动）。 */
 const REVIEW_UPDATE_THROTTLE_KEEP_HANDLER_SQL =
-  "UPDATE risk_reviews SET score = ?, reasons = ?, status = 'throttled' WHERE id = ?";
+  "UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ?, status = 'throttled' WHERE id = ?";
 const ACTION_INSERT_SQL =
   'INSERT INTO risk_actions (user_id, action, actor, reason, review_id, detail) VALUES (?, ?, ?, ?, ?, ?)';
 
@@ -158,6 +202,8 @@ interface LatestReviewRow {
   score: number | string;
   handled_by: string | null;
   handled_at: Date | string | null;
+  game_type: string | null;
+  reasons: unknown;
 }
 
 /**
@@ -216,9 +262,12 @@ export class ReviewsService {
       async (manager): Promise<RiskSystemAction> => {
         const rows = (await manager.query(RISK_UPSERT_LOCK_SQL, [userId])) as LatestReviewRow[];
         const latest = rows[0];
+        const nextGameType =
+          deriveReviewGameType(reasons) ??
+          (latest === undefined ? 'platform' : normalizeReviewGameType(latest.game_type));
         if (latest === undefined) {
           if (score >= SINGLE_HIT_SCORE) {
-            await this.insertOpen(manager, userId, score, reasons);
+            await this.insertOpen(manager, userId, score, reasons, nextGameType);
           }
           return null;
         }
@@ -237,6 +286,7 @@ export class ReviewsService {
                 await manager.query(REVIEW_UPDATE_THROTTLE_KEEP_HANDLER_SQL, [
                   score,
                   JSON.stringify(reasons),
+                  nextGameType,
                   reviewId,
                 ]);
                 return null;
@@ -245,6 +295,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_TRANSITION_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 'throttled',
                 new Date(now),
                 reviewId,
@@ -256,6 +307,7 @@ export class ReviewsService {
             await manager.query(REVIEW_UPDATE_SCORE_SQL, [
               score,
               JSON.stringify(reasons),
+              nextGameType,
               reviewId,
             ]);
             return null;
@@ -268,6 +320,7 @@ export class ReviewsService {
                 await manager.query(REVIEW_UPDATE_SCORE_SQL, [
                   score,
                   JSON.stringify(reasons),
+                  nextGameType,
                   reviewId,
                 ]);
                 await this.armAutoThrottle(userId, now);
@@ -278,6 +331,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_TRANSITION_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 nextStatus,
                 new Date(now),
                 reviewId,
@@ -299,6 +353,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_SCORE_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 reviewId,
               ]);
             }
@@ -316,7 +371,13 @@ export class ReviewsService {
                   handledAt: latest.handled_at,
                 },
               };
-              const newId = await this.insertOpen(manager, userId, score, [...reasons, revived]);
+              const newId = await this.insertOpen(
+                manager,
+                userId,
+                score,
+                [...reasons, revived],
+                nextGameType,
+              );
               await this.insertAction(manager, userId, 'reopen', 'system', null, newId, null);
               return 'reopen';
             }
@@ -549,11 +610,13 @@ export class ReviewsService {
     userId: string,
     score: number,
     reasons: readonly ScanReason[],
+    gameType: ReviewGameType,
   ): Promise<number> {
     const res = (await manager.query(REVIEW_INSERT_OPEN_SQL, [
       userId,
       score,
       JSON.stringify(reasons),
+      gameType,
     ])) as { insertId?: number };
     const newId = res?.insertId;
     if (typeof newId !== 'number' || !Number.isFinite(newId)) {

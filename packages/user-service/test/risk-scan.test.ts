@@ -51,7 +51,7 @@ const T0 = Date.parse('2026-10-05T12:00:00.000Z');
 
 /** 规格 ⚙️10 逐字（全文相等断言 + FakeRiskDb 唯一认得的锁定读文本）。 */
 const SPEC_RISK_UPSERT_LOCK_SQL =
-  'SELECT id,status,score,handled_by,handled_at FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
+  'SELECT id,status,score,handled_by,handled_at,game_type,reasons FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
 /** 规格 §2.5-2 SQL1（胜率）逐字。 */
 const SPEC_RISK_WIN_RATE_SQL =
   "SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins FROM game_record_players p JOIN game_records r ON r.id=p.record_id JOIN users u ON u.id = p.user_id AND u.status='active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL GROUP BY p.user_id";
@@ -81,6 +81,7 @@ interface ReviewRow {
   score: number;
   reasons: string;
   status: string;
+  game_type: string;
   handled_by: string | null;
   handled_at: Date | null;
 }
@@ -100,6 +101,7 @@ function mkReview(over: Partial<ReviewRow> = {}): ReviewRow {
     score: 25,
     reasons: '[]',
     status: 'open',
+    game_type: 'doudizhu',
     handled_by: null,
     handled_at: null,
     ...over,
@@ -153,15 +155,17 @@ class FakeRiskDb {
           score: latest.score,
           handled_by: latest.handled_by,
           handled_at: latest.handled_at,
+          game_type: latest.game_type,
+          reasons: latest.reasons,
         },
       ]);
     }
     // 新条目（恒 open）。
-    const ins = /^INSERT INTO risk_reviews \(user_id, score, reasons, status\) VALUES \(\?, \?, \?, 'open'\)$/.exec(
+    const ins = /^INSERT INTO risk_reviews \(user_id, score, reasons, status, game_type\) VALUES \(\?, \?, \?, 'open', \?\)$/.exec(
       sql,
     );
     if (ins) {
-      const [userId, score, reasons] = params as [string, number, string];
+      const [userId, score, reasons, gameType] = params as [string, number, string, string];
       // id = 现最大 + 1（不依赖既有行的手工 id ⇒ 复跑锁定读时「最新一行」判定成立）。
       const id = this.reviews.reduce((max, r) => Math.max(max, r.id), 0) + 1;
       this.reviews.push({
@@ -170,6 +174,7 @@ class FakeRiskDb {
         score,
         reasons,
         status: 'open',
+        game_type: gameType,
         handled_by: null,
         handled_at: null,
       });
@@ -453,6 +458,54 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(redis.calls.filter((c) => c.key.startsWith('risk:limit:'))).toHaveLength(0);
       // 恰一条写语句（INSERT）——不是 UPDATE。
       expect(db.queries).toHaveLength(2);
+    });
+
+    it('game_type 推导：ddz/pdk/mixed/platform/旧 reasons 缺省 ddz；update 改写', async () => {
+      const R_DDZ: ScanReason[] = [
+        { check: 'winRate', detail: { gameType: 'doudizhu', games: 101, wins: 90, winRate: 90 / 101 } },
+      ];
+      const R_PDK: ScanReason[] = [
+        {
+          check: 'winRate',
+          detail: { gameType: 'paodekuai', playerCount: 3, games: 101, wins: 90, winRate: 90 / 101 },
+        },
+      ];
+      const R_MIX: ScanReason[] = [...R_DDZ, ...R_PDK];
+      const R_DEV: ScanReason[] = [{ check: 'devices', detail: { devices: 5 } }];
+      const R_LEGACY: ScanReason[] = [
+        { check: 'winRate', detail: { games: 101, wins: 90, winRate: 90 / 101 } },
+      ];
+
+      for (const [reasons, expected] of [
+        [R_DDZ, 'doudizhu'],
+        [R_PDK, 'paodekuai'],
+        [R_MIX, 'mixed'],
+        [R_DEV, 'platform'],
+        [R_LEGACY, 'doudizhu'],
+      ] as const) {
+        db = new FakeRiskDb();
+        await mkSvc().applyScanResult('u-A', 25, reasons, T0);
+        expect(db.reviews[0]!.game_type, JSON.stringify(reasons)).toBe(expected);
+      }
+
+      db = new FakeRiskDb();
+      db.reviews.push(mkReview({ id: 5, game_type: 'paodekuai', reasons: '[]' }));
+      await mkSvc().applyScanResult('u-A', 25, R_DDZ, T0);
+      expect(db.reviews[0]!.game_type).toBe('doudizhu');
+
+      db = new FakeRiskDb();
+      db.reviews.push(
+        mkReview({
+          id: 6,
+          status: 'throttled',
+          score: 25,
+          handled_by: 'system',
+          game_type: 'paodekuai',
+          reasons: '[]',
+        }),
+      );
+      await mkSvc().applyScanResult('u-A', 0, [], T0);
+      expect(db.reviews[0]!.game_type).toBe('paodekuai'); // score=0 无 reasons ⇒ 保留最新行
     });
 
     it('无行 + score=50 ⇒ 仍只 INSERT open（⚙️20：无条目 ⇒ 不置旗、不迁 throttled）', async () => {

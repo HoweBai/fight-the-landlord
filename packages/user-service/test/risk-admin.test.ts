@@ -96,6 +96,7 @@ interface ReviewRow {
   score: number;
   reasons: unknown;
   status: string;
+  game_type: string;
   created_at: Date;
   updated_at: Date;
   handled_by: string | null;
@@ -127,6 +128,7 @@ function mkReview(over: Partial<ReviewRow> = {}): ReviewRow {
     score: 25,
     reasons: [{ check: 'winRate', detail: { games: 101, wins: 90 } }],
     status: 'open',
+    game_type: 'doudizhu',
     created_at: new Date(T0 - 3_600_000),
     updated_at: new Date(T0 - 3_600_000),
     handled_by: null,
@@ -316,6 +318,8 @@ class FakeRiskAdminDb {
           score: latest.score,
           handled_by: latest.handled_by,
           handled_at: latest.handled_at,
+          game_type: latest.game_type,
+          reasons: latest.reasons,
         },
       ];
     }
