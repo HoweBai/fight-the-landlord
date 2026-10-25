@@ -25,18 +25,16 @@ const RULES: PdkRulesConfig = {
 const c = (r: number, s = 1): Card => ({ r, s });
 
 describe('cueForPdkPlay：牌型 → 语音', () => {
-  it('单张/对子/三张按点数选音；2 → *15', () => {
-    expect(cueForPdkPlay([c(3)], RULES)).toBe('Single3');
-    expect(cueForPdkPlay([c(12)], RULES)).toBe('Single12'); // Q 是合法单张
-    expect(cueForPdkPlay([c(14)], RULES)).toBe('Single14');
-    expect(cueForPdkPlay([c(17)], RULES)).toBe('Single15');
-
-    expect(cueForPdkPlay([c(7, 1), c(7, 2)], RULES)).toBe('Pair7');
-    expect(cueForPdkPlay([c(14, 1), c(14, 2)], RULES)).toBe('Pair14');
+  it('单张/对子/三张按点数选音（3–13 / A）；2 → *15（合成牌）', () => {
+    for (const r of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
+      expect(cueForPdkPlay([c(r, 1)], RULES), `single ${r}`).toBe(`Single${r}`);
+      expect(cueForPdkPlay([c(r, 1), c(r, 2)], RULES), `pair ${r}`).toBe(`Pair${r}`);
+      expect(cueForPdkPlay([c(r, 1), c(r, 2), c(r, 3)], RULES), `trio ${r}`).toBe(`Trio${r}`);
+    }
     // 合成牌（真实牌堆只有一张 2）
+    expect(cueForPdkPlay([c(17, 1)], RULES)).toBe('Single15');
     expect(cueForPdkPlay([c(17, 1), c(17, 1)], RULES)).toBe('Pair15');
-
-    expect(cueForPdkPlay([c(7, 1), c(7, 2), c(7, 3)], RULES)).toBe('Trio7');
+    expect(cueForPdkPlay([c(17, 1), c(17, 1), c(17, 1)], RULES)).toBe('Trio15');
   });
 
   it('顺子/连对/飞机/三带一/四带二/炸弹', () => {
@@ -97,15 +95,22 @@ describe('cueForPdkPlay：牌型 → 语音', () => {
         { ...RULES, airplaneWings: 'singles' },
       ),
     ).toBe('Plane');
+    expect(
+      cueForPdkPlay(
+        [c(3, 1), c(3, 2), c(3, 3), c(4, 1), c(4, 2), c(4, 3), c(5), c(6)],
+        { ...RULES, airplaneWings: 'both' },
+      ),
+    ).toBe('Plane');
   });
 
   it('空牌/非法/无 rules/王 ⇒ null；不抛', () => {
     expect(cueForPdkPlay([], RULES)).toBeNull();
     expect(cueForPdkPlay([c(3), c(5)], RULES)).toBeNull();
-    expect(cueForPdkPlay([c(20, 4)], RULES)).toBeNull(); // 小王
-    expect(cueForPdkPlay([c(30, 4)], RULES)).toBeNull(); // 大王
+    expect(cueForPdkPlay([c(20, 0)], RULES)).toBeNull(); // 小王（点数上界拦截）
+    expect(cueForPdkPlay([c(30, 0)], RULES)).toBeNull(); // 大王
     expect(cueForPdkPlay([c(3)], null)).toBeNull();
     expect(cueForPdkPlay([c(3)], undefined)).toBeNull();
+    expect(cueForPdkPlay(null as never, RULES)).toBeNull();
     expect(() => cueForPdkPlay([c(3)], { ...RULES, airplaneWings: 'nope' as never })).not.toThrow();
   });
 });

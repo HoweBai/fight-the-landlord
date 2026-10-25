@@ -828,7 +828,7 @@ export function buildPdkFeatures(session, seat): PdkRobotFeatures;
 - `apps/client/test/{pdk-hint,pdk-sound,pdk-settlement}.test.ts`
 
 **做法**
-- hint 窗口内无有效出牌时隐藏/降级；关闭牌型不提示；跑得快只播出牌/过牌/输赢。
+- hint 窗口内无有效出牌时隐藏/降级；关闭牌型不提示；跑得快只播出牌/过牌/输赢。**（2026-10-25 语音复用 spec 已取代：牌型播报复用斗地主素材。）**
 - 提交：`feat(client): 跑得快提示/音效/结算`。
 
 ### Task 6.3 历史页

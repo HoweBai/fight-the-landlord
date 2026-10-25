@@ -142,3 +142,12 @@ pnpm verify:admin
 - 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
   `pnpm verify:admin` ⇒ **377 checks passed**。
 - 代码审查结论待补。
+
+## 代码审查记录（2026-10-25，独立 reviewer）
+
+范围 `e0a994cc..HEAD`：**Critical 0 / Important 0 / Minor 9**。
+
+- 已修：旧计划 :831 冲突点注记；spec 重连措辞收窄；同快照「牌型 → 报单」顺序用例
+  （断言两条 cue 顺序 + 前一条被 stop）；pdk-sound 改精确数组断言；bootstrap 补
+  `vibrateLong=0`；王 fixture 改 `s=0`（由点数上界拦截）；补 Trio15/`airplaneWings='both'`/
+  3–14 点数遍历/`null as never`；`isPdkSettlementResult` 导入合并为单行。

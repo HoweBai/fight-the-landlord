@@ -20,9 +20,7 @@
  * ⚠️ 该顺序只在**同一 setup、默认 pre flush** 下成立，不得跨消息依赖。
  */
 import { watch } from 'vue';
-import {
-  isPdkSettlementResult,
-} from '@fight-the-landlord/protocol';
+import { isPdkSettlementResult } from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { playCue, cueForBid, cueForPass } from '../audio';
 import { cueForPlay } from '../audio/play-cues';

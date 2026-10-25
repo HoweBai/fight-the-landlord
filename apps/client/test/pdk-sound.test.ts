@@ -83,14 +83,14 @@ describe('S6.2：跑得快音效', () => {
 
     store.applySnapshot(pdkView({ version: 2, recentActions: [{ seat: 1, cards: makeCards(6) }] }));
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_6.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_6.mp3`]);
 
     audioContexts.length = 0;
     store.applySnapshot(
       pdkView({ version: 3, recentActions: [{ seat: 1, cards: makeCards(8, 8) }] }),
     );
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_dui8.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_dui8.mp3`]);
 
     audioContexts.length = 0;
     store.applySnapshot(
@@ -100,7 +100,7 @@ describe('S6.2：跑得快音效', () => {
       }),
     );
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_liandui.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_liandui.mp3`]);
 
     audioContexts.length = 0;
     store.applySnapshot(
@@ -111,7 +111,7 @@ describe('S6.2：跑得快音效', () => {
       }),
     );
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_zhadan.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_zhadan.mp3`]);
   });
 
   it('过牌按座位：4 人 seat 3 → Buyao1；seat 1 → Buyao2', async () => {
@@ -132,7 +132,7 @@ describe('S6.2：跑得快音效', () => {
     await flushPromises();
     expect(store.view?.playerCount, '前置：4 人视图').toBe(4);
     expect(store.recentActions.at(-1)?.seat, '前置：最新动作是 seat 3').toBe(3);
-    expect(srcs()).toContain(`${AUDIO}/Woman_buyao1.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_buyao1.mp3`]);
 
     audioContexts.length = 0;
     store.applySnapshot(
@@ -147,7 +147,7 @@ describe('S6.2：跑得快音效', () => {
       }),
     );
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_buyao2.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_buyao2.mp3`]);
   });
 
   it('报单/报双：首版快照不补播，真实跃迁才播并震动', async () => {
@@ -168,7 +168,10 @@ describe('S6.2：跑得快音效', () => {
     expect(store.view, '首版快照必须真的进了 store').not.toBeNull();
     expect(srcs().slice(before), '首版快照不得补播').toEqual([]);
     expect(uniStub.calls.vibrateShort).toBe(0);
+    expect(uniStub.calls.vibrateLong, 'bootstrap 也不得走 heavy 档').toBe(0);
 
+    // 只看真实跃迁产生的 cue
+    audioContexts.length = 0;
     // 真实跃迁 2→1 ⇒ 报单（长震）
     store.applySnapshot(
       pdkView({
@@ -178,8 +181,28 @@ describe('S6.2：跑得快音效', () => {
       }),
     );
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_baojing1.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_baojing1.mp3`]);
     expect(uniStub.calls.vibrateLong).toBe(1);
+  });
+
+  it('同一快照改出牌与张数：先牌型后报单（后者打断前者）', async () => {
+    const store = useGameStore();
+    store.applySnapshot(pdkView({ cardCounts: [3, 3, 16] }));
+    mount(TablePage, { global: { plugins: [pinia] } });
+    await flushPromises();
+    audioContexts.length = 0;
+
+    store.applySnapshot(
+      pdkView({
+        version: 2,
+        cardCounts: [3, 1, 16],
+        recentActions: [{ seat: 1, cards: makeCards(6) }],
+      }),
+    );
+    await flushPromises();
+
+    expect(srcs()).toEqual([`${AUDIO}/Woman_6.mp3`, `${AUDIO}/Woman_baojing1.mp3`]);
+    expect(audioContexts[0]!.stop, '前一条被安全处置').toBeGreaterThan(0);
   });
 
   it('报双：3→2 播 Baojing2 并短震', async () => {
@@ -191,7 +214,7 @@ describe('S6.2：跑得快音效', () => {
 
     store.applySnapshot(pdkView({ version: 2, cardCounts: [3, 2, 16] }));
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/Woman_baojing2.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/Woman_baojing2.mp3`]);
     expect(uniStub.calls.vibrateShort).toBe(1);
   });
 
@@ -225,7 +248,7 @@ describe('S6.2：跑得快音效', () => {
       },
     });
     await flushPromises();
-    expect(srcs()).toContain(`${AUDIO}/MusicEx_Win.mp3`);
+    expect(srcs()).toEqual([`${AUDIO}/MusicEx_Win.mp3`]);
 
     audioContexts.length = 0;
     store.applySnapshot(
