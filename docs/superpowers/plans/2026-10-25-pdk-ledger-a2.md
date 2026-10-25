@@ -711,8 +711,8 @@ pnpm -C tools/conformance exec tsc --noEmit
 
 ### 验证证据（本机）
 
-- `pnpm exec turbo run test lint --force`：**44/44 successful，0 cached**（最终轮）。
-- 定向计数：protocol 296、currency 400、room 915、user 367、client 1488（+2 skipped）、
+- `pnpm exec turbo run test lint --force --concurrency=1`：**44/44 successful，0 cached**（最终串行轮，exit 0；并行轮曾出现一次 mock-server 端口类偶发失败，单独重跑 10/10 通过）。
+- 定向计数：protocol 296、currency 401、room 915、user 367、client 1488（+2 skipped）、
   api-gateway controller 119；均全绿。
 - `node scripts/verify-admin-static.mjs`：378 checks passed；
   `node scripts/admin-players-probe.mjs`：all checks passed（含跑得快行/身份 `—`）。
