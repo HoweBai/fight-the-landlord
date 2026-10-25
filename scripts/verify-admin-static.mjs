@@ -74,6 +74,8 @@ const APP_NEEDLES = [
   '销毁：残差 ',
   'fin-entryfee-skip-line',
   '台费漏收：笔数 ',
+  'fin-game-type',
+  'gameLabelText',
 ];
 for (const needle of APP_NEEDLES) {
   ok(app.includes(needle), `app.js 含 G12 针脚 ${JSON.stringify(needle)}`);
@@ -102,6 +104,8 @@ for (const needle of [
   'fin-entryfee-skip-line',
   'fin-cardcounter-purchases-line',
   'fin-cardcounter-consumptions-line',
+  'fin-game-type',
+  '玩法',
 ]) {
   ok(html.includes(needle), `index.html 含 G12 针脚 ${JSON.stringify(needle)}`);
 }

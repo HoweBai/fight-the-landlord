@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { DataSource } from 'typeorm';
 
 /**
@@ -34,7 +35,7 @@ import { DataSource } from 'typeorm';
  * ⚠️ 列别名（flowId/opId/…/reversed）就是真 MySQL 的列标签——DTO 映射按别名取键。
  */
 export const WALLET_OPS_SELECT_BASE =
-  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.actor, o.reason, ' +
+  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.game_type AS gameType, o.actor, o.reason, ' +
   'o.ref_id AS refId, o.trace_id AS traceId, o.burned_residue AS burnedResidue, o.burned_rake AS burnedRake, f.owner_id AS ownerId, f.owner_type AS ownerType, ' +
   'f.delta, f.balance_after AS balanceAfter, f.created_at AS createdAt, ' +
   'u.phone, u.nickname, ' +
@@ -49,17 +50,17 @@ export const WALLET_OPS_LIST_SUFFIX = ' ORDER BY f.id DESC LIMIT ?';
 /** 详情 SQL（§2.7：同 join 无过滤 + `WHERE f.op_id=? ORDER BY f.id`——升序、全 flows）。 */
 export const WALLET_OPS_DETAIL_SQL = `${WALLET_OPS_SELECT_BASE} WHERE f.op_id = ? ORDER BY f.id`;
 
-/** summary · groupBy=source（§2.7 **逐字**）。 */
+/** summary · groupBy=source（A2：按 source + game_type 展开；k 保留 source）。 */
 export const SUMMARY_BY_SOURCE_SQL =
-  'SELECT o.source AS k, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount ' +
+  'SELECT o.source AS k, o.game_type AS game_type, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount ' +
   'FROM currency_flows f JOIN currency_ops o ON o.id=f.op_id ' +
-  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY o.source ORDER BY k';
+  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY o.source, o.game_type ORDER BY k, o.game_type';
 
-/** summary · groupBy=day（§2.7 **逐字**；+08:00 偏移写法切北京天）。 */
+/** summary · groupBy=day（A2：按 day + game_type 展开；+08:00 偏移写法切北京天）。 */
 export const SUMMARY_BY_DAY_SQL =
-  "SELECT DATE(CONVERT_TZ(f.created_at,'+00:00','+08:00')) AS k, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount " +
+  "SELECT DATE(CONVERT_TZ(f.created_at,'+00:00','+08:00')) AS k, o.game_type AS game_type, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount " +
   'FROM currency_flows f JOIN currency_ops o ON o.id=f.op_id ' +
-  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY k ORDER BY k';
+  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY k, o.game_type ORDER BY k, o.game_type';
 
 /**
  * summary · burn 块（本片规格 §2.6b **逐字**）：窗口内 `source='game_settle'` 的
@@ -75,6 +76,22 @@ export const SUMMARY_BURN_SQL =
  */
 export const SUMMARY_SKIPS_SQL =
   'SELECT COUNT(*) AS cnt, COUNT(DISTINCT owner_id) AS players, COALESCE(SUM(fee_amount),0) AS amount FROM currency_entry_fee_skips WHERE created_at >= ? AND created_at < ?';
+
+/**
+ * A2 · burn 按玩法（0..n 行）。总数仍由 `SUMMARY_BURN_SQL` 提供（其"恰回一行"守卫保留）；
+ * 本查询的 residue/rake/unrecordedOps 之和必须等于总数。
+ */
+export const SUMMARY_BURN_BY_GAME_SQL =
+  'SELECT o.game_type AS k, COALESCE(SUM(o.burned_residue),0) AS residue, COALESCE(SUM(o.burned_rake),0) AS rake, COUNT(*) - COUNT(o.burned_residue) AS unrecordedOps ' +
+  "FROM currency_ops o WHERE o.source='game_settle' AND o.created_at >= ? AND o.created_at < ? GROUP BY o.game_type ORDER BY k";
+
+/**
+ * A2 · 漏收按玩法（0..n 行）。`players` 是该玩法内去重，**不能相加**成全局人数；
+ * cnt/amount 之和必须等于总数。
+ */
+export const SUMMARY_SKIPS_BY_GAME_SQL =
+  'SELECT game_type AS k, COUNT(*) AS cnt, COUNT(DISTINCT owner_id) AS players, COALESCE(SUM(fee_amount),0) AS amount ' +
+  'FROM currency_entry_fee_skips WHERE created_at >= ? AND created_at < ? GROUP BY game_type ORDER BY k';
 
 /**
  * summary · 记牌器购买（记牌器收费片）：窗口内按 kind 的笔数/人数/金额（半开窗）。
@@ -105,6 +122,7 @@ export type SummaryGroupBy = 'source' | 'day';
 /** 过滤（已由 controller 校验通过：长度/枚举/整数域——服务侧只拼 SQL）。 */
 export interface OpsListFilter {
   source?: string;
+  gameType?: GameType;
   actor?: string;
   ownerId?: string;
   /** epoch ms；`f.created_at >= from`（含边界）。 */
@@ -119,6 +137,8 @@ export interface AdminOpsRow {
   opId: number;
   actionId: string;
   source: string;
+  /** A2：游戏相关来源的玩法；非游戏来源/未标注 ⇒ null。 */
+  gameType: GameType | null;
   actor: string | null;
   reason: string | null;
   refId: string | null;
@@ -139,6 +159,8 @@ export interface AdminOpsRow {
 
 export interface SummaryRow {
   k: string;
+  /** A2：该分组行的玩法；非游戏来源/历史未标注 ⇒ null。 */
+  gameType: GameType | null;
   delta: number;
   flowCount: number;
 }
@@ -177,8 +199,12 @@ export interface SummaryResult {
   totals: { delta: number; flowCount: number };
   /** 结算销毁窗口合计（结算销毁上账片）。 */
   burn: SummaryBurn;
+  /** A2：结算销毁按玩法（0..n；residue/rake/unrecordedOps 之和 = 上面的总数）。 */
+  burnByGame: Array<SummaryBurn & { gameType: GameType | null }>;
   /** 台费漏收窗口合计（本片）。 */
   entryFeeSkips: EntryFeeSkipsSummary;
+  /** A2：台费漏收按玩法（0..n）；`players` 为该玩法内去重，不可相加。 */
+  entryFeeSkipsByGame: Array<EntryFeeSkipsSummary & { gameType: GameType }>;
   /** 记牌器购买窗口合计（记牌器收费片）。 */
   cardCounterPurchases: CardCounterPurchasesSummary[];
   /** 记牌器使用窗口合计（记牌器收费片）。 */
@@ -218,6 +244,13 @@ function toEpochMs(value: unknown, context: string): number {
 
 function toNullableString(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
+}
+
+/** A2：`game_type` 只允许 `GameType` 或 NULL；其余回值响亮抛（不静默归 ddz）。 */
+function toGameTypeOrNull(value: unknown, context: string): GameType | null {
+  if (value === null || value === undefined) return null;
+  if (isGameType(value)) return value;
+  throw new Error(`${context}：读出的玩法不是合法 GameType（收到 ${JSON.stringify(value)}）`);
 }
 
 /** NULL 透传；非空值必须是安全整数，否则抛（响亮——「读不出」不得静默成 null）。 */
@@ -271,6 +304,7 @@ function toAdminOpsRow(row: Record<string, unknown>): AdminOpsRow {
     opId: toSafeInt(row['opId'], 'currency_flows.op_id'),
     actionId: String(row['actionId']),
     source: String(row['source']),
+    gameType: toGameTypeOrNull(row['gameType'], 'currency_ops.game_type'),
     actor: toNullableString(row['actor']),
     reason: toNullableString(row['reason']),
     refId: toNullableString(row['refId']),
@@ -291,6 +325,7 @@ function toAdminOpsRow(row: Record<string, unknown>): AdminOpsRow {
 function toSummaryRow(row: Record<string, unknown>, groupBy: SummaryGroupBy): SummaryRow {
   return {
     k: groupBy === 'source' ? String(row['k']) : formatDayKey(row['k']),
+    gameType: toGameTypeOrNull(row['game_type'], 'summary.game_type'),
     delta: toNumberValue(row['delta'], 'summary.delta'),
     flowCount: toNumberValue(row['flowCount'], 'summary.flowCount'),
   };
@@ -298,6 +333,8 @@ function toSummaryRow(row: Record<string, unknown>, groupBy: SummaryGroupBy): Su
 
 @Injectable()
 export class FinanceQueryService {
+  private readonly logger = new Logger(FinanceQueryService.name);
+
   constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
 
   /**
@@ -315,6 +352,10 @@ export class FinanceQueryService {
     if (filter.source !== undefined) {
       conds.push('o.source = ?');
       params.push(filter.source);
+    }
+    if (filter.gameType !== undefined) {
+      conds.push('o.game_type = ?');
+      params.push(filter.gameType);
     }
     if (filter.actor !== undefined) {
       conds.push('o.actor = ?');
@@ -439,11 +480,65 @@ export class FinanceQueryService {
             : toNumberValue(row['players'], 'summary.cardCounterConsumptions.players'),
       };
     });
+    // A2：burn / 漏收按玩法（总数 SQL 不动；分组 SQL 0..n 行）
+    const burnByGameRows = (await this.dataSource.query(SUMMARY_BURN_BY_GAME_SQL, [
+      new Date(from),
+      new Date(to),
+    ])) as Array<Record<string, unknown>>;
+    const burnByGame: Array<SummaryBurn & { gameType: GameType | null }> = burnByGameRows.map(
+      (row) => ({
+        gameType: toGameTypeOrNull(row['k'], 'summary.burnByGame.game_type'),
+        residue: toNumberValue(row['residue'], 'summary.burnByGame.residue'),
+        rake: toNumberValue(row['rake'], 'summary.burnByGame.rake'),
+        unrecordedOps: toNumberValue(row['unrecordedOps'], 'summary.burnByGame.unrecordedOps'),
+      }),
+    );
+    const skipByGameRows = (await this.dataSource.query(SUMMARY_SKIPS_BY_GAME_SQL, [
+      new Date(from),
+      new Date(to),
+    ])) as Array<Record<string, unknown>>;
+    const entryFeeSkipsByGame: Array<EntryFeeSkipsSummary & { gameType: GameType }> =
+      skipByGameRows.map((row) => {
+        const gameType = toGameTypeOrNull(row['k'], 'summary.entryFeeSkipsByGame.game_type');
+        if (gameType === null) {
+          throw new Error('summary entryFeeSkipsByGame：game_type 不得为 NULL（列 NOT NULL）');
+        }
+        return {
+          gameType,
+          cnt: toNumberValue(row['cnt'], 'summary.entryFeeSkipsByGame.cnt'),
+          players: toNumberValue(row['players'], 'summary.entryFeeSkipsByGame.players'),
+          amount: toNumberValue(row['amount'], 'summary.entryFeeSkipsByGame.amount'),
+        };
+      });
+    const sumOf = <T>(rows: T[], pick: (row: T) => number): number =>
+      rows.reduce((acc, row) => acc + pick(row), 0);
+    // ⚠️ 这些查询是**多条自动提交语句**，不在同一快照里：活跃写流量下，总数与 by-game
+    // 分组之间可能刚好插入一笔（毫秒窗口）。守卫只作**可观测漂移**记录，**不得** 500 ——
+    // 否则管理页会间歇「加载汇总失败」。
+    if (
+      sumOf(burnByGame, (r) => r.residue) !== burn.residue ||
+      sumOf(burnByGame, (r) => r.rake) !== burn.rake ||
+      sumOf(burnByGame, (r) => r.unrecordedOps) !== burn.unrecordedOps
+    ) {
+      this.logger.warn(
+        `summary burnByGame 与 burn 总数漂移（跨查询快照窗口）：byGame=${JSON.stringify(burnByGame)} totals=${JSON.stringify(burn)}`,
+      );
+    }
+    if (
+      sumOf(entryFeeSkipsByGame, (r) => r.cnt) !== entryFeeSkips.cnt ||
+      sumOf(entryFeeSkipsByGame, (r) => r.amount) !== entryFeeSkips.amount
+    ) {
+      this.logger.warn(
+        `summary entryFeeSkipsByGame 与 entryFeeSkips 总数漂移（跨查询快照窗口）：byGame=${JSON.stringify(entryFeeSkipsByGame)} totals=${JSON.stringify(entryFeeSkips)}`,
+      );
+    }
     return {
       rows: mapped,
       totals,
       burn,
+      burnByGame,
       entryFeeSkips,
+      entryFeeSkipsByGame,
       cardCounterPurchases,
       cardCounterConsumptions,
     };

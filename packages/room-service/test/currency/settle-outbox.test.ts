@@ -124,6 +124,24 @@ describe('settle:outbox 原样重发 ⇒ 成功走完整收尾并从箱中清除
     expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }], 'doudizhu');
   });
 
+  it('A2：新条目带 gameType=paodekuai ⇒ 重发请求带同值；旧条目无该键 ⇒ 请求无该键', async () => {
+    const h = makeHarness();
+    await seedSettle(h, settleEntry({ gameType: 'paodekuai', playerCount: 3 }));
+    h.currency.apply.mockImplementation(async (req: { actionId: string; entries: typeof ENTRY }) =>
+      applyOk(req.actionId, req.entries, { alice: 1030, 'bot-int-1': 985, carol: 985 }),
+    );
+    await makeSweeper(h).sweepOnce(NOW);
+    expect(h.currency.apply.mock.calls[0]![0]).toMatchObject({ gameType: 'paodekuai' });
+
+    const legacy = makeHarness();
+    await seedSettle(legacy, settleEntry());
+    legacy.currency.apply.mockImplementation(async (req: { actionId: string; entries: typeof ENTRY }) =>
+      applyOk(req.actionId, req.entries, { alice: 1030, 'bot-int-1': 985, carol: 985 }),
+    );
+    await makeSweeper(legacy).sweepOnce(NOW);
+    expect('gameType' in (legacy.currency.apply.mock.calls[0]![0] as Record<string, unknown>)).toBe(false);
+  });
+
   it('replayed 重发同样算送达（replayed 指标；条目清除）', async () => {
     const h = makeHarness();
     await seedSettle(h, settleEntry());

@@ -23,6 +23,9 @@ import { Currency1789600000000 } from '../src/migrations/1789600000000-Currency'
 import { BurnOnOp1792022400000 } from '../src/migrations/1792022400000-BurnOnOp';
 import { EntryFeeSkips1792108800000 } from '../src/migrations/1792108800000-EntryFeeSkips';
 import { CardCounterEntitlements1795900000000 } from '../src/migrations/CardCounterEntitlements1795900000000';
+import { GameTypeOnOpsDdl1797000000000 } from '../src/migrations/1797000000000-GameTypeOnOpsDdl';
+import { GameTypeOnOpsBackfill1797000000001 } from '../src/migrations/1797000000001-GameTypeOnOpsBackfill';
+import { EntryFeeSkipsGameType1797000000002 } from '../src/migrations/1797000000002-EntryFeeSkipsGameType';
 
 const SRC_DIR = join(fileURLToPath(new URL('..', import.meta.url)), 'src');
 
@@ -323,5 +326,89 @@ describe('记牌器收费片 T5：CardCounterEntitlements 迁移 —— 三表�
       }
     }
     expect(hits).toEqual(['currency-service/CardCounterEntitlements1795900000000']);
+  });
+});
+
+describe('A2 账本玩法维度迁移（DDL 与回填分离）', () => {
+  it('① 类名/时间戳：三条新迁移不匹配 /^Currency\\d+$/，DDL 早于回填与免单列', () => {
+    const names = walk(join(SRC_DIR, 'migrations')).flatMap((file) =>
+      [...readFileSync(file, 'utf-8').matchAll(/export class (\w+)/g)].map((m) => m[1]!),
+    );
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'GameTypeOnOpsDdl1797000000000',
+        'GameTypeOnOpsBackfill1797000000001',
+        'EntryFeeSkipsGameType1797000000002',
+      ]),
+    );
+    for (const name of ['GameTypeOnOpsDdl1797000000000', 'GameTypeOnOpsBackfill1797000000001', 'EntryFeeSkipsGameType1797000000002']) {
+      expect(name, `${name} 不得匹配 /^Currency\\d+$/`).not.toMatch(/^Currency\d+$/);
+    }
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('GameTypeOnOpsDdl1797000000000')).toBeLessThan(ts('GameTypeOnOpsBackfill1797000000001'));
+    expect(ts('GameTypeOnOpsBackfill1797000000001')).toBeLessThan(ts('EntryFeeSkipsGameType1797000000002'));
+  });
+
+  it('② currency_ops DDL：up 恰一条 ALTER（列追加表尾+索引）；down 恰一条逆操作', async () => {
+    const up = recordingRunner();
+    await new GameTypeOnOpsDdl1797000000000().up(up.runner);
+    expect(up.statements).toEqual([
+      'ALTER TABLE `currency_ops` ' +
+        'ADD COLUMN `game_type` varchar(16) NULL DEFAULT NULL, ' +
+        'ADD KEY `idx_ops_game_created` (`game_type`, `created_at`)',
+    ]);
+    const down = recordingRunner();
+    await new GameTypeOnOpsDdl1797000000000().down(down.runner);
+    expect(down.statements).toEqual([
+      'ALTER TABLE `currency_ops` DROP KEY `idx_ops_game_created`, DROP COLUMN `game_type`',
+    ]);
+  });
+
+  it('③ currency_ops 回填：keyset 分批（SELECT id > ? LIMIT 500）→ 逐批 UPDATE；down no-op', async () => {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    const batches: Array<Array<{ id: number }>> = [[{ id: 1 }, { id: 2 }], [{ id: 7 }], []];
+    let batch = 0;
+    const runner = {
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql, params: [...params] });
+        if (sql.startsWith('SELECT `id` FROM `currency_ops`')) return batches[batch++]!;
+        if (sql.startsWith('UPDATE `currency_ops` SET `game_type`')) return undefined;
+        throw new Error(`未识别 SQL：${sql}`);
+      },
+    } as unknown as QueryRunner;
+
+    await new GameTypeOnOpsBackfill1797000000001().up(runner);
+    expect(calls).toEqual([
+      { sql: GameTypeOnOpsBackfill1797000000001.SELECT_BATCH, params: [0] },
+      {
+        sql: 'UPDATE `currency_ops` SET `game_type` = \'doudizhu\' WHERE `id` IN (?, ?) AND `game_type` IS NULL',
+        params: [1, 2],
+      },
+      { sql: GameTypeOnOpsBackfill1797000000001.SELECT_BATCH, params: [2] },
+      {
+        sql: 'UPDATE `currency_ops` SET `game_type` = \'doudizhu\' WHERE `id` IN (?) AND `game_type` IS NULL',
+        params: [7],
+      },
+      { sql: GameTypeOnOpsBackfill1797000000001.SELECT_BATCH, params: [7] },
+    ]);
+
+    const down = recordingRunner();
+    await new GameTypeOnOpsBackfill1797000000001().down(down.runner);
+    expect(down.statements).toEqual([]);
+  });
+
+  it('④ currency_entry_fee_skips：up/down 各一条 ALTER', async () => {
+    const up = recordingRunner();
+    await new EntryFeeSkipsGameType1797000000002().up(up.runner);
+    expect(up.statements).toEqual([
+      'ALTER TABLE `currency_entry_fee_skips` ' +
+        "ADD COLUMN `game_type` varchar(16) NOT NULL DEFAULT 'doudizhu', " +
+        'ADD KEY `idx_skips_game_created` (`game_type`, `created_at`)',
+    ]);
+    const down = recordingRunner();
+    await new EntryFeeSkipsGameType1797000000002().down(down.runner);
+    expect(down.statements).toEqual([
+      'ALTER TABLE `currency_entry_fee_skips` DROP KEY `idx_skips_game_created`, DROP COLUMN `game_type`',
+    ]);
   });
 });

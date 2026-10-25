@@ -791,7 +791,7 @@ export class RoomStartService {
         await new Promise((resolve) => setTimeout(resolve, ENTRY_FEE_RETRY_BACKOFF_MS[attempt - 1]!));
       }
       try {
-        const data = await this.currency.apply({ actionId, source: ENTRY_FEE_SOURCE, entries, refId: code });
+        const data = await this.currency.apply({ actionId, source: ENTRY_FEE_SOURCE, entries, refId: code, gameType });
         await this.writeBackFeeBalance(code, seat, ownerId, data);
         return;
       } catch (err) {
@@ -883,6 +883,7 @@ export class RoomStartService {
         baseScore,
         feeAmount: fee,
         reason,
+        gameType,
       });
       if (!inserted) {
         this.logger.debug(`entry_fee.skipped（同房重复，未新增行）${fields}`);

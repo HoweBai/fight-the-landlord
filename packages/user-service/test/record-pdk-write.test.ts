@@ -139,7 +139,7 @@ class FakePdkDb {
         id,
         room_code: String(params[0]),
         game_version: Number(params[1]),
-        ended_at: Number(params[15]),
+        ended_at: Number(params[16]),
         params: [...params],
       });
       return { insertId: id };
@@ -205,13 +205,14 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
     expect(db.ddzQueries).toEqual([]);
 
     const parent = db.records[0]!;
-    // 列序：room_code, game_version, mode, player_count, base_score, winner_seat, remaining,
+    // 列序：room_code, game_version, mode, game_type, player_count, base_score, winner_seat, remaining,
     //       multiplier, bomb_count, guan, spring, baoben_seats, score_changes, unused_cards,
     //       started_at, ended_at
     expect(parent.params).toEqual([
       'PDK001',
       3,
       'gold',
+      'paodekuai',
       3,
       15,
       0,
@@ -231,12 +232,12 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
       T0 + 180_000,
     ]);
 
-    // 玩家行：seat 升序、played_count 来自请求；昵称快照人类查 users。
+    // 玩家行：seat 升序、played_count/score_change/won 来自结算；昵称快照人类查 users。
     const bySeat = new Map(db.players.map((p) => [p.seat, p]));
     expect([...bySeat.keys()].sort((a, b) => a - b)).toEqual([0, 1, 2]);
-    expect(bySeat.get(0)!.params).toEqual([1, 0, 'u-A', 0, null, '甲', HAND16, 16, T0 + 180_000]);
-    expect(bySeat.get(1)!.params).toEqual([1, 1, 'u-B', 0, null, '乙', HAND16, 12, T0 + 180_000]);
-    expect(bySeat.get(2)!.params).toEqual([1, 2, null, 1, 'bot-1', null, HAND16, 14, T0 + 180_000]);
+    expect(bySeat.get(0)!.params).toEqual([1, 0, 'u-A', 0, null, '甲', HAND16, 16, 90, 1, T0 + 180_000]);
+    expect(bySeat.get(1)!.params).toEqual([1, 1, 'u-B', 0, null, '乙', HAND16, 12, -60, 0, T0 + 180_000]);
+    expect(bySeat.get(2)!.params).toEqual([1, 2, null, 1, 'bot-1', null, HAND16, 14, -30, 0, T0 + 180_000]);
     expect(db.players.every((p) => p.money_delta === null)).toBe(true);
   });
 
@@ -280,8 +281,8 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
 
     const res = await makeController(db).write(req);
     expect(res.ok).toBe(true);
-    expect(db.records[0]!.params[13]).toBe(UNUSED32);
-    expect(db.records[0]!.params[3]).toBe(2);
+    expect(db.records[0]!.params[14]).toBe(UNUSED32);
+    expect(db.records[0]!.params[4]).toBe(2);
   });
 
   it('4 人局：12 张（24 hex）合法', async () => {

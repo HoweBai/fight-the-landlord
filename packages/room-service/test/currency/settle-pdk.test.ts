@@ -77,6 +77,7 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
       });
 
       expect(h.currency.apply).toHaveBeenCalledTimes(1);
+      expect(h.currency.apply.mock.calls[0]![0]).toMatchObject({ gameType: 'paodekuai' });
       expect(h.broadcasts).toHaveLength(1);
       expect(h.broadcasts[0]).toMatchObject({ gameType: 'paodekuai', playerCount });
       expect(h.broadcasts[0]!.balances).toHaveLength(playerCount);

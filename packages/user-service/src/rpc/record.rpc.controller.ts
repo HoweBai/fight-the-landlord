@@ -529,14 +529,15 @@ export class RecordRpcController {
 
     const insertResult = (await manager.query(
       'INSERT INTO `game_records_pdk` (' +
-        '`room_code`, `game_version`, `mode`, `player_count`, `base_score`, `winner_seat`, `remaining`, ' +
+        '`room_code`, `game_version`, `mode`, `game_type`, `player_count`, `base_score`, `winner_seat`, `remaining`, ' +
         '`multiplier`, `bomb_count`, `guan`, `spring`, `baoben_seats`, `score_changes`, `unused_cards`, ' +
         '`started_at`, `ended_at`' +
-        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         req.roomCode,
         req.gameVersion,
         req.mode,
+        req.gameType ?? 'paodekuai',
         result.playerCount,
         req.baseScore,
         result.winnerSeats[0],
@@ -565,10 +566,12 @@ export class RecordRpcController {
         : seat.userId === null
           ? null
           : (nicknameById.get(seat.userId) ?? null);
+      const scoreChange = result.scoreChanges.find((c) => c.seat === seat.seat)?.delta ?? 0;
+      const won = seat.seat === result.winnerSeats[0] ? 1 : 0;
       await manager.query(
         'INSERT INTO `game_record_players_pdk` (' +
-          '`record_id`, `seat`, `user_id`, `is_robot`, `robot_id`, `nickname`, `hand`, `played_count`, `ended_at`' +
-          ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          '`record_id`, `seat`, `user_id`, `is_robot`, `robot_id`, `nickname`, `hand`, `played_count`, `score_change`, `won`, `ended_at`' +
+          ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           recordId,
           seat.seat,
@@ -578,6 +581,8 @@ export class RecordRpcController {
           nicknameSnapshot,
           seat.hand,
           seat.playedCount,
+          scoreChange,
+          won,
           req.endedAt,
         ],
       );

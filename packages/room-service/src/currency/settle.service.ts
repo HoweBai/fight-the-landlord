@@ -539,6 +539,7 @@ export class SettleService {
           entries,
           refId: `${roomCode}:${version}`,
           burn,
+          gameType,
         });
         return data.replayed ? { kind: 'replayed', data } : { kind: 'ok', data };
       } catch (err) {
@@ -817,6 +818,8 @@ export class SettleService {
         entries: entry.entries,
         refId: `${entry.roomCode}:${entry.gameVersion}`,
         ...burnPayload,
+        // A2：旧条目（无 gameType）不得凭空补 ddz；新条目原样带回。
+        ...(entry.gameType === undefined ? {} : { gameType: entry.gameType }),
       });
       incGame(currencySettleResultTotal, gameType, 1, { result: data.replayed ? 'replayed' : 'ok' });
       this.logger.log(

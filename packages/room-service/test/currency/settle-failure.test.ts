@@ -70,6 +70,7 @@ describe('10007（超时/传输）：同 id 同载荷重发 ≤2 次 ⇒ 仍失�
         entries: ENTRY,
         refId: 'ROOM01:7',
         burn: { residue: 0, rake: 0 },
+        gameType: 'doudizhu',
       });
     }
     await expect(resultCount('retried')).resolves.toBe(retriedBefore + 2);

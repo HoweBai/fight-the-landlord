@@ -117,6 +117,7 @@ describe('RobotFunding.ensureBots：补给观测 → 注资（规格 §7 上半�
       actionId: `rr:${BOT}:${LEVELS.target}:0`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -LEVELS.target },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target },
@@ -147,6 +148,7 @@ describe('RobotFunding.ensureBots：补给观测 → 注资（规格 §7 上半�
       actionId: `rr:${BOT}:${LEVELS.target}:5000`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -(LEVELS.target - 5000) },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target - 5000 },
@@ -303,6 +305,7 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
       actionId: `rr:${BOT}:${LEVELS.target}:${after}`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -(LEVELS.target - after) },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target - after },
@@ -321,6 +324,7 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
       actionId: `rc:${BOT}:${LEVELS.target}:${after}`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: BOT, ownerType: 'robot', delta: -(after - LEVELS.target) },
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: after - LEVELS.target },
@@ -439,6 +443,7 @@ describe('RobotFunding：水位按玩法取档位/倍率（2026-10-24 平行化�
     expect(h.currency.apply.mock.calls[0]![0].actionId).toBe(
       `rr:${BOT}:${robotWaterLevels(BOT, pdkTop).target}:0`,
     );
+    expect(h.currency.apply.mock.calls[0]![0].gameType).toBe('paodekuai');
 
     h.currency.apply.mockClear();
     await h.svc.ensureBots([BOT], 'doudizhu');

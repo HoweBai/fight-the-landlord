@@ -12,7 +12,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { CSV_BOM, CURRENCY_SOURCES, ErrCode, csvCell, isAdminUsername } from '@fight-the-landlord/protocol';
+import { CSV_BOM, CURRENCY_SOURCES, ErrCode, csvCell, isAdminUsername, isGameType } from '@fight-the-landlord/protocol';
 import { ApplyService } from '../apply/apply.service';
 import { httpException } from '../http/errors';
 import { XAdminGuard, adminActorOf, type AdminRequest } from '../http/x-admin.guard';
@@ -65,8 +65,8 @@ import {
 
 type QueryMap = Record<string, unknown>;
 
-/** ops 白名单（§2.10 = §2.7 过滤键；列序即规格列序）。 */
-export const OPS_QUERY_KEYS: readonly string[] = ['source', 'actor', 'ownerId', 'from', 'to', 'cursor', 'limit'];
+/** ops 白名单（§2.10 = §2.7 过滤键；A2 增 gameType；列序即规格列序）。 */
+export const OPS_QUERY_KEYS: readonly string[] = ['source', 'gameType', 'actor', 'ownerId', 'from', 'to', 'cursor', 'limit'];
 /** summary 白名单（§2.10：`from/to/groupBy`——summary 无 cursor）。 */
 export const SUMMARY_QUERY_KEYS: readonly string[] = ['from', 'to', 'groupBy'];
 
@@ -88,6 +88,7 @@ const LIMIT_MESSAGE = `limit 非法：须为 1–${MAX_PAGE_LIMIT} 的整数`;
 const CURSOR_MESSAGE = 'cursor 非法：须为正整数';
 const EPOCH_MESSAGE = (name: 'from' | 'to') => `${name} 非法：须为非负整数（epoch 毫秒）`;
 const SOURCE_MESSAGE = 'source 非法：须为货币来源 allowlist 之一';
+const GAME_TYPE_MESSAGE = 'gameType 非法：须为 doudizhu 或 paodekuai';
 const ACTOR_MESSAGE = 'actor 非法：须为 3–32 位小写字母/数字/._-';
 const OWNER_ID_MESSAGE = 'ownerId 非法：长度须为 1–36';
 const OP_ID_MESSAGE = 'opId 非法：须为正整数';
@@ -175,6 +176,11 @@ function parseOpsQuery(
     // 同款判定 = protocol `isAdminUsername`（非串/空串/超长/字符集外都拒）；typeof 前置 = 收窄。
     if (typeof actor !== 'string' || !isAdminUsername(actor)) throw badRequest(ACTOR_MESSAGE);
     filter.actor = actor;
+  }
+  const gameType = query['gameType'];
+  if (gameType !== undefined) {
+    if (typeof gameType !== 'string' || !isGameType(gameType)) throw badRequest(GAME_TYPE_MESSAGE);
+    filter.gameType = gameType;
   }
   const ownerId = query['ownerId'];
   if (ownerId !== undefined) {
@@ -285,11 +291,19 @@ function sendCsv(
   return csvBody(header, rows);
 }
 
+/** A2：CSV 玩法列用中文标签（JSON 保留原始 GameType）。 */
+function gameLabelText(gameType: string | null | undefined): string {
+  if (gameType === 'doudizhu') return '斗地主';
+  if (gameType === 'paodekuai') return '跑得快';
+  return '—';
+}
+
 const OPS_CSV_HEADER = [
   '流水ID',
   '操作ID',
   '幂等锚',
   '来源',
+  '玩法',
   '操作者',
   '原因',
   '关联ID',
@@ -302,7 +316,7 @@ const OPS_CSV_HEADER = [
   '昵称',
   '已冲正',
 ];
-const SUMMARY_CSV_HEADER = ['分组', '金额合计', '流水笔数'];
+const SUMMARY_CSV_HEADER = ['分组', '玩法', '金额合计', '流水笔数'];
 
 /** 列集合 = JSON 行字段去 `traceId`（§2.11 钉；null ⇒ 空单元格、boolean ⇒ true/false 由 csvCell 承担）。 */
 const opsCsvRow = (r: AdminOpsRow): unknown[] => [
@@ -310,6 +324,7 @@ const opsCsvRow = (r: AdminOpsRow): unknown[] => [
   r.opId,
   r.actionId,
   r.source,
+  gameLabelText(r.gameType),
   r.actor,
   r.reason,
   r.refId,
@@ -322,7 +337,12 @@ const opsCsvRow = (r: AdminOpsRow): unknown[] => [
   r.nickname,
   r.reversed,
 ];
-const summaryCsvRow = (r: SummaryRow): unknown[] => [r.k, r.delta, r.flowCount];
+const summaryCsvRow = (r: SummaryRow): unknown[] => [
+  r.k,
+  gameLabelText(r.gameType),
+  r.delta,
+  r.flowCount,
+];
 
 /* ------------------------------------------------------------------ *
  * 控制器（五端点；读面全角色——授权在网关，服务侧只认 X-Admin）
