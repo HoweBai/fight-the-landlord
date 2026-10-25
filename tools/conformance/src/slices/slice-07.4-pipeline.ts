@@ -778,7 +778,7 @@ export async function runSlice074Pipeline(): Promise<Checks> {
   );
   // ⚠️ B4 复评补：本文件此前**没有**任何闸看它自己的 `push.branches`（`images.yml` 的同款断言早有）。
   checks.that(
-    JSON.stringify(confOn.pushBranches) === JSON.stringify(['master', 'dev']),
+    JSON.stringify(confOn.pushBranches) === JSON.stringify(['dev', 'master']),
     `conformance.yml 自己那条 push **只**跑 master（feature 分支不跑 —— R1304 的触发分级；` +
       `少了这条，给本文件加 feature 分支触发不会有任何东西响）` +
       ` —— 实际 push.branches = ${JSON.stringify(confOn.pushBranches)}`,
