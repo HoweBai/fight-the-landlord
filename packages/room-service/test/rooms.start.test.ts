@@ -18,8 +18,8 @@ import { botsKey, readBotBindings } from '../src/rooms/rooms.bots';
 import { asRedis, createFakeRedis, type FakeRedis } from './helpers/fake-redis';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from './helpers/config-cache.stub';
 import { seat } from './helpers/room-fixture';
-import { metricValue } from './helpers/metric-readout';
-import { gamesStartedTotal } from '../src/metrics/room.metrics';
+import { metricValue, exactSeriesValue } from './helpers/metric-readout';
+import { gameStartFailuresTotal, gamesStartedTotal } from '../src/metrics/room.metrics';
 // ② T6：真链路（真 `RobotFunding` + 假 currency）的 ensure 失败传播用例。
 import { RobotFunding } from '../src/currency/robot-funding';
 // 断点④修复（Task 5 · 设计 v1.3.1 §4.4）：开局写重连记录 —— `ReconnectService` 真实例
@@ -536,6 +536,46 @@ describe('RoomStartService：补位 → game.start → playing → 通知', () =
     expect(await service.startRoom('MTRX03', { strict: true })).toBe(false);
 
     await expect(metricValue(gamesStartedTotal)).resolves.toBe(afterFirst);
+  });
+
+  it('A1：开局成功按 game_type=doudizhu 计数（精确标签）', async () => {
+    await manualRoom('A1S01', ['u1', 'u2', 'u3']);
+    const before = (await exactSeriesValue(gamesStartedTotal, { game_type: 'doudizhu' })) ?? 0;
+
+    expect(await service.startRoom('A1S01', { strict: true })).toBe(true);
+
+    expect(await exactSeriesValue(gamesStartedTotal, { game_type: 'doudizhu' })).toBe(before + 1);
+  });
+
+  it('A1：start_rpc 失败恰计一次', async () => {
+    await manualRoom('A1S02', ['u1', 'u2', 'u3']);
+    handlers.set(RPC_PATTERNS.gameStart, () => throwError(() => new Error('down')));
+    const before = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'doudizhu', reason: 'start_rpc',
+    })) ?? 0;
+
+    expect(await service.startRoom('A1S02', { strict: true })).toBe(false);
+
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'doudizhu', reason: 'start_rpc',
+    })).toBe(before + 1);
+  });
+
+  it('A1：ddz onSeats 失败计 reason=on_seats', async () => {
+    await manualRoom('A1S03', ['u1', 'u2', 'u3']);
+    const before = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'doudizhu', reason: 'on_seats',
+    })) ?? 0;
+
+    const outcome = await service.startRoomOutcome('A1S03', {
+      strict: false,
+      onSeats: async () => { throw new Error('hook down'); },
+    });
+
+    expect(outcome).toBe('fatal');
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'doudizhu', reason: 'on_seats',
+    })).toBe(before + 1);
   });
 
 /**
