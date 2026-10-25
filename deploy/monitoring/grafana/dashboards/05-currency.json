@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,33 +9,56 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1000000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1000000
+              }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "currency_robot_pool_balance",
           "instant": true,
           "legendFormat": "虚拟池余额（告警线 100 万）",
@@ -44,21 +69,43 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "currency_robot_accounts_balance_sum",
           "instant": true,
           "legendFormat": "机器人账户余额总量",
@@ -69,36 +116,59 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 300 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
       "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "currency_settle_outbox_oldest_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "max by (game_type) (currency_settle_outbox_oldest_seconds)",
           "instant": true,
-          "legendFormat": "最老条目滞留",
+          "legendFormat": "{{game_type}} 最老滞留",
           "refId": "A"
         }
       ],
@@ -106,16 +176,42 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "id": 4,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "sum by (result) (rate(currency_settle_result_total[5m]))",
-          "legendFormat": "{{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type, result) (rate(currency_settle_result_total[5m]))",
+          "legendFormat": "{{game_type}} / {{result}}",
           "refId": "A"
         }
       ],
@@ -123,14 +219,40 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "id": 5,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "sum by (result) (rate(currency_relief_total[5m]))",
           "legendFormat": "{{result}}",
           "refId": "A"
@@ -140,16 +262,40 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
       "id": 6,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "rate(currency_settle_residue_total[5m])",
-          "legendFormat": "残差销毁（金额/秒，5m 窗）",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type) (rate(currency_settle_residue_total[5m]))",
+          "legendFormat": "{{game_type}} 残差销毁",
           "refId": "A"
         }
       ],
@@ -157,16 +303,42 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
       "id": 7,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "sum by (action) (rate(currency_robot_topup_total[5m]))",
-          "legendFormat": "{{action}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type, action) (rate(currency_robot_topup_total[5m]))",
+          "legendFormat": "{{game_type}} / {{action}}",
           "refId": "A"
         }
       ],
@@ -174,16 +346,40 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
       "id": 8,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "currency_robot_ensure_failed_total",
-          "legendFormat": "累计失败（≥1 即异常）",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type) (currency_robot_ensure_failed_total)",
+          "legendFormat": "{{game_type}} 累计失败",
           "refId": "A"
         }
       ],
@@ -191,22 +387,51 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "id": 9,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "sum by (reason) (rate(entry_fee_skipped_total[5m]))",
-          "legendFormat": "漏收 {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type, reason) (rate(entry_fee_skipped_total[5m]))",
+          "legendFormat": "{{game_type}} 漏收 {{reason}}",
           "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "rate(entry_fee_conflict_total[5m])",
-          "legendFormat": "冲突（视为已收，非漏收）",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type) (rate(entry_fee_conflict_total[5m]))",
+          "legendFormat": "{{game_type}} 冲突（视为已收）",
           "refId": "B"
         }
       ],
@@ -216,9 +441,17 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["ftl", "monitoring"],
-  "templating": { "list": [] },
-  "time": { "from": "now-24h", "to": "now" },
+  "tags": [
+    "ftl",
+    "monitoring"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "资金面 / Currency",

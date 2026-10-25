@@ -82,6 +82,110 @@ const jobCount = (prom.match(/job_name:/g) ?? []).length;
 ok(jobCount >= JOBS.length, `prometheus job 数 ≥ ${JOBS.length}（实测 ${jobCount}）`);
 for (const svc of JOBS) ok(prom.includes(`job_name: ${svc}`), `prometheus 抓取 ${svc}`);
 
+
+/* ── 多玩法 A1（2026-10-25）：告警规则解析 + 看板按玩法分组 ─────────────── */
+const ALERT_FILE = join(ROOT, 'deploy/monitoring/prometheus/rules/ftl-alerts.yml');
+const EXPECTED_ALERTS = [
+  'Watchdog', 'ServiceDown', 'Http5xxRatioHigh', 'Http5xxRatioCritical',
+  'HostDiskSpaceLow', 'HostDiskSpaceCritical', 'HostMemoryAvailableLow',
+  'WsConnectionsHigh', 'WsConnectionsCritical', 'ContainerRestartFlapping',
+  'RecordsCleanupStalled', 'RecordsCleanupFailing', 'AlertDeliveryFailing',
+  'CurrencySettleOutboxStuck', 'CurrencyReconcileDrift', 'CurrencyRobotPoolLow',
+  'RiskScanStalled', 'MatchPredicateRejectionHigh',
+  'PaymentFundOpStalled', 'PaymentNotifyBadSignSpike', 'WithdrawBacklog',
+  'PaymentLateNotifyReopen', 'PaymentReconcileDiff',
+  'NotifyEmailIncomplete', 'NotifyDingtalkIncomplete',
+  'ReliefCallbackBroken', 'ReliefGrantZero',
+  'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
+];
+const alertText = readFileSync(ALERT_FILE, 'utf8')
+  .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
+ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
+ok(
+  EXPECTED_ALERTS.every((n) => alertNames.includes(n)),
+  `告警名集齐（缺 ${EXPECTED_ALERTS.filter((n) => !alertNames.includes(n)).join(',') || '无'}）`,
+);
+const ALERT_PREDICATES = {
+  GameStartFailuresHigh: ['reason="cancelled"', '>= 5'],
+  GameSettleFailures: ['phase', '> 0'],
+  SettleDroppedByGame: ['result="dropped"'],
+  RecordWriteFailuresHigh: ['kind="record_lost"', '>= 3'],
+};
+for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
+  const block = new RegExp(`- alert: ${name}[\\s\\S]*?(?=\\n\\s*- alert:|$)`).exec(alertText)?.[0] ?? '';
+  ok(block !== '', `存在告警 ${name}`);
+  ok(/^\s*expr:\s*.*game_type/m.test(block), `${name} 的 expr 含 game_type`);
+  for (const needle of needles) ok(block.includes(needle), `${name} 含关键谓词 ${needle}`);
+  ok((alertText.match(new RegExp(`- alert: ${name}\\b`, 'g')) ?? []).length === 1, `${name} 规则名唯一`);
+}
+
+const dashboardTargets = [
+  ['02-business.json', '匹配队列深度（按模式/档位）', 'A', 'match_queue_length', true],
+  ['02-business.json', '活跃房间 / 对局', 'A', 'rooms_active', true],
+  ['02-business.json', '活跃房间 / 对局', 'B', 'games_active', true],
+  ['02-business.json', '活跃房间 / 对局', 'C', 'rooms_active', false],
+  ['02-business.json', '活跃房间 / 对局', 'D', 'games_active', false],
+  ['02-business.json', '开局 / 结算速率', 'A', 'games_started_total', true],
+  ['02-business.json', '开局 / 结算速率', 'B', 'games_ended_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'A', 'robot_decisions_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'B', 'robot_decision_errors_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'C', 'robot_rule_errors_total', true],
+  ['05-currency.json', '结算补偿队列最老滞留（告警线 300s）', 'A', 'currency_settle_outbox_oldest_seconds', true],
+  ['05-currency.json', '结算结果速率（按 result / 5m：ok|replayed|retried|r2|outboxed|dropped）', 'A', 'currency_settle_result_total', true],
+  ['05-currency.json', '残差销毁增速', 'A', 'currency_settle_residue_total', true],
+  ['05-currency.json', '机器人补给/回收速率（按 action / 5m：refill|recall）', 'A', 'currency_robot_topup_total', true],
+  ['05-currency.json', '机器人 ensure 失败累计', 'A', 'currency_robot_ensure_failed_total', true],
+  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'A', 'entry_fee_skipped_total', true],
+  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'B', 'entry_fee_conflict_total', true],
+  ['05-currency.json', '虚拟池余额（告警线 100 万）', 'A', 'currency_robot_pool_balance', false],
+  ['05-currency.json', '机器人账户余额总量（僵尸余额通缩观测）', 'A', 'currency_robot_accounts_balance_sum', false],
+  ['05-currency.json', '救助速率（按 result / 5m：granted|replayed|rejected）', 'A', 'currency_relief_total', false],
+  ['04-records-backup.json', '记录删除速率', 'A', 'records_rows_deleted_total', true],
+  ['04-records-backup.json', 'records 表字节', 'A', 'records_table_bytes', false],
+  ['06-risk.json', '谓词拒绝速率（按 predicate / 5m：sameDevice|sameIp；记忆拒绝不计）', 'A', 'match_predicate_rejections_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'A', 'match_selection_rounds_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'B', 'match_no_legal_group_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'C', 'match_predicate_rejections_total', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'A', 'risk_scan_runs_total', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'B', 'risk_scan_last_success_timestamp_seconds', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'C', 'risk_scan_hits_total', true],
+  ['06-risk.json', '待审队列水位（risk_reviews_open；无自动告警——目视）', 'A', 'risk_reviews_open', false],
+  ['06-risk.json', '处置动作速率（按 action / 5m：auto_throttle|throttle|unthrottle|ban|unban|dismiss|reopen）', 'A', 'risk_actions_total', false],
+];
+const dashboards = new Map(
+  readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(join(DIR, f), 'utf8'))]),
+);
+const byPanel = new Map();
+for (const [file, title, refId, metric, expectGameType] of dashboardTargets) {
+  const dash = dashboards.get(file);
+  const panel = dash?.panels?.find((p) => p.title === title);
+  const target = panel?.targets?.find((t) => t.refId === refId);
+  ok(target !== undefined, `${file}「${title}」存在 target ${refId}`);
+  if (!target) continue;
+  const expr = String(target.expr);
+  ok(expr.includes(metric), `${file}「${title}」${refId} 引用 ${metric}`);
+  if (expectGameType) {
+    ok(/by\s*\([^)]*\bgame_type\b/.test(expr), `${file}「${title}」${refId} 用 by (game_type)（实际：${expr}）`);
+  } else {
+    ok(!/\bgame_type\b/.test(expr), `${file}「${title}」${refId} 不应出现 game_type（实际：${expr}）`);
+  }
+  const key = `${file}\u0000${title}`;
+  const expected = byPanel.get(key) ?? new Set();
+  expected.add(refId);
+  byPanel.set(key, expected);
+}
+for (const [key, expected] of byPanel) {
+  const [file, title] = key.split('\u0000');
+  const dash = dashboards.get(file);
+  const panel = dash?.panels?.find((p) => p.title === title);
+  const actual = new Set((panel?.targets ?? []).map((t) => t.refId));
+  ok(
+    actual.size === expected.size && [...expected].every((r) => actual.has(r)),
+    `${file}「${title}」target refId 集合严格等于白名单（实际 ${[...actual].join(',')}；期望 ${[...expected].join(',')}）`,
+  );
+}
+
 if (failures.length) {
   console.error(`monitoring verify: ${failures.length} FAILED / ${checks} checks`);
   for (const f of failures) console.error(`  ✗ ${f}`);
