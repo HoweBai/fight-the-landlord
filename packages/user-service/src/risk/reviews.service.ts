@@ -174,6 +174,34 @@ function deriveReviewGameType(reasons: readonly ScanReason[]): ReviewGameType | 
   return hasDevices ? 'platform' : null;
 }
 
+/** 最新行“涉及”的玩法集合：game_type 列 + reasons 兜底（旧行缺省 ddz 也能识别 PDK）。 */
+function reviewInvolvedGames(latest: LatestReviewRow): Set<GameType> {
+  const games = new Set<GameType>();
+  const column = normalizeReviewGameType(latest.game_type);
+  if (column === 'doudizhu' || column === 'mixed') games.add('doudizhu');
+  if (column === 'paodekuai' || column === 'mixed') games.add('paodekuai');
+  for (const reason of parseReasonsValue(latest.reasons)) {
+    if (reason.check === 'winRate') {
+      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+    }
+  }
+  return games;
+}
+
+/**
+ * 有效自动限流线：PDK 胜率命中 ⇒ min(50, pdkAutoThrottleScore)；否则账号级 50。
+ * pdkScore=25 时 PDK-only 25 分即武装；26–49 与 50 同效（PDK+设备 50 仍武装）。
+ */
+function autoThrottleLine(
+  reasons: readonly ScanReason[],
+  pdkAutoThrottleScore: number,
+): number {
+  const pdkHit = reasons.some(
+    (reason) => reason.check === 'winRate' && reason.detail.gameType === 'paodekuai',
+  );
+  return pdkHit ? Math.min(AUTO_THROTTLE_SCORE, pdkAutoThrottleScore) : AUTO_THROTTLE_SCORE;
+}
+
 /** 本次调用落入 `risk_actions` 的系统动作（`null` = 没动作；仅用于指标写点）。 */
 export type RiskSystemAction = 'auto_throttle' | 'unthrottle' | 'reopen' | null;
 
@@ -259,11 +287,24 @@ export class ReviewsService {
     now: number,
     unavailableGames: readonly GameType[] = [],
   ): Promise<void> {
-    void unavailableGames; // T6 冻结保护使用；T4/T5 先保留签名
+    const pdkAutoThrottleScore = this.configCache.riskPaodekuaiAutoThrottleScore();
+    const throttleLine = autoThrottleLine(reasons, pdkAutoThrottleScore);
     const action = await this.dataSource.transaction(
       async (manager): Promise<RiskSystemAction> => {
         const rows = (await manager.query(RISK_UPSERT_LOCK_SQL, [userId])) as LatestReviewRow[];
         const latest = rows[0];
+        if (latest !== undefined && unavailableGames.length > 0) {
+          const autoThrottled =
+            latest.status === 'throttled' && latest.handled_by === 'system';
+          // ② 任一玩法失败 + throttled(auto)：不得解除；仅续 Redis 旗（零 DB 写/审计）。
+          if (autoThrottled) {
+            await this.armAutoThrottle(userId, now);
+            return null;
+          }
+          // ① 最新行涉及失败玩法：零 DB 写/零审计。
+          const involved = reviewInvolvedGames(latest);
+          if (unavailableGames.some((game) => involved.has(game))) return null;
+        }
         const nextGameType =
           deriveReviewGameType(reasons) ??
           (latest === undefined ? 'platform' : normalizeReviewGameType(latest.game_type));
@@ -278,7 +319,7 @@ export class ReviewsService {
         switch (latest.status) {
           case 'open': {
             if (score < SINGLE_HIT_SCORE) return null;
-            if (score >= AUTO_THROTTLE_SCORE && this.configCache.riskAutoThrottle()) {
+            if (score >= throttleLine && this.configCache.riskAutoThrottle()) {
               // ⚠️ 终审 F1：**武装前读旗现值** —— 合法动作链（manual throttle → ban → unban
               // → 涨分 revive）后旗仍为 manual；无条件置 auto 会把人工旗改写成 auto，再被
               // 下轮 release 静默删掉（人工处置被解除 + limitSource 溯源漂移）。
@@ -317,7 +358,7 @@ export class ReviewsService {
 
           case 'throttled': {
             if (latest.handled_by === 'system') {
-              if (score >= AUTO_THROTTLE_SCORE) {
+              if (score >= throttleLine) {
                 // 续期：刷新 score/reasons + SET 重发 EX 7d；**不刷审计**。
                 await manager.query(REVIEW_UPDATE_SCORE_SQL, [
                   score,

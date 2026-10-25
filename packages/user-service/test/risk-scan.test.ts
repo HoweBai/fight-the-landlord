@@ -335,9 +335,12 @@ class FakeRedis {
 
 // ─── 配置替身 / 指标读数 ────────────────────────────────────────────────────
 
-/** ReviewsService 用（只读 riskAutoThrottle）。 */
-function makeReviewsConfig(autoThrottle = true): ConfigCacheService {
-  return { riskAutoThrottle: vi.fn(() => autoThrottle) } as unknown as ConfigCacheService;
+/** ReviewsService 用（只读 riskAutoThrottle + PDK 自动限流阈值）。 */
+function makeReviewsConfig(autoThrottle = true, pdkAutoThrottleScore = 50): ConfigCacheService {
+  return {
+    riskAutoThrottle: vi.fn(() => autoThrottle),
+    riskPaodekuaiAutoThrottleScore: vi.fn(() => pdkAutoThrottleScore),
+  } as unknown as ConfigCacheService;
 }
 
 /**
@@ -443,11 +446,11 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     let db: FakeRiskDb;
     let redis: FakeRedis;
 
-    const mkSvc = (autoThrottle = true) =>
+    const mkSvc = (autoThrottle = true, pdkScore = 50) =>
       new ReviewsService(
         db.dataSource as never,
         redis as never,
-        makeReviewsConfig(autoThrottle),
+        makeReviewsConfig(autoThrottle, pdkScore),
       );
 
     const R25: ScanReason[] = [{ check: 'winRate', detail: { games: 101, wins: 90, winRate: 90 / 101 } }];
@@ -523,6 +526,175 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       );
       await mkSvc().applyScanResult('u-A', 0, [], T0);
       expect(db.reviews[0]!.game_type).toBe('paodekuai'); // score=0 无 reasons ⇒ 保留最新行
+    });
+
+    const R_PDK: ScanReason[] = [
+      {
+        check: 'winRate',
+        detail: { gameType: 'paodekuai', playerCount: 3, games: 101, wins: 90, winRate: 90 / 101 },
+      },
+    ];
+    const R_DDZ: ScanReason[] = [
+      { check: 'winRate', detail: { gameType: 'doudizhu', games: 101, wins: 90, winRate: 90 / 101 } },
+    ];
+    const R_MIX: ScanReason[] = [...R_DDZ, ...R_PDK];
+    const R_DEV: ScanReason[] = [{ check: 'devices', detail: { devices: 5 } }];
+    const R_LEGACY_PDK: ScanReason[] = [
+      { check: 'winRate', detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 } },
+    ];
+
+    it('PDK 自动限流线：pdkScore=25 + PDK 25 ⇒ open 武装；26/49/50 ⇒ 不武装', async () => {
+      for (const [pdkScore, shouldThrottle] of [
+        [25, true],
+        [26, false],
+        [49, false],
+        [50, false],
+      ] as const) {
+        db = new FakeRiskDb();
+        redis = new FakeRedis();
+        db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, reasons: '[]' }));
+        await mkSvc(true, pdkScore).applyScanResult('u-A', 25, R_PDK, T0);
+        expect(db.reviews[0]!.status, `pdkScore=${pdkScore}`).toBe(
+          shouldThrottle ? 'throttled' : 'open',
+        );
+        expect(redis.count('set', 'risk:limit:u-A'), `pdkScore=${pdkScore}`).toBe(
+          shouldThrottle ? 1 : 0,
+        );
+        expect(db.actionsOf('u-A').length, `pdkScore=${pdkScore}`).toBe(shouldThrottle ? 1 : 0);
+      }
+    });
+
+    it('PDK 自动限流线：DDZ-only / device-only 不触发；mixed 触发', async () => {
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, reasons: '[]' }));
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_DDZ, T0);
+      expect(db.reviews[0]!.status).toBe('open');
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(0);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, reasons: '[]' }));
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_DEV, T0);
+      expect(db.reviews[0]!.status).toBe('open');
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(0);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, reasons: '[]' }));
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_MIX, T0);
+      expect(db.reviews[0]!.status).toBe('throttled');
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(1);
+    });
+
+    it('首轮新建行不武装（⚙️20）：无行 + PDK 25 + pdkScore=25 ⇒ 只 INSERT open', async () => {
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_PDK, T0);
+      expect(db.reviews[0]!.status).toBe('open');
+      expect(db.actions).toHaveLength(0);
+      expect(redis.calls.filter((c) => c.key === 'risk:limit:u-A')).toHaveLength(0);
+    });
+
+    it('throttled(auto)：PDK 25 + pdkScore=25 ⇒ 续旗；PDK 消失 + DDZ 25 ⇒ 回 50 线解除', async () => {
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(
+        mkReview({ id: 9, status: 'throttled', score: 25, handled_by: 'system', reasons: '[]' }),
+      );
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_PDK, T0);
+      expect(db.reviews[0]!.status).toBe('throttled');
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(1);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(
+        mkReview({ id: 9, status: 'throttled', score: 25, handled_by: 'system', reasons: '[]' }),
+      );
+      await mkSvc(true, 25).applyScanResult('u-A', 25, R_DDZ, T0);
+      expect(db.reviews[0]!.status).toBe('open');
+      expect(redis.count('del', 'risk:limit:u-A')).toBe(1);
+    });
+
+    it('riskAutoThrottle=false 只阻止新武装，不阻止 throttled(auto) 续旗', async () => {
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(
+        mkReview({ id: 9, status: 'throttled', score: 25, handled_by: 'system', reasons: '[]' }),
+      );
+      await mkSvc(false, 25).applyScanResult('u-A', 25, R_PDK, T0);
+      expect(db.reviews[0]!.status).toBe('throttled');
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(1);
+    });
+
+    it('冻结①：最新行涉及失败玩法 ⇒ db.queries 恰为锁定读、零审计、零旗', async () => {
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, game_type: 'paodekuai' }));
+      await mkSvc().applyScanResult('u-A', 25, R_PDK, T0, ['paodekuai']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+      expect(redis.calls).toHaveLength(0);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, game_type: 'mixed' }));
+      await mkSvc().applyScanResult('u-A', 25, R_MIX, T0, ['doudizhu']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+    });
+
+    it('冻结①：最新行不涉及失败玩法 ⇒ 正常更新；旧行 reasons 含 PDK 仍冻结', async () => {
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, game_type: 'doudizhu' }));
+      await mkSvc().applyScanResult('u-A', 25, R_DDZ, T0, ['paodekuai']);
+      expect(db.queries.length).toBeGreaterThan(1);
+      expect(db.reviews[0]!.score).toBe(25);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'doudizhu',
+          reasons: JSON.stringify(R_LEGACY_PDK),
+        }),
+      );
+      await mkSvc().applyScanResult('u-A', 25, R_LEGACY_PDK, T0, ['paodekuai']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+    });
+
+    it('冻结②：任一玩法失败 + throttled(auto) ⇒ 不解除，仅续旗 EX 7d，零 DB 写/审计', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'throttled',
+          score: 25,
+          handled_by: 'system',
+          game_type: 'doudizhu',
+        }),
+      );
+      await mkSvc().applyScanResult('u-A', 0, [], T0, ['paodekuai']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.reviews[0]!.status).toBe('throttled');
+      expect(db.actions).toHaveLength(0);
+      const set = redis.calls.find((c) => c.op === 'set' && c.key === 'risk:limit:u-A');
+      expect(set?.args).toEqual([expect.any(String), 'EX', 604800]);
+    });
+
+    it('冻结②：throttled(auto)+涉及失败玩法+score=0 ⇒ 仍只续旗，不 dismiss', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'throttled',
+          score: 25,
+          handled_by: 'system',
+          game_type: 'paodekuai',
+        }),
+      );
+      await mkSvc().applyScanResult('u-A', 0, [], T0, ['paodekuai']);
+      expect(db.reviews[0]!.status).toBe('throttled');
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+      expect(redis.count('set', 'risk:limit:u-A')).toBe(1);
     });
 
     it('无行 + score=50 ⇒ 仍只 INSERT open（⚙️20：无条目 ⇒ 不置旗、不迁 throttled）', async () => {
