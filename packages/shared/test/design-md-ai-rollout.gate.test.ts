@@ -147,6 +147,11 @@ const NEW_ENVS = [
   'PAY_CHANNEL_PULL_TOKEN',
   'NOTIFY_CHANNEL_PULL_TOKEN',
   'AD_CHANNEL_PULL_TOKEN',
+  // 代理分润（2026-10-26）：会话签名钥、自玩 HMAC 钥、currency→user 两条边的地址。
+  'AGENT_JWT_SECRET',
+  'AGENT_PHONE_HMAC_KEY',
+  'USER_SERVICE_RPC_HOST',
+  'USER_SERVICE_RPC_PORT',
 ] as const;
 
 describe('J18：docs/design.md 的片②修订机械闸（片⑦/T17 起第 ② 条极性已翻转；时点纪律见文件头）', () => {

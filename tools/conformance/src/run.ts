@@ -44,6 +44,7 @@ import { runSlice26 } from './slices/slice-26-client-gate';
 import { runSlice27 } from './slices/slice-27-idle-trustee';
 import { runSlice28 } from './slices/slice-28-card-counter';
 import { runSlice29 } from './slices/slice-29-paodekuai';
+import { runSlice30 } from './slices/slice-30-agent';
 
 interface Case {
   title: string;
@@ -119,6 +120,9 @@ const CASES: Record<string, Case> = {
   // 多玩法片（S7.3）：追加在末尾（顺序即 CI 切片循环与 full 回填顺序）。
   // 本片经管理面开启跑得快（收尾还原），用独立 oracle 打完整一局并核对结算/记录。
   'slice-29-paodekuai': { title: '跑得快（真栈：匹配/开局/出牌过牌/结算/记录/房间过滤/风控扫描）', run: runSlice29 },
+  // 代理分润片（2026-10-26，任务 15）：追加在末尾。真库证明 SAVEPOINT/额度首建并发/
+  // 水位结算 SUM+hash 复核/关闭期对账；收尾恢复两开关/表名/冻结态。
+  'slice-30-agent': { title: '代理分润（真栈：绑定/计佣链/自玩冻结/并发/SAVEPOINT/结算/调账/对账/鉴权）', run: runSlice30 },
 };
 
 function printUsage(): void {
