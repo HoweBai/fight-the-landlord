@@ -181,7 +181,7 @@ B 组要收口 2/4 人落地后暴露的风控与金币场缺口。逐条对应�
 | D18 | 列表 `REVIEWS_SELECT_BASE` 增加 `game_type`；API `RiskReviewItem.gameType`；筛选 `doudizhu`/`paodekuai` 用 `IN (…,'mixed')`，`mixed`/`platform` 用等值；controller 白名单 `gameType`，非法值 400。**部署顺序：gateway + user-service 先、admin 后**；新 admin 遇 400 显示“服务端尚未支持玩法筛选，请先升级 user-service”，不静默回退 | 语义 = “包含该玩法”；mixed 在两玩法筛选里都出现；旧服务窗口不崩但明确提示 |
 | D19 | gateway `RISK_REVIEWS_QUERY_KEYS` 加 `gameType`；admin UI 增加玩法筛选下拉 + 表格“玩法”列 + `gameType` 标签；**表头、行、详情 `colSpan` 三处同步 10 列** | 端到端可用；静态闸断言表头/colSpan，防 UI 假绿 |
 | D20 | 新指标 `risk_scan_sql_failures_total{scope}`（scope=doudizhu|paodekuai|device）；单玩法失败 catch 计数+ERROR 日志；设备失败计数后 rethrow；两玩法都失败 throw | U6；有界标签；失败可见 |
-| D21 | 冻结保护（两条正交规则）：① 锁定读后，若最新行的 `game_type ∪ reasons` 涉及任一失败玩法 ⇒ **零 DB 写、零审计**；② **只要有任一玩法 SQL 失败**，最新行为 `throttled(auto)` 时 **不得走解除分支**：跳过 DB 写/审计，但**仅续期 Redis `risk:limit` 旗（EX 7d）**；续期失败按单用户失败隔离（warn）。`platform`/无最新行不因涉及玩法冻结，但 ② 仍适用 | ① 防样本缺失导致误判 0 分/误 dismiss；② 防 7d TTL 到期静默解限，也防“latest 只写 ddz+device、隐藏 PDK 新命中”被误释放 |
+| D21 | 冻结保护（两条正交规则）：① 锁定读后，若最新行的 `game_type ∪ reasons` 涉及任一失败玩法 ⇒ **零 DB 写、零审计**；② **只要有任一玩法 SQL 失败**，最新行为 `throttled(auto)` 时 **不得走解除分支**：跳过 DB 写/审计，但**仅续期 Redis `risk:limit` 旗（EX 7d）**；续期失败按单用户失败隔离（warn），若全员失败仍按既有 F7 系统性失败处理（runs fail）。**无最新行不触发①；② 自然不成立**（没有 throttled(auto) 可续）；`platform` 最新行若为 `throttled(auto)` 才适用②。 | ① 防样本缺失导致误判 0 分/误 dismiss；② 防 7d TTL 到期静默解限，也防“latest 只写 ddz+device、隐藏 PDK 新命中”被误释放 |
 | D22 | 单玩法失败轮仍记 `runs{ok}` 并刷 `last_success`；由新告警 `RiskScanSqlFailures` 覆盖；`degradedGames` 仅作局部变量 + ERROR 日志，**不改变 `RiskScanRoundResult` 形状**（避免无关断言漂移） | 轮次确实完成（部分降级）；不改变 `runs` 值域与看板；失败由指标/日志/告警可见 |
 | D23 | 告警 `RiskScanSqlFailures`：`sum by (scope) (increase(risk_scan_sql_failures_total[10m])) > 0`，for 5m，warning；告警总数 31→32、类 28→29；带 runbook：先看 `scope` 对应的表/权限，再看扫描 ERROR 日志与 `risk_scan_last_success_timestamp_seconds`。**同步 slice-16/18/24 的 31→32 硬编码** | B 必需的可观测面；不改 A1 看板；slice-18/24 也有规则数断言 |
 | D24 | 14003 保持 `baseScore × entryMultiplier`；不改 `message.router` 生产代码；补 PDK 2/3/4 单测与真栈断言 | U4；输光截断是既有安全网 |
@@ -392,8 +392,8 @@ async applyScanResult(
   - `open` 的自动限流条件：`score >= autoThrottleLine(reasons, pdkScore)`；
   - `throttled(auto)` 的续期/解除条件同线；
   - 插入用 `deriveReviewGameType(reasons) ?? 'platform'`。
-- `riskAutoThrottle()` 开关仍总闸。
-- 旗续期失败 ⇒ 该用户本轮按单用户失败隔离（warn），不拖垮整轮；下一轮再试。
+- `riskAutoThrottle()` 开关**仅管新自动限流武装**（open 分支）；已有 `throttled(auto)` 的续期/解除不受它阻止（既有语义，B 不改）。
+- 旗续期失败 ⇒ 该用户本轮按单用户失败隔离（warn），不拖垮整轮；**若全员都是冻结 auto 且续旗全失败，仍按既有 F7 系统性失败处理**（runs fail、`RiskScanStalled` 可见）。不新增独立指标（另立片）。
 
 ### 5.6 管理详情与列表（`risk/admin-risk.service.ts`）
 
@@ -448,7 +448,8 @@ export const RISK_STATS_PDK_SQL =
   - pdk 风控页签含 9 键；新键 step/suffix；旧键备注含“回退”；
   - `renderRiskDetail` 块内含 `byPlayerCount` 与 `分人数`；
   - `riskQuery`/`buildRiskRow` 含 `gameType`；
-  - `admin/index.html` 表头恰 10 个 `<th>`；`buildRiskRow` 详情 `colSpan` 为 10；
+  - `admin/index.html` 表头恰 10 个 `<th>`；`toggleRiskDetail` 块内 `td.colSpan = 10`
+    （**不是** `buildRiskRow`；`colSpan` 在展开函数里）；
   - notes 覆盖新 7 键。
 
 ### 5.8 监控（B 新指标/告警）
@@ -498,11 +499,11 @@ export const riskScanSqlFailuresTotal = createCounter(
   （robot-funding + settle-pdk 2/4），真栈若时间允许加一局 2 人真人 + 机器人补位并断言
   afterSettle 补给。
 - ④ 风险扫描：用 `record.write` 注入**每个 2/3/4 桶至少 2 条纯人类胜局**（严格
-  `games > minGames=1` 需要 ≥2 局），另对 2 人桶加 1 条含机器人座的整局；
+  `games > minGames=1` 需要 ≥2 局），**并对每个 2/3/4 桶各加 1 条含机器人座的整局**；
   设置 per-count minGames=1、threshold=0.5；重启 user-service；
   轮询 `GET /api/admin/risk/users/:id` 与 `GET /api/admin/risk/reviews?gameType=...`：
   - reasons 含 `playerCount` 且按 2/3/4 升序；`stats.byGame.paodekuai.byPlayerCount` 正确；
-  - 含机器人座的整局不计入：2 人桶 games=2（不是 3）、wins=2；
+  - 含机器人座的整局不计入：每个 2/3/4 桶 games=2（不是 3）、wins=2；
   - `gameType=paodekuai` 筛选能看到 mixed/paodekuai 行；`doudizhu` 不含纯 PDK 行；
     `mixed` 精确筛选命中“DDZ+PDK 双命中”用户（该用户注入 2 条 DDZ 纯人类胜局 +
     2 条 PDK 3 人胜局）；
@@ -707,3 +708,15 @@ export const riskScanSqlFailuresTotal = createCounter(
 | L9 | 低 | 新告警无 runbook；`risk.metrics.ts` 文件头“四个指标”未同步 | **已修**：D23/§5.8：告警 runbook；metrics 注释同步 |
 
 > 修订后进入计划阶段前，需再复核上表处置是否全部落到 §4–§7 与 §9。
+
+### 10.2 第二轮复核（2026-10-26，独立 reviewer）
+
+结论：**可进入计划**（无仍阻断/仍高项；第一轮 16 条处置已核对落地）。剩余 5 条计划/TDD 收口项已并入：
+
+| # | 发现 | 处置 |
+|---|---|---|
+| 1 | D26 说“每个 2/3/4 桶 + 1 条机器人局”，§5.9 只写 2 人桶 | 已改 §5.9 ④：每个 2/3/4 桶各加 1 条机器人局，断言各桶 games=2 |
+| 2 | §5.7 colSpan 校验指向 `buildRiskRow`，实际在 `toggleRiskDetail` | 已改 §5.7/§5.10：校验 `toggleRiskDetail` 块 |
+| 3 | D21 ② 与 `riskAutoThrottle()`“总闸”措辞冲突 | 已改 §5.5：开关仅管 open 新武装，不阻止已有 auto 续期/解除（既有语义） |
+| 4 | 续旗失败与 F7 全量失败语义未写清 | 已改 D21/§5.5：单用户隔离开；全员失败仍按 F7 runs fail；不新增独立指标 |
+| 5 | “无最新行……② 仍适用”自相矛盾 | 已改 D21：无最新行不触发①，②自然不成立 |
