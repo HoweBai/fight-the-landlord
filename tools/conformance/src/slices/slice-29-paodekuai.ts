@@ -97,7 +97,7 @@ function craftPdkWinningRecord(
         userId: winnerUserId,
         isRobot: false,
         robotId: null,
-        hand: encodeHand(sampleCards(0, 16)),
+        hand: encodeHand(sampleCards(0, 16), 16),
         playedCount: 16,
       },
       {
@@ -105,7 +105,7 @@ function craftPdkWinningRecord(
         userId: null,
         isRobot: true,
         robotId: 'bot-s29-pdk-1',
-        hand: encodeHand(sampleCards(16, 16)),
+        hand: encodeHand(sampleCards(16, 16), 16),
         playedCount: 12,
       },
       {
@@ -113,7 +113,7 @@ function craftPdkWinningRecord(
         userId: null,
         isRobot: true,
         robotId: 'bot-s29-pdk-2',
-        hand: encodeHand(sampleCards(32, 16)),
+        hand: encodeHand(sampleCards(32, 16), 16),
         playedCount: 9,
       },
     ],

@@ -388,7 +388,10 @@ export async function runSlice14(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     step('C8：ON 窗 ⇒ 造在途房 ⇒ 置 false ⇒ 三面断言（匹配正对照在 T7 单测）');
     await setFriendRooms(true, user.accessToken);             // ON 窗（轮询至建房 code 0）
-    const c8Created = await postJson<{ code: string }>('/api/rooms', { mode: 'random' }, user.accessToken);
+    // 平行化（2026-10-24，spec §5.3）：入座闸只对**好友房（practice）**生效 ——
+    // 全局检查已移除（否则 ddz 关 + pdk 开仍被拒）。⇒ 在途房必须是 practice，
+    // 用 random 房测「关闸后占座被拒」会恒绿失真（random 房本来就不走这道闸）。
+    const c8Created = await postJson<{ code: string }>('/api/rooms', { mode: 'practice' }, user.accessToken);
     checks.eq(c8Created.body?.code, ErrCode.OK, 'C8① ON 窗建房 code 0');
     const c8Room = c8Created.body?.data?.code ?? '';
     checks.that(typeof c8Room === 'string' && c8Room !== '', `C8① 在途房必须有 code —— 实际 ${JSON.stringify(c8Created.body)}`);
