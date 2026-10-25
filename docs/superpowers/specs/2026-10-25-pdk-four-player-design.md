@@ -45,25 +45,32 @@
 
 ### 4.1 protocol / shared：动作窗口
 
-- `packages/protocol/src/views.ts`（或 pdk 类型模块）新增：
+- 新叶子模块 `packages/protocol/src/pdk/window.ts`（**无 import**，避免
+  views↔validate 运行时环）新增：
   ```ts
   /** pdk 出站 recentActions 窗口：要容纳「一次出牌 + 其余所有玩家过牌」。 */
   export function pdkRecentActionsWindow(playerCount: number): number {
     return Math.max(2, playerCount - 1);
   }
   ```
+  由 `packages/protocol/src/index.ts` 导出；validate 与 game-service 都从本包引用。
 - `validateOutbound` 的 pdk 分支：`recentActions.length > pdkRecentActionsWindow(playerCount)` ⇒ 抛；
   错误文案带 `playerCount` 与窗口值。斗地主分支仍 `≤ RECENT_ACTIONS_WINDOW`。
 - `packages/shared/src/ddz/recent.ts`：`projectRecentActions(session, windowSize = RECENT_ACTIONS_WINDOW)`；
   pdk 视图构建（`games/pdk/view.ts`）传 `pdkRecentActionsWindow(session.playerCount)`；
   斗地主视图构建不传（默认 2）。
+- **窗口 3 对 4 人足够**：A 出 + B/C 过、轮到 D ⇒ 窗口含 A 的目标；A/B/C 全过后轮回到 A ⇒
+  窗口只剩三次过牌，此时 A 本就该首出（无需目标）。斗地主的
+  「窗口有非 null ⟺ lastPlayedHand 非空」不变式**不扩展到 pdk 4 人**；pdk 的首出/跟牌
+  以服务端 `canPass` 与「窗口无非 null ⇒ 首出」为准。
 - `views.ts` 注释改为「斗地主窗口 2；pdk 按人数（2/3→2、4→3）」；
   `docs/design.md` 的窗口说明同步。
 - 测试：
-  - protocol：`pdkRecentActionsWindow` 2/3/4 → 2/2/3；4 人视图 3 条通过、4 条拒绝；
+  - protocol：窗口函数 2/3/4 → 2/2/3；4 人视图 3 条通过、4 条拒绝；
+    **3 人视图 3 条拒绝**（窗口 2）、2 人视图 3 条拒绝；
   - shared：4 人「A 出、B/C 过」投影含 A 的非 null 目标、窗口 3；
-  - game-service：4 人 pdk view 的 recentActions 长度 3；
-  - client：4 人 hint/target/passOnly 在「出牌 + 两次过牌」后仍按目标跟牌。
+  - game-service：4 人 pdk view 的 recentActions 长度 3、3 人最多 2；
+  - client：4 人 PdkBoard 在「出牌 + 两次过牌」后仍按目标跟牌（见 §6）。
 
 ### 4.2 客户端能力表与余额投影
 
@@ -76,6 +83,7 @@
   });
   ```
   同步注释（不再写「三座」）。
+  余额显示测试锚 `.seat__coin-value` 文本，金额取 < 10 万（避免「x.x万」缩写）。
 - 头注释同步：`PdkBoard`、`table.vue`、`gameModes.ts` 不再写「首版只做 3 人」。
 
 ### 4.3 PdkBoard 4 人布局
@@ -112,8 +120,10 @@
   - `setup.disable()` 一并复位 `nonThreePlayerEnabled=false`（与 2 人闸同纪律）。
 - `browser-e2e.mjs`：新增 `--scenario pdk4`（一人 + 三机器人）：
   - `setupPdkEnabled(4)` 开 `enabled` + `nonThreePlayerEnabled`，`POST /api/rooms` 4 人轮询；
+    此时 `/api/config` 的 `supportedPlayerCounts=[3,4]`，脚本按文本定位「4 人」，**不**断言三选项；
   - 选「4 人」→ 匹配（30s 补位窗口）→ 手牌 **12**（不再写死 16）、`.pdk__seat` 恰 3、
-    `.pdk__seat--top` 存在且 bounding-box 在左右座上方 → 出牌/过牌 → 结算 4 行 → 返回大厅；
+    `.pdk__seat--top` 存在且 bounding-box 在左右座上方 → 出牌/过牌（`canPass` 读
+    `pdkCanPass`，不用窗口非空推断）→ 结算 4 行 → 返回大厅；
   - 收尾还原两键；现有 pdk 场景的 handSize/人数选择/清理全部参数化（2/3/4 共用）。
 
 ### 4.6 文档与后台
@@ -187,3 +197,9 @@
 | 低 | 新 spec 未标注取代旧 D6/D10 | 文首已写 |
 | 低 | 4 人金币场可达 + 余额缺陷 | D7 修余额；真栈仍登记 |
 | 低 | PdkBoard 头注释未列 | §4.2 同步 |
+
+**计划审查补充**（2026-10-25）：窗口函数放**叶子模块** `protocol/src/pdk/window.ts`
+（views↔validate 运行时环）；T2/T3 顺序调整为先 PdkBoard 4 人布局、再能力表/余额；
+protocol 增加 2/3 人负向回归（3 条必须拒）；4 人 hint/target 用例落 `pdk-board.test.ts`
+（`pdk-hint` 不吃 recentActions）且用「含 ≤目标的牌」防假绿；余额断言锚 `.seat__coin-value`；
+e2e 按文本选「4 人」且 `canPass` 读 `pdkCanPass`。
