@@ -41,15 +41,15 @@
 | D4 | 服务端逐人数判定：2→two、3→恒真、4→nonThree；其余按 `GameMeta` 拒绝 | 拒绝码沿用 `12012`（该玩法暂不支持该人数） |
 | D5 | `/api/config` 的 `games.paodekuai.supportedPlayerCounts` 按两闸派生：`[3]`/`[2,3]`/`[3,4]`/`[2,3,4]` | 与现有客户端配置形状兼容，`CLIENT_CONFIG_KEYS` 仍 21 键 |
 | D6 | 客户端新增 UI 能力表：斗地主 `[3]`、跑得快 `[2,3]`；与服务端 `supportedPlayerCounts` **取交集** | 服务端开 4 人时客户端也不展示；4 人片只改能力表 |
-| D7 | 入口 = 开始游戏页「人数」切换；交集长度 >1 才出现；默认 3；存 store、跨页保留 | 用户裁决；不改大厅 IA |
+| D7 | 入口 = 开始游戏页「人数」切换；交集长度 >1 才出现；默认 3；存 store、跨页保留 | 用户裁决；不改大厅 IA。页面不主动拉配置：停留期间配置变化由 getter 收敛，回大厅/重进后刷新 |
 | D8 | `room.match` 与好友房 `POST /api/rooms`（`rest.createRoom`）都带有效人数；斗地主恒 3 | 服务端已校验 |
-| D9 | 「再来一局」先把上一局人数（`store.playerCount`）写回选择（仅在交集内），再走唯一 `match()` | 防好友房 2 人局后按 3 人重匹配；选择器高亮同步 |
+| D9 | 「再来一局」先把上一局人数（`store.playerCount`）写回选择（仅在交集内），再走唯一 `match()`，由 `effectivePlayerCount` 决定实际值 | 防好友房 2 人局后按 3 人重匹配；选择器高亮同步；闸已关时回落 3 |
 | D10 | 牌桌按 `view.playerCount` 渲染：2=单对手座；3=现布局；4=提示并回大厅 | **牌桌只信视图，不信选择** |
 | D11 | 结算/记录层零改动（PdkSettlement 数据驱动）；历史项显示「N 人局」 | 2 行结算天然支持 |
 | D12 | 机器人沿用现有 `freeBotFillEnabled`/`goldBotFillEnabled` | 缺 1 补 1；不加新键 |
 | D13 | 测试服先开 `enabled` + `twoPlayerEnabled`；正式环境另行发版 | `nonThreePlayerEnabled` 保持 false |
 | D14 | 在队票遇到人数闸关闭 ⇒ 本桶全部 `failMatch`（12007），不留在队里等 TTL | 防 `create` 抛 12012 穿透扫描轮、票被静默孤儿化 |
-| D15 | 12012 文案改为 **message-first**，并加入 `ROOM_LOCAL_CODES` | 玩家能看到「暂不支持该人数」而不是统一「玩法未开放」；REST 建房不被登出 |
+| D15 | 12012 文案改为 **message-first**，并加入 `ROOM_LOCAL_CODES` | 玩家能看到「暂不支持该人数」而不是统一「玩法未开放」；REST 建房时就地提示（12012 的 `CLIENT_ACTION` 本就是 TOAST，不存在登出问题） |
 
 ## 4. 实现设计
 
@@ -105,6 +105,9 @@ if (!this.configCache.supportsRoomPlayerCount(queue.gameType, queue.playerCount)
 在队 2 人遇闸关 ⇒ 一次 `failMatch`、票删除、无建房、扫描轮不抛。
 **测试桩** `test/helpers/config-cache.stub.ts` 必须加 `paodekuaiTwoPlayerEnabled`
 并同步 `supportsRoomPlayerCount`（`as unknown as` 会绕过结构校验，缺了就是假绿）。
+既有夹具同步：`test/match-player-count.test.ts` 的 `enablePdk` 补开 two 闸；
+`test/record-pdk.test.ts` 的 2 人建房用例显式开 two；`test/match-queue-key.test.ts`
+两个 2 人用例补开 two 闸（否则语义被新闸抽空）。
 
 ### 4.4 admin
 
@@ -140,8 +143,8 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 - getter `activePlayerCounts`：客户端能力 ∩ 服务端能力，升序；空则 `[3]`。
 - getter `effectivePlayerCount`：选中值在交集内则用之；否则 3 在交集内取 3；否则交集首项。
 - action `setSelectedPlayerCount(n)`：仅接受交集内的值。
-- 配置热更新后由上述 getter 自动收敛。开始游戏页挂载时调用一次
-  `refreshClientConfig()`（非阻塞），避免停留期间配置变化不收敛。
+- 配置热更新后由上述 getter 自动收敛；开始游戏页**不主动拉配置**（避免覆盖页面现有配置夹具），
+  配置变化在回大厅/重进后生效，服务端 12012 为最终兜底。
 
 **开始游戏页**（`pages/game/game.vue`）：
 
@@ -167,7 +170,10 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 **牌桌壳**（`pages/table/table.vue`）：
 
 - 用 `CLIENT_TABLE_PLAYER_COUNTS[gameType].includes(playerCount)` 判定；
-  不支持的人数（含 4）⇒ 先**尽力** `room.leave`（失败不阻塞）→ 原提示 → `reset()` + 回大厅。
+  不支持的人数（含 4）⇒ 先**尽力**退出房间，再原提示 → `reset()` + 回大厅。
+  退出必须照 `doLeave` 成例：`sendQueued('room.leave', { roomCode: store.roomCode }, 5)`
+  + `raceTimeout(…, 5000)` + 不阻塞导航（`room.leave` 载荷**必须带 roomCode**；
+  裸 `await send('room.leave', {})` 既不释放座位也可能永久挂起）。
 - 斗地主同理（只接受 3）。
 
 **PdkBoard**：
@@ -179,8 +185,9 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
   （两处 `v-if` 必须同时存在，防幽灵座位）。
 - 中段加 `pdk__mid--two` 修饰类，CSS 让左座 + 中央区均衡占宽。
 - 手牌/动作栏/托管/结算逻辑不变；3 人布局零变化。
-- 结构断言：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`；
-  3 人 ⇒ `.pdk__seat` 恰 2（`.pdk__me` 是我的座位，不计入）。
+- 结构断言：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`、无 `.pdk__play-col--right`、
+  `.turn-timer` 恰 1；3 人 ⇒ `.pdk__seat` 恰 2、`.turn-timer` 恰 2
+  （`.pdk__me` 是我的座位，不计入）。
 
 **历史页**：pdk 卡片显示「N 人局」。
 
@@ -189,9 +196,10 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 ### 4.6 conformance / e2e
 
 - `slice-29-paodekuai` 增加 2 人组：
-  - **生效观测点**：经管理面 PUT `twoPlayerEnabled=true` 后，轮询
-    `POST /api/rooms` + `playerCount=2` 得 `code 0`（沿用 pdk 开关的「行为生效」纪律，
-    不轮询 `/api/config`）；
+  - **负对照前显式 PUT `twoPlayerEnabled=false`**（防上一轮残留 true）；负对照放在
+    `enablePdk` 之后（好友房/玩法闸在前，否则只得到 12006）；
+  - **生效观测点**：经管理面 PUT `twoPlayerEnabled=true` 后用**全新账号**轮询
+    `POST /api/rooms` + `playerCount=2` 得 `code 0`（`enablePdk` 探测账号已建房，复用会撞 12011）；
   - 负对照：关闭时 2 人建房/匹配 ⇒ 12012 **且 message 含「人数」**（与「玩法未开放」区分）；
   - 两账号以 `playerCount=2` 匹配：`room.matched.playerCount===2`、双方各 16 张、
     扣牌不出站；驱动到终局：零和结算、`winnerSeats`、记录 `playerCount=2`、旧查询不含 pdk；
@@ -217,12 +225,12 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 |---|---|
 | 旧服务端无 `games` | 不出现人数切换；恒 3 |
 | 开局前两闸被关（无在队票） | 新匹配/建房 12012；message-first 显示「暂不支持该人数」 |
-| 关闸时仍有在队票 | `processQueue` 整桶 `failMatch` ⇒ 12007「当前无匹配的玩家」，不留孤儿 |
+| 关闸时仍有在队票 | `processQueue` 整桶 `failMatch` ⇒ 12007，客户端文案为固定「当前无匹配的玩家」（服务端 message 只进日志） |
 | 断线重进 2 人局 | 按 `view.playerCount` 渲染，与本地选择无关 |
-| 直连 API 造 4 人房后客户端加入 | 牌桌壳尽力 `room.leave` → 提示「暂不支持该人数」→ 回大厅 |
+| 直连 API 造 4 人房后客户端加入 | 牌桌壳按 `doLeave` 成例带 `roomCode` 尽力退房 → 提示「暂不支持该人数」→ 回大厅 |
 | 好友房 | 建房带当前有效人数；2 人闸关时 12012 就地提示 |
-| 再来一局 | 用上一局人数；2 人闸已关则服务端拒绝并提示 |
-| 配置停留期间变化 | 开始游戏页挂载刷新一次；选择由 getter 收敛；服务端为最终权威 |
+| 再来一局 | 用上一局人数；2 人闸已关时选择回写被拒、按有效人数回落 3；服务端为最终权威 |
+| 配置停留期间变化 | 页面不主动拉配置；选择由 getter 收敛，回大厅/重进后生效；服务端 12012 兜底 |
 | 2 人队列冷清 | 机器人补位（沿用现有补位开关） |
 
 ## 6. 测试判据
@@ -258,7 +266,7 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 - `packages/room-service/src/config/config-cache.service.ts`
 - `packages/room-service/src/match/match.service.ts`
 - `packages/room-service/test/helpers/config-cache.stub.ts`
-- `packages/room-service/test/{config-cache,match-switch-game}.test.ts`
+- `packages/room-service/test/{config-cache,match-switch-game,match.service,match-player-count,match-queue-key,record-pdk}.test.ts`
 - `admin/app.js`、`scripts/verify-admin-static.mjs`
 - `apps/client/src/{gameModes.ts,net/copy.ts,stores/game.ts,pages/game/game.vue,pages/table/table.vue,pages/history/history.vue,components/table/pdk/PdkBoard.vue}` + 测试
 - `tools/conformance/src/lib/pdk-driver.ts`

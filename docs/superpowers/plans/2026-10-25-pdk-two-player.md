@@ -62,7 +62,7 @@
 ## T3 room-service：逐人数闸 + 在队票出口
 
 **Files**：`src/config/config-cache.service.ts`、`src/match/match.service.ts`；
-`test/helpers/config-cache.stub.ts`；`test/{config-cache,match-switch-game,match.service}.test.ts`。
+`test/helpers/config-cache.stub.ts`；`test/{config-cache,match-switch-game,match.service,match-player-count,match-queue-key,record-pdk}.test.ts`。
 
 1. 测试先行：
    - `config-cache.test.ts`：`supportsRoomPlayerCount` 四组合 × 2/3/4；
@@ -70,7 +70,12 @@
    - `match-switch-game.test.ts`：`nonThree 开 ⇒ 2/4 放行` 改为两个独立用例；
      `two=false` 时 2 人 ⇒ 12012 且 message 含「人数」；
    - `match.service.test.ts`：队列里有 2 人票、`supportsRoomPlayerCount=false` ⇒
-     `failMatch` 一次、票删除、无建房、扫描轮不抛。
+     `failMatch` 一次、票删除、无建房、扫描轮不抛。前置：`paodekuaiEnabled=true`
+     （否则 `processQueue` 在玩法级早退）；断言 `zrem` 用的是 5 段实际键（`queue.key`）。
+   - 既有夹具同步：`match-player-count.test.ts` 的 `enablePdk` 补
+     `paodekuaiTwoPlayerEnabled.mockReturnValue(true)`；`record-pdk.test.ts` 的
+     `rooms.create({playerCount:2})` 用例显式开 two；`match-queue-key.test.ts` 两个
+     2 人用例补开 two（否则测试语义被新闸抽空）。
 2. 红。
 3. 实现：
    - `paodekuaiTwoPlayerEnabled()`；旧方法注释「仅 4 人」；
@@ -88,9 +93,11 @@
 1. `app.js`：
    - pdk「开关」页签两键；`CONFIG_CONTROLS` 新增「开放 2 人」、旧键改「开放 4 人」；
    - `CONFIG_NOTES` 两键各一条（旧键注明历史命名/只影响 4 人）；
-   - 头部注释计数 63→65、76→77、23→24、22→23（逐处核对）。
-2. `verify-admin-static.mjs`：92→93、76→77（两处）、71→72、BOOL 34→35、
-   notes 63→65、分类合计与 `entries.size` 比较；pdk 开关页签断言两键。
+   - 注释计数：`:120`/`:1251` 92→93、`:871` 71→72、`:891` 22→23、
+     `:134`「23 键中 13 键（22 个简单控件中 12 个）」→「24 键中 15 键（23 个简单控件中 14 个）」、
+     `:153` 63→65、`:356` 63→65/76→77。
+2. `verify-admin-static.mjs`：文件头注释 76→77；92→93、76→77（两处）、71→72、
+   BOOL 34→35、notes 63→65、分类合计与 `entries.size` 比较；pdk 开关页签断言两键。
 3. 验证：`pnpm verify:admin` 全绿。
 4. Commit：`feat(admin): 跑得快 2/4 人开关拆分`。
 
@@ -108,9 +115,10 @@
    空则用「这个玩法暂未开放，请稍后再试」。
 2. 红。
 3. 实现：
-   - `gameModes.ts` 导出 `CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly number[]>>`；
-     tagline 去掉「三人」；
-   - store 加 state/两 getter/action（`isGameType` 窄化后索引 `games`）；
+   - `gameModes.ts` 导出 `CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly number[]>>`
+     （新增 `import type { GameType }`）；tagline 去掉「三人」；
+   - store 加 state + 三只 getter（`activeServerPlayerCounts`/`activePlayerCounts`/
+     `effectivePlayerCount`）+ action（`isGameType` 窄化后索引 `games`）；
    - `copy.ts` 把 `GAME_UNAVAILABLE` 移入 `FALLBACK_COPY`。
 4. 绿：`pnpm -C apps/client test && pnpm -C apps/client run lint`。
 5. Commit：`feat(client): 跑得快人数能力表与 12012 文案`。
@@ -124,15 +132,18 @@
      `[3]` ⇒ 不渲染；
    - 选 2 后点「开始游戏」⇒ `room.match` 载荷 `playerCount === 2`（number）；
    - `.game__match button` 仍恰 1 个；控件不在 `.game__match` 内；
-   - 「再来一局」：上一局 2 人 ⇒ 载荷 2 且选择器高亮 2；
+   - 「再来一局」：上一局 2 人 ⇒ 回写选择后 `match()` 载荷 2 且选择器高亮 2；
+     2 人闸已关 ⇒ 回写被拒、载荷回落 3；
    - 好友房 `createRoom` 载荷 2；REST 12012 走页面错误行（`ROOM_LOCAL_CODES`）。
 2. 红。
 3. 实现：
    - 控件放 `.game__stage`、`.game__match` 外；`v-for="n in store.activePlayerCounts"`；
    - `match(playerCountOverride?: number)`，`@click="match()"`，数字守卫；
    - `createAndJoin` 用 `effectivePlayerCount`；
-   - 挂载 `refreshClientConfig()` + 消费 rematch 时回写选择；
-   - `ROOM_LOCAL_CODES` 加 `GAME_UNAVAILABLE`；删除未用 `GAME_META` 导入。
+   - 消费 rematch：`setSelectedPlayerCount(store.playerCount)` 后调用 `match()`（用 effective）；
+   - **不**在挂载时 `refreshClientConfig()`（会覆盖既有测试夹具并清空 games）；
+   - `ROOM_LOCAL_CODES` 加 `GAME_UNAVAILABLE`；删除未用 `GAME_META` 导入
+     （确认 `:603`/`:859` 两处已替换）。
 4. 绿 + lint。
 5. Commit：`feat(client): 开始游戏页人数切换`。
 
@@ -142,15 +153,18 @@
 `src/pages/history/history.vue`；`test/{pdk-board,history-pdk}.test.ts`。
 
 1. 测试先行：
-   - 壳：4 人视图 ⇒ 提示、回大厅、尽力 `room.leave`（FakeSocket 断言）；
-     2 人视图 ⇒ 正常渲染；
+   - 壳：4 人视图 ⇒ 提示、回大厅、按 `doLeave` 成例带 `roomCode` 尽力 `room.leave`
+     （FakeSocket 断言载荷；不 await、不阻塞导航）；2 人视图 ⇒ 正常渲染；
    - PdkBoard：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`、
-     `.pdk__mid--two` 存在；3 人 ⇒ `.pdk__seat` 恰 2；
+     无 `.pdk__play-col--right`、`.turn-timer` 恰 1、`.pdk__mid--two` 存在；
+     3 人 ⇒ `.pdk__seat` 恰 2、`.turn-timer` 恰 2；
    - 历史：pdk 卡片含「2 人局」。
 2. 红。
 3. 实现：
-   - 壳改用 `CLIENT_TABLE_PLAYER_COUNTS[gameType].includes(playerCount)`（先窄化 gameType），
-     不支持时 `session.client.send('room.leave', {})`（try/catch 忽略）→ fail-safe 原有流程；
+   - 壳改用 `CLIENT_TABLE_PLAYER_COUNTS[gameType].includes(playerCount)`（先窄化 gameType，
+     新增该 import），不支持时：
+     `sendQueued('room.leave', { roomCode: store.roomCode }, 5)` +
+     `raceTimeout(…, 5000)`，`void … .catch(() => {})`，随后原有 fail-safe 流程；
    - PdkBoard `seats: readonly number[]`，2 人单座；右座/右列/右计时器统一
      `v-if="seats.length > 1"`；`pdk__mid--two` + CSS；
    - 历史加 `{{ record.playerCount }} 人局`。
@@ -160,17 +174,23 @@
 ## T8 文档与注释同步
 
 **Files**：`docs/games/paodekuai.md`、`docs/design.md`、`docs/client-protocol.md`、
-`packages/shared/src/pdk/doc-sync.test.ts`；低优先注释：
+`docs/ops/first-deploy.md`、`packages/shared/src/pdk/doc-sync.test.ts`；注释：
+`packages/config-service/src/config/{admin.controller.ts,platform-config.service.ts}`、
+`packages/api-gateway/src/gateway/gateway.controller.ts`、
+`packages/room-service/src/config/config-cache.service.ts`（`supportsRoomPlayerCount` 方法注释）、
 `packages/room-service/src/currency/settle.service.ts`、
 `packages/user-service/src/records/records.service.ts`、
 `packages/room-service/src/gateway/ws.gateway.ts`。
 
 1. 文档：配置表两行、§2 客户端开放人数、design 键表/计数（92→93、active 77、pdk active 24）、
-   client-protocol 92→93。
+   client-protocol 92→93、first-deploy 92/76→93/77。
 2. `doc-sync.test.ts` 键↔文档行配对加入新键。
-3. 低优先注释把「三人/三座/恰 3 条」改为人数中立表述（不改变逻辑）。
-4. 绿：`pnpm -C packages/shared test`；`node scripts/check-docs.mjs`（若有）。
-5. Commit：`docs: 跑得快 2 人场文档与计数同步`。
+3. 注释同步：admin/controller/entity/gateway 的「九十二键」→「九十三键」；「三人/三座/恰 3 条」
+   改人数中立表述（不改变逻辑）。
+4. `platform-config.service.test.ts` 的种子数组新键**追加在跑得快段（index > 80）**，
+   不得插到前部（`:397` 有按位置取 `SEED[8]` 的断言）。
+5. 绿：`pnpm -C packages/shared test`。
+6. Commit：`docs: 跑得快 2 人场文档与计数同步`。
 
 ## T9 conformance：2 人真栈段
 
@@ -178,9 +198,12 @@
 `tools/conformance/src/slices/slice-29-paodekuai.ts`、`tools/conformance/baselines.json`。
 
 1. `startPdkRoom` 加 `playerCount`（默认 3）与账号数参数；3 人调用零改动。
-2. slice-29 新增 2 人组（spec §4.6）：负对照 → 管理面开 `twoPlayerEnabled` →
-   轮询 `POST /api/rooms` `playerCount=2` 得 0 → 两账号匹配/16 张/扣牌不出站 →
-   打到终局/零和/记录 `playerCount=2` → 收尾还原。
+2. slice-29 新增 2 人组（spec §4.6）：
+   - 先显式 PUT `twoPlayerEnabled=false`（防残留）；
+   - 在 `enablePdk` 之后（好友房/玩法闸在前）做负对照：2 人建房/匹配 ⇒ 12012 且 message 含「人数」；
+   - 管理面开 `twoPlayerEnabled`，用**全新账号**轮询 `POST /api/rooms` `playerCount=2`
+     得 0（`enablePdk` 的探测账号已建房，复用会撞 12011）；
+   - 两账号匹配/16 张/扣牌不出站 → 打到终局/零和/记录 `playerCount=2` → 收尾还原。
 3. `pnpm -C tools/conformance lint && build`；真栈可跑则实测并按读数回填 baseline，
    否则按源码静态计数并登记「真栈未跑」。
 4. Commit：`test(conformance): 跑得快 2 人真栈段`。
@@ -189,8 +212,9 @@
 
 **Files**：`scripts/browser-e2e.mjs`。
 
-1. 新增 `--scenario pdk2`：开 `enabled`+`twoPlayerEnabled` → 大厅切跑得快 → 选 2 人 →
-   匹配（一人 + 机器人）→ 出牌/过牌 → 结算 → 返回大厅；收尾还原两键。
+1. 新增 `--scenario pdk2`：开 `enabled`+`twoPlayerEnabled` → **room-service 生效观测**
+   （`POST /api/rooms` + `playerCount:2` 轮询到 0，放在好友房两闸之后）→ 大厅切跑得快 →
+   选 2 人 → 匹配（一人 + 机器人，30s 补位窗口）→ 出牌/过牌 → 结算 → 返回大厅；收尾还原两键。
 2. 判据：`room.matched/state_update.playerCount===2`、`.pdk__seat` 恰 1、
    结算行恰 2、手牌 16、结算面板含「倍数」。
 3. 能跑则跑；不能跑登记。
@@ -221,6 +245,26 @@ pnpm -C tools/conformance lint
 node scripts/browser-e2e.mjs --scenario pdk2   # 环境可用时
 ```
 
-## 计划审查记录
+## 计划审查记录（2026-10-25，独立 reviewer）
 
-（待独立 reviewer 审查后填写）
+结论：**阻断 3 / 高 3 / 低 11**，全部处置如下。
+
+| 级别 | 发现 | 处置 |
+|---|---|---|
+| 阻断 | `room.leave` 载荷缺 `roomCode`，裸 await 会挂起 | T7：照 `doLeave` 用 `sendQueued` + `raceTimeout` + 不阻塞导航 |
+| 阻断 | 改桩后 `record-pdk.test.ts`、`match-player-count.test.ts` 必红 | T3：列入文件并补开 two 闸 |
+| 阻断 | 挂载 `refreshClientConfig()` 会清空既有测试夹具的 `games`，成片红 | 删除该刷新；T6/spec D7 改为 getter 收敛 + 回大厅重取 |
+| 高 | 2 人断言漏 `.pdk__play-col--right` / 右计时器 | T7：补 `.turn-timer` 与右列断言 |
+| 高 | e2e 缺 room-service 生效观测点 | T10：加 `POST /api/rooms` 2 人轮询 |
+| 高 | slice-29 负对照残留 true、探测账号撞 12011、闸顺序错 | T9：显式 PUT false、全新账号、放在 enablePdk 之后 |
+| 低 | `match-queue-key.test.ts` 两个 2 人用例语义被抽空 | T3：补开 two 闸 |
+| 低 | 12007 是固定文案，服务端 message 只进日志 | spec §5/T3 注明，不改 12007 |
+| 低 | 12012 的 `CLIENT_ACTION` 本是 TOAST，原理由不成立 | spec D15 措辞修正 |
+| 低 | rematch 覆盖值绕过交集 | T6：回写选择后用 `effectivePlayerCount` |
+| 低 | admin 注释漏 :120/:871/:891/:1251 | T4 点位补全 |
+| 低 | 更多「九十二键」注释与 first-deploy 未列 | T8 补全 |
+| 低 | 种子数组 `SEED[8]` 按位置取值 | T8：新键追加在 index > 80 |
+| 低 | config-cache 方法注释仍写「收窄为 [3]」 | T8 补 |
+| 低 | 「两 getter」与不存在的 `check-docs.mjs` | 已改三 getter，删除该命令 |
+| 低 | match.service 用例缺玩法级前置与 zrem 键断言 | T3 补 |
+| 低 | 新增 import（`GameType`、`CLIENT_TABLE_PLAYER_COUNTS`）未点出 | T5/T7 补 |
