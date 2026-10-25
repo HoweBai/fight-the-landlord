@@ -151,13 +151,12 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 - 人数分段控件放在 `.game__stage` 内、**`.game__match` 之外**
   （仓库硬纪律：`.game__match button` 恒唯一；e2e 与多处测试按它取「开始游戏」）。
   控件用非 `.btn` 样式或独立类，不进入 `.game__match`。
-- 仅 `activePlayerCounts.length > 1` 时显示（斗地主恒不显示）。
-- `match(playerCountOverride?: number)`：`playerCount = 覆盖值 ?? effectivePlayerCount`；
-  模板改 `@click="match()"`（**不得**写 `@click="match"`，否则 MouseEvent 会被当成人数）。
-  函数内对覆盖值加 `typeof === 'number'` 守卫。
+- 仅 `activePlayerCounts.length > 1` 且**非匹配中**时显示（斗地主恒不显示）。
+- `match()` 无参数，一律用 `effectivePlayerCount`；模板写 `@click="match()"`
+  （**不得**写 `@click="match"`，避免 MouseEvent 被当成人数）。
 - `createAndJoin()`：`playerCount: store.effectivePlayerCount`。
 - 挂载消费「再来一局」：先 `setSelectedPlayerCount(store.playerCount)`（不在交集内则忽略），
-  再 `match(store.playerCount)`。
+  再 `match()`（用有效人数；闸已关时回落 3）。
 - 删除不再使用的 `GAME_META` 导入（`noUnusedLocals`）。
 
 **聊天码/错误处置**（D15）：
@@ -174,7 +173,8 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
   退出必须照 `doLeave` 成例：`sendQueued('room.leave', { roomCode: store.roomCode }, 5)`
   + `raceTimeout(…, 5000)` + 不阻塞导航（`room.leave` 载荷**必须带 roomCode**；
   裸 `await send('room.leave', {})` 既不释放座位也可能永久挂起）。
-- 斗地主同理（只接受 3）。
+- 斗地主恒 3 由协议/服务端保证；客户端**不加**非 3 的防御分支（不可达，YAGNI；
+  已登记为已知边界）。
 
 **PdkBoard**：
 
@@ -185,9 +185,9 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
   （两处 `v-if` 必须同时存在，防幽灵座位）。
 - 中段加 `pdk__mid--two` 修饰类，CSS 让左座 + 中央区均衡占宽。
 - 手牌/动作栏/托管/结算逻辑不变；3 人布局零变化。
-- 结构断言：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`、无 `.pdk__play-col--right`、
-  `.turn-timer` 恰 1；3 人 ⇒ `.pdk__seat` 恰 2、`.turn-timer` 恰 2
-  （`.pdk__me` 是我的座位，不计入）。
+- 结构断言：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`、无 `.pdk__play-col--right`；
+  3 人 ⇒ `.pdk__seat` 恰 2、右列存在（`.pdk__me` 是我的座位，不计入）。
+  计时器只在 `active` 时渲染（非行动者一只钟都没有），因此不用钟的数量做人数判据。
 
 **历史页**：pdk 卡片显示「N 人局」。
 
@@ -200,9 +200,11 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
     `enablePdk` 之后（好友房/玩法闸在前，否则只得到 12006）；
   - **生效观测点**：经管理面 PUT `twoPlayerEnabled=true` 后用**全新账号**轮询
     `POST /api/rooms` + `playerCount=2` 得 `code 0`（`enablePdk` 探测账号已建房，复用会撞 12011）；
-  - 负对照：关闭时 2 人建房/匹配 ⇒ 12012 **且 message 含「人数」**（与「玩法未开放」区分）；
+  - 负对照：关闭时 2 人 **WS 匹配** ⇒ 12012 且 message 含「人数」（用 `room.unmatch` 撤票，
+    有界轮询等缓存生效；与「玩法未开放」区分）；
   - 两账号以 `playerCount=2` 匹配：`room.matched.playerCount===2`、双方各 16 张、
-    扣牌不出站；驱动到终局：零和结算、`winnerSeats`、记录 `playerCount=2`、旧查询不含 pdk；
+    扣牌不出站；驱动到终局：零和结算、`winnerSeats`、记录 `playerCount=2`、
+    **旧查询（无 gameType）不含 2 人 pdk 记录**；
   - 收尾还原两键。
 - `tools/conformance/src/lib/pdk-driver.ts`：`startPdkRoom` 参数化
   `playerCount` 与账号数（默认 3）；`playPdkToEnd` 已人数无关。
@@ -299,3 +301,26 @@ export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly numb
 | 低 | D8「`room.create`」措辞错误 | D8：改为 `POST /api/rooms` |
 | 低 | conformance 未规定闸生效观测点 | §4.6：`POST /api/rooms` + 2 人轮询、message 断言 |
 | 低 | settle/records/ws 注释仍写三座 | §4.7：列入低优先同步 |
+
+## 10. 代码审查记录（2026-10-25）
+
+独立 reviewer 审 `7cc1b133..HEAD`：**Critical 0 / Important 1 / Minor 15**。
+
+| 级别 | 发现 | 处置 |
+|---|---|---|
+| Important | 2 人闸复位只在内层 `finally`；`registerUser`/`startPdkRoom` 抛错时污染共享真栈 | 已修：复位移入 `setup.disable()`（外层 `finally` 必跑） |
+| Minor | 负对照未等缓存生效 | 已修：WS 匹配 + `room.unmatch` 有界轮询 |
+| Minor | 2 人组缺 WS 负对照与旧查询断言 | 已修：WS 12012 + 旧查询不含 2 人记录 |
+| Minor | admin 备注计数注释不准 | 已修：24 键 / 12 条备注 / 11 个简单控件无备注 |
+| Minor | 多处「九十二键」注释漏改 | 已修（room/user/gateway/测试） |
+| Minor | 未用的 `activeServerPlayerCounts` getter | 已删 |
+| Minor | `match` 覆盖参数无调用且可绕过交集 | 已删参数，统一 `effectivePlayerCount` |
+| Minor | 斗地主非 3 视图无防御 | 登记不做（不可达，YAGNI） |
+| Minor | 匹配中人数控件仍可点 | 已修：`!matching` 时隐藏 |
+| Minor | 缺「闸关回落 3」与高亮断言 | 已补（回落 3 + 高亮） |
+| Minor | `.turn-timer` 计数判据不成立 | 已改：以右列/座位结构判定（钟只在行动者位渲染） |
+| Minor | 4 人退房非阻塞无法证伪 | 登记（FakeSocket 立即 resolve；行为已按 doLeave 成例） |
+| Minor | 迁移用例名与内容不符 | 已拆成「空表 ⇒ version 1」与「沿用 MAX」两例 |
+| Minor | pdk-driver 注释写死 3 个真人 | 已改为 playerCount |
+| Minor | `verify-admin` 备注/页签只钉总数 | 已加两键条目级与「开关」页签断言 |
+| Minor | REST 12012 就地提示缺行为测试 | 登记（message-first 单测 + 本地码集合；真栈由 slice-29 负对照覆盖） |

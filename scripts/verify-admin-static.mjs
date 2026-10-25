@@ -247,6 +247,13 @@ ok(
     pdkDomainBlock.includes("'game.paodekuai.nonThreePlayerEnabled'"),
   'pdk 2/4 人两闸位于 pdk 域内',
 );
+const pdkSwitchesBlock =
+  /id: 'switches',\s*\n\s*name: '开关',\s*\n\s*keys: \[([\s\S]*?)\]/.exec(pdkDomainBlock)?.[1] ?? '';
+ok(
+  pdkSwitchesBlock.includes("'game.paodekuai.twoPlayerEnabled'") &&
+    pdkSwitchesBlock.includes("'game.paodekuai.nonThreePlayerEnabled'"),
+  'pdk 2/4 人两闸位于「开关」页签',
+);
 ok(iaBlock.includes("'game.levels.doudizhu'"), 'ddz 档位表用新键 game.levels.doudizhu');
 
 /* 玩法顶部开关（2026-10-24）：headerKeys 运行时键集/无重复/备注/默认值/渲染接线/纯函数行为。 */
@@ -261,6 +268,11 @@ ok(
   /'game\.paodekuai\.risk\.winRateThreshold':\s*\[/.test(notesBlock) &&
     /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock),
   'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
+);
+ok(
+  /'game\.paodekuai\.twoPlayerEnabled':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.nonThreePlayerEnabled':\s*\[/.test(notesBlock),
+  'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
 ok(noteKeys.length === 65, `CONFIG_NOTES 恰 65 条（实测 ${noteKeys.length}）`);

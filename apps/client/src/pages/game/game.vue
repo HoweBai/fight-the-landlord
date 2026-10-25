@@ -584,7 +584,7 @@ async function loadRooms(replayed = false) {
  * 这是它在**客户端唯一**的发送点 —— 不得再复制第二处（`settlement-rematch.test.ts` ⑤
  * 按源码计数钉「`send('room.match'` 恰一处」）。
  */
-async function match(playerCountOverride?: number) {
+async function match() {
   const session = getGameSession();
   session.clearNotice(); // 玩家主动重开匹配 ⇒ 清掉上一次的失败提示
   if (busy.value) return;
@@ -600,13 +600,9 @@ async function match(playerCountOverride?: number) {
       mode: store.roomMode,
       baseScore,
       // 多玩法（S5.4）：玩法 + 人数随匹配上行。人数来自 store 的有效值
-      //（客户端能力 ∩ 服务端开放）；覆盖值仅供「再来一局」用，且必须是数字
-      //（模板写 `@click="match()"`，避免 MouseEvent 被当成人数）。
+      //（客户端能力 ∩ 服务端开放）。模板写 `@click="match()"`，避免 MouseEvent 被当成人数。
       gameType: store.activeGameType,
-      playerCount:
-        typeof playerCountOverride === "number"
-          ? playerCountOverride
-          : store.effectivePlayerCount,
+      playerCount: store.effectivePlayerCount,
       // 风控 T8：设备指纹随行（服务器可见、玩家面永不出站 —— K3）
       deviceId: getDeviceId(),
     });
@@ -992,7 +988,7 @@ onUnmounted(() => stopBgm());
         <!-- 跑得快 2 人场：人数选择（仅当客户端能力 ∩ 服务端开放 > 1 时出现）。
              ⚠️ 刻意放在 `.game__match` **之外**：既有探针按 `.game__match button`
              取唯一的「开始游戏」，控件不得挤进那条选择器。 -->
-        <view v-if="store.activePlayerCounts.length > 1" class="game__players">
+        <view v-if="!matching && store.activePlayerCounts.length > 1" class="game__players">
           <button
             v-for="n in store.activePlayerCounts"
             :key="n"

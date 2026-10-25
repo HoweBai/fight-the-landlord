@@ -199,7 +199,7 @@ export interface PdkOutcome {
 }
 
 /**
- * 把一局从 `game.deal` 驱到 `game.finished`（3 个真人；本 oracle 只打单张）。
+ * 把一局从 `game.deal` 驱到 `game.finished`（playerCount 个真人；本 oracle 只打单张）。
  * 判据留在切片里；本函数只做推进 + 事实回传。动作被拒/超时 ⇒ 抛。
  */
 export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutcome> {
@@ -261,7 +261,7 @@ export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutc
 
     const actorClient = room.bySeat.get(view.currentPlayer);
     if (!actorClient) {
-      // 本驱动只起 3 个真人；机器人回合（未来扩展）等服务器推进。
+      // 本驱动起的真人座位都已登记在 bySeat；机器人回合（未来扩展）等服务器推进。
       const next = await tryAdvancePdk(reader, view.version, 40_000);
       if (!next && !finishedOn()) {
         throw new ConformanceError(`${what}：机器人回合后 40s 无推进（seat ${view.currentPlayer}）`);

@@ -465,11 +465,6 @@ export const useGameStore = defineStore('game', {
       if (cfg) return cfg.baseScoreLevels;
       return id === 'doudizhu' ? s.baseScoreLevels : [];
     },
-    /** 服务端为本玩法开放的人数（旧服务端无 `games` ⇒ `[3]`）。 */
-    activeServerPlayerCounts: (s): number[] => {
-      const id = isGameType(s.activeMode) ? s.activeMode : 'doudizhu';
-      return s.games[id]?.supportedPlayerCounts ?? [3];
-    },
     /** 客户端实际展示的人数 = UI 能力 ∩ 服务端开放（4 人片落地前恒不含 4）。 */
     activePlayerCounts: (s): number[] => resolveActivePlayerCounts(s.activeMode, s.games),
     /** 上行实际使用的人数：选中值合法则用之，否则回落 3（再否则交集首项）。 */

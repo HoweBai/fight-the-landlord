@@ -28,6 +28,7 @@ import {
   type HarnessUser,
 } from '../lib/http';
 import { playPdkToEnd, startPdkRoom } from '../lib/pdk-driver';
+import { HarnessClient } from '../lib/client';
 import { rpcCall, type RpcEndpoint } from '../lib/rpc';
 
 const PDK_ENABLED_KEY = 'game.paodekuai.enabled';
@@ -205,6 +206,11 @@ async function enablePdk(): Promise<{ disable: () => Promise<void> }> {
   }
   return {
     disable: async () => {
+      // 2 人闸先还原（幂等；放在这里 ⇒ registerUser/startPdkRoom 抛错时也一定复位）。
+      const twoOff = await adminPutConfig(PDK_TWO_PLAYER_KEY, false, admin);
+      if (twoOff.body?.code !== ErrCode.OK) {
+        throw new ConformanceError(`还原 2 人闸失败：${JSON.stringify(twoOff.body)}`);
+      }
       const off = await adminPutConfig(PDK_ENABLED_KEY, false, admin);
       if (off.body?.code !== ErrCode.OK) {
         throw new ConformanceError(`还原跑得快开关失败：${JSON.stringify(off.body)}`);
@@ -473,15 +479,39 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
     step('⑦ 2 人场：闸负对照 → 开闸 → 2 人成局/16 张/零和/记录');
     const admin2p = await adminLogin();
     await putConfigOrThrow(admin2p, PDK_TWO_PLAYER_KEY, false, '2 人闸置 false ');
+
+    // 负对照用 **WS 匹配** 并用 unmatch 撤票（REST 建房会占房；同账号不能再探）。
+    // 有界轮询等消费侧缓存刷新生效，避免脏栈残留 true 时撞陈旧缓存假红。
     const negUser = await registerUser(92);
-    const neg = await postJson(
-      '/api/rooms',
-      { mode: 'random', gameType: 'paodekuai', playerCount: 2 },
-      negUser.accessToken,
-    );
-    checks.eq(neg.body?.code, ErrCode.GAME_UNAVAILABLE, '⑦ 2 人闸关 ⇒ 建房 12012');
+    const negClient = await HarnessClient.connect('S29NEG', negUser);
+    let negCode: number | null = null;
+    let negMessage = '';
+    try {
+      const negDeadline = Date.now() + 60_000;
+      for (;;) {
+        const ack = await negClient.send('room.match', {
+          mode: 'random',
+          baseScore: 15,
+          gameType: 'paodekuai',
+          playerCount: 2,
+        });
+        negCode = ack.code;
+        negMessage = String(ack.message ?? '');
+        if (negCode === ErrCode.GAME_UNAVAILABLE) break;
+        await negClient.send('room.unmatch', {});
+        if (Date.now() >= negDeadline) {
+          throw new ConformanceError(
+            `twoPlayerEnabled=false 60s 内未生效（最后一次 code=${negCode}）`,
+          );
+        }
+        await sleep(1000);
+      }
+    } finally {
+      negClient.close();
+    }
+    checks.eq(negCode, ErrCode.GAME_UNAVAILABLE, '⑦ 2 人闸关 ⇒ 匹配 12012');
     checks.that(
-      String(neg.body?.message ?? '').includes('人数'),
+      negMessage.includes('人数'),
       '⑦ 12012 message 含「人数」（与「玩法未开放」区分）',
     );
 
@@ -552,9 +582,13 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
         checks.eq(rec2.playerCount, 2, '⑦ 记录 playerCount=2');
         checks.eq(rec2.players?.length, 2, '⑦ 记录 players 恰 2 条');
       }
+      const legacy2 = await getJson<any>('/api/records/mine', user2.accessToken);
+      checks.that(
+        !(legacy2.body?.data?.items ?? []).some((r: any) => r.roomCode === room2.roomCode),
+        '⑦ 旧查询（无 gameType）只查斗地主表 ⇒ 不含 2 人 pdk 记录',
+      );
     } finally {
       for (const c of room2.clients) c.close();
-      await putConfigOrThrow(admin2p, PDK_TWO_PLAYER_KEY, false, '2 人闸还原 ');
     }
     } finally {
       for (const c of room.clients) c.close();

@@ -477,6 +477,7 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     expect(wrapper.find('.game__match .game__player-option').exists(), '控件不得进 .game__match').toBe(false);
     expect(wrapper.findAll('.game__match button'), '.game__match button 恒唯一').toHaveLength(1);
     expect(store.effectivePlayerCount).toBe(3);
+    expect(flat(wrapper.find('.game__player-option--active').text())).toBe('3 人');
   });
 
   it('服务端只开 3 人 ⇒ 人数控件不渲染', async () => {
@@ -499,6 +500,7 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     const two = wrapper.findAll('.game__player-option').find((o) => flat(o.text()) === '2 人');
     expect(two).toBeDefined();
     await two!.trigger('click');
+    expect(flat(wrapper.find('.game__player-option--active').text())).toBe('2 人');
     const start = wrapper.findAll('.game__match button').find((b) => flat(b.text()) === '开始游戏');
     expect(start).toBeDefined();
     await start!.trigger('click');
@@ -525,6 +527,22 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     const matches = socket.emittedOf('room.match');
     expect(matches).toHaveLength(1);
     expect((matches[0]!.env.payload as { playerCount?: unknown }).playerCount).toBe(2);
+  });
+
+  it('2 人闸已关 ⇒ 再来一局回写被拒、载荷回落 3', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([3]));
+    store.setSelectedBaseScore(15);
+    store.setPlayerCount(2);
+    store.requestRematch();
+    const { socket } = mountGame();
+    await flushPromises();
+
+    expect(store.selectedPlayerCount, 'setter 拒绝写入 2').toBe(3);
+    const matches = socket.emittedOf('room.match');
+    expect(matches).toHaveLength(1);
+    expect((matches[0]!.env.payload as { playerCount?: unknown }).playerCount).toBe(3);
   });
 
   it('好友房建房带选中人数 2', async () => {

@@ -1971,7 +1971,13 @@ describe('PdkTwoPlayerSeed1796800000000：跑得快 2 人闸种子', () => {
     expect(db.params[insertAt]).toEqual([KEY, JSON.stringify(false), 7, 'seed']);
   });
 
-  it('空表 ⇒ version 1；重放不改值；down 只删本键', async () => {
+  it('空表 ⇒ version 1', async () => {
+    const db = new TwoPlayerSeedRunner();
+    await new PdkTwoPlayerSeed1796800000000().up(asRunner(db));
+    expect(db.rows.get(KEY)).toEqual({ value: false, version: 1 });
+  });
+
+  it('已有行 ⇒ version 沿用 MAX；重放不改值；down 只删本键', async () => {
     const db = new TwoPlayerSeedRunner();
     db.rows.set('some.other.key', { value: true, version: 3 });
     const migration = new PdkTwoPlayerSeed1796800000000();

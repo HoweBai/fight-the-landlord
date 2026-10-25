@@ -138,7 +138,7 @@
 2. 红。
 3. 实现：
    - 控件放 `.game__stage`、`.game__match` 外；`v-for="n in store.activePlayerCounts"`；
-   - `match(playerCountOverride?: number)`，`@click="match()"`，数字守卫；
+   - `match()` 无参数（一律用 `effectivePlayerCount`），`@click="match()"`；
    - `createAndJoin` 用 `effectivePlayerCount`；
    - 消费 rematch：`setSelectedPlayerCount(store.playerCount)` 后调用 `match()`（用 effective）；
    - **不**在挂载时 `refreshClientConfig()`（会覆盖既有测试夹具并清空 games）；
@@ -156,8 +156,8 @@
    - 壳：4 人视图 ⇒ 提示、回大厅、按 `doLeave` 成例带 `roomCode` 尽力 `room.leave`
      （FakeSocket 断言载荷；不 await、不阻塞导航）；2 人视图 ⇒ 正常渲染；
    - PdkBoard：2 人 ⇒ `.pdk__seat` 恰 1、无 `.pdk__seat--right`、
-     无 `.pdk__play-col--right`、`.turn-timer` 恰 1、`.pdk__mid--two` 存在；
-     3 人 ⇒ `.pdk__seat` 恰 2、`.turn-timer` 恰 2；
+     无 `.pdk__play-col--right`、`.pdk__mid--two` 存在；
+     3 人 ⇒ `.pdk__seat` 恰 2、右列存在（计时器只在行动者位渲染，不用钟数做判据）；
    - 历史：pdk 卡片含「2 人局」。
 2. 红。
 3. 实现：
@@ -257,7 +257,7 @@ node scripts/browser-e2e.mjs --scenario pdk2   # 环境可用时
   conformance lint + build 通过。
 - **真栈未跑**：本机 Docker daemon 未运行（`docker info` 无 endpoint）⇒ slice-29 的
   ⑦ 2 人组与 `--scenario pdk2` 只有源码级判据；`slice-29` 基线按源码静态计数
-  69→88 回填（零 `skip()`、固定 2 客户端循环），Docker 恢复后按实测校正。
+  69→**89** 回填（零 `skip()`、固定 2 客户端循环），Docker 恢复后按实测校正。
 - 计划审查与设计审查记录见上；代码审查结论待补。
 
 ## 计划审查记录（2026-10-25，独立 reviewer）
@@ -283,3 +283,11 @@ node scripts/browser-e2e.mjs --scenario pdk2   # 环境可用时
 | 低 | 「两 getter」与不存在的 `check-docs.mjs` | 已改三 getter，删除该命令 |
 | 低 | match.service 用例缺玩法级前置与 zrem 键断言 | T3 补 |
 | 低 | 新增 import（`GameType`、`CLIENT_TABLE_PLAYER_COUNTS`）未点出 | T5/T7 补 |
+
+## 代码审查记录（2026-10-25，独立 reviewer）
+
+范围 `7cc1b133..HEAD`：**Critical 0 / Important 1 / Minor 15**。逐条处置见
+spec §10；Important（2 人闸复位移入 `setup.disable()`）与可判别性 Minor
+（WS 负对照、旧查询、计数/注释、`match` 参数、匹配中隐藏控件、迁移用例拆分、
+`verify-admin` 条目级断言）均已修；斗地主非 3 防御、4 人退房非阻塞证伪、
+REST 12012 行为测试登记为已知边界。修后重跑全量 + verify:admin。
