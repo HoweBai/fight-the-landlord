@@ -355,8 +355,8 @@ const SKIP_INSERT_SQL =
 ## T7 user-service PDK 迁移
 
 **Files**
-- `packages/user-service/src/migrations/1797000000000-PdkRecordGameTypeDdl.ts`（新增）
-- `packages/user-service/src/migrations/1797000000001-PdkRecordPlayerBackfill.ts`（新增）
+- `packages/user-service/src/migrations/1797000000003-PdkRecordGameTypeDdl.ts`（新增）
+- `packages/user-service/src/migrations/1797000000004-PdkRecordPlayerBackfill.ts`（新增）
 - `packages/user-service/test/migration.test.ts`
 
 **实现要点**
@@ -374,7 +374,7 @@ const SKIP_INSERT_SQL =
   //     按 seat 找 delta；缺座 ⇒ 0；won = seat === winner_seat ? 1 : 0。
   ```
   循环至空批；down no-op。
-- 类名：`PdkRecordGameTypeDdl1797000000000` / `PdkRecordPlayerBackfill1797000000001`
+- 类名：`PdkRecordGameTypeDdl1797000000003` / `PdkRecordPlayerBackfill1797000000004`
   （不匹配既有 `PdkRecords` 查找）。
 
 **TDD**

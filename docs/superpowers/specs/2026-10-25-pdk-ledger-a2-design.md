@@ -306,7 +306,7 @@ GROUP BY game_type ORDER BY k
 
 ### 6.5 PDK 记录迁移与写入（user-service）
 
-**`1797000000000-PdkRecordGameTypeDdl.ts`**：
+**`1797000000003-PdkRecordGameTypeDdl.ts`**：
 
 ```sql
 -- up 静态 2 条
@@ -324,7 +324,7 @@ ALTER TABLE `game_record_players_pdk`
 ALTER TABLE `game_records_pdk` DROP COLUMN `game_type`;
 ```
 
-**`1797000000001-PdkRecordPlayerBackfill.ts`**（数据迁移，可重入）：
+**`1797000000004-PdkRecordPlayerBackfill.ts`**（数据迁移，可重入）：
 
 ```ts
 const SELECT_BATCH =
@@ -549,8 +549,8 @@ const LAST_ACTIVE_MS_EXPR = `
 - `packages/room-service/test/currency/*`、`rooms.entry-fee.test.ts`、`rooms.start.test.ts`
 
 **user-service**
-- `packages/user-service/src/migrations/1797000000000-PdkRecordGameTypeDdl.ts`（新增）
-- `packages/user-service/src/migrations/1797000000001-PdkRecordPlayerBackfill.ts`（新增）
+- `packages/user-service/src/migrations/1797000000003-PdkRecordGameTypeDdl.ts`（新增）
+- `packages/user-service/src/migrations/1797000000004-PdkRecordPlayerBackfill.ts`（新增）
 - `packages/user-service/src/rpc/record.rpc.controller.ts`
 - `packages/user-service/src/records/records.service.ts`
 - `packages/user-service/src/players/admin-players.service.ts`
