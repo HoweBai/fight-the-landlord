@@ -1,6 +1,7 @@
 // packages/game-service/src/game/game.service.ts
 import { Inject, Injectable, Logger, OnApplicationShutdown, Optional, forwardRef } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { gameSettleFailuresTotal } from '../metrics/game.metrics';
 import {
   ErrCode,
   GAME_META,
@@ -8,10 +9,13 @@ import {
   parseGameType,
   supportsPlayerCount,
   type GameType,
+  type SettlementResult,
 } from '@fight-the-landlord/protocol';
 import {
   GameState,
+  incGame,
   isLegalTrusteeCombo,
+  normalizeGameType,
   onManualTrusteeOff,
   onTimeoutOccurred,
   onTrusteeOff,
@@ -358,6 +362,15 @@ export class GameService implements OnApplicationShutdown {
    */
   activeSessionCount(): number {
     return this.cache.size;
+  }
+
+  /** A1：按玩法统计活跃会话（per-instance cache）。 */
+  activeSessionCountByGameType(): Record<'doudizhu' | 'paodekuai', number> {
+    const out = { doudizhu: 0, paodekuai: 0 };
+    for (const session of this.cache.values()) {
+      out[normalizeGameType(session.gameType)] += 1;
+    }
+    return out;
   }
 
   // ─── 对外契约（§4.2）────────────────────────────────────────────
@@ -825,21 +838,38 @@ export class GameService implements OnApplicationShutdown {
   private async publishEnded(roomCode: string, session: AnyGameSession): Promise<void> {
     const runtime = this.runtimeFor(session);
     // runtime.settle() 返回契约结算形状（ddz 9 键 / pdk 向量）⇒ **不得**再拼一次（R187）。
-    const result = runtime.settle(session);
+    let result: SettlementResult;
+    try {
+      result = runtime.settle(session);
+    } catch (err) {
+      incGame(gameSettleFailuresTotal, session.gameType, 1, { phase: 'settle' });
+      this.logger.error(
+        `Game settle failed for room ${roomCode} (gameType=${String(session.gameType)}, phase=settle): ${String(err)}`,
+      );
+      throw err;
+    }
     // 记录片 T3：附 `record` 信封；旧会话无快照 ⇒ 键不存在（runtime.buildRecord 的窗口守卫）。
     const record = runtime.buildRecord(session);
-    await this.redis.publish(
-      GAME_EVENTS_CHANNEL,
-      JSON.stringify({
-        event: 'game.ended',
-        roomCode,
-        gameType: session.gameType,
-        playerCount: session.playerCount,
-        version: session.version,
-        result,
-        ...(record ? { record } : {}),
-      }),
-    );
+    try {
+      await this.redis.publish(
+        GAME_EVENTS_CHANNEL,
+        JSON.stringify({
+          event: 'game.ended',
+          roomCode,
+          gameType: session.gameType,
+          playerCount: session.playerCount,
+          version: session.version,
+          result,
+          ...(record ? { record } : {}),
+        }),
+      );
+    } catch (err) {
+      incGame(gameSettleFailuresTotal, session.gameType, 1, { phase: 'publish' });
+      this.logger.error(
+        `Game ended publish failed for room ${roomCode} (gameType=${String(session.gameType)}, phase=publish): ${String(err)}`,
+      );
+      throw err;
+    }
   }
 
   /** 显式发布 `game.ended`（结算由调用方给出）。Exposed for testing. */
