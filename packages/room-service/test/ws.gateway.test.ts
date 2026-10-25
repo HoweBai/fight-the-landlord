@@ -32,8 +32,8 @@ import { asRedis, createFakeRedis } from './helpers/fake-redis';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
 import type { ConfigCacheService } from '../src/config/config-cache.service';
 import { seatsOf } from './helpers/room-fixture';
-import { metricValue } from './helpers/metric-readout';
-import { gamesEndedTotal, wsConnections } from '../src/metrics/room.metrics';
+import { exactSeriesValue, metricValue } from './helpers/metric-readout';
+import { gamesEndedTotal, recordWriteFailuresTotal, recordWriteSkipsTotal, wsConnections } from '../src/metrics/room.metrics';
 
 /**
  * WsGateway 的单元测试（§6.3 / §4.4 / §6.6.1）。
@@ -2133,6 +2133,52 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
       redis.del.mock.invocationCallOrder[delIdx]!,
     );
   });
+
+  it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状不符计 record_lost', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const realRoom = await rooms.findOne('ROOM1');
+    const findOne = vi.spyOn(rooms, 'findOne');
+
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    recordClient.write.mockRejectedValueOnce(new Error('down'));
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 30, result: RESULT, record: envelope() });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'doudizhu', kind: 'record',
+      })).toBe(beforeRecord + 1);
+    });
+
+    const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
+      game_type: 'doudizhu', reason: 'room_ttl',
+    })) ?? 0;
+    // 第一次 findOne 被结算读消耗 ⇒ 先给真房；此后（记录链及其后续读）一律 null
+    findOne.mockReset();
+    findOne.mockResolvedValueOnce(realRoom).mockResolvedValue(null);
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 31, result: RESULT, record: envelope() });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteSkipsTotal, {
+        game_type: 'doudizhu', reason: 'room_ttl',
+      })).toBe(beforeSkip + 1);
+    });
+
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'record_lost',
+    })) ?? 0;
+    findOne.mockReset();
+    findOne.mockResolvedValueOnce(realRoom).mockResolvedValue({ ...realRoom, gameType: 'doudizhu' } as never);
+    ctx.gateway.onGameEvent({
+      event: 'game.ended', roomCode: 'ROOM1', version: 32,
+      result: { ...(RESULT as object), gameType: 'paodekuai' } as never,
+      record: { ...envelope(), gameType: 'paodekuai' } as never,
+    });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'paodekuai', kind: 'record_lost',
+      })).toBe(beforeLost + 1);
+    });
+  });
 });
 
 /**
@@ -2232,6 +2278,30 @@ describe('监控片 T3：ws_connections 恰一次升降（C10）+ games_ended_to
 
     ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'MTRM1', version: 2 });
     await expect(metricValue(gamesEndedTotal)).resolves.toBe(before + 1);
+  });
+
+  it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {
+    const ctx = makeGateway({ redis: asRedis(createFakeRedis()) });
+    const ddzResult = {
+      roomCode: 'R2', baseScore: 15, winner: 'landlord', landlordSeat: 0,
+      farmerSeats: [1, 2], multiplier: 2, spring: 'none',
+      landlordScoreChange: 60, farmerScoreChange: -30,
+    };
+    const pdk = {
+      roomCode: 'R1', gameType: 'paodekuai', playerCount: 3, baseScore: 15,
+      winnerSeats: [0],
+      scoreChanges: [{ seat: 0, delta: 30 }, { seat: 1, delta: -15 }, { seat: 2, delta: -15 }],
+      remaining: [0, 5, 5], multiplier: 1, bombCount: 0, guan: false, spring: false, baobenSeats: [],
+    };
+    const beforePdk = (await exactSeriesValue(gamesEndedTotal, { game_type: 'paodekuai' })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended', roomCode: 'R1', version: 1, gameType: 'paodekuai', result: pdk,
+    } as never);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'paodekuai' })).toBe(beforePdk + 1);
+
+    const beforeDdz = (await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })) ?? 0;
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'R2', version: 1, result: ddzResult } as never);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })).toBe(beforeDdz + 1);
   });
 });
 

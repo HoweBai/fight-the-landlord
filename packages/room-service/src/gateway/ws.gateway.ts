@@ -11,6 +11,7 @@ import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import {
   ErrCode,
+  isGameType,
   isPdkSettlementResult,
   type Ack,
   type GameType,
@@ -20,7 +21,7 @@ import {
 } from '@fight-the-landlord/protocol';
 // ⚠️ **值导入**（不是 `import type`）：下面用 `runWithTrace` 把这些回调包进 ALS ——
 // 类型导入会被擦除、运行期只剩 undefined（本仓 DI 陷阱那条教训同族）。
-import { ONLINE_USERS_KEY, runWithTrace } from '@fight-the-landlord/shared';
+import { ONLINE_USERS_KEY, incGame, runWithTrace } from '@fight-the-landlord/shared';
 import { Redis } from 'ioredis';
 import { MatchService } from '../match/match.service';
 import { clearBotBindings, botsKey } from '../rooms/rooms.bots';
@@ -52,7 +53,9 @@ import { CurrencyClient } from '../currency/currency.client';
 import { SettleService } from '../currency/settle.service';
 import { CHANNELS } from '../channels';
 // 监控片（规格 §2.2 / C10）：两个模块级指标常量（本文件的写点，不走 DI —— 见该文件头注）。
-import { gamesEndedTotal, wsConnections } from '../metrics/room.metrics';
+import {
+  gamesEndedTotal, recordWriteFailuresTotal, recordWriteSkipsTotal, wsConnections,
+} from '../metrics/room.metrics';
 // 记牌器收费片：房间状态（room:{code}:ccstate）的读/发共用件（重连补发三条路径之一）。
 import { emitCardCounterStatus, readCardCounterStatus } from './card-counter-status';
 
@@ -131,6 +134,8 @@ export interface GameEvent {
   version: number;
   seatViews?: GameView[];
   result?: SettlementResult;
+  /** A1：game.ended 的玩法（game-service 已发布；旧 producer/notifyRoomEnded 缺省 ⇒ ddz）。 */
+  gameType?: GameType;
   /**
    * 记录片 T5：仅 `game.ended` 可能带。**旧会话窗口**（部署期无 `initialHands` 的会话）
    * 与 `notifyRoomEnded` 路径**两者都缺** ⇒ room 侧跳过写入 + WARN（设计 D1）。
@@ -921,11 +926,26 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
    * ⚠️ **唯一**的例外（N17/R187）：`view.state === 'ended'` 时**只发** `game.state_update`，
    * 不发 `game.current_turn` —— 终局没有「下一回合」。
    */
+  /** A1：game.ended 的玩法归一（事件缺省 → record → ddz；非法值 WARN）。 */
+  private resolveGameEventType(event: GameEvent): GameType {
+    const raw = event.gameType;
+    const recordRaw = event.record?.gameType;
+    if (raw !== undefined && !isGameType(raw)) {
+      this.logger.warn(`game.ended carries invalid gameType ${JSON.stringify(raw)} — treating as doudizhu`);
+    }
+    if (recordRaw !== undefined && !isGameType(recordRaw)) {
+      this.logger.warn(`game.ended record carries invalid gameType ${JSON.stringify(recordRaw)}`);
+    }
+    if (isGameType(raw)) return raw;
+    if (isGameType(recordRaw)) return recordRaw;
+    return 'doudizhu';
+  }
+
   onGameEvent(event: GameEvent): void {
     if (event.event === 'game.ended') {
       // 监控片（规格 §2.2）：结算计数 —— 本分支每条事件恰一次（与 ws_connections 不同，
       // 这里没有特殊路：game.ended 只会经 `game:events` 订阅进来一次）。
-      gamesEndedTotal.inc();
+      incGame(gamesEndedTotal, this.resolveGameEventType(event));
       const result = event.result;
       const finishedPayload =
         result && isPdkSettlementResult(result)
@@ -1115,6 +1135,8 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     } catch (err) {
       // 失败姿态（设计 D2）：单次尝试失败即丢该局记录（无重试）—— 响亮（error）不静默，
       // 后果并入台账「已接受窗口」；**广播不受影响**（它早已同步发出）。
+      const gameType = this.resolveGameEventType(event);
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'record' });
       this.logger.error(`Record write failed for room ${event.roomCode}: ${String(err)}`);
     }
   }
@@ -1162,6 +1184,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     // ── 跳过判据二：房间数据缺失（房键已过期 —— 已接受窗口，台账登记）────────────
     const room = await this.roomsService.findOne(event.roomCode);
     if (!room) {
+      incGame(recordWriteSkipsTotal, record.gameType, 1, { reason: 'room_ttl' });
       this.logger.warn(
         `Record write skipped for room ${event.roomCode}: room data missing (room keys expired — TTL window)`,
       );
@@ -1190,6 +1213,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       // 结算形状必须与信封玩法一致（pdk 向量 vs 旧 9 键地主结算）
       isPdk !== isPdkSettlementResult(result)
     ) {
+      incGame(recordWriteFailuresTotal, record.gameType, 1, { kind: 'record_lost' });
       this.logger.warn(
         `Record write skipped for room ${event.roomCode}: game.ended shape mismatch (seats/result vs room data)`,
       );
