@@ -10,7 +10,7 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 77 个 active 键
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 84 个 active 键
  *     （72 简单 + 5 结构化）。
  *  3. 控件定稿表：72 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
@@ -213,9 +213,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 93, `protocol CONFIG_KEYS 恰 93 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 77, `active = CONFIG_KEYS − LEGACY 恰 77 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 77, `CONFIG_IA 覆盖 77 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 100, `protocol CONFIG_KEYS 恰 100 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 84, `active = CONFIG_KEYS − LEGACY 恰 84 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 84, `CONFIG_IA 覆盖 84 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -242,8 +242,15 @@ ok(
 );
 ok(
   pdkDomainBlock.includes("'game.paodekuai.risk.winRateThreshold'") &&
-    pdkDomainBlock.includes("'game.paodekuai.risk.minGames'"),
-  'pdk 风控两键位于 pdk 域内',
+    pdkDomainBlock.includes("'game.paodekuai.risk.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player2.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player2.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player3.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player3.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player4.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player4.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.autoThrottleScore'"),
+  'pdk 风控 9 键位于 pdk 域内',
 );
 ok(pdkDomainBlock.includes("'game.levels.paodekuai'"), 'pdk 档位表在 pdk 域');
 ok(
@@ -270,16 +277,26 @@ ok(notesBlock.includes("'game.doudizhu.enabled'"), 'CONFIG_NOTES 含斗地主总
 ok(notesBlock.includes("'game.paodekuai.enabled'"), 'CONFIG_NOTES 含跑得快总开关');
 ok(
   /'game\.paodekuai\.risk\.winRateThreshold':\s*\[/.test(notesBlock) &&
-    /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock),
-  'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
+    /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player2\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player2\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player3\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player3\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player4\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player4\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.autoThrottleScore':\s*\[/.test(notesBlock),
+  'CONFIG_NOTES 以条目形态含跑得快风控 9 键（防注释假绿）',
 );
+const oldPdkRiskNoteBlock =
+  /'game\.paodekuai\.risk\.winRateThreshold':\s*\[([\s\S]*?)\n  \],/.exec(notesBlock)?.[1] ?? '';
+ok(oldPdkRiskNoteBlock.includes('回退'), '跑得快旧胜率阈值备注写明“回退键”');
 ok(
   /'game\.paodekuai\.twoPlayerEnabled':\s*\[/.test(notesBlock) &&
     /'game\.paodekuai\.nonThreePlayerEnabled':\s*\[/.test(notesBlock),
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 77, `CONFIG_NOTES 恰 77 条（实测 ${noteKeys.length}）`);
+ok(noteKeys.length === 84, `CONFIG_NOTES 恰 84 条（实测 ${noteKeys.length}）`);
 /* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
 const PDK_NOTE_KEYS = [
   'game.levels.paodekuai',
@@ -296,6 +313,15 @@ const PDK_NOTE_KEYS = [
   'game.paodekuai.baobenEnabled',
   'game.paodekuai.twoPlayerEnabled',
   'game.paodekuai.nonThreePlayerEnabled',
+  'game.paodekuai.risk.winRateThreshold',
+  'game.paodekuai.risk.minGames',
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.winRateThreshold',
+  'game.paodekuai.risk.player4.minGames',
+  'game.paodekuai.risk.autoThrottleScore',
 ];
 const missingPdkNotes = PDK_NOTE_KEYS.filter((k) => !noteKeys.includes(k));
 ok(
@@ -334,7 +360,7 @@ ok(
 );
 ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnabledGameWarning：缺键按默认值判定');
 
-/* ── 5. CONFIG_CONTROLS：72 简单键 + 5 结构化键 = 77；定稿表 ─── */
+/* ── 5. CONFIG_CONTROLS：79 简单键 + 5 结构化键 = 84；定稿表 ─── */
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
@@ -415,6 +441,13 @@ const NUMBER_SUFFIX = {
   'game.doudizhu.risk.minGames': '',
   'game.paodekuai.risk.winRateThreshold': '',
   'game.paodekuai.risk.minGames': '',
+  'game.paodekuai.risk.player2.winRateThreshold': '',
+  'game.paodekuai.risk.player2.minGames': '',
+  'game.paodekuai.risk.player3.winRateThreshold': '',
+  'game.paodekuai.risk.player3.minGames': '',
+  'game.paodekuai.risk.player4.winRateThreshold': '',
+  'game.paodekuai.risk.player4.minGames': '',
+  'game.paodekuai.risk.autoThrottleScore': '分',
   'risk.deviceLimit': '',
   'game.doudizhu.cardCounterPricePerGameCoins': '金币/局',
   'game.doudizhu.cardCounterPricePerHourCoins': '金币/小时',
@@ -431,15 +464,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 72, `CONFIG_CONTROLS 恰 72 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 79, `CONFIG_CONTROLS 恰 79 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '77 键 = 72 简单 ∪ 5 结构化（无遗漏）');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '84 键 = 79 简单 ∪ 5 结构化（无遗漏）');
 ok(BOOL_KEYS.every((k) => entries.has(k)), '35 布尔键清单全部入表');
 ok(BOOL_KEYS.length === 35 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '35 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 35, `数字键定论表 35 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 42, `数字键定论表 42 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);
@@ -453,12 +486,20 @@ ok(/step:\s*0\.01/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''
 ok(!/suffix/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值不带后缀');
 ok(/step:\s*0\.01/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值 step=0.01');
 ok(!/suffix/.test(entries.get('game.paodekuai.risk.minGames') ?? ''), '跑得快最少局数不带后缀');
+for (const n of [2, 3, 4]) {
+  const win = `game.paodekuai.risk.player${n}.winRateThreshold`;
+  const min = `game.paodekuai.risk.player${n}.minGames`;
+  ok(/step:\s*0\.01/.test(entries.get(win) ?? ''), `${win} step=0.01`);
+  ok(!/suffix/.test(entries.get(win) ?? ''), `${win} 不带后缀`);
+  ok(!/suffix/.test(entries.get(min) ?? ''), `${min} 不带后缀`);
+}
+ok(/suffix:\s*'分'/.test(entries.get('game.paodekuai.risk.autoThrottleScore') ?? ''), 'PDK 自动限流阈值后缀=分');
 // 每条目必须有非空中文 label。
 for (const [k, body] of entries) {
   const labelM = /label:\s*'([^']+)'/.exec(body);
   ok(!!labelM && labelM[1].trim() !== '', `${k} 有非空 label`);
 }
-// 简单/布尔/文本/数字分类合计 = 71（防清单漂移）。
+// 简单/布尔/文本/数字分类合计 = 79（防清单漂移）。
 ok(
   BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === entries.size,
   `控件分类合计 = entries.size（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length} / ${entries.size}）`,

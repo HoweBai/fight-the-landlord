@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：九十三键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：一百键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -132,7 +132,7 @@ const PAGE_LIMIT = 20;
 
 /**
  * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
- * **77 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；无备注条目时展示通用说明）。
+ * **84 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
@@ -152,7 +152,7 @@ const PAGE_LIMIT = 20;
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
  *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
- *    **77 条备注 / 77 个 active 键（全覆盖）**
+ *    **84 条备注 / 84 个 active 键（全覆盖）**
  *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
@@ -362,7 +362,7 @@ const CONFIG_NOTES = {
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
   // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
-  // 2026-10-25 跑得快风控两键后 63 条备注 / 76 个 active 键；2 人闸片后 65 条备注 / 77 个 active 键。
+  // 2026-10-26 跑得快按人数/自动限流 7 键后 84 条备注 / 84 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -614,16 +614,58 @@ const CONFIG_NOTES = {
     ['注意', '同时影响跑得快机器人水位（该玩法最高档 × 本值）；与斗地主门槛独立。'],
   ],
   'game.paodekuai.risk.winRateThreshold': [
-    ['作用', '跑得快胜率阈值 —— 跑得快对局局数超过「扫描最少局数」且胜率严格高于本值的账号进 / 更新风控审核队列。'],
+    ['作用', '跑得快胜率阈值（回退键）—— 仅当对应人数键 `player2/3/4.winRateThreshold` 缺失时生效；新键优先。'],
     ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数（如 0.8）。默认 0.8。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。当前一轮扫描按旧值跑完，下一轮起用新值。'],
-    ['注意', '与斗地主阈值各自独立；两个玩法同时命中只记一项胜率分（25），不叠加；跑得快没有对局记录时不参与判定。自动限流仍看 50 分（胜率一项 + 设备一项才到 50）。2/4 人局胜率期望与 3 人不同，可按实际调整。'],
+    ['注意', '与斗地主阈值各自独立；两个玩法同时命中只记一项胜率分（25），不叠加；跑得快没有对局记录时不参与判定。'],
   ],
   'game.paodekuai.risk.minGames': [
-    ['作用', '跑得快扫描最少局数 —— 跑得快对局局数必须「大于」本值才参与胜率命中判定（防小样本误判）。'],
+    ['作用', '跑得快扫描最少局数（回退键）—— 仅当对应人数键 `player2/3/4.minGames` 缺失时生效；新键优先。'],
     ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。下一轮扫描起用新值。'],
-    ['注意', '判定是严格「大于」（恰 100 局不算）；与跑得快胜率阈值同属一条命中项，两个条件同时满足才记分；与斗地主最少局数独立。'],
+    ['注意', '判定是严格「大于」（恰 100 局不算）；与跑得快胜率阈值同属一条命中项，两个条件同时满足才记分。'],
+  ],
+  'game.paodekuai.risk.player2.winRateThreshold': [
+    ['作用', '2 人跑得快胜率阈值：2 人桶对局数超过「2 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '2 人基准胜率约 50%，0.8 对 2 人偏松/偏严需按实际人口调；样本按人数独立，不与 3/4 人混算。'],
+  ],
+  'game.paodekuai.risk.player2.minGames': [
+    ['作用', '2 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 2 人、不含机器人座的整局；与 3/4 人桶独立。'],
+  ],
+  'game.paodekuai.risk.player3.winRateThreshold': [
+    ['作用', '3 人跑得快胜率阈值：3 人桶对局数超过「3 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '3 人基准胜率约 33%；样本按人数独立；含机器人座的整局不计入。'],
+  ],
+  'game.paodekuai.risk.player3.minGames': [
+    ['作用', '3 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 3 人、不含机器人座的整局；与 2/4 人桶独立。'],
+  ],
+  'game.paodekuai.risk.player4.winRateThreshold': [
+    ['作用', '4 人跑得快胜率阈值：4 人桶对局数超过「4 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '4 人基准胜率约 25%，0.8 对 4 人很严/需按实际下调；样本按人数独立；含机器人座的整局不计入。'],
+  ],
+  'game.paodekuai.risk.player4.minGames': [
+    ['作用', '4 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 4 人、不含机器人座的整局；与 2/3 人桶独立。'],
+  ],
+  'game.paodekuai.risk.autoThrottleScore': [
+    ['作用', 'PDK 单玩法自动限流阈值：25 = PDK 胜率单命中（25 分）即自动限流；26–49 与 50 同效（PDK 单命中不自动限流，PDK+设备 50 分仍限流）。'],
+    ['取值', '整数，25 ≤ n ≤ 50。默认 50。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效；已有 auto 旗的续期/解除不受此键阻止。'],
+    ['注意', '只影响“PDK 胜率命中”的自动限流线；设备/platform 行仍走账号级 50。dismissed 同分不复活。'],
   ],
   'currency.reliefThresholdCoins': [
     ['作用', '每日广告救助的平台级绝对门槛：余额低于该金币数才能领取。'],
@@ -640,7 +682,7 @@ const CONFIG_NOTES = {
  * 归属原则：跟「怎么组局/打什么牌/对手是谁」绑定的归玩法；跟「钱/安全/留存/商业化」
  * 绑定的归通用设置。2026-10-24 配置平行化后，场次/好友房/补位/金币经济/风控胜率
  * 均已按玩法分域（斗地主、跑得快各读各的键）；旧平台键只读、不出现在本表。
- * 2026-10-25：跑得快风控两键（`game.paodekuai.risk.*`）进入 pdk 域「风控检测」页签。
+ * 2026-10-26：跑得快按人数/自动限流 7 键进入 pdk 域「风控检测」页签（共 9 键；旧两键为回退）。
  * `record.retentionDays` / `cleanupIntervalMs` 同时作用于两玩法记录表，保留在通用设置。
  * 快照中存在但本表未收录的键 ⇒ 自动落入「未分组」桶（见 ungroupedKeys）。
  */
@@ -772,6 +814,13 @@ const CONFIG_IA = [
             id: 'risk',
             name: '风控检测',
             keys: [
+              'game.paodekuai.risk.player2.winRateThreshold',
+              'game.paodekuai.risk.player2.minGames',
+              'game.paodekuai.risk.player3.winRateThreshold',
+              'game.paodekuai.risk.player3.minGames',
+              'game.paodekuai.risk.player4.winRateThreshold',
+              'game.paodekuai.risk.player4.minGames',
+              'game.paodekuai.risk.autoThrottleScore',
               'game.paodekuai.risk.winRateThreshold',
               'game.paodekuai.risk.minGames',
             ],
@@ -986,8 +1035,15 @@ const CONFIG_CONTROLS = {
   'game.paodekuai.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
   'game.paodekuai.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
   'game.paodekuai.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
-  'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
-  'game.paodekuai.risk.minGames': { label: '扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值（回退）', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.minGames': { label: '扫描最少局数（回退）', type: 'number' },
+  'game.paodekuai.risk.player2.winRateThreshold': { label: '2 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player2.minGames': { label: '2 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.player3.winRateThreshold': { label: '3 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player3.minGames': { label: '3 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.player4.winRateThreshold': { label: '4 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player4.minGames': { label: '4 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.autoThrottleScore': { label: 'PDK 自动限流阈值', type: 'number', suffix: '分' },
   'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
   'game.paodekuai.twoPlayerEnabled': { label: '开放 2 人', type: 'bool' },
   'game.paodekuai.nonThreePlayerEnabled': { label: '开放 4 人', type: 'bool' },
@@ -1339,7 +1395,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量九十三键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量一百键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
