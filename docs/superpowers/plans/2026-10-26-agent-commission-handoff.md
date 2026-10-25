@@ -1,31 +1,20 @@
 # 代理分润 —— 交接（2026-10-26）
 
-> 用途：当前会话上下文接近上限，**新开会话**从这里继续。
-> 分支 `dev`，工作区干净（仅有一个未跟踪的 `grep.exe.stackdump` 垃圾文件，**不要提交**）。
-> 最近提交：`e6e70950 feat(agent): 客户端注册邀请码（任务 12）`。
+> 用途：跨会话状态。**任务 0–15 已全部完成**：dev 已推送（`f1545a9c`），
+> GitHub CI `40222597118` 绿、全序真库 conformance `40232890418` 绿（45 片，slice-32=137）。
+> 分支 `dev`，工作区除未跟踪的 `grep.exe.stackdump`（垃圾文件，**不要提交**）外干净。
+> **未做（等用户发话）**：合 master / 打 `v*` tag / 部署 / 真浏览器走查。
 
-## 0. 新会话提示词（直接复制）
+## 0. 后续会话提示词（仅在上线阶段用）
 
 ```text
-继续实现代理分润功能（仓库 d:\Code\pokergame，分支 dev；不要推 master、不要打 tag、不要部署）。
-
-先读：
-- docs/superpowers/plans/2026-10-26-agent-commission-handoff.md（本文件，先读）
-- docs/superpowers/specs/2026-10-26-agent-commission-design.md（v1.1）
-- docs/superpowers/plans/2026-10-26-agent-commission.md（15 任务计划）
-
-已完成任务 0–12（见下）。请从任务 13 继续：
-13) 管理后台「代理」UI；
-14) 代理门户静态站 + edge 路由；
-15) tools/conformance slice-32 真库 + 全量验证 + 独立代码审查 + 交付报告。
-
-按 docs/dev-process.md 执行：每个任务 TDD/红绿、独立提交、提交信息末尾带
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>。
-先跑一遍本文件 §2 的基线命令确认起点绿；任务 15 的代码审查派独立子代理做，
-Critical/Important 必须修。没有用户明确发话前不要推送/部署。
+代理分润任务 0–15 已完成并推 dev（f1545a9c）；CI 与全序真库均绿。
+如用户发话上线：按 docs/dev-process.md 合 master（权威轮）、打 tag、部署；
+先读本文件 §5（真库轮证据）与 §6（已知边界）。
+不得在用户明确发话前合 master / 打 tag / 部署。
 ```
 
-## 1. 已完成（任务 0–12，均已提交）
+## 1. 已完成（任务 0–15，均已提交）
 
 | 任务 | 提交 | 内容 |
 |---|---|---|
@@ -43,7 +32,7 @@ Critical/Important 必须修。没有用户明确发话前不要推送/部署。
 | 12 | `e6e70950` | 登录页注册态懒拉配置 + 邀请码字段（开关开才渲染）；`signUp`/`register` 透传；docs 错误码/22 键同步 |
 | 13 | `876be015` | 管理后台「代理」UI（列表/新建/详情/设置/结算/调账/对账/审计；`verify:admin` 465 + jsdom 冒烟） |
 | 14 | `dc5e6aaf` | 代理门户静态站 + `Dockerfile.edge`/`Caddyfile` `/agent` 路由；`verify:agent` 104 + jsdom 冒烟 |
-| 15 | `56f84133` / `324d6442` / `71be4070` | slice-32 真库 + design.md env 表；r3 独立审查 Critical/Important 收口（公开 boot 配置、管理页竞态、对账区间、手机号归一、分页等） |
+| 15 | `56f84133` … `f1545a9c` | slice-32 真库（CI 全序 45 片绿，137/137）+ design.md env 表；r3 独立审查 Critical/Important 收口（公开 boot 配置、管理页竞态、对账区间、手机号归一、分页等）；既有切片键集/迁移/edge 收尾同步 |
 
 ### 设计增量（相对 spec v1.1，需在 spec 的偏差台账/审查记录补一句）
 
