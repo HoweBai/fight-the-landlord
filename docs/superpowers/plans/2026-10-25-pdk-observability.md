@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - 指标 `game_type` 值域只能是 `doudizhu` 或 `paodekuai`；缺字段/空串/未知一律经 `normalizeGameType` 归一为 `doudizhu`。
-- 所有带 `game_type` 的写点必须经 `incGame` / `setGame`；禁止直接 `.inc({...})` / `.set({...})` 带标签。
+- 所有带 `game_type` 的写点必须经 `incGame` / `setGame`；禁止直接 `.inc({...})` / `.set({...})` 带标签。**唯一豁免**：`match_queue_length`（它自带 `mode/game_type/player_count/base_score` 多标签，继续直接 `.set`，不在本片改造范围）。
+- 跨包测试前先构建 shared：`pnpm --filter @fight-the-landlord/shared build`（裸 `npx vitest` 不触发 turbo 的 build 依赖）。
 - 失败计数器的 `reason/phase/kind` 只用枚举值；禁止把错误文本、roomCode、botId 放进标签。
 - 新增计数一律在 catch 内计数后 **rethrow**（不吞错、不改状态机）。
 - 采样类 gauge 先读后写；整条快照读取失败保留旧值；单键/单条目坏按 ddz + 汇总 WARN。
@@ -22,6 +23,30 @@
 - 不改 `tools/conformance/src/slices/slice-29-paodekuai.ts`；不改用户工作区的 `apps/client/src/components/PdkSettlement.vue`。
 - 每个任务一个 commit；先写失败测试 → 跑红 → 最小实现 → 跑绿 → 提交。
 - 实施前用 `superpowers:using-git-worktrees` 建独立 worktree/分支 `feature/pdk-observability-a1`。
+
+---
+
+## Fixture 手册（避免“复用既有夹具”变成不可执行）
+
+| 任务 | 现有夹具/入口 | 如何造目标场景 |
+|---|---|---|
+| Task 3 bot_fill | `packages/room-service/test/pdk-start-retry.test.ts` 的 `pdkRoom()` / `calls` / `configCache` | 在 RPC stub 中让 `robotAcquire` 返回业务错误（filter `RPC_PATTERNS.robotAcquire`），使 `fillBots` 返回 null |
+| Task 3 pending_write | 同上 `redis` 假桩 | 让 `redis.hset` 在 key 以 `match:pending:` 开头时抛错一次 |
+| Task 3 on_seats | `startRoomOutcome(..., { onSeats: async () => { throw new Error('x') } })` | ddz 房满员时传入 reject 的 `onSeats` |
+| Task 3 start_rpc | `rooms.start.test.ts` 既有 `game.start` 失败夹具 | 让注入的 game client `start` reject；断言 `reason='start_rpc'` 只 +1 |
+| Task 3 台费 | `packages/room-service/test/rooms.entry-fee.test.ts` | 复用该文件 `makeService`/收费夹具，断言 `entry_fee_skipped_total{game_type=...}` |
+| Task 4 局终 | `packages/room-service/test/ws.gateway.test.ts` 的 `ctx.gateway` | 直接构造 `GameEvent`（带/不带 `gameType`、`record`）调用 `onGameEvent` |
+| Task 4 记录失败 | 同文件 `:1821-2110` 的记录拒绝/房缺失夹具 | `record.write` mock reject ⇒ `kind='record'`；`roomsService.findOne` 返回 null ⇒ `reason='room_ttl'`；room.gameType 与 record.gameType 不符 ⇒ `kind='record_lost'` |
+| Task 5 PDK 结算 | `settle-pdk.test.ts` 的 `pdkResult()` / `pdkRoom()` | 复用该文件 `SettleService` 构造；`record.moneyDelta.mockRejectedValueOnce` 造 money_delta |
+| Task 5 outbox | `settle-outbox.test.ts` 的 `settleEntry()` / `moneyEntry()` / `makeSweeper()` / `SettleHarness` | 超龄：`createdAt = now - TTL - 1`；部分匹配：moneyDelta 返回 `matched: [0]` |
+| Task 6 坏条目 | 同上 `seedMoney(h, { ...moneyEntry(), createdAt: ... })` | 直接把条目值写成 `'{bad json'`，断言 ddz 组 +1 且 WARN |
+| Task 7 资金 | `robot-funding.test.ts` 的 `makeHarness()` | 复用 refill/recall/ensure 失败用例；`gameType` 传 `'paodekuai'` |
+| Task 8 匹配 | `match-player-count.test.ts` 的 PDK 队列夹具 | 构造 `queue.gameType='paodekuai'`，让 `randomGreedyPick` 走谓词拒绝路径 |
+| Task 9 采样 | `room-metrics.test.ts` 的 `{ scan } as Redis` | 补 `pipeline` 桩：`pipeline()` 返回 `{ hget: vi.fn().mockReturnThis(), exec: async () => keys.map(() => [null, 'paodekuai']) }` |
+| Task 10 结算失败 | `game.service.redis.test.ts` 的 C3 终局夹具 `:96-113` | mock `GameService.prototype.runtimeFor` 返回假 runtime（settle 抛错）；publish 失败直接 mock `redis.publish` reject |
+| Task 11 PDK bot | `bot-pdk.test.ts` / `bot.player.test.ts` | 传 `features.gameType` 非 `paodekuai` 触发 feature guard；或构造无合法首出触发 `decidePdkBot` throw |
+| Task 12 清理 | `records-cleanup.test.ts` 的 `FakeCleanupDb` / `runCleanupOnce` | 造 ddz 2 行、pdk 0 行；断言两个 game_type 序列（0 也写） |
+| Task 12 风控 | `risk-scan.test.ts` 的扫描夹具 | 复用“PDK 2 局 2 胜”夹具，断言 `risk_scan_hits_total{game_type='paodekuai'}` |
 
 ---
 
@@ -133,7 +158,7 @@ export function incGame<T extends string>(
   labels: Partial<Record<T, string | number>> = {},
 ): void {
   const values = { ...labels, game_type: normalizeGameType(gameType) };
-  counter.inc(values as Parameters<Counter<T>['inc']>[0], amount);
+  (counter as Counter<string>).inc(values, amount);
 }
 
 /** 强制带 game_type 的 gauge.set。 */
@@ -143,7 +168,7 @@ export function setGame<T extends string>(
   value: number,
 ): void {
   const values = { game_type: normalizeGameType(gameType) };
-  gauge.set(values as Parameters<Gauge<T>['set']>[0], value);
+  (gauge as Gauge<string>).set(values, value);
 }
 ```
 
@@ -156,7 +181,7 @@ export * from './metrics/game-label';
 - [ ] **Step 4: 跑绿**
 
 Run: `cd packages/shared && npx vitest run src/metrics/game-label.test.ts && npx tsc --noEmit`
-Expected: PASS；tsc 0。
+Expected: PASS；`npx tsc --noEmit` 0（若报 TS2352，说明 cast 仍走错重载——必须保持 `(counter as Counter<string>).inc(values, amount)` 形态）。
 
 - [ ] **Step 5: 提交**
 
@@ -372,7 +397,7 @@ recordWriteSkipsTotal: counter,
 - [ ] **Step 4: 跑绿**
 
 Run: `cd packages/room-service && npx vitest run test/room-metrics-definitions.test.ts && npx tsc --noEmit`
-Expected: PASS；tsc 0。
+Expected: PASS；`npx tsc --noEmit` 0（若报 TS2352，说明 cast 仍走错重载——必须保持 `(counter as Counter<string>).inc(values, amount)` 形态）。
 
 - [ ] **Step 5: 提交**
 
@@ -435,6 +460,8 @@ it('A1：开局成功按 game_type 计数；start_rpc 失败恰计一次', async
 ```
 
 - [ ] **Step 2: 跑红**
+
+**既有断言同步**：`rooms.start.test.ts:503-538` 的 `metricValue(gamesStartedTotal)` 是 `values[0]`；改为 `exactSeriesValue(..., {game_type:'doudizhu'})`，否则新 PDK 序列插入后顺序依赖。
 
 Run: `cd packages/room-service && npx vitest run test/pdk-start-retry.test.ts test/rooms.start.test.ts`
 Expected: FAIL（reason 标签无序列 / 计数缺失）。
@@ -518,6 +545,15 @@ return 'fatal';
 }
 ```
 
+台费三处写点（同文件，方法内已有 `gameType`）：
+
+```ts
+// chargeOne（:791）
+incGame(entryFeeConflictTotal, gameType, 1);
+// recordEntryFeeSkip（:873/:876）
+incGame(entryFeeSkippedTotal, gameType, 1, { reason });
+```
+
 成功点：
 
 ```ts
@@ -526,13 +562,13 @@ if (ok) incGame(gamesStartedTotal, gameType);
 
 - [ ] **Step 4: 跑绿**
 
-Run: `cd packages/room-service && npx vitest run test/pdk-start-retry.test.ts test/rooms.start.test.ts && npx tsc --noEmit`
+Run: `pnpm --filter @fight-the-landlord/shared build && cd packages/room-service && npx vitest run test/pdk-start-retry.test.ts test/rooms.start.test.ts test/rooms.entry-fee.test.ts && npx tsc --noEmit`
 Expected: PASS；原有 outcome/warning 断言不变。
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add packages/room-service/src/rooms/rooms.start.ts packages/room-service/test/pdk-start-retry.test.ts packages/room-service/test/rooms.start.test.ts
+git add packages/room-service/src/rooms/rooms.start.ts packages/room-service/test/pdk-start-retry.test.ts packages/room-service/test/rooms.start.test.ts packages/room-service/test/rooms.entry-fee.test.ts
 git commit -m "feat(room): 开局成功/失败按玩法计数（6 种 reason）
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -576,6 +612,8 @@ it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状�
 
 - [ ] **Step 2: 跑红**
 
+**既有断言同步**：`ws.gateway.test.ts:2228-2234` 的 metrics 断言用 `values[0]`；改为按 `game_type` 精确读。
+
 Run: `cd packages/room-service && npx vitest run test/ws.gateway.test.ts`
 Expected: FAIL（标签无序列/计数缺失）。
 
@@ -614,8 +652,10 @@ incGame(gamesEndedTotal, endedGameType);
 
 4. 记录投递 catch：
 
+`finalizeRoomEnd` 与 `onGameEvent` 是不同方法：catch 内**重新解析**，不得引用 `endedGameType`：
+
 ```ts
-const recordGameType = isGameType(event.record?.gameType) ? event.record.gameType : endedGameType;
+const recordGameType = this.resolveGameEventType(event);
 incGame(recordWriteFailuresTotal, recordGameType, 1, { kind: 'record' });
 this.logger.error(`Record write failed for room ${event.roomCode}: ${String(err)}`);
 ```
@@ -676,9 +716,13 @@ it('A1：PDK 结算 ok/dropped 与残差按 game_type 计数', async () => {
   expect(await exactSeriesValue(currencySettleResultTotal, {
     result: 'ok', game_type: 'paodekuai',
   })).toBe(beforeOk + 1);
-  expect(await exactSeriesValue(currencySettleResidueTotal, {
+  const residueBefore = (await exactSeriesValue(currencySettleResidueTotal, {
     game_type: 'paodekuai',
-  })).toBeGreaterThanOrEqual(0);
+  })) ?? 0;
+  const residueAfter = (await exactSeriesValue(currencySettleResidueTotal, {
+    game_type: 'paodekuai',
+  })) ?? 0;
+  expect(residueAfter - residueBefore).toBe(0); // 夹具余额充足、无截断 ⇒ 残差增量为 0（序列仍存在）
 });
 
 it('A1：moneyDelta 失败/部分计 kind=money_delta', async () => {
@@ -720,19 +764,29 @@ incGame(currencySettleResultTotal, gameType, 1, { result: data.replayed ? 'repla
 incGame(currencySettleResidueTotal, gameType, computed.residue);
 ```
 
-参数贯穿：
-
-- `applyGraded(actionId, entries, roomCode, version, round, burn, gameType)`；
-- `readBalances(ownerIds, gameType)`；
-- `dropWarn(roomCode, version, reason, gameType)`；
-- `dropError(roomCode, version, reason, gameType, err?)`。
-
-调用点 gameType 来源：
+参数贯穿（**逐调用点，不得漏**）：
 
 ```ts
-const gameType = room.gameType ?? DEFAULT_GAME_TYPE; // 房间已知后
-const beforeRoom = isPdkSettlementResult(input.result) ? 'paodekuai' : 'doudizhu'; // 房间缺失守卫
+// 顶层兜底（:313）——房间可能缺失，从 result 反推
+const topGameType = input.result !== undefined && isPdkSettlementResult(input.result)
+  ? 'paodekuai' : 'doudizhu';
+this.dropError(input.roomCode, input.version, topGameType, 'unexpected error', err);
+
+// 房间已知后统一：
+const gameType = room.gameType ?? DEFAULT_GAME_TYPE; // 守卫③ 之后
+this.dropWarn(roomCode, version, gameType, '...');   // :336/:344/:360/:364
+this.resolveSeats(room, input.botBySeat, version, playerCount, gameType); // :373
+this.readBalances(..., gameType);                    // :381/:420
+this.applyGraded(..., gameType);                     // :410/:442
+this.dropError(roomCode, version, gameType, '...', err); // :383/:422/:479/:541/:549
+
+// resendSettleOutboxEntry（:781）开头：
+const gameType = isGameType(entry.gameType) ? entry.gameType : DEFAULT_GAME_TYPE;
+// 超龄 dropped、replayed/ok、finalize 的 gameType 全用它；:838 的 dropError 也用它
 ```
+
+`resolveSeats` 增加 `gameType: GameType` 形参，内部两处 `dropWarn` 使用它。
+**删除**原计划里的 `beforeRoom` 死变量（`noUnusedLocals` 会红）。
 
 `resendRecordMoneyOutboxEntry`：
 
@@ -821,7 +875,9 @@ private async refreshOutboxGauges(now: number): Promise<void> {
     try {
       parsed = JSON.parse(raw) as { createdAt?: unknown; gameType?: unknown };
     } catch {
+      // 设计 §5：单条目 JSON 坏 ⇒ 归 ddz + 汇总 WARN（整条 hgetall 失败才保留旧值）
       badEntries += 1;
+      sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
       continue;
     }
     const gameType = normalizeGameType(parsed.gameType);
@@ -833,7 +889,7 @@ private async refreshOutboxGauges(now: number): Promise<void> {
   }
 
   if (badEntries > 0) {
-    this.logger.warn(`Settle outbox gauge: ${badEntries} unparseable entr(ies) ignored`);
+    this.logger.warn(`Settle outbox gauge: ${badEntries} unparseable entr(ies) counted as doudizhu`);
   }
   for (const gameType of ['doudizhu', 'paodekuai'] as const) {
     setGame(currencySettleOutboxSize, gameType, sizes.get(gameType) ?? 0);
@@ -842,7 +898,7 @@ private async refreshOutboxGauges(now: number): Promise<void> {
 }
 ```
 
-坏条目不计入分组（它们会被本轮 sweep 删除；若仍存在，只 WARN，不伪造 ddz）。整条 `hgetall` 抛错时不会走到写 gauge。
+坏条目按设计 §5 归 ddz（`badEntries` 汇总 WARN）；整条 `hgetall` 抛错时不会走到写 gauge。
 
 - [ ] **Step 4: 跑绿**
 
@@ -879,7 +935,7 @@ it('A1：补款/回收与 ensure 失败按 game_type 计数', async () => {
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL
+- [ ] **Step 2: 跑红** → FAIL。**既有断言同步**：`robot-funding.test.ts:87-90` 用 `values[0]`；改为按 `{action,game_type}` 精确读。
 - [ ] **Step 3: 实现**
 
 把 `currencyRobotTopupTotal.inc({ action })` 改为：
@@ -929,18 +985,23 @@ it('A1：PDK 队列的抽选轮/不成组/谓词拒绝带 game_type=paodekuai', 
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL
+- [ ] **Step 2: 跑红** → FAIL。**既有断言同步**：`match.service.test.ts` 的 `values[0]` 断言改为按 `game_type` 精确读（同文件 `:2228-2235/:2444-2452`）。
 - [ ] **Step 3: 实现**
 
-- `randomGreedyPick` 增加 `gameType: GameType` 参数；两个调用点传 `queue.gameType`。
-- `accountRejection` 增加 `gameType` 参数；调用点传入。
-- 三处 `inc` 改为：
+- `randomGreedyPick` 增加 `gameType: GameType` 参数；两个调用点（:971/:1096）传 `queue.gameType`。
+- `accountRejection` 增加 `gameType` 参数；调用点（:1332）传入。
+- **5 处** inc（不是 3 处）全部改：
 
 ```ts
+// :970 / :1095
 incGame(matchSelectionRoundsTotal, queue.gameType);
+// :986 / :1108
 incGame(matchNoLegalGroupTotal, queue.gameType);
+// :1351
 incGame(matchPredicateRejectionsTotal, gameType, 1, { predicate: predicate.name });
 ```
+
+测试落点：`match.service.test.ts` **没有** PDK 队列夹具；用 `match-player-count.test.ts` 的 PDK 队列夹具（或在其文件内新增本轮断言），构造 `queue.gameType='paodekuai'` 后断言 `game_type='paodekuai'` 序列。
 
 - [ ] **Step 4: 跑绿**
 
@@ -976,7 +1037,7 @@ it('A1：rooms_active 按 game_type 分组；pipeline 整条失败保留旧值',
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL（gauge 无标签 / pipeline 不存在）
+- [ ] **Step 2: 跑红** → FAIL（gauge 无标签 / pipeline 不存在）。同时把本文件既有两个用例的 `{ scan } as Redis` 补 `pipeline` 桩（返回 `{ exec: async () => keys.map(() => [null, 'doudizhu']) }`），否则旧用例先红。
 - [ ] **Step 3: 实现**
 
 ```ts
@@ -1050,6 +1111,12 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 `game-metrics.test.ts`：
 
 ```ts
+async function exactGauge(metric: { get(): Promise<unknown> }, labels: Record<string, string>): Promise<number | undefined> {
+  const { values } = (await metric.get()) as { values: Array<{ labels: Record<string, string>; value: number }> };
+  return values.find((v) => Object.keys(v.labels).sort().join('|') === Object.keys(labels).sort().join('|') &&
+    Object.entries(labels).every(([k, val]) => String(v.labels[k]) === val))?.value;
+}
+
 it('A1：games_active 按 game_type 采样', async () => {
   const service = new GameMetricsService({
     activeSessionCountByGameType: () => ({ doudizhu: 2, paodekuai: 1 }),
@@ -1060,12 +1127,17 @@ it('A1：games_active 按 game_type 采样', async () => {
 });
 ```
 
+**既有用例同步**：`game-metrics.test.ts` 的 `fakeGame` 只实现 `activeSessionCount`；实现改为 `activeSessionCountByGameType` 后必须补该方法（返回 `{doudizhu: count, paodekuai: 0}`），并把 `gaugeValue` 改成上面的 `exactGauge`。`GameService` 真对象用例同时断言 `activeSessionCountByGameType()`。
+
 `game.service.redis.test.ts`：
 
 ```ts
 it('A1：settle 抛错 ⇒ 计数 {phase:"settle"} 且仍抛出；publish 抛错同理', async () => {
-  // 复用终局夹具；用 vi.spyOn(runtime,'settle') 抛错 / redis.publish reject
-  // 断言 exactSeriesValue(gameSettleFailuresTotal,{game_type:'doudizhu',phase:'settle'}) 增量
+  // 复用终局夹具；`runtimeFor` 是私有 ⇒ 不要 spy runtime。
+  // 用 `vi.spyOn(GameService.prototype as never, 'runtimeFor')` 返回一个
+  // `{ settle: () => { throw new Error('boom') }, buildRecord: () => undefined, finish: (s)=>s, isFinished: ()=>true }`
+  // 的假 runtime；redis.publish reject 则直接 mock `redis.publish`。
+  // 断言 exactGauge(gameSettleFailuresTotal,{game_type:'doudizhu',phase:'settle'}) 增量，
   // 并 await expect(...).rejects
 });
 ```
@@ -1177,7 +1249,7 @@ it('A1：成功决策按 game_type + result + skill 计数；DouZero 失败按�
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL
+- [ ] **Step 2: 跑红** → FAIL。既有 `robot.metrics.test.ts` 的 `counterValue` 要求标签键数完全相等；加 `game_type` 后必须把它改为按 `{result,skill,game_type}` / `{reason,game_type}` 精确匹配。
 - [ ] **Step 3: 实现**
 
 `robot.metrics.ts`：
@@ -1316,7 +1388,18 @@ if (ddzHit) incGame(riskScanHitsTotal, 'doudizhu');
 if (pdkHit) incGame(riskScanHitsTotal, 'paodekuai');
 ```
 
-`records-cleanup.test.ts` 的 `simpleMetric('records_rows_deleted_total')` 改为标签感知（用 `exactSeriesValue` 或解析带标签行）。
+`records-cleanup.test.ts` 的 `simpleMetric('records_rows_deleted_total')` 是“无标签行”正则，会直接抛；改为本文件内的标签感知读数：
+```ts
+async function labeledMetric(name: string, labels: Record<string, string>): Promise<number> {
+  const text = await metricsRegistry().metrics();
+  const hit = text.split('
+').find((line) => line.startsWith(`${name}{`) &&
+    Object.entries(labels).every(([k, v]) => line.includes(`${k}="${v}"`)));
+  if (!hit) throw new Error(`registry 输出里没有 ${name} ${JSON.stringify(labels)}`);
+  return Number(hit.slice(hit.lastIndexOf(' ') + 1));
+}
+```
+既有断言改为 `labeledMetric('records_rows_deleted_total', { game_type: 'doudizhu' })`。
 
 - [ ] **Step 4: 跑绿**
 
@@ -1418,66 +1501,27 @@ Expected: FAIL（规则数 27 / 新规则缺失）。
 
 同步头注释：`**31 条 = 28 类**`；`Dockerfile.prometheus:1` 的 `27 条规则` → `31 条规则`。
 
-- [ ] **Step 3: 看板断言 + 负例自证**
+- [ ] **Step 3: 告警语义断言 + 负例自证**
 
-在 `verify-monitoring.mjs` 加入完整 per-target 白名单（覆盖 spec §4.4 全表，含“不改”target）：
+在 `verify-monitoring.mjs` 的 `if (failures.length)` **之前**（追加到文件末尾会变成死代码）加入关键谓词断言：
 
 ```js
-const dashboardTargets = [
-  ['02-business.json', '匹配队列深度（按模式/档位）', 'A', 'match_queue_length', true],
-  ['02-business.json', '活跃房间 / 对局', 'A', 'rooms_active', true],
-  ['02-business.json', '活跃房间 / 对局', 'B', 'games_active', true],
-  ['02-business.json', '活跃房间 / 对局', 'C', 'rooms_active', false],
-  ['02-business.json', '活跃房间 / 对局', 'D', 'games_active', false],
-  ['02-business.json', '开局 / 结算速率', 'A', 'games_started_total', true],
-  ['02-business.json', '开局 / 结算速率', 'B', 'games_ended_total', true],
-  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'A', 'robot_decisions_total', true],
-  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'B', 'robot_decision_errors_total', true],
-  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'C', 'robot_rule_errors_total', true],
-  ['05-currency.json', '结算补偿队列最老滞留（告警线 300s）', 'A', 'currency_settle_outbox_oldest_seconds', true],
-  ['05-currency.json', '结算结果速率（按 result / 5m：ok|replayed|retried|r2|outboxed|dropped）', 'A', 'currency_settle_result_total', true],
-  ['05-currency.json', '残差销毁增速', 'A', 'currency_settle_residue_total', true],
-  ['05-currency.json', '机器人补给/回收速率（按 action / 5m：refill|recall）', 'A', 'currency_robot_topup_total', true],
-  ['05-currency.json', '机器人 ensure 失败累计', 'A', 'currency_robot_ensure_failed_total', true],
-  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'A', 'entry_fee_skipped_total', true],
-  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'B', 'entry_fee_conflict_total', true],
-  ['05-currency.json', '虚拟池余额（告警线 100 万）', 'A', 'currency_robot_pool_balance', false],
-  ['05-currency.json', '机器人账户余额总量（僵尸余额通缩观测）', 'A', 'currency_robot_accounts_balance_sum', false],
-  ['05-currency.json', '救助速率（按 result / 5m：granted|replayed|rejected）', 'A', 'currency_relief_total', false],
-  ['04-records-backup.json', '记录删除速率', 'A', 'records_rows_deleted_total', true],
-  ['04-records-backup.json', 'records 表字节', 'A', 'records_table_bytes', false],
-  ['06-risk.json', '谓词拒绝速率（按 predicate / 5m：sameDevice|sameIp；记忆拒绝不计）', 'A', 'match_predicate_rejections_total', true],
-  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'A', 'match_selection_rounds_total', true],
-  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'B', 'match_no_legal_group_total', true],
-  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'C', 'match_predicate_rejections_total', false],
-  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'A', 'risk_scan_runs_total', false],
-  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'B', 'risk_scan_last_success_timestamp_seconds', false],
-  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'C', 'risk_scan_hits_total', true],
-  ['06-risk.json', '待审队列水位（risk_reviews_open；无自动告警——目视）', 'A', 'risk_reviews_open', false],
-  ['06-risk.json', '处置动作速率（按 action / 5m：auto_throttle|throttle|unthrottle|ban|unban|dismiss|reopen）', 'A', 'risk_actions_total', false],
-];
-const dashboards = new Map(
-  readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(join(DIR, f), 'utf8'))]),
-);
-for (const [file, title, refId, metric, expectGameType] of dashboardTargets) {
-  const dash = dashboards.get(file);
-  const panel = dash?.panels?.find((p) => p.title === title);
-  const target = panel?.targets?.find((t) => t.refId === refId);
-  ok(target !== undefined, `${file}「${title}」存在 target ${refId}`);
-  if (target) {
-    ok(String(target.expr).includes(metric), `${file}「${title}」${refId} 引用 ${metric}`);
-    ok(
-      String(target.expr).includes('game_type') === expectGameType,
-      `${file}「${title}」${refId} game_type=${expectGameType}（实际 expr：${target.expr}）`,
-    );
-  }
+const ALERT_PREDICATES = {
+  GameStartFailuresHigh: ['reason="cancelled"', '>= 5'],
+  GameSettleFailures: ['phase', '> 0'],
+  SettleDroppedByGame: ['result="dropped"'],
+  RecordWriteFailuresHigh: ['kind="record_lost"', '>= 3'],
+};
+for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
+  const block = new RegExp(`- alert: ${name}[\s\S]*?(?=\n\s*- alert:|$)`).exec(alertText)?.[0] ?? '';
+  for (const needle of needles) ok(block.includes(needle), `${name} 含关键谓词 ${needle}`);
+  ok((alertText.match(new RegExp(`- alert: ${name}\b`, 'g')) ?? []).length === 1, `${name} 规则名唯一`);
 }
 ```
 
-
-负例自证（手工执行一次并记录）：
+负例自证（手工执行一次并记录在提交信息里）：
 1. 临时删掉 `GameSettleFailures` → 脚本红；
-2. 把 02 的 refId A 改回 `rooms_active` → 脚本红；
+2. 把 `GameStartFailuresHigh` 的 `reason="cancelled"` 删掉 → 脚本红（语义断言，不只看名字/数量）；
 3. 还原后脚本绿。
 
 - [ ] **Step 4: 跑绿**
@@ -1537,6 +1581,65 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 | 06 / 风险扫描 / C（新增） | `sum by (game_type) (increase(risk_scan_hits_total[2h]))` | `{{game_type}} 胜率命中（2h）` |
 
 “不改清单”的面板（05 池余额/账户余额/救助、04 表字节、06 待审队列/处置动作）原样不动。
+
+在 `verify-monitoring.mjs` 加入完整 per-target 白名单（覆盖 spec §4.4 全表，含“不改”target）：
+
+```js
+const dashboardTargets = [
+  ['02-business.json', '匹配队列深度（按模式/档位）', 'A', 'match_queue_length', true],
+  ['02-business.json', '活跃房间 / 对局', 'A', 'rooms_active', true],
+  ['02-business.json', '活跃房间 / 对局', 'B', 'games_active', true],
+  ['02-business.json', '活跃房间 / 对局', 'C', 'rooms_active', false],
+  ['02-business.json', '活跃房间 / 对局', 'D', 'games_active', false],
+  ['02-business.json', '开局 / 结算速率', 'A', 'games_started_total', true],
+  ['02-business.json', '开局 / 结算速率', 'B', 'games_ended_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'A', 'robot_decisions_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'B', 'robot_decision_errors_total', true],
+  ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'C', 'robot_rule_errors_total', true],
+  ['05-currency.json', '结算补偿队列最老滞留（告警线 300s）', 'A', 'currency_settle_outbox_oldest_seconds', true],
+  ['05-currency.json', '结算结果速率（按 result / 5m：ok|replayed|retried|r2|outboxed|dropped）', 'A', 'currency_settle_result_total', true],
+  ['05-currency.json', '残差销毁增速', 'A', 'currency_settle_residue_total', true],
+  ['05-currency.json', '机器人补给/回收速率（按 action / 5m：refill|recall）', 'A', 'currency_robot_topup_total', true],
+  ['05-currency.json', '机器人 ensure 失败累计', 'A', 'currency_robot_ensure_failed_total', true],
+  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'A', 'entry_fee_skipped_total', true],
+  ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'B', 'entry_fee_conflict_total', true],
+  ['05-currency.json', '虚拟池余额（告警线 100 万）', 'A', 'currency_robot_pool_balance', false],
+  ['05-currency.json', '机器人账户余额总量（僵尸余额通缩观测）', 'A', 'currency_robot_accounts_balance_sum', false],
+  ['05-currency.json', '救助速率（按 result / 5m：granted|replayed|rejected）', 'A', 'currency_relief_total', false],
+  ['04-records-backup.json', '记录删除速率', 'A', 'records_rows_deleted_total', true],
+  ['04-records-backup.json', 'records 表字节', 'A', 'records_table_bytes', false],
+  ['06-risk.json', '谓词拒绝速率（按 predicate / 5m：sameDevice|sameIp；记忆拒绝不计）', 'A', 'match_predicate_rejections_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'A', 'match_selection_rounds_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'B', 'match_no_legal_group_total', true],
+  ['06-risk.json', '抽选轮与不成组（+ 拒绝率——告警线 0.5）', 'C', 'match_predicate_rejections_total', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'A', 'risk_scan_runs_total', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'B', 'risk_scan_last_success_timestamp_seconds', false],
+  ['06-risk.json', '风险扫描（runs 速率 + 距上次成功；RiskScanStalled 告警线 7200s）', 'C', 'risk_scan_hits_total', true],
+  ['06-risk.json', '待审队列水位（risk_reviews_open；无自动告警——目视）', 'A', 'risk_reviews_open', false],
+  ['06-risk.json', '处置动作速率（按 action / 5m：auto_throttle|throttle|unthrottle|ban|unban|dismiss|reopen）', 'A', 'risk_actions_total', false],
+];
+const dashboards = new Map(
+  readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(join(DIR, f), 'utf8'))]),
+);
+for (const [file, title, refId, metric, expectGameType] of dashboardTargets) {
+  const dash = dashboards.get(file);
+  const panel = dash?.panels?.find((p) => p.title === title);
+  const target = panel?.targets?.find((t) => t.refId === refId);
+  ok(target !== undefined, `${file}「${title}」存在 target ${refId}`);
+  if (target) {
+    ok(String(target.expr).includes(metric), `${file}「${title}」${refId} 引用 ${metric}`);
+    ok(
+      String(target.expr).includes('game_type') === expectGameType,
+      `${file}「${title}」${refId} game_type=${expectGameType}（实际 expr：${target.expr}）`,
+    );
+  }
+}
+```
+
+**断言强度**（防 H7 假绿）：
+- `expectGameType=true` 时断言 `/by\s*\([^)]*\bgame_type\b/`（不接受 `game_type=~`/`label_replace` 等旁路）；
+- `expectGameType=false` 时用 `\bgame_type\b` 整词否定；
+- 每个受影响面板的 `targets.map(t=>t.refId)` 集合必须**严格等于**白名单中该面板的 refId 集合（旧聚合 target 不得与新 target 并存）。
 
 - [ ] **Step 2: 跑绿**
 
@@ -1609,7 +1712,7 @@ checks.that(startedUp.ok, `C11：games_started_total{game_type="doudizhu"} ≥ �
 
 - [ ] **Step 2: 改 slice-18**
 
-- E 组 `runGoldGame` 前取：
+- **F 组 `runGoldGame` 之前（E 组结束后）**取基线（E 自己也打完一局；若在 E 前取，E 会满足 +1，F 丢事件也绿）：
 
 ```ts
 const gamesEndedBefore = seriesValue(readRoomMetrics(), 'games_ended_total', { game_type: 'doudizhu' }) ?? 0;
@@ -1631,11 +1734,27 @@ checks.that(
   `H：games_ended_total{game_type="doudizhu"} ≥ 基线+1（${gamesEndedBefore} → ${endedNow}）`,
 );
 ```
+
+- `terminalSettles` 改为按 `result` 对多序列求和（H12）：
+
+```ts
+function sumMetricWhere(text: string, name: string, labels: Record<string, string>): number {
+  return parseProm(text)
+    .filter((s) => s.name === name && Object.entries(labels).every(([k, v]) => s.labels[k] === v))
+    .reduce((acc, s) => acc + (Number.isFinite(s.value) ? s.value : 0), 0);
+}
+
+const terminalSettles =
+  sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'ok' }) +
+  sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'replayed' });
+```
+
+- 若 slice-18 的 `H room-service /metrics 含 ...` 清单需要同步断言 outbox 两族仍在，不变。
 - outbox 读数：
 
 ```ts
-const outboxSize = sumMetric(currMetrics, 'currency_settle_outbox_size');
-const outboxOldest = sumMetric(currMetrics, 'currency_settle_outbox_oldest_seconds');
+const outboxSize = sumMetric(roomMetrics, 'currency_settle_outbox_size');
+const outboxOldest = sumMetric(roomMetrics, 'currency_settle_outbox_oldest_seconds');
 ```
 
 - `:1575` 条件+消息 27 → 31。
@@ -1744,9 +1863,18 @@ const ROOM_SERVICE = { container: 'ftl-room-service', port: 9002 } as const;
 
 async function enablePdk(): Promise<() => Promise<void>> {
   const admin = await adminLogin();
-  const put = await adminPutConfig(PDK_ENABLED_KEY, true, admin);
-  if (put.body?.code !== ErrCode.OK) throw new ConformanceError(`开启跑得快失败：${JSON.stringify(put.body)}`);
-  const probeUser = await registerUser(90);
+  // 探测走 `POST /api/rooms` ⇒ controller 先查好友房开关；PDK 好友房种子是 false。
+  for (const [key, value] of [
+    [PDK_ENABLED_KEY, true],
+    ['game.paodekuai.friendRoomEnabled', true],
+  ] as const) {
+    const put = await adminPutConfig(key, value, admin);
+    if (put.body?.code !== ErrCode.OK) {
+      throw new ConformanceError(`开启 ${key} 失败：${JSON.stringify(put.body)}`);
+    }
+  }
+  // 与 slice-29 不同的账号序号（90 已被 slice-29 的探针占用，复用会撞 12011 等待房）
+  const probeUser = await registerUser(95);
   const deadline = Date.now() + 60_000;
   for (;;) {
     const probe = await postJson('/api/rooms', { mode: 'random', gameType: 'paodekuai', playerCount: 3 }, probeUser.accessToken);
@@ -1755,8 +1883,10 @@ async function enablePdk(): Promise<() => Promise<void>> {
     await sleep(1_000);
   }
   return async () => {
-    const off = await adminPutConfig(PDK_ENABLED_KEY, false, admin);
-    if (off.body?.code !== ErrCode.OK) throw new ConformanceError(`还原跑得快开关失败`);
+    for (const key of ['game.paodekuai.friendRoomEnabled', PDK_ENABLED_KEY]) {
+      const off = await adminPutConfig(key, false, admin);
+      if (off.body?.code !== ErrCode.OK) throw new ConformanceError(`还原 ${key} 失败`);
+    }
   };
 }
 
@@ -1873,9 +2003,13 @@ describe('A1 源码闸：指标写点必须经 incGame/setGame', () => {
     const offenders: string[] = [];
     for (const file of walk(join(ROOT, 'packages'))) {
       if (file.includes('/test/') || file.endsWith('.test.ts')) continue;
-      const src = readFileSync(file, 'utf8');
+      // 先剥注释，避免注释里的示例误报
+      const src = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
       for (const name of TARGETS) {
-        if (new RegExp(`\\b${name}\\.(inc|set)\\(`).test(src)) {
+        // 覆盖 .inc( / .set( / .labels( / ?.inc( 等直写形态
+        if (new RegExp(`\\b${name}\\.(inc|set|labels)\\(`).test(src)) {
           offenders.push(`${file.replace(ROOT, '')}: ${name}`);
         }
       }
@@ -1897,21 +2031,18 @@ describe('A1 源码闸：指标写点必须经 incGame/setGame', () => {
 - [ ] **Step 3: 全量验证**
 
 ```bash
-cd packages/shared && npx vitest run && npx tsc --noEmit
-cd ../room-service && npx vitest run && npx tsc --noEmit
-cd ../game-service && npx vitest run && npx tsc --noEmit
-cd ../robot-service && npx vitest run && npx tsc --noEmit
-cd ../user-service && npx vitest run && npx tsc --noEmit
-cd ../../tools/conformance && npx tsc --noEmit
+pnpm --filter @fight-the-landlord/shared build
+pnpm exec turbo run test lint --force
+cd tools/conformance && npx tsc --noEmit
 cd ../.. && node scripts/verify-monitoring.mjs && node scripts/verify-admin-static.mjs
 ```
 
-Expected: 全部 0 退出；记录测试文件/用例数。
+Expected: 全部 0 退出；记录测试文件/用例数。`turbo run test lint --force` 覆盖各包测试类型检查（`tsconfig.test.json`）；Cached 不算真跑。
 
 - [ ] **Step 4: 工作区检查**
 
 Run: `git status --porcelain`
-Expected: 仅剩用户已有的 `apps/client/src/components/PdkSettlement.vue`（不得提交）。
+Expected: 仅剩用户已有的 `apps/client/src/components/PdkSettlement.vue`（不得提交）。本片 spec/plan/实现均已各自提交；若 spec 仍有未提交改动，先单独提交再进本任务。
 
 - [ ] **Step 5: 提交**
 
@@ -1934,3 +2065,32 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [x] spec §5 边界语义 → Task 6/9 + 全局约束
 - [x] spec §7 文件清单 → Task 1–17
 - [x] 类型一致性：`incGame(counter, gameType, amount?, labels?)` / `setGame(gauge, gameType, value)` / `exactSeriesValue(metric, labels)` / `seriesValueExact(text, name, labels)` 全计划一致。
+
+
+---
+
+## 计划审查记录（2026-10-25，独立 reviewer）
+
+结论：**需修订后再开工**（6 阻断 / 14 高）。修订如下：
+
+| 编号 | 发现 | 处置 |
+|---|---|---|
+| B1 | `incGame` 泛型 cast 走错 prom-client 重载，Task 1 tsc 必红 | 改为 `(counter as Counter<string>).inc(values, amount)` / `(gauge as Gauge<string>).set(values, value)` |
+| B2 | 台费两指标三个写点未改，源码闸必红 | Task 3 补 `chargeOne` / `recordEntryFeeSkip` 三处 `incGame` + entry-fee 测试 |
+| B3 | `endedGameType` 跨方法引用（TS2304） | Task 4 记录 catch 内改用 `this.resolveGameEventType(event)` |
+| B4 | slice-30 探测建房被 PDK 好友房闸拦 12006 | enable 同时开 `friendRoomEnabled`，finally 还原；探针账号换序号 |
+| B5 | slice-18 outbox 读错 metrics 源（currency-service），断言恒真 | 改用 `roomMetrics` |
+| B6 | settle 参数贯穿缺调用点清单 + `beforeRoom` 死变量 | 已列 9 个 drop*/read/apply 调用点、`resolveSeats` 传参；删除 `beforeRoom` |
+| H1 | shared 未 build，跨包测试 import 失败 | 全局约束加 `pnpm --filter @fight-the-landlord/shared build` |
+| H2/H13 | 测试步骤大量注释占位/夹具不存在 | 新增「Fixture 手册」逐任务给出夹具与造场景方式；补 reason 覆盖 |
+| H3 | match 有 5 处 inc 不是 3 处 | Task 8 改为 5 处 + 2 个调用点 |
+| H4 | 既有 `values[0]`/子集读数 | Task 3/4/7/8/9/10/11/12 各自列明同步改造 |
+| H5 | 坏 outbox 条目语义与 spec 冲突 | Task 6 坏条目归 ddz + WARN |
+| H6 | 看板闸在 Task 13 先于看板改动 | 看板白名单整体移到 Task 14 |
+| H7 | per-target 断言只看 substring | 改为 `by (game_type)` 正则 + refId 集合严格相等 |
+| H8 | slice-18 基线在 E 前，F 丢失也绿 | 基线移到 F 前 |
+| H9 | 残差断言恒真 | 改 before/after 精确增量（夹具增量为 0） |
+| H10 | 全局约束与 `match_queue_length` 矛盾；源码闸可绕过 | 显式豁免 `match_queue_length`；源码闸剥注释并覆盖 `.labels(`/`?.` |
+| H11 | 验证命令不覆盖测试类型检查；工作区期望过期 | 改用 `turbo run test lint --force`；注明 spec/plan 已提交 |
+| H12 | slice-18 `terminalSettles` 仍取首条 | 新增 `sumMetricWhere` 按 result 求和 |
+| H14 | 告警闸只查名字/存在性 | 增加关键谓词与阈值断言 |

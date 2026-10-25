@@ -26,7 +26,7 @@ PDK 已具备完整的对局、结算、记录、风控主链路，但可观测�
 - 更新 4 块现有看板（业务/记录/货币/风控），不新建看板。
 - `scripts/verify-monitoring.mjs` 增加告警规则解析与 per-target 看板校验。
 - conformance：修正 slice-16/18 的规则数硬编码与文案；C11 增加 `games_started_total` 精确标签增量；slice-18 增加 `games_ended_total` 与 outbox 合计断言；**新增 `slice-30-pdk-metrics`** 做 PDK 指标真栈验证。
-- 单测 + registry 不变量测试；HELP 文本、告警头注释、`Dockerfile.prometheus`、ops 文档同步。
+- 单测 + 源码闸（禁止直接 .inc/.set）+ 标签声明测试；HELP 文本、告警头注释、`Dockerfile.prometheus`、ops 文档同步。
 
 ### 2.2 不做（YAGNI / 边界）
 
@@ -46,7 +46,7 @@ PDK 已具备完整的对局、结算、记录、风控主链路，但可观测�
 | D2 | `game_type` 值域 = `GameType`；缺字段/空串/未知在**指标边界**归一为 `doudizhu`，入口 WARN；不宣称与 `parseGameType` 的抛错纪律一致 | 有界标签；`??` 不兜空串，必须显式 `isGameType` |
 | D3 | 本片不新增 `player_count` 维度 | 2/4 会话并行；B 组统一加 |
 | D4 | 失败计数器的 `reason/phase/kind` 全部枚举；`failPdkStart` 接收枚举 + detail 文本 | 防基数爆炸；调用点映射可测，禁止字符串匹配 |
-| D5 | 所有带 `game_type` 的写点经 shared `incGame/setGame`（带 amount 参数）；助手最后写入 `game_type`，调用方不可覆盖 | prom-client 少传标签不抛错；只有助手 + registry 不变量能防静默缺标签 |
+| D5 | 所有**本片改造**的指标写点经 shared `incGame/setGame`（带 amount 参数）；助手最后写入 `game_type`，调用方不可覆盖。`match_queue_length` 例外（多标签、非本片改造，继续直接 `.set`） | prom-client 少传标签不抛错；只有助手 + 源码闸 + 标签声明测试能防静默缺标签 |
 | D6 | 采样类 gauge **先读后写**；整条快照读取失败保留旧值；单键/单条目错误按 ddz 继续并汇总 WARN | 防 Redis 抖动把 `CurrencySettleOutboxStuck` 假解除 |
 | D7 | 告警用绝对次数；`for` 5–10m | PDK 初期量小，比例告警不触发 |
 | D8 | 看板静态校验按 `(文件, 面板 title, refId, 指标, expectGameType)` 白名单 | 同一面板同时存在“按玩法 target”和“合计/平台 target”，metric 名不足以区分 |
@@ -111,6 +111,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 - outbox：整条 `hgetall` 失败 ⇒ 不写；单条目 JSON 坏 ⇒ 计 ddz + 汇总 WARN；其余照常分组。
 - `risk_scan_hits_total` 只看胜率命中；设备命中不纳入（reasons/score 仍可见）。
 - 所有 HELP 同步标签口径。
+- `match_queue_length` 不在本片改造范围（已带多标签），源码闸显式豁免。
 
 ### 4.2 新增失败/跳过计数器
 
@@ -167,7 +168,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 **`scripts/verify-monitoring.mjs`**
 
 - 剥注释行，按行首 `^\s*-\s+alert:` 切块；只从 `expr:` 行提取表达式。
-- 规则名集合**等于** 31 条 EXPECTED 集合；4 条新规则 `expr` 含 `game_type`。
+- 规则名集合**等于** 31 条 EXPECTED 集合；4 条新规则 `expr` 含 `game_type`，并断言关键谓词（`cancelled` / `phase` / `dropped` / `record_lost` / 阈值）与规则名唯一。
 - 头部注释断言 31 条 / 28 类。
 - 看板按 per-target 白名单断言；对合计/平台 target 断言**不含** `game_type`。
 - 判别力自证：删一条告警或把按玩法 target 改回聚合 ⇒ 必须红（计划中记录手工验证）。
@@ -182,10 +183,11 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 - `slice-18-gold-room.ts`：
   - `:1575` 条件+消息 27→31；
   - 在 E 组 `runGoldGame` **之前**取 `gamesEndedBefore = seriesValue(roomMetrics, 'games_ended_total', {game_type:'doudizhu'}) ?? 0`；F 组金币局结束（`game.settlement`）后有界轮询断言 `>= gamesEndedBefore + 1`；
-  - outbox 读数从 `seriesValue(...,{})` 改为 `sumMetric(...)`（跨玩法合计），避免只读第一条序列；`oldest` 当前只断言 0，sum 可用（未来断言非零时改 max）；
+  - outbox 读数从 `seriesValue(...,{})` 改为 `sumMetric(roomMetrics, ...)`（跨玩法合计）；`oldest` 当前只断言 0，sum 可用（未来断言非零时改 max）；
+  - `terminalSettles`（ok|replayed）改为按 `result` 对多序列求和（`sumMetricWhere`），不得用 `seriesValue` 首条；
   - `baselines.json` slice-18 `150 → 151`。
 - **新增 `slice-30-pdk-metrics.ts`**：
-  - 复用 slice-29 的 `enablePdk()` 形态：`adminPutConfig('game.paodekuai.enabled', true)` 后用**探测建房**轮询至生效；finally 还原 false 并等待探测拦截；
+  - 复用 slice-29 的 `enablePdk()` 形态：同时开 `game.paodekuai.enabled` 与 `game.paodekuai.friendRoomEnabled`（`POST /api/rooms` 探测会被好友房闸拦 12006），用**探测建房**轮询至生效；finally 两键都还原 false；探针账号用不同序号（避免复用 slice-29 的等待房撞 12011）；
   - 自带/复用 `tools/conformance/src/lib/prom-text.ts`（新增：`parseProm/seriesValueExact/sumMetric/execCurl`），不复制第三份解析器，也不改 slice-16/18 现有私有实现；
   - 取 room-service `games_started_total{game_type="paodekuai"}` 基线 → `startPdkRoom` → 局中断言 started 增量；
   - `playPdkToEnd` 后断言 `games_ended_total{game_type="paodekuai"}` 增量；
@@ -201,7 +203,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 - game-service：`publishEnded` settle/publish 失败计数 + rethrow；`games_active` 分玩法（fake 补新方法）。
 - robot-service：PDK 分支异常含 feature guard；`robot_decisions_total` 标签；DouZero errors 标签；PDK 日志不打印 ddz 模型名；HELP/注释写明两条错误率公式（DouZero `errors/decisions`、PDK `errors/(decisions+errors)`）。
 - user-service：`records_rows_deleted_total` 分玩法（0/2 行）；`risk_scan_hits_total`。
-- 测试助手：新增精确标签读数器；替换 `values[0]` 用法于本片用例；新增 registry 不变量测试（所有改造指标每条序列必须有 `game_type` 且值域 ⊆ {doudizhu,paodekuai}）。
+- 测试助手：新增精确标签读数器；替换 `values[0]` 用法于本片用例；新增源码闸（src 下禁止对目标指标直接 .inc/.set）与各包标签声明测试（incGame 写入不抛错且序列带合法 game_type）。
 - `packages/room-service/test/client-message-wiring.gate.test.ts` 的 metrics mock 补新导出。
 - `packages/user-service/test/records-cleanup.test.ts` 的 `simpleMetric` 改为标签感知。
 
@@ -222,7 +224,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 |---|---|---|
 | 与 2/4 同文件并行 | 合并冲突 | D14 独立 worktree/分支；合入顺序由用户/玩法侧定；本片不改 slice-29 |
 | 现有单测按无标签断言 | 测试红 | 同步更新；逐包跑 |
-| prom-client 少传标签不抛错 | 静默缺标签 | D5 助手 + registry 不变量 |
+| prom-client 少传标签不抛错 | 静默缺标签 | D5 助手 + 源码闸 + 标签声明测试 |
 | 采样读取失败写 0 | 告警假解除 | D6 三分支语义 + 失败单测 |
 | `rooms_active` 新增 HGET | Redis 负载小幅上升 | pipeline 批量；房间量级小；单轮失败保留旧值 |
 | 告警阈值初期噪声 | 误报 | 绝对次数 + for；上线后调参（发版） |
@@ -277,7 +279,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 
 ## 8. 测试判据（完成定义）
 
-1. 每个改造指标都有单测断言最终标签值；registry 不变量测试通过。
+1. 每个改造指标都有单测断言最终标签值；源码闸与标签声明测试通过。
 2. `packages/shared` / `room-service` / `game-service` / `robot-service` / `user-service` 测试全绿，对应 `lint` 通过。
 3. `node scripts/verify-monitoring.mjs` 通过；判别力自证（删告警/改聚合 ⇒ 红）。
 4. `pnpm verify:admin` 不受影响。
