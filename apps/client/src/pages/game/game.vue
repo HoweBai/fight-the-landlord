@@ -239,12 +239,15 @@ watch(matching, (isMatching) => {
 const ccPerGame = computed(() => store.cardCounterPricePerGameCoins);
 const ccPerHour = computed(() => store.cardCounterPricePerHourCoins);
 /**
- * 入口/弹层可见条件（2026-10-19 入口改造）：总开关开 + 金币场 + 两价格均为数值
- * （旧服务端 null ⇒ 整块不渲染）。
+ * 入口/弹层可见条件（2026-10-19 入口改造）：**玩法能力位**（记牌器是斗地主专属付费能力，
+ * `GAME_META.paodekuai.capabilities.cardCounter=false` ⇒ 跑得快整块不渲染，与开局链
+ * 「不扣费/不下发」同一判据 D17）+ 总开关 + 金币场 + 两价格均为数值（旧服务端 null ⇒
+ * 整块不渲染）。
  * ⚠️ **不含 matching**：模板另外叠 `&& !matching`（匹配中入口隐藏、弹层由 watcher 强制关闭）。
  */
 const ccPanelVisible = computed(
   () =>
+    GAME_META[store.activeGameType].capabilities.cardCounter &&
     store.cardCounterEnabled &&
     store.roomMode === "gold" &&
     typeof ccPerGame.value === "number" &&
