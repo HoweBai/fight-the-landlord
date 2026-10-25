@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import type { Redis } from 'ioredis';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import { ErrCode, type GameType } from '@fight-the-landlord/protocol';
 import { REDIS } from '../auth/token.service';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { DomainError } from '../http/errors';
@@ -257,7 +257,9 @@ export class ReviewsService {
     score: number,
     reasons: readonly ScanReason[],
     now: number,
+    unavailableGames: readonly GameType[] = [],
   ): Promise<void> {
+    void unavailableGames; // T6 冻结保护使用；T4/T5 先保留签名
     const action = await this.dataSource.transaction(
       async (manager): Promise<RiskSystemAction> => {
         const rows = (await manager.query(RISK_UPSERT_LOCK_SQL, [userId])) as LatestReviewRow[];

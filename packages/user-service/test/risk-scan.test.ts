@@ -55,9 +55,9 @@ const SPEC_RISK_UPSERT_LOCK_SQL =
 /** 规格 §2.5-2 SQL1（胜率）逐字。 */
 const SPEC_RISK_WIN_RATE_SQL =
   "SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins FROM game_record_players p JOIN game_records r ON r.id=p.record_id JOIN users u ON u.id = p.user_id AND u.status='active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL GROUP BY p.user_id";
-/** 2026-10-25 跑得快胜率 SQL 逐字（spec §5.4）。 */
+/** 2026-10-25 跑得快胜率 SQL 逐字（spec §5.4）；2026-10-26 加 player_count + 机器人整局剔除。 */
 const SPEC_RISK_WIN_RATE_PDK_SQL =
-  "SELECT p.user_id, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 GROUP BY p.user_id";
+  "SELECT p.user_id, r.player_count AS player_count, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id, r.player_count";
 /** 规格 §2.5-2 SQL2（设备数）逐字。 */
 const SPEC_RISK_DEVICE_COUNT_SQL =
   "SELECT d.user_id, COUNT(DISTINCT d.device_id) AS devices FROM user_devices d JOIN users u ON u.id = d.user_id AND u.status='active' WHERE d.last_seen_at >= ? GROUP BY d.user_id";
@@ -236,7 +236,12 @@ class FakeRiskDb {
 
 class FakeScanDb {
   winRows: Array<{ user_id: string; games: number | string; wins: number | string }> = [];
-  pdkWinRows: Array<{ user_id: string; games: number | string; wins: number | string }> = [];
+  pdkWinRows: Array<{
+    user_id: string;
+    player_count: number | string;
+    games: number | string;
+    wins: number | string;
+  }> = [];
   deviceRows: Array<{ user_id: string; devices: number | string }> = [];
   bannedIds: string[] = [];
   /** 复核读的回执（缺 ⇒ 返回 [] —— 「行已不在」形态）。 */
@@ -348,6 +353,12 @@ function makeScanConfig(
       | 'winRateThreshold'
       | 'pdkMinGames'
       | 'pdkWinRateThreshold'
+      | 'pdkMinGames2'
+      | 'pdkMinGames3'
+      | 'pdkMinGames4'
+      | 'pdkWinRate2'
+      | 'pdkWinRate3'
+      | 'pdkWinRate4'
       | 'deviceLimit'
       | 'deviceWindowDays'
       | 'intervalMs',
@@ -360,6 +371,12 @@ function makeScanConfig(
     riskWinRateThreshold: vi.fn(() => over.winRateThreshold ?? 0.8),
     riskPaodekuaiMinGames: vi.fn(() => over.pdkMinGames ?? 100),
     riskPaodekuaiWinRateThreshold: vi.fn(() => over.pdkWinRateThreshold ?? 0.8),
+    riskPaodekuaiPlayerMinGames: vi.fn(
+      (n: 2 | 3 | 4) => over[`pdkMinGames${n}`] ?? over.pdkMinGames ?? 100,
+    ),
+    riskPaodekuaiPlayerWinRateThreshold: vi.fn(
+      (n: 2 | 3 | 4) => over[`pdkWinRate${n}`] ?? over.pdkWinRateThreshold ?? 0.8,
+    ),
     riskDeviceLimit: vi.fn(() => over.deviceLimit ?? 3),
     riskDeviceWindowDays: vi.fn(() => over.deviceWindowDays ?? 30),
     riskScanIntervalMs: vi.fn(() => over.intervalMs ?? 3_600_000),
@@ -989,7 +1006,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     });
 
     it('跑得快单独命中：score 25 + reasons gameType=paodekuai（PDK getter 现读）', async () => {
-      db.pdkWinRows = [{ user_id: 'u-pdk', games: 101, wins: 90 }];
+      db.pdkWinRows = [{ user_id: 'u-pdk', player_count: 3, games: 101, wins: 90 }];
       const cache = makeScanConfig({ pdkMinGames: 100, pdkWinRateThreshold: 0.8 });
 
       const result = await mkSvc(cache).runScanOnce(T0);
@@ -1000,16 +1017,20 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
         reasons: [
           {
             check: 'winRate',
-            detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 },
+            detail: { gameType: 'paodekuai', playerCount: 3, games: 101, wins: 90, winRate: 90 / 101 },
           },
         ],
       });
-      expect(cache.riskPaodekuaiWinRateThreshold).toHaveBeenCalled();
-      expect(cache.riskPaodekuaiMinGames).toHaveBeenCalled();
+      expect(cache.riskPaodekuaiPlayerWinRateThreshold).toHaveBeenCalledWith(2);
+      expect(cache.riskPaodekuaiPlayerWinRateThreshold).toHaveBeenCalledWith(3);
+      expect(cache.riskPaodekuaiPlayerWinRateThreshold).toHaveBeenCalledWith(4);
+      expect(cache.riskPaodekuaiPlayerMinGames).toHaveBeenCalledWith(2);
+      expect(cache.riskPaodekuaiPlayerMinGames).toHaveBeenCalledWith(3);
+      expect(cache.riskPaodekuaiPlayerMinGames).toHaveBeenCalledWith(4);
     });
 
     it('跑得快-only 未命中（score 0）仍进并集并调用状态机', async () => {
-      db.pdkWinRows = [{ user_id: 'u-pdk-zero', games: 5, wins: 5 }];
+      db.pdkWinRows = [{ user_id: 'u-pdk-zero', player_count: 3, games: 5, wins: 5 }];
 
       const result = await mkSvc().runScanOnce(T0);
 
@@ -1019,8 +1040,8 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
 
     it('跑得快边界：games === pdkMinGames / winRate === pdkWinRateThreshold ⇒ 不命中（严格大于）', async () => {
       db.pdkWinRows = [
-        { user_id: 'u-pdk-eq-games', games: 100, wins: 100 }, // 恰 = minGames ⇒ 不 >
-        { user_id: 'u-pdk-eq-rate', games: 125, wins: 100 }, // winRate 恰 = 0.8 ⇒ 不 >
+        { user_id: 'u-pdk-eq-games', player_count: 3, games: 100, wins: 100 }, // 恰 = minGames ⇒ 不 >
+        { user_id: 'u-pdk-eq-rate', player_count: 3, games: 125, wins: 100 }, // winRate 恰 = 0.8 ⇒ 不 >
       ];
 
       const result = await mkSvc().runScanOnce(T0);
@@ -1032,7 +1053,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     });
 
     it('按玩法阈值：pdk 用自己的 minGames/winRate（0.95 反例不命中）', async () => {
-      db.pdkWinRows = [{ user_id: 'u-pdk', games: 51, wins: 46 }];
+      db.pdkWinRows = [{ user_id: 'u-pdk', player_count: 3, games: 51, wins: 46 }];
 
       const hit = await mkSvc(
         makeScanConfig({ pdkMinGames: 50, pdkWinRateThreshold: 0.9 }),
@@ -1046,6 +1067,136 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       ).runScanOnce(T0);
       expect(miss.flagged).toBe(0);
       expect(callsByUser()['u-pdk']).toEqual({ score: 0, reasons: [] });
+    });
+
+    it('按人数拆样本：2/3/4 各自 2 局 2 胜 ⇒ 三条 reasons 按人数升序、总分仍 25', async () => {
+      db.pdkWinRows = [
+        { user_id: 'u-pdk', player_count: 4, games: 2, wins: 2 },
+        { user_id: 'u-pdk', player_count: 2, games: 2, wins: 2 },
+        { user_id: 'u-pdk', player_count: 3, games: 2, wins: 2 },
+      ];
+      const cache = makeScanConfig({
+        pdkMinGames2: 1,
+        pdkMinGames3: 1,
+        pdkMinGames4: 1,
+        pdkWinRate2: 0.5,
+        pdkWinRate3: 0.5,
+        pdkWinRate4: 0.5,
+      });
+      const before = await labeledMetric(
+        'risk_scan_hits_total',
+        '{game_type="paodekuai"}',
+      );
+
+      await mkSvc(cache).runScanOnce(T0);
+
+      expect(callsByUser()['u-pdk']).toEqual({
+        score: 25,
+        reasons: [
+          {
+            check: 'winRate',
+            detail: { gameType: 'paodekuai', playerCount: 2, games: 2, wins: 2, winRate: 1 },
+          },
+          {
+            check: 'winRate',
+            detail: { gameType: 'paodekuai', playerCount: 3, games: 2, wins: 2, winRate: 1 },
+          },
+          {
+            check: 'winRate',
+            detail: { gameType: 'paodekuai', playerCount: 4, games: 2, wins: 2, winRate: 1 },
+          },
+        ],
+      });
+      // 每用户每玩法只 +1（不是每个 playerCount +1）。
+      expect(
+        await labeledMetric('risk_scan_hits_total', '{game_type="paodekuai"}'),
+      ).toBe(before + 1);
+    });
+
+    it('按人数独立阈值：2 人命中、3/4 人同数据不命中', async () => {
+      db.pdkWinRows = [
+        { user_id: 'u-pdk', player_count: 2, games: 2, wins: 2 },
+        { user_id: 'u-pdk', player_count: 3, games: 2, wins: 1 },
+        { user_id: 'u-pdk', player_count: 4, games: 2, wins: 1 },
+      ];
+      const cache = makeScanConfig({
+        pdkMinGames2: 1,
+        pdkMinGames3: 1,
+        pdkMinGames4: 1,
+        pdkWinRate2: 0.5,
+        pdkWinRate3: 0.9,
+        pdkWinRate4: 0.9,
+      });
+
+      await mkSvc(cache).runScanOnce(T0);
+
+      expect(callsByUser()['u-pdk']).toEqual({
+        score: 25,
+        reasons: [
+          {
+            check: 'winRate',
+            detail: { gameType: 'paodekuai', playerCount: 2, games: 2, wins: 2, winRate: 1 },
+          },
+        ],
+      });
+    });
+
+    it('按人数严格边界：恰好 1 局 1 胜 / minGames=1 ⇒ 不命中', async () => {
+      db.pdkWinRows = [{ user_id: 'u-pdk', player_count: 2, games: 1, wins: 1 }];
+
+      const result = await mkSvc(
+        makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 }),
+      ).runScanOnce(T0);
+
+      expect(result.flagged).toBe(0);
+      expect(callsByUser()['u-pdk']).toEqual({ score: 0, reasons: [] });
+    });
+
+    it('未知 player_count：跳过并按轮汇总一条 WARN，不计入任何人数桶', async () => {
+      db.pdkWinRows = [
+        { user_id: 'u-unknown', player_count: 5, games: 2, wins: 2 },
+        { user_id: 'u-known', player_count: 2, games: 2, wins: 2 },
+      ];
+      const cache = makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 });
+
+      const result = await mkSvc(cache).runScanOnce(T0);
+
+      expect(result.users).toBe(1); // 只有 u-known
+      expect(callsByUser()['u-unknown']).toBeUndefined();
+      expect(callsByUser()['u-known']?.score).toBe(25);
+      const warns = captured.records.filter((r) => r.level === 'warn');
+      expect(
+        warns.some(
+          (r) =>
+            r.msg.includes('unknown player_count') &&
+            r.msg.includes('u-unknown') &&
+            r.msg.includes('1'),
+        ),
+      ).toBe(true);
+    });
+
+    it('COUNT/SUM/player_count 的字符串回值全部 Number() 归一', async () => {
+      db.pdkWinRows = [
+        { user_id: 'u-pdk', player_count: '2', games: '2', wins: '2' },
+      ];
+
+      await mkSvc(makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 })).runScanOnce(T0);
+
+      expect(callsByUser()['u-pdk']).toEqual({
+        score: 25,
+        reasons: [
+          {
+            check: 'winRate',
+            detail: { gameType: 'paodekuai', playerCount: 2, games: 2, wins: 2, winRate: 1 },
+          },
+        ],
+      });
+    });
+
+    it('扫描把 degradedGames（本任务恒空）作为第 5 参传给状态机', async () => {
+      db.winRows = [{ user_id: 'u-A', games: 5, wins: 5 }];
+      await mkSvc(makeScanConfig({ minGames: 1 })).runScanOnce(T0);
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual([]);
     });
 
     it('斗地主阈值仍走自己的键（与 pdk 独立）', async () => {
@@ -1066,7 +1217,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
 
     it('跨玩法不聚合：两玩法各自未过 minGames ⇒ 不命中（合并会命中）', async () => {
       db.winRows = [{ user_id: 'u-mix', games: 60, wins: 55 }];
-      db.pdkWinRows = [{ user_id: 'u-mix', games: 60, wins: 55 }];
+      db.pdkWinRows = [{ user_id: 'u-mix', player_count: 3, games: 60, wins: 55 }];
 
       const result = await mkSvc(
         makeScanConfig({
@@ -1084,7 +1235,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
 
     it('两玩法同时命中不叠加：score 25（无设备）/ 50（有设备），reasons 两条 + devices', async () => {
       db.winRows = [{ user_id: 'u-both2', games: 101, wins: 90 }];
-      db.pdkWinRows = [{ user_id: 'u-both2', games: 101, wins: 90 }];
+      db.pdkWinRows = [{ user_id: 'u-both2', player_count: 3, games: 101, wins: 90 }];
 
       const first = await mkSvc().runScanOnce(T0);
       expect(first.flagged).toBe(1);
@@ -1097,7 +1248,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
           },
           {
             check: 'winRate',
-            detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 },
+            detail: { gameType: 'paodekuai', playerCount: 3, games: 101, wins: 90, winRate: 90 / 101 },
           },
         ],
       });
@@ -1115,7 +1266,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
           },
           {
             check: 'winRate',
-            detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 },
+            detail: { gameType: 'paodekuai', playerCount: 3, games: 101, wins: 90, winRate: 90 / 101 },
           },
           { check: 'devices', detail: { devices: 5 } },
         ],
@@ -1151,7 +1302,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     });
 
     it('A1：胜率命中按玩法计 risk_scan_hits_total', async () => {
-      db.pdkWinRows = [{ user_id: 'u-pdk', games: 101, wins: 90 }];
+      db.pdkWinRows = [{ user_id: 'u-pdk', player_count: 3, games: 101, wins: 90 }];
       const before = await labeledMetric('risk_scan_hits_total', '{game_type="paodekuai"}');
       const beforeDdz = await labeledMetric('risk_scan_hits_total', '{game_type="doudizhu"}');
 
