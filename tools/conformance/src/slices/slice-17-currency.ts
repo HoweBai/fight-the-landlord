@@ -689,8 +689,8 @@ export async function runSlice17(): Promise<Checks> {
     checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 8, '③ C2：migrations_currency 恰 8 行（AgentDomain 迁移 +1；真库读过）');
     checks.eq(
       mysqlText(`SELECT GROUP_CONCAT(name ORDER BY id) FROM migrations_currency`),
-      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002',
-      '③ C2：七行 = 既有四行 + A2 三条（顺序=执行序）',
+      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002,AgentDomain1798000000000',
+      '③ C2：八行 = 既有四行 + A2 三条 + 代理 AgentDomain（顺序=执行序）',
     );
 
     // ══════════════════════════════════════════════════════════════════════

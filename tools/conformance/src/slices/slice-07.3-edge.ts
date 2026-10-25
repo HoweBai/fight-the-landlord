@@ -617,12 +617,19 @@ export async function runSlice073Edge(): Promise<Checks> {
     info(`收尾 docker compose --profile edge up -d --no-deps edge（复原常态化门口）⇒ exit ${restoreEdge.code}`);
     if (restoreEdge.code !== 0) info(`复原门口输出（尾部 400 字）：${restoreEdge.out.slice(-400)}`);
   }
-  // ⚠️ 判"无残留"用**精确名**（订正，实测 2026-09-24）：`--filter name=` 是**子串**匹配 ——
-  //    B5 探针叫 `ftl-edge-probe-*`，上一轮失败的残留会被它命中 ⇒ 本轮以"门口有残留"的
-  //    形态**假红**（真因在探针不在门口）。判据的本意只关门口（残留 ⇒ 下次跑的是旧镜像）。
-  const ps = spawnSync('docker', ['ps', '-a', '--format', '{{.Names}}'], { cwd: REPO_ROOT, encoding: 'utf8' });
-  const edgeResidue = (ps.stdout ?? '').split('\n').map((s) => s.trim()).filter((n) => n === EDGE_CONTAINER);
-  checks.that(edgeResidue.length === 0, `收尾后 ${EDGE_CONTAINER} 无残留 —— 实际残留 ${JSON.stringify(edgeResidue)}`);
+  // ⚠️ 2026-10-26：收尾现在**故意**把 `ftl-edge` 起回来（后续 slice-16/19/22/24 都要它），
+  //    所以这里判「已复原且 healthy」，而不是「无残留」。旧镜像残留仍由 B0 之前的清理负责
+  //    （`docker ps -a` 精确名命中会被先删）。
+  const edgeState = spawnSync(
+    'docker',
+    ['inspect', EDGE_CONTAINER, '--format', '{{.State.Status}}/{{.State.Health.Status}}'],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  );
+  const edgeStatus = (edgeState.stdout ?? '').trim();
+  checks.that(
+    edgeStatus === 'running/healthy',
+    `收尾后 ${EDGE_CONTAINER} 已复原并 healthy（后续切片依赖门口）—— 实际 ${JSON.stringify(edgeStatus)}`,
+  );
   // ⚠️ 收尾的**阳性自证**（Task 3 交接的缺口）：网关必须**真的**回到开发默认形态。
   //    它既是本轮的证据，也是**下一轮非空测**的前提；`TRUST_PROXY=` 是**恰好**元素
   //    （用 `includes('TRUST_PROXY=')` 判原文会把 `TRUST_PROXY=172.…` 也判真 ⇒ 必须逐元素比）。
