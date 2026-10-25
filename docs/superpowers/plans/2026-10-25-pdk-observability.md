@@ -2446,3 +2446,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 | H11 | 验证命令不覆盖测试类型检查；工作区期望过期 | 改用 `turbo run test lint --force`；注明 spec/plan 已提交 |
 | H12 | slice-18 `terminalSettles` 仍取首条 | 新增 `sumMetricWhere` 按 result 求和 |
 | H14 | 告警闸只查名字/存在性 | 增加关键谓词与阈值断言 |
+
+---
+
+## 实施记录（2026-10-25）
+
+- 分支：`feature/pdk-observability-a1`（从 `dev@1c12a039` 开出；22 commits）。
+- 任务 1–17 全部完成；每任务 TDD（红 → 绿 → 提交）。
+- 验证：`pnpm exec turbo run test lint --force` **44/44 通过 / 0 cached**；`node scripts/verify-monitoring.mjs` **222 checks**；`node scripts/verify-admin-static.mjs` **374 checks**；`tools/conformance` `tsc --noEmit` 0。
+- 真栈：slice-16 / slice-18 / slice-24 / slice-30 未在本机跑（需 Docker + 监控 profile / PDK 开关）；待 master 权威轮或真栈环境复核。`baselines.json` 按源内静态计数回填（slice-16 87 / slice-18 151 / slice-24 225 / slice-30 2）。
+- 代码审查：Critical/Important 已修（slice-24 规则数 27→31、sweeper `JSON null` 健壮性、残差/清理恒真断言、既有 `values[0]` 读法迁移）；review 修复提交 `c1373e85`。
+- 未合入 `dev`：按 spec D14 由用户/玩法侧在 2/4 人工作落地后决定合并顺序。
