@@ -68,6 +68,8 @@ const myTrustee = computed<boolean>(() => {
   const seat = props.mySeat;
   return seat === null ? false : (trustees.value[seat] ?? false);
 });
+/** 末 5 秒紧迫态（A 档；与 DdzBoard 同款）。 */
+const clockUrgent = computed(() => props.seconds > 0 && props.seconds <= 5);
 
 /** 两个对手方位（逆时针；与 ddz 同款：下家在右、上家在左）。 */
 const seats = computed<[number, number]>(() => {
@@ -189,6 +191,16 @@ const hintCandidates = computed<Card[][]>(() => {
   if (!rules || hand.value.length === 0) return [];
   return suggestPdkPlays(hand.value, target.value, rules);
 });
+
+/** 打不过：有跟牌目标且提示候选为空（无任何一手能压过目标）。 */
+const cannotBeat = computed(
+  () => target.value !== null && hintCandidates.value.length === 0,
+);
+/** 只能过牌：跟牌但穷尽判定无解 ⇒ 只显示「不出」按钮。 */
+const passOnly = computed(
+  () => target.value !== null && cannotBeat.value,
+);
+
 function onHint(): void {
   const rules = pdkRules.value;
   const candidates = hintCandidates.value;
@@ -260,10 +272,15 @@ function onTrustee(on: boolean): void {
       </view>
     </view>
 
-    <view v-if="!settlementRevealed" class="pdk__phase">
-      <text v-if="isPlaying" class="pdk__phase-text">出牌中</text>
-      <text v-else-if="isEnded" class="pdk__phase-text">已结束</text>
-      <text v-else class="pdk__phase-text">{{ view?.state ?? "等待发牌" }}</text>
+    <!--
+      阶段状态遮罩层：绝对定位到牌桌中央（参考 DdzBoard 的 `.table__phase-overlay`）。
+      定位基准 = `.pdk`（position: relative），z-index 低于顶栏、高于牌桌内容。
+      top: 28% 与 DdzBoard 一致，落在中段上半段，与动作行垂直错开。
+    -->
+    <view v-if="!settlementRevealed" class="pdk__phase-overlay">
+      <text v-if="isPlaying" class="pdk__phase">出牌中</text>
+      <text v-else-if="isEnded" class="pdk__phase">已结束</text>
+      <text v-else class="pdk__phase">{{ view?.state ?? "等待发牌" }}</text>
     </view>
 
     <view v-if="waitingForDeal" class="pdk__waiting">已进房，等待服务端发牌…</view>
@@ -272,21 +289,18 @@ function onTrustee(on: boolean): void {
         <Seat v-bind="seatProps(seats[0]!)" class="pdk__seat" />
         <view class="pdk__play-col">
           <TurnTimer v-bind="timerProps(seats[0]!)" />
-          <PlayArea v-if="leftAction && leftAction.cards" class="pdk__played" :cards="leftAction.cards" />
+          <PlayArea v-if="leftAction && leftAction.cards" class="pdk__played-slot" :cards="leftAction.cards" />
           <text v-else-if="leftAction && leftAction.cards === null" class="pdk__play-pass anim-toast-in">不出</text>
         </view>
         <view class="pdk__center">
-          <text v-if="levelName" class="pdk__scene-name">{{ levelName }}</text>
+          <text v-if="levelName && !isPlaying" class="pdk__scene-name">{{ levelName }}</text>
           <text v-if="sceneBase !== null" class="pdk__scene-base">底分 {{ sceneBase }}</text>
-          <text class="pdk__remaining">
-            剩余 {{ cardCounts[seats[0]!] ?? 0 }} · {{ cardCounts[seats[1]!] ?? 0 }}
-          </text>
         </view>
         <view class="pdk__play-col pdk__play-col--right">
           <TurnTimer v-bind="timerProps(seats[1]!)" />
           <PlayArea
             v-if="rightAction && rightAction.cards"
-            class="pdk__played"
+            class="pdk__played-slot pdk__played-slot--right"
             :cards="rightAction.cards"
             :mirror="true"
           />
@@ -296,36 +310,83 @@ function onTrustee(on: boolean): void {
       </view>
 
       <view class="pdk__action-bar">
-        <view v-if="isPlaying && isMyTurn && !settlementArrived" class="pdk__actions">
-          <button
-            v-if="canPass"
-            type="button"
-            class="btn pdk__pass"
-            :disabled="busy"
-            @click="pass"
-          >
-            不出
-          </button>
-          <view class="pdk__clock">
-            <text class="pdk__clock-value">{{ seconds }}s</text>
+        <view
+          v-if="isPlaying && isMyTurn && !settlementArrived"
+          class="pdk__actions pdk__actions--playing"
+          :class="{ 'pdk__actions--pass-only': passOnly }"
+        >
+          <view class="pdk__actions-side pdk__actions-side--left">
+            <!-- 跟牌期正常：过牌在左 -->
+            <button
+              v-if="canPass && !passOnly"
+              type="button"
+              class="btn pdk__pass"
+              :disabled="busy"
+              @click="pass"
+            >
+              不出
+            </button>
+            <!-- 首出：提示移到钟左边 → 对称（左提示 右出牌） -->
+            <button
+              v-else-if="!canPass && !passOnly"
+              type="button"
+              class="btn pdk__hint"
+              :disabled="busy || hintCandidates.length === 0"
+              @click="onHint"
+            >
+              提示
+            </button>
           </view>
-          <button
-            v-if="hintCandidates.length > 0"
-            type="button"
-            class="btn pdk__hint"
-            :disabled="busy"
-            @click="onHint"
+          <view
+            class="pdk__clock"
+            :class="{
+              'pdk__clock--urgent': clockUrgent,
+              'anim-urgent-pulse': clockUrgent,
+            }"
           >
-            提示
-          </button>
-          <button
-            type="button"
-            class="btn btn--primary pdk__play"
-            :disabled="busy || selected.length === 0 || !isLegalLocal"
-            @click="play"
-          >
-            出牌（{{ selected.length }}）
-          </button>
+            <text
+              class="pdk__clock-value"
+              :class="{
+                'pdk__clock-value--urgent': clockUrgent,
+                'pdk__clock-value--digits-2': seconds >= 10 && seconds <= 99,
+                'pdk__clock-value--digits-3': seconds >= 100,
+              }"
+            >
+              {{ seconds }}s
+            </text>
+          </view>
+          <view class="pdk__actions-side pdk__actions-side--right">
+            <!-- passOnly（要不起）：不出移到钟右边 -->
+            <button
+              v-if="passOnly"
+              type="button"
+              class="btn pdk__pass"
+              :disabled="busy"
+              @click="pass"
+            >
+              不出
+            </button>
+            <!-- 跟牌期正常：提示在右（首出时提示已移到左边） -->
+            <button
+              v-if="!passOnly && canPass"
+              type="button"
+              class="btn pdk__hint"
+              :disabled="busy || hintCandidates.length === 0"
+              @click="onHint"
+            >
+              提示
+            </button>
+            <!-- 出牌按钮：正常跟牌/首出都显示；passOnly 不显示 -->
+            <button
+              v-if="!passOnly"
+              type="button"
+              class="btn btn--primary pdk__play"
+              :disabled="busy || selected.length === 0 || !isLegalLocal"
+              @click="play"
+            >
+              出牌（{{ selected.length }}）
+            </button>
+          </view>
         </view>
         <template v-else-if="isEnded">
           <PlayArea v-if="myAction && myAction.cards" class="pdk__my-play" :cards="myAction.cards" />
@@ -356,6 +417,7 @@ function onTrustee(on: boolean): void {
         />
         <view v-if="myTrustee && !settlementRevealed && isPlaying" class="pdk__trustee-mask" @click.stop>
           <text class="pdk__trustee-title">托管中</text>
+          <text class="pdk__trustee-desc">轮到你时将自动出牌</text>
           <button type="button" class="btn btn--primary pdk__trustee-cancel" :disabled="busy" @click="onTrustee(false)">
             取消托管
           </button>
@@ -399,6 +461,12 @@ function onTrustee(on: boolean): void {
 <style scoped lang="scss">
 @import "../../../styles/animations.scss";
 
+/**
+ * 跑得快牌桌样式（参考 DdzBoard 验证过的布局/视觉）。
+ *
+ * 跑得快特有差异保留：无叫抢/无底牌/无地主徽标/无记牌器；
+ * 以下样式全部与 DdzBoard 同形同量（token 逐字一致）。
+ */
 .pdk {
   box-sizing: border-box;
   display: flex;
@@ -410,98 +478,254 @@ function onTrustee(on: boolean): void {
   position: relative;
   color: $ftl-color-text;
 }
+
+/* —— 顶栏 —— */
 .pdk__bar {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
+  gap: $ftl-space-5;
   min-height: $ftl-bar-h;
 }
 .pdk__bar-left,
-.pdk__bar-right,
+.pdk__bar-right {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: $ftl-space-3;
+}
+/**
+ * 顶栏中央段（底分 + 炸弹）：绝对定位到 bar 的几何中心。
+ * 🔴 不能用 flex 子项 —— bar-left 宽度会变，center 会被挤偏。
+ */
 .pdk__bar-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: $ftl-space-3;
+  z-index: 1;
+}
+.pdk__base,
+.pdk__bombs {
+  font-size: $ftl-font-sm;
+  color: rgba($ftl-color-on-primary, 0.75);
+  line-height: 1.2;
+}
+.pdk__trustee--on {
+  border-color: $ftl-color-gold-deep;
+  color: $ftl-color-gold-light;
+}
+
+/* —— 阶段状态遮罩 —— */
+.pdk__phase-overlay {
+  position: absolute;
+  top: 28%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $ftl-space-2;
+  pointer-events: none;
+}
+.pdk__phase {
+  color: $ftl-color-gold;
+  font-size: $ftl-font-lg;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba($ftl-color-night-deep, 0.6);
+  white-space: nowrap;
+}
+
+/* —— 等待 / 静音 / 终局文字 —— */
+.pdk__waiting {
+  padding: $ftl-space-9;
+  text-align: center;
+  color: $ftl-color-text-muted;
+  font-size: $ftl-font-md;
+}
+.pdk__muted {
+  color: $ftl-color-text-disabled;
+  font-size: $ftl-font-sm;
+}
+.pdk__ended {
+  font-size: $ftl-font-md;
+  color: $ftl-color-text-secondary;
+}
+
+/* —— 中段 —— */
+.pdk__mid {
+  display: flex;
+  flex-direction: row;
+  gap: $ftl-space-5;
+  align-items: stretch;
+  flex: 1 1 0;
+  min-height: 0;
+}
+/** 对手座位：无白底板浮动组，沉到中段带底。 */
+.pdk__seat {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: flex-end;
+  margin-bottom: $ftl-mid-seat-bottom-gap;
+}
+/**
+ * 对手出牌/状态列：水平排列，钟在牌的头像一侧。
+ * 与 DdzBoard 同款：钟和出牌同一行，两家的牌永远在同一水平线上。
+ */
+.pdk__play-col {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: $ftl-space-4;
+  padding-top: $ftl-mid-play-pad-top;
+}
+.pdk__play-col--right {
+  flex-direction: row-reverse;
+}
+/** 出牌槽：钟让出宽，牌没钟时吃满整列。 */
+.pdk__play-col .pdk__played-slot {
+  flex: 0 1 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+/** 牌多换行：把 PlayArea 内部改成 wrap。 */
+.pdk__play-col .pdk__played-slot :deep(.table__played) {
+  width: 100%;
+  max-width: 100%;
+}
+.pdk__play-col .pdk__played-slot :deep(.hand) {
+  box-sizing: border-box;
+  width: 100%;
+  flex-wrap: wrap;
+  column-gap: 0;
+  row-gap: $ftl-space-3;
+  padding-left: $ftl-card-overlap-mid;
+}
+.pdk__play-col .pdk__played-slot :deep(.hand .card) {
+  margin-left: -$ftl-card-overlap-mid;
+}
+.pdk__play-col--right .pdk__played-slot :deep(.hand) {
+  justify-content: flex-end;
+}
+/**
+ * 「不出」胶囊：深玻璃底白字。
+ */
+.pdk__play-pass {
+  flex: 0 0 auto;
+  padding: 0 $ftl-space-7;
+  border-radius: $ftl-radius-pill;
+  background: rgba($ftl-color-night, 0.62);
+  color: $ftl-color-on-primary;
+  font-size: $ftl-font-md;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+/* —— 中央区域（场次名/底分/剩余牌数）—— */
+.pdk__center {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $ftl-space-3;
+  padding: $ftl-space-4;
+  padding-bottom: $ftl-mid-center-bottom-pad;
+}
+.pdk__scene-name {
+  color: $ftl-color-on-primary;
+  font-size: $ftl-font-lg;
+  font-weight: 700;
+  line-height: 1.2;
+  text-shadow:
+    0 2px 0 $ftl-color-night-deep,
+    2px 0 0 $ftl-color-night-deep,
+    -2px 0 0 $ftl-color-night-deep,
+    0 -2px 0 $ftl-color-night-deep;
+}
+.pdk__scene-base {
+  color: rgba($ftl-color-on-primary, 0.75);
+  font-size: $ftl-font-md;
+  line-height: 1.2;
+}
+
+/* —— 我的出牌（在动作行里）—— */
+.pdk__my-play {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 0;
+}
+.pdk__my-pass {
+  flex: 0 0 auto;
+  padding: 0 $ftl-space-7;
+  border-radius: $ftl-radius-pill;
+  background: rgba($ftl-color-night, 0.62);
+  color: $ftl-color-on-primary;
+  font-size: $ftl-font-md;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+/* —— 动作行 —— */
+.pdk__action-bar {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: $ftl-size-action-bar-h;
+  overflow: visible;
+}
+/**
+ * 出牌期动作行 grid 三列：两侧 flex 轨道等宽配平 ⇒ 钟恒居中。
+ */
+.pdk__actions {
+  display: flex;
+  gap: $ftl-space-3;
+  align-items: center;
+}
+.pdk__actions--playing {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: $ftl-space-3;
+}
+.pdk__actions-side {
   display: flex;
   align-items: center;
   gap: $ftl-space-3;
 }
-.pdk__back-icon {
-  width: 40px;
-  height: 40px;
+.pdk__actions-side--left {
+  justify-content: flex-end;
 }
-.pdk__base,
-.pdk__bombs {
-  font-size: $ftl-font-md;
-  color: $ftl-color-text-secondary;
+.pdk__actions-side--right {
+  justify-content: flex-start;
 }
-.pdk__phase {
-  text-align: center;
-}
-.pdk__phase-text {
-  font-size: $ftl-font-sm;
-  color: $ftl-color-text-secondary;
-}
-.pdk__waiting,
-.pdk__muted,
-.pdk__ended {
-  text-align: center;
-  font-size: $ftl-font-md;
-  color: $ftl-color-text-secondary;
-}
-.pdk__mid {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: $ftl-space-4;
-  min-height: 0;
-}
-.pdk__play-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $ftl-space-2;
-  flex: 0 0 auto;
-}
-.pdk__play-col--right {
-  align-items: center;
-}
-.pdk__center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $ftl-space-2;
-  flex: 1 1 auto;
-}
-.pdk__scene-name {
-  font-size: $ftl-font-lg;
-  color: $ftl-color-gold-light;
-}
-.pdk__scene-base,
-.pdk__remaining {
-  font-size: $ftl-font-sm;
-  color: $ftl-color-text-secondary;
-}
-.pdk__play-pass {
-  font-size: $ftl-font-md;
-  color: $ftl-color-text-secondary;
-}
-.pdk__action-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: $ftl-size-action-bar-h;
-}
-.pdk__actions {
-  display: flex;
-  align-items: center;
-  gap: $ftl-space-4;
-}
+
+/* —— 倒计时钟 —— */
 .pdk__clock {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: $ftl-size-clock-w;
   height: $ftl-size-clock-h;
+  flex-shrink: 0;
   background-image: $ftl-art-countdown;
   background-size: 100% 100%;
   background-repeat: no-repeat;
@@ -510,12 +734,42 @@ function onTrustee(on: boolean): void {
   color: $ftl-color-gold-light;
   font-size: $ftl-font-xl;
   font-weight: 700;
+  line-height: 1;
+  text-shadow:
+    0 2px 0 $ftl-color-night-deep,
+    2px 0 0 $ftl-color-night-deep,
+    -2px 0 0 $ftl-color-night-deep,
+    0 -2px 0 $ftl-color-night-deep;
 }
+.pdk__clock-value--digits-2 {
+  font-size: $ftl-font-md;
+}
+.pdk__clock-value--digits-3 {
+  font-size: $ftl-font-clock-compact;
+}
+.pdk__clock--urgent {
+  filter: drop-shadow(0 0 6px $ftl-color-danger-on-dark);
+}
+.pdk__clock-value--urgent {
+  color: $ftl-color-danger-on-dark;
+}
+
+/* —— 按钮 3D 立体样式（与 DdzBoard 同款）—— */
+.pdk__action-bar :deep(.btn) {
+  min-width: 136px;
+  min-height: 60px;
+  font-size: $ftl-font-md;
+  padding: 0 $ftl-space-5;
+}
+
+/* —— 我的区域 —— */
 .pdk__me {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: $ftl-space-2;
+  flex: 0 0 auto;
+  gap: $ftl-space-3;
+  padding: $ftl-space-2 $ftl-space-4;
 }
 .pdk__me :deep(.hand) {
   display: flex;
@@ -523,47 +777,132 @@ function onTrustee(on: boolean): void {
   column-gap: 0;
   align-items: flex-end;
   justify-content: center;
+  min-height: $ftl-card-h;
+  margin-bottom: -$ftl-hand-tuck;
 }
+.pdk__me :deep(.hand .card + .card) {
+  margin-left: -$ftl-card-overlap;
+}
+
+/* —— 底部信息条 —— */
 .pdk__me-foot {
   display: flex;
   align-items: flex-end;
-  gap: $ftl-space-4;
+  justify-content: space-between;
+  gap: $ftl-space-5;
+  min-width: 0;
 }
 .pdk__me-info {
   display: flex;
   flex: 1 1 0;
   align-items: flex-end;
   justify-content: space-between;
+  gap: $ftl-space-5;
+  min-width: 0;
 }
 .pdk__room {
   font-size: $ftl-font-sm;
   color: $ftl-color-text-secondary;
 }
+
+/* —— 托管遮罩 —— */
 .pdk__trustee-mask {
   position: absolute;
   inset: 0;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: $ftl-space-3;
   background: rgb(0 0 0 / 45%);
-  z-index: 2;
+  border-radius: $ftl-radius-md;
 }
 .pdk__trustee-title {
-  color: $ftl-color-gold-light;
+  color: $ftl-color-gold;
   font-size: $ftl-font-lg;
+  font-weight: 700;
 }
-.pdk__trustee--on {
-  border-color: $ftl-color-gold-deep;
-  color: $ftl-color-gold-light;
+.pdk__trustee-desc {
+  color: $ftl-color-text-secondary;
+  font-size: $ftl-font-sm;
 }
+.pdk__trustee-cancel {
+  min-width: 180px;
+}
+
+/* —— 按钮 —— */
 .btn {
   @include ftl-btn;
+  border-color: rgba(160, 170, 190, 0.5);
+  border-radius: $ftl-radius-md;
+  background: linear-gradient(180deg, rgba(120, 130, 150, 0.35), rgba(80, 90, 110, 0.5));
+  color: rgba($ftl-color-on-primary, 0.7);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  transition: transform 0.1s, box-shadow 0.1s, border-color 0.15s;
+  background-image: none;
+  &:hover {
+    border-color: rgba(180, 190, 210, 0.7);
+    color: rgba($ftl-color-on-primary, 0.85);
+  }
+  &:active {
+    transform: translateY(2px);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+}
+.btn--small {
+  min-height: $ftl-control-h-sm;
+  padding: 0 $ftl-space-6;
+  font-size: $ftl-font-sm;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 2px 0 rgba(255, 255, 255, 0.06);
 }
 .btn--primary {
   border-color: $ftl-color-gold-deep;
   background: $ftl-color-gold;
   color: $ftl-color-on-primary;
+  border-radius: $ftl-radius-md;
+  box-shadow:
+    0 6px 0 $ftl-color-gold-deep,
+    0 8px 20px rgb(255 152 0 / 0.45),
+    inset 0 2px 0 rgb(255 255 255 / 0.6),
+    inset 0 -2px 0 rgb(0 0 0 / 0.1);
+  transition: transform 0.1s, box-shadow 0.1s;
+  background-image: none;
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 8px 0 $ftl-color-gold-deep,
+      0 12px 28px rgb(255 152 0 / 0.55),
+      inset 0 2px 0 rgb(255 255 255 / 0.6);
+  }
+  &:active {
+    transform: translateY(4px);
+    box-shadow:
+      0 2px 0 $ftl-color-gold-deep,
+      0 4px 10px rgb(255 152 0 / 0.3),
+      inset 0 3px 8px rgb(0 0 0 / 0.2);
+  }
+}
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  filter: grayscale(0.4);
+}
+
+/* —— 返回大厅按钮：PNG 图标 ——
+   ⚠️ 必须放在 .btn / .btn--small 之后，否则会被它们的 padding/min-height 覆盖。 */
+.pdk__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  width: 40px;
+  padding: 0;
+}
+.pdk__back-icon {
+  width: 22px;
+  height: 22px;
 }
 </style>

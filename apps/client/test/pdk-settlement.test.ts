@@ -6,7 +6,7 @@ import PdkSettlement from '../src/components/PdkSettlement.vue';
 import { useGameStore } from '../src/stores/game';
 
 /**
- * S6.2：跑得快结算面板（只渲染服务端字段：名次/剩余/倍数/炸弹/关牌/春天/保本/分差）。
+ * S6.2：跑得快结算面板（只渲染服务端字段：名次/剩余/倍数/炸弹/关牌/春天/分差）。
  */
 const result = (over: Partial<PdkSettlementResult> = {}): PdkSettlementResult => ({
   roomCode: 'PDK1',
@@ -33,7 +33,33 @@ describe('S6.2：PdkSettlement', () => {
     setActivePinia(createPinia());
   });
 
-  it('渲染三行：名次/剩余张数/分差；关牌与保本标记；倍数与炸弹原样', () => {
+  it('绶带标题带 + headline + 公式行 齐备', () => {
+    const store = useGameStore();
+    store.mySeat = 1;
+    const wrapper = mount(PdkSettlement, { props: { settlement: result() } });
+
+    // 绶带
+    expect(wrapper.find('.pdk-settlement__ribbon').exists()).toBe(true);
+    expect(wrapper.text()).toContain('结算');
+
+    // headline：我是 seat=1，不在 winnerSeats=[0]，所以"你输了 -60"
+    expect(wrapper.find('.pdk-settlement__headline').exists()).toBe(true);
+    expect(wrapper.text()).toContain('你输了');
+    expect(wrapper.text()).toContain('-60');
+
+    // 公式行
+    expect(wrapper.find('.pdk-settlement__formula').exists()).toBe(true);
+    expect(wrapper.text()).toContain('底分 15');
+    expect(wrapper.text()).toContain('倍数 2');
+    expect(wrapper.text()).toContain('炸弹 1');
+    expect(wrapper.text()).toContain('关牌');
+    expect(wrapper.text()).not.toContain('春天');
+    expect(wrapper.text()).not.toContain('保本');
+
+    wrapper.unmount();
+  });
+
+  it('三行表格 + 我的行高亮 + 胜者名金色', () => {
     const store = useGameStore();
     store.mySeat = 1;
     const wrapper = mount(PdkSettlement, { props: { settlement: result() } });
@@ -45,14 +71,23 @@ describe('S6.2：PdkSettlement', () => {
       '玩家2',
     ]);
     expect(wrapper.find('.pdk-settlement__row--winner').exists()).toBe(true);
+    expect(wrapper.find('.pdk-settlement__row--me').exists()).toBe(true);
     expect(wrapper.text()).toContain('第 1 名');
-    expect(wrapper.text()).toContain('剩余 4 张');
+    expect(wrapper.text()).toContain('4 张');
     expect(wrapper.text()).toContain('-60');
-    expect(wrapper.text()).toContain('关牌');
-    expect(wrapper.text()).toContain('保本');
-    expect(wrapper.text()).not.toContain('春天');
-    expect(wrapper.text()).toContain('倍数 2');
-    expect(wrapper.text()).toContain('炸弹 1');
+
+    wrapper.unmount();
+  });
+
+  it('headline：我在胜方 → "你赢了 +90"', () => {
+    const store = useGameStore();
+    store.mySeat = 0; // 胜者
+    const wrapper = mount(PdkSettlement, { props: { settlement: result() } });
+
+    expect(wrapper.text()).toContain('你赢了');
+    expect(wrapper.text()).toContain('+90');
+
+    wrapper.unmount();
   });
 
   it('金币列：结算余额到达 ⇒ 按座位展示；否则整列不渲染', () => {
@@ -68,6 +103,8 @@ describe('S6.2：PdkSettlement', () => {
       '940',
       '910',
     ]);
+    plain.unmount();
+    gold.unmount();
   });
 
   it('再来一局 / 返回大厅上抛', async () => {
@@ -76,5 +113,6 @@ describe('S6.2：PdkSettlement', () => {
     await wrapper.find('.pdk-settlement__lobby').trigger('click');
     expect(wrapper.emitted('again')).toHaveLength(1);
     expect(wrapper.emitted('back')).toHaveLength(1);
+    wrapper.unmount();
   });
 });

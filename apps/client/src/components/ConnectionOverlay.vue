@@ -177,18 +177,20 @@ const message = computed(() => copy.value?.message ?? "");
   max-width: 100%;
   padding: $ftl-space-7 $ftl-space-7 $ftl-space-6;
   border-radius: $ftl-radius-md;
-  background: $ftl-color-surface;
-  box-shadow: 0 $ftl-space-3 $ftl-space-7 rgb(0 0 0 / 35%);
+  background: $ftl-color-night-deep;
+  border: $ftl-hairline solid rgba($ftl-color-gold, 0.2);
+  box-shadow: 0 $ftl-space-3 $ftl-space-7 rgb(0 0 0 / 55%);
 }
 .connection-overlay__title {
-  color: $ftl-color-text;
+  color: $ftl-color-gold-light;
   font-size: $ftl-font-xl;
   font-weight: 700;
   line-height: 1.3;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 .connection-overlay__message {
   margin-top: $ftl-space-4;
-  color: $ftl-color-text-secondary;
+  color: rgba($ftl-color-on-primary, 0.8);
   font-size: $ftl-font-sm;
   line-height: 1.6;
   text-align: center;
@@ -205,18 +207,18 @@ const message = computed(() => copy.value?.message ?? "");
 /* 原生 button 必须在本组件自持观感（同 Settlement.vue 的机械闸规约）。 */
 .btn {
   @include ftl-btn;
-  /* 2026-10 UI 重设计：次按钮（默认态）改成冷灰弱化风格 */
+  /* 项目既有次按钮风格：冷灰玻璃底 + 弱化白字（深色面板上对比充足） */
   border-color: rgba(160, 170, 190, 0.5);
   border-radius: $ftl-radius-md;
   background: linear-gradient(180deg, rgba(120, 130, 150, 0.35), rgba(80, 90, 110, 0.5));
-  color: rgba($ftl-color-on-primary, 0.7);
+  color: rgba($ftl-color-on-primary, 0.85);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   transition: transform 0.1s, box-shadow 0.1s, border-color 0.15s;
   background-image: none;
   &:hover {
     border-color: rgba(180, 190, 210, 0.7);
-    color: rgba($ftl-color-on-primary, 0.85);
+    color: rgba($ftl-color-on-primary, 0.95);
   }
   &:active {
     transform: translateY(2px);

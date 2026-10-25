@@ -49,12 +49,18 @@ withDefaults(defineProps<{ variant?: 'blue' | 'orange' }>(), { variant: 'blue' }
   background-size: 100% 100%, 100% 100%;
   background-repeat: no-repeat, no-repeat;
   color: $ftl-color-on-primary;
-  border-radius: $ftl-radius-lg;
+  /*
+    border-radius 必须等于源图圆角 = border-width = slice（全是 24px）。
+    三个量对齐后，border-image 的圆角贴图被 CSS 圆角精准匹配，
+    贴图透明区 = 元素裁剪外的区域 → 没有缝隙、没有外界黑边。
+  */
+  border-radius: $ftl-panel-slice;
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.5),
     inset 0 2px 0 rgba(255, 215, 0, 0.15),
     inset 0 -2px 0 rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(20px);
+  /* 🔴 不能加 backdrop-filter：它采样面板外部像素（scrim 黑遮罩），
+     会把黑色揉进 border-image 圆角的透明区 → 可见黑边。 */
 }
 .panel--blue {
   border-image: url('/static/ui/panel-blue.png') 24 fill stretch;
