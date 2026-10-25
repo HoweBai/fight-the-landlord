@@ -144,7 +144,7 @@ for agent in chain:
 
 ---
 
-## 3. 数据模型（currency-service 新表，14 张）
+## 3. 数据模型（currency-service 新表，17 张）
 
 > 迁移类名 **不得** 以 `Currency` 开头（`migration.test.ts` 按 `/^Currency\d+$/` 取首个匹配，会抢位）。文件名 `<ts>-AgentDomain.ts`；ENGINE/CHARSET 照 `1789600000000-Currency.ts`（`InnoDB` + `utf8mb4` + `utf8mb4_0900_ai_ci`）。`agent_settings` 需 id=1 种子行。
 
@@ -178,11 +178,11 @@ for agent in chain:
 | `contact_name` | varchar(50) NULL | 联系人 |
 | `payout_name` / `payout_account` / `payout_bank` | varchar(100) NULL | 收款信息快照源；允许 NULL |
 | `status` | varchar(10) | active/frozen；索引 |
-| `must_change_password` | tinyint(1) | 首登/重置后强制改密 |
-| `token_version` | int | JWT `ver`；重置密码/冻结时递增 |
-| `micro_carry` | bigint | 零头结转（稳态 0–9999） |
-| `settled_watermark` | bigint | 已结佣金行最大 id |
-| `pending_settlement_id` | bigint NULL | 一代理一 pending 的快速闸 |
+| `must_change_password` | tinyint(1) NOT NULL DEFAULT 1 | 首登/重置后强制改密 |
+| `token_version` | int NOT NULL DEFAULT 0 | JWT `ver`；重置密码/冻结时递增 |
+| `micro_carry` | bigint NOT NULL DEFAULT 0 | 零头结转（稳态 0–9999） |
+| `settled_watermark` | bigint NOT NULL DEFAULT 0 | 已结佣金行最大 id |
+| `pending_settlement_id` | bigint NULL DEFAULT NULL | 一代理一 pending 的快速闸 |
 | `created_at` / `updated_at` | datetime(3) | |
 
 ### 3.3 `agent_invite_codes`
@@ -287,6 +287,14 @@ for agent in chain:
 
 `id bigint AI PK`、`source_op_id bigint UNIQUE`、`owner_id varchar(36) NULL`、`source varchar(32)`、`error varchar(500)`、`created_at`。钩子失败时**独立连接** best-effort 写入（主事务可能已毒化）。
 
+### 3.15 `agent_settings_history`
+
+`id bigint AI PK`、`enabled tinyint(1)`、`effective_from datetime(3) NULL`、`changed_at datetime(3)`、`actor varchar(50)`。每次启用/停用写一行；对账据此只统计「启用区间」内的 entry_fee op，避免关闭期历史被误报为缺口。
+
+### 3.16 bigint 读回纪律
+
+所有 bigint 列（`micro_carry`/`settled_watermark`/`total_micro`/`total_coins`/`commission_micro`/`expected_max_micro`/`inflow_total`/`consumed_total`）读回必须经 `toSafeInt`（照 `reverse.service.ts:49-55`）；假 DB 需有「驱动返回字符串」用例，禁止 `"0" + "123"` 式字符串拼接。
+
 ---
 
 ## 4. 写边（ApplyService 内置钩子）
@@ -355,6 +363,7 @@ for agent in chain:
 1. 生成 `userId`。
 2. 若 `inviteCode` 存在 ⇒ 调 `agent.bind({ownerId, code, phone, source:'signup'})`（**同一事务内重新校验**码、两个开关、代理状态）：
    - `bound` ⇒ 继续；
+   - `already_bound`（该 owner 已有绑定）⇒ 继续（首绑为准，不覆盖）；
    - `ignored`（`agent_settings.enabled=false` 或 `agent.inviteEnabled=false`）⇒ 继续，注册为未归属；
    - `AGENT_INVITE_INVALID` ⇒ 注册失败 400，**不建用户、不发赠币**；
    - 传输失败 ⇒ 注册失败 10007（与 signup grant 同一姿态）。
@@ -363,7 +372,7 @@ for agent in chain:
 5. 绑定已在第 2 步完成；若第 3/4 步失败，可能留下**孤儿绑定**（uuid 永不复用；日志 + 指标；提供按 owner 清理的运维 SQL）。
 - **TOCTOU 消除**：`bind` 用 code 而非 agentId，在同一事务内重新解析/校验。
 - **开关矩阵**：两个开关都开才 `bound`；任一关 ⇒ `ignored`。2×2 测试。
-- **phone_hash**：`HMAC-SHA256(normalize(phone), AGENT_PHONE_HMAC_KEY)`；`normalize` = trim + 11 位数字校验。`AGENT_PHONE_HMAC_KEY` 生产缺失 ⇒ 启动 fail-closed（照 `INTERNAL_SERVICE_TOKEN`）；v1 不支持轮换（文档写明；轮换需全量重算）。
+- **phone_hash**：`HMAC-SHA256(normalizePhone(phone), AGENT_PHONE_HMAC_KEY)`；`normalizePhone = trim`（唯一实现，bind/rebind/profile 三处共用；三处同值用例）。`AGENT_PHONE_HMAC_KEY` 在 **production 缺失 ⇒ `main.ts` 启动 `process.exit(1)`**（照 `INTERNAL_SERVICE_TOKEN`；加源码级闸）；v1 不支持轮换（文档写明；轮换需全量重算）。
 
 ### 5.3 改绑/解绑/批量
 
@@ -396,13 +405,14 @@ for agent in chain:
 
 ### 6.2 申请（事务，无佣金行锁）
 
-1. `SELECT ... FROM agent_accounts WHERE id=? FOR UPDATE`；校验 `pending_settlement_id IS NULL`。
-2. `client_request_id` 幂等：查 `(agent_id, client_request_id)`；存在 ⇒ 返回该单（任意状态；客户端重试须换新 id）。
-3. `from = settled_watermark`；`to = COALESCE(MAX(id),0) FROM agent_commission_entries WHERE agent_id=?`。
-4. `to <= from` ⇒ `AGENT_SETTLEMENT_MIN`（无可结）。
-5. `SELECT SUM(commission_micro), COUNT(*) FROM ... WHERE agent_id=? AND id > from AND id <= to`。
-6. `total_coins = floor((carry_before + total_micro)/10000)`；`total_coins <= 0` 或 `total_coins * 1 < min_yuan * coin_per_yuan` ⇒ `AGENT_SETTLEMENT_MIN`。
-7. 插入 settlement（from/to/total_micro/total_coins/items_count/carry_before/carry_after/coin_per_yuan/payout_json/min_yuan/items_hash/settlement_no/client_request_id）；`agent.pending_settlement_id = id`；commit。
+1. `SELECT ... FROM agent_accounts WHERE id=? FOR UPDATE`。
+2. **先**查 `(agent_id, client_request_id)` 幂等：存在 ⇒ 返回该单（任意状态；客户端重试须换新 id）。
+3. 校验 `pending_settlement_id IS NULL`；非空 ⇒ `AGENT_SETTLEMENT_PENDING`。
+4. `from = settled_watermark`；`to = COALESCE(MAX(id),0) FROM agent_commission_entries WHERE agent_id=?`。
+5. `to <= from` ⇒ `AGENT_SETTLEMENT_MIN`（无可结）。
+6. `SELECT SUM(commission_micro), COUNT(*) FROM ... WHERE agent_id=? AND id > from AND id <= to`。
+7. `total_coins = floor((carry_before + total_micro)/10000)`；`total_coins <= 0` 或 `total_coins * 1 < min_yuan * coin_per_yuan` ⇒ `AGENT_SETTLEMENT_MIN`。
+8. 插入 settlement（先以 `settlement_no = 'AS'+uuid 占位`，拿到自增 id 后同事务 UPDATE 为 `AS`+12 位零填充）；`agent.pending_settlement_id = id`；commit。
 - `items_hash = SHA256(agentId|from|to|carry_before|total_micro| + 按 id 升序的 "id:micro" 逗号串)`。
 - 收款信息缺失（payout_name/account/bank 任一空）⇒ 400「请先补全收款信息」。
 - pending 期间新佣金行 id > to，不进入本单；人工调账同样只影响下一单（文档写明）。
@@ -412,6 +422,7 @@ for agent in chain:
 1. 锁 settlement + agent；require pending。
 2. 校验 `agent.settled_watermark = from`、`agent.micro_carry = carry_before`。
 3. **重新** `SUM(commission_micro)` 与 `items_hash`（`id > from AND id <= to`）；与单头不一致 ⇒ `AGENT_SETTLEMENT_STATE`（409）。
+   - **并发提交序兜底**：低 id 事务可能晚于高 id 提交；若水位范围内出现申请后可见的行，SUM/hash 必然不一致。恢复路径 = 驳回/撤回 → 重新申请（水位未推进，行不会丢）；文档与 409 文案写明。
 4. `agent.settled_watermark = to`；`micro_carry = carry_after`；`pending_settlement_id = NULL`；status paid、paid_at/by、voucher；audit。
 
 ### 6.4 驳回/撤回（事务）
@@ -424,7 +435,7 @@ for agent in chain:
 - 明细：level 0 按玩家聚合（昵称、脱敏手机号、局数、base、佣金）；level>0 聚合「下线级差」；manual 单独列出。
 - 恒等式：`E = ΣT×10000 + C + U`（E=全部佣金 micro；ΣT=已结金币；C=carry；U=水位后未结 micro）。
 - 平台净台费 = 台费毛利（coins）− E/10000（含 manual）。
-- 负 manual 使未来可结 ≤ 0 ⇒ 拒绝申请、挂账；代理退出时作为应收款线下处理（合同写明）。
+- 负 manual 使未来可结 ≤ 0 ⇒ 拒绝申请、后台显示负余额；**v1 不建应收台账**，由财务线下追偿（合同写明）；已付错账同样走线下应收。
 
 ---
 
@@ -444,7 +455,7 @@ for agent in chain:
 - `POST /api/agent/login {phone, password}`：
   - scrypt 校验；允许 `active` 与 `frozen`（冻结只读 + 结算）；无用户/密码错统一 401（不泄露）。
   - 失败计数：Redis `agent_login_fail:{phone}` 5 次/5 分钟；达界 429；成功清零；网关另有 IP 桶。
-  - JWT：`secret = AGENT_JWT_SECRET || JWT_SECRET || dev`；`{sub: agentId, phone, typ:'agent-access', aud:'ftl-agent', ver: token_version, jti}`；TTL 12h；无 refresh。
+  - JWT：**逐字常量链** `process.env.AGENT_JWT_SECRET || process.env.JWT_SECRET || 'dev-secret-change-in-production'`（`||` 不是 `??`；网关与 currency 各一份，由跨服务源码闸比对）；`{sub: agentId, phone, typ:'agent-access', aud:'ftl-agent', ver: token_version, jti}`；TTL 12h；无 refresh。production 缺 `AGENT_JWT_SECRET` 且缺 `JWT_SECRET` ⇒ `main.ts` 启动 `process.exit(1)`。
 - 网关 `AgentAuthMiddleware`（所有路径先剥 `x-agent-id`；`/api/agent/*` 除 login 外验签 `aud/typ`、`sub` 以 `ag_` 开头；注入 `x-agent-id`）。
 - currency-service `AgentGuard`（读 `x-agent-id`）：
   - 加载 agent 行；`token_version === ver`；否则 401。
@@ -498,8 +509,10 @@ for agent in chain:
 | `POST /api/admin/agent-settlements/:id/pay|reject` | finance \| super_admin |
 | `POST /api/admin/agents/:id/adjustments` | super_admin |
 | `POST /api/admin/agent-adjustments/:id/approve|reject` | super_admin（复核人 ≠ 请求人，服务层判） |
-| `PUT /api/admin/config/agent.inviteEnabled`（**字面路由，先于 P4**） | super_admin |
+| `PUT /api/admin/config/agent.inviteEnabled`（**P4 之前的 fail-closed 规则**） | super_admin |
 | 其余 viewer/operator | 403（显式负例） |
+
+- **P4 编码绕过**：`PUT /api/admin/config/` 下（a）原值等于 `agent.inviteEnabled`，或（b）键段含 `%`（如 `agent%2EinviteEnabled`），或（c）解码后键以 `agent.` 开头 ⇒ **仅 super_admin**；三种变体都写负例。
 
 - **路由声明序**：`reconciliation`/`audit`/`settings` 等字面路由必须写在 `@Get(':id')` **之前**。
 - 所有写端点走 `XAdminGuard`（`X-Admin:1` + `X-Admin-Actor`）；audit。
@@ -533,7 +546,7 @@ for agent in chain:
 |---|---|---|---|
 | `agent.inviteEnabled` | 严格 boolean | false | 可见（裸名 `agentInviteEnabled`） |
 
-- `parseConfigValue` 增加分支；`CLIENT_CONFIG_KEYS` 增加裸名；客户端配置控制器读 `agent.inviteEnabled ?? false`。
+- `parseConfigValue` 增加分支；`CLIENT_CONFIG_KEYS` 增加裸名；`ClientConfig` 接口增加 `agentInviteEnabled: boolean`；客户端配置控制器读 `agent.inviteEnabled ?? false`；客户端 `ClientConfigState`/`FAILSAFE_CLIENT_CONFIG`/`normalizeClientConfig` 同步补字段（缺省 false）。
 - 计数闸：protocol 93→94、active 77→78、`verify:admin` IA 77→78、`CONFIG_CONTROLS` 72→73、`BOOL_KEYS` 35→36、`CONFIG_NOTES` 65→66。
 - IA 放新「代理」域的 `switches` 页签；`CONFIG_CONTROLS` 加 `type:'bool'`。
 - 写权限：网关字面路由 `PUT /api/admin/config/agent.inviteEnabled` → **super_admin**（先于 P4）。
@@ -579,7 +592,7 @@ for agent in chain:
 
 ### 12.2 对账
 
-- 每笔 entry_fee op（user owner）：恰好一条 revenue event（bound/unbound/skipped）或一条 gap。
+- 每笔 entry_fee op（user owner，**且落在 `agent_settings_history` 的启用区间内**）：恰好一条 revenue event（bound/unbound/skipped）或一条 gap；启用前/关闭期不要求，避免假缺口。
 - 逐行 `micro = base × paid_bp`；`base ≤ fee`；`0 ≤ Σmicro ≤ expected_max_micro`。
 - 日对账：台费流水合计 vs revenue event `fee_amount` 合计；`fee = base + no-quota`；佣金微合计 vs 逐行重算。
 - 管理端 `GET /api/admin/agent-reconciliation?from&to` 返回上述数字与差额；缺口 > 0 ⇒ gauge + error 日志。
@@ -616,13 +629,13 @@ for agent in chain:
 3. **额度封闭**：包含「充值 1000 → 提现 1000 → 救助金付台费」⇒ 佣金 0；「充值→台费→赢钱→提现→再充值→台费」⇒ 佣金不被赢钱提现压低；退款/回滚对称；负出账不超过未消耗本金。
 4. **幂等/重放**：同一 op 重放、钩子重跑、扫描两遍 ⇒ 恰好 1 revenue event + 1 组佣金行。
 5. **归属时点**：fee 在改绑/改率/冻结之前 ⇒ 旧代理/旧比例/按当时状态；反向亦然（**写时钩子，不是事后扫描**）。
-6. **结算水位/并发**：真 MySQL 双会话同时申请 ⇒ 恰好 1 张单；水位互斥；驳回不推进水位；打款 hash/金额复核；pending 期间新行不进本单。
+6. **结算水位/并发**：真 MySQL 双会话同时申请 ⇒ 恰好 1 张单；水位互斥；驳回不推进水位；打款 hash/金额复核；pending 期间新行不进本单；pending 期同 `client_request_id` 重试 ⇒ 返回原单；「低 id 晚提交」⇒ 409 + 撤回重申请恢复。
 7. **鉴权交叉**：代理 token 调玩家/管理端点 ⇒ 401；玩家 token 调代理 ⇒ 401；A 查 B ⇒ 403/空；viewer/operator 查代理 GET ⇒ 403；`must_change_password` 只放行 me/password；重置后旧 token 失效。
 8. **故障隔离**：注入语句级失败钩子 ⇒ 台费 apply 成功、无免单、gap + 指标；注入 1213/1205 ⇒ apply 失败（不空提交）；额度行首建并发不死锁。
 9. **树/比例不变量**：随机 reparent/改率 ⇒ `parent ≥ self ≥ max(child)` 或拒绝；无环；深度 ≤ 5；重复 agent 硬告警。
 10. **开关/生效时点**：`enabled` × `inviteEnabled` 2×2；`effective_from` 之前的 op 不产生任何行；`enabled=1 && effective_from IS NULL` ⇒ 不生效。
 11. **配置闸**：`CONFIG_KEYS` 恰 94、`CLIENT_CONFIG_KEYS` 恰 22、`verify:admin` IA 78 / CONTROLS 73 / BOOL 36 / NOTES 66；`errors.test.ts` SPEC_CODES 与 `CLIENT_ACTION` 全量。
-12. **财务对账**：模拟一天，`E = ΣT×10000 + C + U`；每笔 entry_fee op 有 revenue event（含 unbound/skipped）或 gap；`fee = base + no-quota`；已付 ≤ 已结金币。
+12. **财务对账**：模拟一天，`E = ΣT×10000 + C + U`；每笔启用区间内的 entry_fee op 有 revenue event（含 unbound/skipped）或 gap；`fee = base + no-quota`；已付 ≤ 已结金币；关闭期 op 不计缺口。
 
 ### 14.2 真 MySQL / conformance
 
@@ -656,16 +669,18 @@ for agent in chain:
 
 ## 16. 涉及文件
 
-- `packages/protocol/src/config.ts`、`config.test.ts`、`errors.ts`、`errors.test.ts`、`rpc.ts`、`index.ts`
+- `packages/protocol/src/config.ts`、`config.test.ts`、`errors.ts`、`errors.test.ts`、`rpc.ts`、`messages.test.ts`、`index.ts`
+- `apps/client/src/net/copy.ts`、`src/stores/game.ts`、`src/composables/useClientConfig.ts`
 - `packages/currency-service/src/agent/**`（新模块：ledger/math/accounts/bindings/settlements/portal/admin/auth/settings/metrics）、`apply/apply.service.ts`、`rpc/rpc.module.ts`、`app.module.ts`、`migrations/1797000000000-AgentDomain.ts`、`http/errors.ts`、`config/config-cache.service.ts`（如需）、`package.json`（jsonwebtoken）、测试
 - `packages/user-service/src/users/users.dto.ts`、`auth/auth.service.ts`、`auth/auth.module.ts`、`currency/currency.client.ts`、`rpc/user-agent-profile.rpc.controller.ts`（新）、`app.module.ts`、`http/errors.ts`、测试
 - `packages/api-gateway/src/auth/agent.middleware.ts`（新）、`auth/jwt.middleware.ts`、`auth/public-paths.ts`、`auth/identity-headers.ts`、`auth/admin-policy.ts`、`http/http-rate-limit.middleware.ts`、`http/rate-limit.ts`、`gateway/gateway.controller.ts`、`gateway/proxy.gateway.ts`、`app.module.ts`、测试
-- `packages/config-service/src/config/client-config.controller.ts`、`migrations/<ts>-AgentInviteKey.ts`、`test/migration.test.ts`、`admin/app.js`（IA/controls/notes）、`scripts/verify-admin-static.mjs`
+- `packages/config-service/src/config/client-config.controller.ts`、`migrations/<ts>-AgentInviteKey.ts`、`test/migration.test.ts`、`test/client-config.test.ts`、`test/platform-config.service.test.ts`、`admin/app.js`（IA/controls/notes/CFG_NAV）、`admin/index.html`（代理配置叶锚点）、`scripts/verify-admin-static.mjs`
 - `admin/app.js`、`admin/index.html`、`admin/style.css`
 - `agent/index.html`、`agent/app.js`、`agent/style.css`
 - `apps/client/src/pages/login/login.vue`、`src/net/rest.ts`、`src/stores/auth.ts`、config 类型/存储、测试
 - `Dockerfile.edge`、`deploy/Caddyfile`、`docker-compose.yml`（env：`AGENT_JWT_SECRET`、`AGENT_PHONE_HMAC_KEY`、`USER_SERVICE_RPC_HOST/PORT`）
-- `tools/conformance/src/slices/slice-30-agent.ts`
+- `tools/conformance/src/slices/slice-30-agent.ts`、`tools/conformance/src/run.ts`、`tools/conformance/baselines.json`
+- `scripts/verify-agent-static.mjs`、根 `package.json`（`verify:agent` 脚本）
 - `docs/design.md`（§11.2 错误码）
 - `docs/superpowers/specs/2026-10-26-agent-commission-design.md`、`docs/superpowers/plans/2026-10-26-agent-commission.md`
 
@@ -715,6 +730,38 @@ for agent in chain:
 | 低 13 条 | DDL/索引/bigint/迁移时间戳/settings 审计/gauge/公开路径语义/Caddy/依赖/手机号归一/管理端闸/单号/空收款 | 已并入 §3/§8/§9/§11/§15/§16 |
 
 **结论**：阻断项全部处置；高风险项全部处置或登记；设计进入实现计划阶段。
+
+### 17.1 计划对抗审查记录（r2）
+
+| 级别 | 发现 | 处置 |
+|---|---|---|
+| 阻断 Z1 | 任务 1 加 RPC pattern 会让 J21 门禁红 | RPC pattern 随各自接收侧任务同笔；`messages.test.ts` 同笔改 |
+| 阻断 Z2 | 任务 4 `AgentModule` 导出尚不存在的 `AgentLedgerService` | 任务 4 先落 no-op 骨架，任务 5 填实现 |
+| 阻断 Z3 | `ApplyService` 构造注入打爆 11 处 `new` 与精确 SQL 序列 | 构造参数必填 + 测试替身；按 source 闸门跳过无关源；FakeCurrencyDb 增补；SAVEPOINT 在 caller effect 之后 |
+| 阻断 Z4 | 任务 6 改绑依赖任务 8 的 user client | user client + ClientsModule + env 提到任务 6 |
+| 阻断 Z5 | `agent%2EinviteEnabled` 绕过 super_admin 闸 | P4 前加「字面/含 %/解码后 agent. 前缀」三路 super_admin + 变体负例 |
+| 阻断 Z6 | 表数 14 vs 实际 16 | 统一为 17（含 `agent_settings_history`）并逐名断言 |
+| 阻断 Z7 | `ClientConfig` 接口缺字段 | 任务 1 加 `agentInviteEnabled`；客户端 state/normalizer 同步 |
+| 高 H1 | 结算幂等查重顺序 | 锁 agent → 同 request id 返回原单 → pending 校验 |
+| 高 H2 | 低 id 晚提交卡 pending | 打款 SUM/hash 复核 + 409 恢复路径（撤回重申请）+ slice 用例 |
+| 高 H3 | 列默认值缺失 | `NOT NULL DEFAULT 0/1`；迁移测试逐列断言 |
+| 高 H4 | bigint 读回字符串 | 全部经 `toSafeInt` + 假 DB 字符串用例 |
+| 高 H5 | 关闭期对账假缺口 | `agent_settings_history` 启用区间；只统计区间内 |
+| 高 H6 | currency `http/errors.ts` 漏映射 | 任务 8/9 补 6 码 + 逐码测试 |
+| 高 H7 | AgentModule 缺 ConfigModule/新 RPC 装配 | `imports [ConfigModule]` + ClientsModule + 装配测试 |
+| 高 H8 | JWT 依赖/lockfile | 用 `@nestjs/jwt`；`pnpm install` 同笔更新 lockfile |
+| 高 H9 | 密钥链两侧不同形 | 逐字常量 + 跨服务源码闸 + production fail-closed |
+| 高 H10 | compose env 无任务 | 新增依赖/env 任务（gateway/currency 两处） |
+| 高 H11 | 客户端 6 码文案 | 任务 1 补 `net/copy.ts` + 逐码断言 |
+| 高 H12 | 登录页无配置来源 | 注册态懒拉 `/api/config`，失败不渲染不阻塞 + 用例 |
+| 高 H13 | config 测试/CFG_NAV 漏改 | 任务 2 补 `platform-config.service.test.ts`、`admin/index.html`、`CFG_NAV` + verifier 自证 |
+| 高 H14 | conformance 无 run/baseline | 任务 15 补 `run.ts` + `baselines.json`（CI 回填） |
+| 高 H15 | 「零查询」矛盾/无 opCreatedAt | 改为「一次 settings 读」；钩子读 `currency_ops.created_at` |
+| 高 H16 | 应收台账无表 | v1 明确不做（线下应收，后台显示负余额） |
+| 高 H17 | 手机号归一/HMAC fail-closed | `normalizePhone=trim` 唯一实现；`main.ts` production fail-closed + 源码闸 |
+| 低 10 条 | 登录页 4 框锚点、PUBLIC_PATHS 5 条、重试丢码、单号生成、bind 状态、VIEW_ORDER/锚点、文档/脚本、N+1、gap 假 DB、maturity 注册 | 已并入计划任务与测试判据 |
+
+**结论**：计划修订后开工；每一任务独立 commit，先红后绿。
 
 ---
 
