@@ -4,6 +4,7 @@ import { ApplyService } from '../apply/apply.service';
 import { GetService } from '../apply/get.service';
 import { EntryFeeSkipService } from '../skip/entry-fee-skip.service';
 import { CardCounterConsumeService } from '../card-counter/consume.service';
+import { AgentModule } from '../agent/agent.module';
 
 /**
  * 货币片的 **RPC 接收面**装配（T4；台费片 T3 起 +`currency.entryFeeSkip`）：
@@ -23,6 +24,7 @@ import { CardCounterConsumeService } from '../card-counter/consume.service';
  * 经 `imports: [RpcModule]` 取，不另造服务实例。
  */
 @Module({
+  imports: [AgentModule],
   controllers: [CurrencyRpcController],
   providers: [ApplyService, GetService, EntryFeeSkipService, CardCounterConsumeService],
   exports: [ApplyService, GetService],

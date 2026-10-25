@@ -1,0 +1,28 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '../config/config.module';
+import { AgentSettingsService } from './agent-settings.service';
+import { AgentQuotaService } from './agent-quota.service';
+import { AgentQuotaMaturityService } from './agent-quota-maturity.service';
+import { AgentLedgerService } from './agent-ledger.service';
+
+/**
+ * 代理分润域（spec §4/§8/§9）。
+ *
+ * 装配纪律（仓内 DI 陷阱）：`ApplyService` 在 `RpcModule`，本模块由 `RpcModule` imports；
+ * `AgentLedgerService` 必须在本模块 **exports**，否则真容器解析 `ApplyService` 构造参数时
+ * 看不到它（单测 `new` 全绿、启动即崩）。
+ *
+ * `ConfigModule` 提供 `ConfigCacheService`（`agent.inviteEnabled` 读侧，任务 6 消费）。
+ * 本模块**不得** imports `RpcModule`（会成环；钩子不需要 ApplyService）。
+ */
+@Module({
+  imports: [ConfigModule],
+  providers: [
+    AgentSettingsService,
+    AgentQuotaService,
+    AgentQuotaMaturityService,
+    AgentLedgerService,
+  ],
+  exports: [AgentSettingsService, AgentQuotaService, AgentLedgerService],
+})
+export class AgentModule {}
