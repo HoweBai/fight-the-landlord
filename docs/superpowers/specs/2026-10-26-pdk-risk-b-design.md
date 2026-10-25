@@ -491,7 +491,9 @@ export const riskScanSqlFailuresTotal = createCounter(
 - ① 14003（2/4 各一）：0 余额 ⇒ 14003 + 消息含 needed（15×10=150）；补足 150 ⇒ 入队。
 - ② PDK gold 2 人：两真人匹配、开局、打到终局；断言 2 座结算零和、rake>0、
   `game.balances` 2 座、余额不为负；记录 `player_count=2`、`mode='gold'`。
-- ③ PDK gold 4 人：四真人；4 座结算、12 张、记录 `player_count=4`；余额不为负。
+  **终局后立即关闭 2 人房 sockets**（网关同 IP WS 上限 5；slice-29 的 4 人组已登记过该坑）。
+- ③ PDK gold 4 人：四真人；4 座结算、12 张、记录 `player_count=4`；余额不为负；
+  终局后关闭 sockets。
 - ③b **真实截断**：2 人/4 人 gold 局 `game.deal` 后、任何出牌前，用管理面
   `POST /api/admin/wallet/adjust` 把**所有真人余额降到 1**（保证输家必被截断；
   游戏中途不查余额）；再驱到终局。断言：每个输家实际 delta = -1、赢家池 = 输家数、
