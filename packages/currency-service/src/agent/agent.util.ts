@@ -41,3 +41,17 @@ export function toDate(value: unknown, context: string): Date | null {
   }
   return d;
 }
+
+/** Asia/Shanghai 自然日的 UTC 区间 `[start, end)`（日限查询用）。 */
+export function shanghaiDayRange(now: Date): { start: Date; end: Date } {
+  const day = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const part = (type: string): number =>
+    Number(day.find((p) => p.type === type)?.value ?? '0');
+  const startMs = Date.UTC(part('year'), part('month') - 1, part('day')) - 8 * 3_600_000;
+  return { start: new Date(startMs), end: new Date(startMs + 86_400_000) };
+}

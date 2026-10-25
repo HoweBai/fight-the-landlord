@@ -9,6 +9,8 @@ import { AgentGapService } from './agent-gap.service';
 import { AgentInviteService } from './agent-invite.service';
 import { AgentBindingsService } from './agent-bindings.service';
 import { AgentAccountsService } from './agent-accounts.service';
+import { AgentSettlementService } from './agent-settlement.service';
+import { AgentAdjustmentService } from './agent-adjustment.service';
 import { AgentBindRpcController } from './agent-bind.rpc.controller';
 import {
   AGENT_USER_RPC_PROXY,
@@ -41,6 +43,8 @@ import {
     AgentInviteService,
     AgentBindingsService,
     AgentAccountsService,
+    AgentSettlementService,
+    AgentAdjustmentService,
     AgentLedgerService,
     {
       provide: AgentUserClient,
@@ -56,6 +60,8 @@ import {
     AgentInviteService,
     AgentBindingsService,
     AgentAccountsService,
+    AgentSettlementService,
+    AgentAdjustmentService,
     AgentUserClient,
   ],
 })
