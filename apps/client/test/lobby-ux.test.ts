@@ -56,6 +56,40 @@ function roomFixture(code: string, over: Partial<RoomInfo> = {}): RoomInfo {
   };
 }
 
+/** 跑得快 2 人场夹具：服务端开放人数由参数决定（客户端能力 ∩ 服务端）。 */
+function pdkCountsConfig(counts: number[]) {
+  return {
+    baseScoreLevels: [],
+    friendRoomEnabled: true,
+    freeRoomEnabled: true,
+    goldRoomEnabled: false,
+    reliefEnabled: false,
+    reliefAdpid: '',
+    entryMultiplier: 10,
+    rechargeEnabled: false,
+    withdrawEnabled: false,
+    coinPerYuan: null,
+    rechargePackages: [],
+    withdrawMinCoins: null,
+    withdrawMaxCoinsPerOrder: null,
+    withdrawDailyMaxCoins: null,
+    withdrawReAuthEnabled: false,
+    version: 2,
+    games: {
+      paodekuai: {
+        enabled: true,
+        supportedPlayerCounts: counts,
+        defaultPlayerCount: 3,
+        baseScoreLevels: [{ name: '休闲场', baseScore: 15, entryFeePercent: 0 }],
+        freeRoomEnabled: true,
+        goldRoomEnabled: false,
+        friendRoomEnabled: true,
+        entryMultiplier: 10,
+      },
+    },
+  };
+}
+
 /** 记录 `fetch` 的每一次调用（`rest.ts` 只用到 `status` 与 `text()`）。 */
 interface FetchCall {
   url: string;
@@ -429,6 +463,87 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     // 引号风格不限（仓内格式化器会输出双引号）。
     const callSites = [...game!.content.matchAll(/send\(\s*(['"])room\.join\1/g)];
     expect(callSites, '同一条 room.join 只能有一种实现').toHaveLength(1);
+  });
+
+  it('跑得快 2 人场：人数控件出现、默认 3、在 .game__match 之外', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3]));
+    const { wrapper } = mountGame();
+    await flushPromises();
+
+    const options = wrapper.findAll('.game__player-option');
+    expect(options.map((o) => flat(o.text()))).toEqual(['2 人', '3 人']);
+    expect(wrapper.find('.game__match .game__player-option').exists(), '控件不得进 .game__match').toBe(false);
+    expect(wrapper.findAll('.game__match button'), '.game__match button 恒唯一').toHaveLength(1);
+    expect(store.effectivePlayerCount).toBe(3);
+  });
+
+  it('服务端只开 3 人 ⇒ 人数控件不渲染', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([3]));
+    const { wrapper } = mountGame();
+    await flushPromises();
+    expect(wrapper.find('.game__players').exists()).toBe(false);
+  });
+
+  it('选 2 人后开始游戏：room.match 载荷 playerCount=2（number）', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3]));
+    store.setSelectedBaseScore(15);
+    const { wrapper, socket } = mountGame();
+    await flushPromises();
+
+    const two = wrapper.findAll('.game__player-option').find((o) => flat(o.text()) === '2 人');
+    expect(two).toBeDefined();
+    await two!.trigger('click');
+    const start = wrapper.findAll('.game__match button').find((b) => flat(b.text()) === '开始游戏');
+    expect(start).toBeDefined();
+    await start!.trigger('click');
+    await flushPromises();
+
+    const matches = socket.emittedOf('room.match');
+    expect(matches).toHaveLength(1);
+    const payload = matches[0]!.env.payload as { playerCount?: unknown };
+    expect(payload.playerCount).toBe(2);
+    expect(typeof payload.playerCount).toBe('number');
+  });
+
+  it('再来一局：上一局 2 人 ⇒ 选择回写 2 且载荷 2', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3]));
+    store.setSelectedBaseScore(15);
+    store.setPlayerCount(2);
+    store.requestRematch();
+    const { socket } = mountGame();
+    await flushPromises();
+
+    expect(store.selectedPlayerCount).toBe(2);
+    const matches = socket.emittedOf('room.match');
+    expect(matches).toHaveLength(1);
+    expect((matches[0]!.env.payload as { playerCount?: unknown }).playerCount).toBe(2);
+  });
+
+  it('好友房建房带选中人数 2', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3]));
+    store.setSelectedPlayerCount(2);
+    const { wrapper, calls } = mountGame();
+    await flushPromises();
+
+    await openFriends(wrapper);
+    const create = wrapper.findAll('button').find((b) => flat(b.text()) === '创建房间');
+    expect(create).toBeDefined();
+    await create!.trigger('click');
+    await flushPromises();
+
+    const post = calls.find((c) => c.init?.method === 'POST');
+    expect(post, '必须真的发 POST /api/rooms').toBeDefined();
+    expect(JSON.parse(String(post!.init?.body)).playerCount).toBe(2);
   });
 });
 
