@@ -16,8 +16,7 @@ name: conformance
 
 on:
   push:
-    # ⚠️ 2026-10-26 临时：代理分润片需在 dev 上跑真库（用户已授权 GitHub CI；跑完 revert 本行）。
-    branches: [master, dev]
+    branches: [master]
     tags-ignore: ['**']
   workflow_call:
     inputs:
