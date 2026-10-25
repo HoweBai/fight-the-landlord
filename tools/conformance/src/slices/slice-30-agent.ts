@@ -297,11 +297,13 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
     invite0 = inviteRes.body?.data?.config?.[INVITE_KEY]?.value ?? false;
 
     // 总是「先关再开」：在 settings_history 里切出一个**从本次运行开始**的启用区间
-    // （共享脏栈上也能把旧区间的台费流水排除在 missingEvent 统计之外）。
-    if (settings0.enabled === true) {
-      const off = await patchJson('/api/admin/agents/settings', { enabled: false }, admin);
-      checks.that(off.status === 200 && off.body?.data?.enabled === false, '准入：关闭旧启用区间');
-    }
+    // （共享脏栈上也能把旧区间的台费流水排除在 missingEvent 统计之外；fresh 栈的
+    //  disable 是 no-op）。
+    const offOld = await patchJson('/api/admin/agents/settings', { enabled: false }, admin);
+    checks.that(
+      offOld.status === 200 && offOld.body?.data?.enabled === false,
+      '准入：先关闭旧启用区间（fresh 栈为 no-op）',
+    );
     const enabledAt = new Date();
     const on = await patchJson(
       '/api/admin/agents/settings',
@@ -313,12 +315,9 @@ export async function runSlice30(): Promise<{ passed: string[] }> {
       `PATCH /api/admin/agents/settings {enabled:true} ⇒ 200/true —— 实际 HTTP ${on.status} ${JSON.stringify(on.body)}`,
     );
     checks.eq(on.body?.data?.minSettlementYuan, 0, '准入：最低结算额临时置 0（小额用例）');
-    if (invite0 !== true) {
-      await putConfigAndWait(admin, INVITE_KEY, true);
-      checks.ok(`PUT ${INVITE_KEY}=true → currency-service 缓存生效`);
-    } else {
-      checks.ok(`${INVITE_KEY} 已是 true（共享栈）`);
-    }
+    // 总是写一次 true（同值也写）：既保证 currency 缓存生效，也让断言条数与环境无关。
+    await putConfigAndWait(admin, INVITE_KEY, true);
+    checks.ok(`PUT ${INVITE_KEY}=true → currency-service 缓存生效`);
 
     const adminCfg = await adminGetConfig<{ config: Record<string, unknown> }>(admin);
     const cfgKeys = Object.keys(adminCfg.body?.data?.config ?? {});

@@ -95,7 +95,7 @@ export class CurrencyClient {
    * (`uk_action_id`)，同一 `actionId` 的**任何**重发都不会重复入账。
    */
   async apply(request: CurrencyApplyRequest): Promise<CurrencyApplyData> {
-    return this.send<CurrencyApplyResponse, CurrencyApplyData>(
+    return this.call<CurrencyApplyResponse, CurrencyApplyData>(
       RPC_PATTERNS.currencyApply,
       request,
     );
@@ -106,10 +106,16 @@ export class CurrencyClient {
    * 业务错误原码（无效码 `11006`）；传输故障 `10007`。**不重试**（与 apply 同纪律）。
    */
   async agentBind(request: AgentBindRequest): Promise<AgentBindData> {
-    return this.send<AgentBindResponse, AgentBindData>(RPC_PATTERNS.agentBind, request);
+    return this.call<AgentBindResponse, AgentBindData>(RPC_PATTERNS.agentBind, request);
   }
 
-  private async send<TRes extends { ok: boolean }, TData>(
+  /**
+   * ⚠️ 私有助手刻意**不叫 `send`**：`meta-on-every-rpc-send` 闸把所有 `.send(` 调用点都当成
+   * RPC 发送点扫「实参里有没有 `metaFromTrace()`」；叫 `this.send(...)` 会让两处**包装调用**
+   * 被误判为漏 meta（真正的 `.send` 在下面、带着 meta）——照 R150，正确处置是消除误判形态，
+   * 不是放宽闸。
+   */
+  private async call<TRes extends { ok: boolean }, TData>(
     pattern: string,
     request: object,
   ): Promise<TData> {

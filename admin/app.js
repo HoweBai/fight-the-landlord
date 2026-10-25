@@ -5921,6 +5921,7 @@ async function saveAgentSettings(ev) {
       return showMsg('数值参数必须是非负整数', 'err');
     }
   }
+  if (payload.coinPerYuan < 1) return showMsg('结算汇率必须 ≥ 1 金币/元', 'err');
   const saveBtn = $('ag-settings-save-btn');
   saveBtn.disabled = true;
   const res = await api('/api/admin/agents/settings', {
@@ -6130,11 +6131,15 @@ async function saveAgentDetail() {
   if (!name) return showMsg('名称不能为空', 'err');
   const payload = {
     name,
-    parentId: $('ag-e-parent').value || null,
     rateBp,
     region: $('ag-e-region').value.trim() || null,
     contactName: $('ag-e-contact').value.trim() || null,
   };
+  // 树未加载成功时（下拉只剩「无上级」）**不得提交 parentId**：否则会把上级静默清空。
+  // 只有树非空才把下拉值（含空 = 无上级）写进 PATCH。
+  if (agentsState.tree.length > 0) {
+    payload.parentId = $('ag-e-parent').value || null;
+  }
   // updatePayout 的 PATCH 省略字段会置 NULL ⇒ 三收款字段必须同笔提交（空串 ⇒ null）。
   const payout = {
     payoutName: $('ag-e-payout-name').value.trim() || null,
@@ -6691,6 +6696,7 @@ function resetAgents() {
   $('ag-body').textContent = '';
   $('ag-empty').textContent = '';
   $('ag-page-info').textContent = '';
+  $('ag-page-size').value = '20';
   $('ag-detail').hidden = true;
   $('ag-detail-body').textContent = '';
   $('ag-create-panel').hidden = true;
