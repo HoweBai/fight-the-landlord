@@ -56,7 +56,7 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
       cardCounter: false,
       bots: true,
       goldRoom: true,
-      voiceAnnouncements: false,
+      voiceAnnouncements: true,
     },
   },
 };
