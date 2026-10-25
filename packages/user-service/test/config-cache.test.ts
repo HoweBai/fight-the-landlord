@@ -730,3 +730,125 @@ describe('跑得快风控键（2026-10-25）：新键 → 斗地主 → 默认',
     min.onApplicationShutdown();
   });
 });
+
+describe('跑得快按人数风控键与自动限流阈值（2026-10-26）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const playerWin = (cache: ConfigCacheService, n: 2 | 3 | 4) =>
+    cache.riskPaodekuaiPlayerWinRateThreshold(n);
+  const playerMin = (cache: ConfigCacheService, n: 2 | 3 | 4) =>
+    cache.riskPaodekuaiPlayerMinGames(n);
+
+  it('playerN 键合法逐值生效（2/3/4 各自独立）', async () => {
+    for (const n of [2, 3, 4] as const) {
+      for (const value of [0.5, 0.79, 0.8, 1]) {
+        const cache = await cachedWith({
+          [`game.paodekuai.risk.player${n}.winRateThreshold`]: value,
+        } as never);
+        expect(playerWin(cache, n), `player${n} winRate=${value}`).toBe(value);
+        cache.onApplicationShutdown();
+      }
+      for (const value of [1, 100, 100_000]) {
+        const cache = await cachedWith({
+          [`game.paodekuai.risk.player${n}.minGames`]: value,
+        } as never);
+        expect(playerMin(cache, n), `player${n} minGames=${value}`).toBe(value);
+        cache.onApplicationShutdown();
+      }
+    }
+  });
+
+  it('playerN 缺失 ⇒ 旧 PDK ⇒ DDZ 新键 ⇒ DDZ 旧键 ⇒ 默认', async () => {
+    const pdk = await cachedWith({
+      'game.paodekuai.risk.winRateThreshold': 0.7,
+      'game.paodekuai.risk.minGames': 50,
+    });
+    expect(playerWin(pdk, 2)).toBe(0.7);
+    expect(playerMin(pdk, 2)).toBe(50);
+    pdk.onApplicationShutdown();
+
+    const ddzNew = await cachedWith({
+      'game.doudizhu.risk.winRateThreshold': 0.9,
+      'game.doudizhu.risk.minGames': 40,
+    });
+    expect(playerWin(ddzNew, 3)).toBe(0.9);
+    expect(playerMin(ddzNew, 3)).toBe(40);
+    ddzNew.onApplicationShutdown();
+
+    const legacy = await cachedWith({
+      'risk.winRateThreshold': 0.6,
+      'risk.minGames': 30,
+    });
+    expect(playerWin(legacy, 4)).toBe(0.6);
+    expect(playerMin(legacy, 4)).toBe(30);
+    legacy.onApplicationShutdown();
+
+    const missing = await cachedWith({});
+    expect(playerWin(missing, 2)).toBe(RISK_WIN_RATE_THRESHOLD_DEFAULT);
+    expect(playerMin(missing, 2)).toBe(RISK_MIN_GAMES_DEFAULT);
+    missing.onApplicationShutdown();
+  });
+
+  it('playerN 存在但非法 ⇒ 代码默认，不回退旧 PDK/DDZ 键（null 也算存在）', async () => {
+    const winCases: unknown[] = [0.785, null, '0.8', 0.49, 1.01, true];
+    for (const bad of winCases) {
+      const cache = await cachedWith({
+        'game.paodekuai.risk.player2.winRateThreshold': bad,
+        'game.paodekuai.risk.winRateThreshold': 0.7,
+        'game.doudizhu.risk.winRateThreshold': 0.9,
+      } as never);
+      expect(playerWin(cache, 2), `player2 winRate=${JSON.stringify(bad)}`).toBe(
+        RISK_WIN_RATE_THRESHOLD_DEFAULT,
+      );
+      cache.onApplicationShutdown();
+    }
+    const minCases: unknown[] = [0, 100_001, 3.5, '100', null, true];
+    for (const bad of minCases) {
+      const cache = await cachedWith({
+        'game.paodekuai.risk.player3.minGames': bad,
+        'game.paodekuai.risk.minGames': 50,
+        'game.doudizhu.risk.minGames': 40,
+      } as never);
+      expect(playerMin(cache, 3), `player3 minGames=${JSON.stringify(bad)}`).toBe(
+        RISK_MIN_GAMES_DEFAULT,
+      );
+      cache.onApplicationShutdown();
+    }
+  });
+
+  it('自动限流阈值：25/26/49/50 原值；非法/缺失 ⇒ 50', async () => {
+    for (const value of [25, 26, 49, 50]) {
+      const cache = await cachedWith({ 'game.paodekuai.risk.autoThrottleScore': value });
+      expect(cache.riskPaodekuaiAutoThrottleScore(), `autoThrottleScore=${value}`).toBe(value);
+      cache.onApplicationShutdown();
+    }
+    for (const bad of [24, 51, 3.5, '25', null, true]) {
+      const cache = await cachedWith({
+        'game.paodekuai.risk.autoThrottleScore': bad,
+      } as never);
+      expect(cache.riskPaodekuaiAutoThrottleScore(), JSON.stringify(bad)).toBe(50);
+      cache.onApplicationShutdown();
+    }
+    const missing = await cachedWith({});
+    expect(missing.riskPaodekuaiAutoThrottleScore()).toBe(50);
+    missing.onApplicationShutdown();
+  });
+
+  it('快照为 null ⇒ 两 getter 安全回落 0.8/100/50，不抛', async () => {
+    const { client, snapshot } = makeClient();
+    snapshot.mockRejectedValue(transportDown());
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+
+    expect(playerWin(cache, 2)).toBe(RISK_WIN_RATE_THRESHOLD_DEFAULT);
+    expect(playerMin(cache, 2)).toBe(RISK_MIN_GAMES_DEFAULT);
+    expect(cache.riskPaodekuaiAutoThrottleScore()).toBe(50);
+
+    cache.onApplicationShutdown();
+  });
+});
