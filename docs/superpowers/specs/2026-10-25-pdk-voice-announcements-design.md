@@ -11,8 +11,13 @@
 跑得快目前只播：炸弹 `Bomb`、过牌 `Buyao*`、输赢；其余出牌静音。
 `GAME_META.paodekuai.capabilities.voiceAnnouncements = false`。
 
-跑得快与斗地主共享牌面编码（3–14 / 17=2）与大部分牌型语义，多数语音可直接复用；
-差异只有：没有王/王炸、没有叫地主/抢地主、没有「四带两对」8 张型。
+跑得快与斗地主共享牌面编码（3–14 / 17=2）与大部分牌型语义，多数语音可直接复用。
+**不能直接复用 `cueForPlay` 的硬原因**：
+- 跑得快连对最少 **2 对**，斗地主 `parseHand` 要求 **≥3 对** ⇒ 2 对连对会被判 `Invalid` 静音；
+- 顺子/连对/飞机的 `keyRank` 取**最大**点数（斗地主取最小），规则判定不能混用；
+- 牌型开关由 `pdkRules` 决定（裸三张/三带二/裸飞机/四带二/对子带牌），斗地主没有这些开关；
+- 没有王/王炸、没有叫地主/抢地主、没有「四带两对」8 张型。
+因此走独立的 `cueForPdkPlay`，只共享「点数 → 素材」映射。
 
 ## 2. 范围
 
@@ -44,13 +49,16 @@
 | `Pair` 3–14 / 17 | `Pair{3..14}` / `Pair15` | |
 | `Trio` 3–14 / 17 | `Trio{3..14}` / `Trio15` | 裸三张（受 `bareTrioEnabled`） |
 | `TrioWithSingle` | `TrioWithSingle` | 三带一 |
-| `TrioWithPair` | `TrioWithPair` | 三带二（受 `trioWithPairEnabled`） |
-| `FourWithTwo` | `FourWithTwo` | 含对子带牌；不是 DDZ 的「四带两对」8 张 |
+| `TrioWithPair` | `TrioWithPair` | 三带二（受 `trioWithPairEnabled`，默认关） |
+| `FourWithTwo` | `FourWithTwo` | 对子带牌受 `fourWithTwoPairKickerAllowed`（默认关）；不是 DDZ 的「四带两对」8 张 |
 | `Straight` | `Straight` | |
 | `ConsecutivePairs` | `PairStraight` | 连对 |
-| `Airplane` / `AirplaneWithWings` | `Plane` | 飞机 |
+| `Airplane`（受 `bareAirplaneEnabled`，默认关） / `AirplaneWithWings` | `Plane` | 飞机 |
 | `Bomb` | `Bomb` | 裸四张 |
 | `Invalid` / 解析抛错 / 未知 | `null` | 静默 |
+
+> **防御性映射**：跑得快牌堆只有一张 2（仅红桃 2），`Pair15` / `Trio15` 在真实对局**不可达**；
+> 保留映射只为未来规则变化，测试 fixture 必须遵守 48 张牌（不得造两张 2 或四张 A）。
 
 过牌：`cueForPass(seat)`（seat 3 回退 `Buyao1`）。报单/报双：`Baojing1` / `Baojing2`。
 输赢：`Win` / `Lose`（已有）。
@@ -61,25 +69,33 @@
   （内部复用现有 rank 表），`cueForPlay` 改为调它们（行为不变）。
 - `pdk-play-cues.ts`：
   ```ts
-  export function cueForPdkPlay(cards: Card[], rules: PdkRulesConfig): CueName | null {
-    // parsePdkHand(cards, rules)；按 §4 映射；绝不抛
+  export function cueForPdkPlay(
+    cards: Card[],
+    rules: PdkRulesConfig | null,
+  ): CueName | null {
+    // rules === null ⇒ null；parsePdkHand(cards, rules)；按 §4 映射；绝不抛
   }
   ```
+- rank helper 签名显式 `CueName | null`，返回处保留 `?? null`
+  （`noUncheckedIndexedAccess` 未开，照抄索引会被推成 `CueName`）。
 - `useTableSound.ts`：
-  - 出牌分支：跑得快调 `cueForPdkPlay(newest.cards, rules)`，`null` 静默；
+  - 出牌分支：跑得快调 `cueForPdkPlay(newest.cards, rules)`（rules 为 null ⇒ 静默）；
   - `cardCounts` watcher：删除跑得快豁免，只保留 `store.settlement` 锁；
-  - 头注释同步（不再写「只播出牌/过牌/输赢」）。
+  - 头注释同步（`cueForPlay`/`cueForPdkPlay` 分别服务两种玩法）；不再写「只播出牌/过牌/输赢」。
 - `audio/index.ts`：`cueForPass` 注释补 4 人回退规则（逻辑不变）。
 - `packages/protocol/src/game.ts`：pdk `voiceAnnouncements: true`；`game.test.ts` 同步。
 
 ## 6. 测试判据
 
-- `pdk-play-cues.test.ts`：全部牌型/点数；2 → `*15`；无王映射；关闭的牌型（如三带二）
-  ⇒ `null`；空牌/非法 ⇒ `null`；不抛。
-- `pdk-sound.test.ts`：单张播 `Woman_6`；对子/连对/炸弹；过牌；4 人 seat 3 过牌；
-  报单（2→1）/报双（3→2）在跑得快也播；结算后不播牌型。
-- `packages/protocol`：能力位 true。
-- 既有 `play-cues.test.ts` 全绿（ddz 行为不变）。
+- `pdk-play-cues.test.ts`：全部牌型/点数（fixture 遵守 48 张：只有一张 2、无四张 A）；
+  2 → `*15`（防御性）；无王映射；关闭的牌型（三带二/裸飞机/对子带牌）⇒ `null`；
+  2 对连对 ⇒ `PairStraight`（与 DDZ 的分界）；空牌/非法/rules=null ⇒ `null`；不抛。
+- `pdk-sound.test.ts`：单张精确播 `Woman_6.mp3`；对子/连对/炸弹；过牌；
+  4 人 seat 3 过牌精确 `Woman_buyao1.mp3`；报单（2→1）/报双（3→2）在跑得快也播；
+  **首版快照已含 1/2 张 ⇒ 零 cue**（bootstrap 不补播），随后真实跃迁 ⇒ 播；
+  结算后不播牌型。现有 `toEqual([])` 与 `toContain` 改为精确断言。
+- `packages/protocol`：能力位 true（只改 `game.test.ts` 一处）。
+- 既有 `play-cues.test.ts` 全绿（ddz 行为不变；rank helper 返回 null 不得变 undefined）。
 
 ## 7. 边界与风险
 
@@ -91,6 +107,10 @@
 | 结算后 | 结算锁；不再播牌型/过牌（与斗地主一致） |
 | 关闭的牌型 | `parsePdkHand` 返回 Invalid ⇒ 静默（服务端也不会下发非法牌） |
 | 音量/打断 | 沿用 `playCue` 单通道最新优先 |
+| 同一次视图更新多条动作 | 只播最新一条（每次状态转移是独立 WS 消息；同 flush 时旧 cue 本来也会被打断） |
+| 首次出某点数 | 素材按需下载（DDZ spec D8 同口径，不预热 48 条）；登记为可感知延迟风险 |
+| 4 人报单/报双 | 沿用斗地主的震动（`haptic`）；一次出牌只掉一座，不会同 flush 连震 |
+| 播报频率放大 | `disposeCue` 的 abandoned 分支被顶掉概率上升；登记（不加超时兜底，保持与 DDZ 同实现） |
 
 ## 8. 涉及文件
 
@@ -101,3 +121,25 @@
 - `packages/protocol/src/game.ts`、`game.test.ts`
 - `apps/client/test/{pdk-play-cues,pdk-sound}.test.ts`（新/改）
 - `docs/games/paodekuai.md`（一句说明）
+- 旧多玩法 spec/plan 各加一行「已被 2026-10-25 语音 spec 取代」指针
+
+
+## 9. 设计对抗审查记录（2026-10-25）
+
+独立 reviewer：**阻断 0 / 高 0 / 低 13**，全部处置。
+
+| 发现 | 处置 |
+|---|---|
+| rank helper 可能返回 undefined（未开 noUncheckedIndexedAccess） | §5：显式 `CueName \| null` + `?? null` |
+| `cueForPdkPlay` 未处理 rules=null | §5：签名 `PdkRulesConfig \| null`，null ⇒ null |
+| 漏记 pdk 连对最少 2 对 / keyRank 取最大 / 规则开关 | §1 补为「不能直接复用 cueForPlay」的硬证据 |
+| 裸飞机/对子带牌受默认关开关限制 | §4 补注 |
+| 只有一张 2 ⇒ Pair15/Trio15 不可达 | §4 注明防御性映射与 fixture 约束 |
+| 首版快照/重连不补播报单报双 | §6 补判据 |
+| 4 人 seat 3 过牌断言不够精确 | §6 改精确 `Woman_buyao1.mp3` |
+| useTableSound 头注释半真 | §5 明确同步 |
+| 旧多玩法 spec/plan 冲突 | §8 加取代指针 |
+| 首次出牌素材按需下载 | §7 登记 |
+| pdk 报单/报双带震动 | §7 登记（一次出牌只掉一座） |
+| 同 flush 多条只播最新 | §7 登记 |
+| abandoned cue 频率放大 | §7 登记（保持与 DDZ 同实现） |
