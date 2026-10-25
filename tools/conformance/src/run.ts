@@ -44,6 +44,7 @@ import { runSlice26 } from './slices/slice-26-client-gate';
 import { runSlice27 } from './slices/slice-27-idle-trustee';
 import { runSlice28 } from './slices/slice-28-card-counter';
 import { runSlice29 } from './slices/slice-29-paodekuai';
+import { runSlice30 } from './slices/slice-30-pdk-metrics';
 
 interface Case {
   title: string;
@@ -119,6 +120,8 @@ const CASES: Record<string, Case> = {
   // 多玩法片（S7.3）：追加在末尾（顺序即 CI 切片循环与 full 回填顺序）。
   // 本片经管理面开启跑得快（收尾还原），用独立 oracle 打完整一局并核对结算/记录。
   'slice-29-paodekuai': { title: '跑得快（真栈：匹配/开局/出牌过牌/结算/记录/房间过滤/风控扫描）', run: runSlice29 },
+  // 多玩法 A1：PDK 指标标签真栈（只打一局，断言 started/ended 的 game_type）。
+  'slice-30-pdk-metrics': { title: '跑得快指标（真栈：按玩法 started/ended）', run: runSlice30 },
 };
 
 function printUsage(): void {

@@ -246,6 +246,9 @@ describe('C26 · 腿②：每条 CLIENT_MESSAGE_TYPES 走 routeClientMessage 不
         currencyRobotEnsureFailedTotal: counter,
         entryFeeSkippedTotal: counter,
         entryFeeConflictTotal: counter,
+        gameStartFailuresTotal: counter,
+        recordWriteFailuresTotal: counter,
+        recordWriteSkipsTotal: counter,
       };
     });
     try {

@@ -23,7 +23,7 @@
  * ─── 十二组（组序与状态链；未列组沿用前组末态——规格 §5.2 前言）────────────────────
  *  ⓪ 起手自证（前置 = 空/脏库任意；末态 = 干净命名空间 + 种子态自证）：四容器 healthy ·
  *     `relief:claim:*`/`ad:notify:rate` 清源归零 · 开关=false / adpid='' 种子态自证 ·
- *     第四键空间种子在场 · Prometheus rules 恰 27 含两新告警。
+ *     第四键空间种子在场 · Prometheus rules 恰 31 含两新告警。
  *  ① 键空间面（ad-channel 管理面）：掩码读（value 恒 null+指纹=宿主复算）· super_admin
  *     写读回 · 非 SA（operator/finance/viewer）×（PUT/DELETE）⇒ 403 · 种子密钥生效
  *     （末态 = 四键空间回种子）。
@@ -667,7 +667,7 @@ export async function runSlice24(): Promise<Checks> {
 
   try {
     /* ── ⓪ 起手自证 ──────────────────────────────────────────────────────── */
-    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 27 含两新告警');
+    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 31 含两新告警');
     for (const container of HEALTH_CONTAINERS) {
       const h = await waitContainerHealthy(container);
       checks.that(h.ok, `⓪ ${container} healthy（${h.last}）`);
@@ -703,10 +703,17 @@ export async function runSlice24(): Promise<Checks> {
     );
 
     const ruleNames0 = await fetchPromRuleNames();
-    checks.that(ruleNames0.length === 27, `⓪ Prometheus /api/v1/rules 恰 27 条（25 既有 + 2 救助；T16 同核面）—— 实际 ${ruleNames0.length}`);
+    checks.that(ruleNames0.length === 31, `⓪ Prometheus /api/v1/rules 恰 31 条（29 既有 + 2 救助；A1 同步面）—— 实际 ${ruleNames0.length}`);
     checks.that(
       AD_ALERT_RULES.every((n) => ruleNames0.includes(n)),
-      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 27 条错规则也绿）`,
+      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 31 条错规则也绿）`,
+    );
+    const A1_ALERT_RULES = [
+      'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
+    ];
+    checks.that(
+      A1_ALERT_RULES.every((n) => ruleNames0.includes(n)),
+      `⓪ A1 四条按玩法告警逐个在场（${A1_ALERT_RULES.join('/')}）`,
     );
 
     /* ── ① 键空间面（ad-channel 管理面）──────────────────────────────────── */

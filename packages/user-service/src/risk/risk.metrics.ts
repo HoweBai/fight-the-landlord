@@ -49,3 +49,10 @@ export const riskActionsTotal: ReturnType<typeof createCounter> = createCounter(
   '风控处置动作计数（action=auto_throttle|throttle|unthrottle|ban|unban|dismiss|reopen）。',
   ['action'],
 );
+
+/** A1：风控胜率命中次数（按玩法；设备命中不纳入本指标）。 */
+export const riskScanHitsTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_scan_hits_total',
+  '风控胜率命中次数（按玩法；每用户每玩法命中 +1；设备命中不纳入本指标）。',
+  ['game_type'],
+);

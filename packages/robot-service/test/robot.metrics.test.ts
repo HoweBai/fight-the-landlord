@@ -15,7 +15,6 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import type { Card, PlayerView, RobotDecideRequest, DdzRobotFeatures } from '@fight-the-landlord/protocol';
-import { metricsRegistry } from '@fight-the-landlord/shared';
 import { BotPlayer } from '../src/robot/bot.player';
 import { RobotService } from '../src/robot/robot.service';
 import type { RobotPool } from '../src/robot/robot.pool';
@@ -27,6 +26,7 @@ import {
   ROBOT_DECISION_RESULTS,
 } from '../src/robot/robot.metrics';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
+import { counterSum, counterValue, series } from './helpers/metrics';
 
 const asCards = (ranks: number[]): Card[] => ranks.map((r) => ({ r, s: 0 }));
 
@@ -96,46 +96,6 @@ function makeService(getMove: (ctx: unknown) => Promise<number[]>) {
     asConfigCache(makeConfigCache()),
   );
   return { service, client };
-}
-
-interface Series {
-  labels: Record<string, string>;
-  value: number;
-}
-
-/** registry 文本输出里的同名序列（`metric{...} value` / 无标签 `metric value`）。 */
-async function series(name: string): Promise<Series[]> {
-  const text = await metricsRegistry().metrics();
-  const out: Series[] = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line.startsWith(`${name}{`) && !line.startsWith(`${name} `)) continue;
-    const m = /^([a-zA-Z_:][\w:]*)(?:\{(.*)\})?\s+(-?[\d.eE+]+)$/.exec(line);
-    if (!m || m[1] !== name) continue;
-    const labels: Record<string, string> = {};
-    if (m[2]) {
-      for (const kv of m[2].split(',')) {
-        const eq = kv.indexOf('=');
-        labels[kv.slice(0, eq)] = kv.slice(eq + 1).replace(/^"|"$/g, '');
-      }
-    }
-    out.push({ labels, value: Number(m[3]) });
-  }
-  return out;
-}
-
-/** 一条 labeled 序列的当前值（未出现过 ⇒ 0 —— prom-client 不输出零值新序列）。 */
-async function counterValue(name: string, labels: Record<string, string>): Promise<number> {
-  const keys = Object.keys(labels);
-  const hit = (await series(name)).find(
-    (s) => Object.keys(s.labels).length === keys.length && keys.every((k) => s.labels[k] === labels[k]),
-  );
-  return hit?.value ?? 0;
-}
-
-/** 一个 counter 全部序列之和（「恰一次」判据用它，不依赖具体标签）。 */
-async function counterSum(name: string): Promise<number> {
-  return (await series(name)).reduce((acc, s) => acc + s.value, 0);
 }
 
 describe('robot 决策指标（监控片 T5 / 规格 §2.2）', () => {

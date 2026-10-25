@@ -90,7 +90,7 @@ const EXPECTED_JOBS = [
   'douzero', 'node-exporter', 'cadvisor', 'prometheus', 'alertmanager', 'grafana', 'alert-relay',
 ] as const;
 
-/** C2：27 条规则的**名字集合**（数量之外再钉集合——只有数量的话，27 条错规则也绿）。 */
+/** C2：31 条规则的**名字集合**（数量之外再钉集合——只有数量的话，31 条错规则也绿）。 */
 const EXPECTED_RULES = [
   'Watchdog', 'ServiceDown', 'Http5xxRatioHigh', 'Http5xxRatioCritical',
   'HostDiskSpaceLow', 'HostDiskSpaceCritical', 'HostMemoryAvailableLow',
@@ -106,6 +106,8 @@ const EXPECTED_RULES = [
   'NotifyEmailIncomplete', 'NotifyDingtalkIncomplete',
   // 广告小片 T16（§2.7 逐字）：两条新规则（数量 25→27 与名集同提交）。
   'ReliefCallbackBroken', 'ReliefGrantZero',
+  // 多玩法 A1（2026-10-25）：四条新规则（数量 27→31 与名集同提交）。
+  'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
 ] as const;
 
 /** C1：九个目标的 exec 探测面（八 Nest + douzero；指标端口**不发布宿主口**——D2）。 */
@@ -701,14 +703,14 @@ export async function runSlice16(): Promise<Checks> {
     const rulesOut = `${checkRules.stdout}${checkRules.stderr}`;
     const rulesFound = /SUCCESS: (\d+) rules found/.exec(rulesOut);
     checks.that(
-      checkRules.status === 0 && rulesFound?.[1] === '27',
-      `C3：promtool check rules ⇒ 0 且 **27 rules found** —— 实际退出码 ${checkRules.status}：${rulesOut.trim().slice(0, 300)}`,
+      checkRules.status === 0 && rulesFound?.[1] === String(EXPECTED_RULES.length),
+      `C3：promtool check rules ⇒ 0 且 **${EXPECTED_RULES.length} rules found** —— 实际退出码 ${checkRules.status}：${rulesOut.trim().slice(0, 300)}`,
     );
 
     // ═════════════════════════════════════════════════════════════════════════
-    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 27 + 正则自证 + 降级开关
+    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 31 + 正则自证 + 降级开关
     // ═════════════════════════════════════════════════════════════════════════
-    step(`C2：/api/v1/targets 15 目标逐个 up · /api/v1/rules = 27 · 容器名正则自证 · MONITORING_EXPECT_CADVISOR=${EXPECT_CADVISOR ? '1' : '0'}`);
+    step(`C2：/api/v1/targets 15 目标逐个 up · /api/v1/rules = ${EXPECTED_RULES.length} · 容器名正则自证 · MONITORING_EXPECT_CADVISOR=${EXPECT_CADVISOR ? '1' : '0'}`);
     // 谓词正/负对照（R115 同族）：判别力用合成样本自证，防「谓词写瞎 ⇒ 恒绿」。
     const SYN_FULL: TargetSnapshot[] = EXPECTED_JOBS.map((job) => ({ job, health: 'up' }));
     checks.that(
@@ -757,15 +759,15 @@ export async function runSlice16(): Promise<Checks> {
         `违规：${tViolations.join(' | ') || '无'}${targetsErr ? `（末次读取错误：${targetsErr}）` : ''}` +
         ` 实测快照 ${JSON.stringify(targets.map((t) => `${t.job}:${t.health}`))}`,
     );
-    // rules：数量 + **名字集合**（只钉数量的话，27 条错规则也绿）。
+    // rules：数量 + **名字集合**（只钉数量的话，31 条错规则也绿）。
     const rulesResp = await httpText(`${PROM_URL}/api/v1/rules`);
     const rulesParsed = JSON.parse(rulesResp.text) as {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
     checks.that(
-      ruleNames.length === 27 && fieldSetViolations(ruleNames, [...EXPECTED_RULES]).length === 0,
-      `C2：/api/v1/rules 恰 27 条且**名字逐个** —— 实际 ${ruleNames.length} 条；` +
+      ruleNames.length === EXPECTED_RULES.length && fieldSetViolations(ruleNames, [...EXPECTED_RULES]).length === 0,
+      `C2：/api/v1/rules 恰 ${EXPECTED_RULES.length} 条且**名字逐个** —— 实际 ${ruleNames.length} 条；` +
         `差异 ${JSON.stringify(fieldSetViolations(ruleNames, [...EXPECTED_RULES]))}`,
     );
     // 容器名正则自证（Y7）：`/?(ftl-.*)` 失配不许静默 —— 正常形态下必须 ≥6 条序列。
@@ -1155,6 +1157,7 @@ export async function runSlice16(): Promise<Checks> {
     const roomsBefore = sumMetric(readNestMetrics(roomSvc), 'rooms_active');
     const gamesBefore = sumMetric(readNestMetrics(gameSvc), 'games_active');
     const robotBefore = sumMetric(readNestMetrics(robotSvc), 'robot_decisions_total');
+    const startedBefore = seriesValue(readNestMetrics(roomSvc), 'games_started_total', { game_type: 'doudizhu' }) ?? 0;
     info(`C11 基线：rooms_active=${roomsBefore} · games_active=${gamesBefore} · robot_decisions_total=${robotBefore}`);
     const mUser = await registerUser(7);
     const mClient = await HarnessClient.connect('S16-C11', mUser);
@@ -1199,6 +1202,19 @@ export async function runSlice16(): Promise<Checks> {
       checks.that(
         typeof dealSeat === 'number' && dealVersion > 0 && Array.isArray(deal.payload.hand) && deal.payload.hand.length > 0,
         `C11：game.deal 到手（seat=${dealSeat} v${dealVersion} 手牌 ${deal.payload.hand?.length} 张 —— 开局真的发生了）`,
+      );
+      // A1：games_started_total 精确标签增量（基线在 room.match 之前取；有界轮询等落点）
+      let startedNow: number | null = null;
+      const startedDeadline = Date.now() + 30_000;
+      for (;;) {
+        startedNow = seriesValue(readNestMetrics(roomSvc), 'games_started_total', { game_type: 'doudizhu' });
+        if (startedNow !== null && startedNow >= startedBefore + 1) break;
+        if (Date.now() >= startedDeadline) break;
+        await sleep(1_000);
+      }
+      checks.that(
+        startedNow !== null && startedNow >= startedBefore + 1,
+        `C11：games_started_total{game_type="doudizhu"} ≥ 基线+1（${startedBefore} → ${startedNow}）`,
       );
       // rooms_active：**与 Redis 真值对账 + 本局房在册**（确定性口径）。
       // ⚠️ T13b CI 首跑订正：原断言是「净增量 ≥ 基线+1」——共享计数器上的**净差**会被

@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { DEFAULT_GAME_TYPE, ErrCode, type CurrencyEntryIn, type GameType } from '@fight-the-landlord/protocol';
+import { incGame } from '@fight-the-landlord/shared';
 import { CurrencyClient, CurrencyServiceError } from './currency.client';
 import { ConfigCacheService } from '../config/config-cache.service';
 import type { SettleRobotHook } from './settle.service';
@@ -154,10 +155,10 @@ export class RobotFunding implements SettleRobotHook {
         const balance = entry && entry.exists ? entry.balance : 0;
         const { refillLine, target } = robotWaterLevels(botId, top);
         if (entry && entry.exists && balance >= refillLine) continue;
-        await this.applyFunding('refill', botId, target, balance);
+        await this.applyFunding('refill', botId, target, balance, gameType);
       }
     } catch (err) {
-      currencyRobotEnsureFailedTotal.inc();
+      incGame(currencyRobotEnsureFailedTotal, gameType, 1);
       this.logger.error(
         `Robot ensure failed for [${botIds.join(',')}]: ${this.describeError(err)}`,
       );
@@ -182,7 +183,7 @@ export class RobotFunding implements SettleRobotHook {
     try {
       top = await this.computeTop(gameType);
     } catch (err) {
-      currencyRobotEnsureFailedTotal.inc();
+      incGame(currencyRobotEnsureFailedTotal, gameType, 1);
       this.logger.warn(
         `Robot after-settle funding skipped (water levels underivable; fail-open): ${this.describeError(err)}`,
       );
@@ -192,13 +193,13 @@ export class RobotFunding implements SettleRobotHook {
       try {
         const { refillLine, target, recallLine } = robotWaterLevels(botId, top);
         if (balanceAfter < refillLine) {
-          await this.applyFunding('refill', botId, target, balanceAfter);
+          await this.applyFunding('refill', botId, target, balanceAfter, gameType);
         } else if (balanceAfter > recallLine) {
-          await this.applyFunding('recall', botId, target, balanceAfter);
+          await this.applyFunding('recall', botId, target, balanceAfter, gameType);
         }
         // 带内（refillLine ≤ balanceAfter ≤ recallLine）⇒ 不动 —— 正常路径。
       } catch (err) {
-        currencyRobotEnsureFailedTotal.inc();
+        incGame(currencyRobotEnsureFailedTotal, gameType, 1);
         this.logger.warn(
           `Robot after-settle funding failed for ${botId} (fail-open): ${this.describeError(err)}`,
         );
@@ -241,6 +242,7 @@ export class RobotFunding implements SettleRobotHook {
     botId: string,
     target: number,
     observed: number,
+    gameType: GameType,
   ): Promise<void> {
     const amount = action === 'refill' ? target - observed : observed - target;
     // 调用点的前置条件保证 amount ≥ 1（refill: observed < refillLine < target；
@@ -268,7 +270,7 @@ export class RobotFunding implements SettleRobotHook {
       this.logger.log(`Robot ${action} replayed (no double movement): ${actionId}`);
       return;
     }
-    currencyRobotTopupTotal.inc({ action });
+    incGame(currencyRobotTopupTotal, gameType, 1, { action });
     this.logger.log(
       `Robot ${action}: ${botId} observed=${observed} → target=${target} (x=${amount}; ${actionId})`,
     );

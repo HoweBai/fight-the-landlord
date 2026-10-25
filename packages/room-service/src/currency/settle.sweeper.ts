@@ -2,7 +2,8 @@
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { runWithTrace, setGame } from '@fight-the-landlord/shared';
+import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import {
   RECORD_MONEY_OUTBOX_KEY,
   SETTLE_OUTBOX_KEY,
@@ -106,24 +107,53 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
     await this.refreshOutboxGauges(now);
   }
 
-  /** 刷新两个 gauge：size = 两箱条目数之和；oldest = 两侧最老条目年龄（空 ⇒ 0）。 */
+  /** 刷新两个 gauge：按玩法分组；先读后写（整条 hgetall 失败 ⇒ 抛给 runOnce，旧值保留）。 */
   private async refreshOutboxGauges(now: number): Promise<void> {
     const settleRaw = (await this.redis.hgetall(SETTLE_OUTBOX_KEY)) ?? {};
     const moneyRaw = (await this.redis.hgetall(RECORD_MONEY_OUTBOX_KEY)) ?? {};
-    const agesMs = [...Object.values(settleRaw), ...Object.values(moneyRaw)]
-      .map((raw) => {
-        try {
-          const parsed = JSON.parse(raw) as { createdAt?: unknown };
-          return typeof parsed.createdAt === 'number' ? now - parsed.createdAt : null;
-        } catch {
-          return null; // 坏条目在遍历时已记过 ERROR —— 这里不再重复
-        }
-      })
-      .filter((age): age is number => age !== null);
-    currencySettleOutboxSize.set(Object.keys(settleRaw).length + Object.keys(moneyRaw).length);
-    currencySettleOutboxOldestSeconds.set(
-      agesMs.length > 0 ? Math.max(0, Math.round(Math.max(...agesMs) / 1000)) : 0,
-    );
+    const sizes = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    const oldest = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    let badEntries = 0;
+
+    for (const raw of [...Object.values(settleRaw), ...Object.values(moneyRaw)]) {
+      let parsed: { createdAt?: unknown; gameType?: unknown };
+      let rawParsed: unknown;
+      try {
+        rawParsed = JSON.parse(raw);
+      } catch {
+        // 设计 §5：单条目 JSON 坏 ⇒ 归 ddz + 汇总 WARN（整条 hgetall 失败才保留旧值）
+        badEntries += 1;
+        sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      if (rawParsed === null || typeof rawParsed !== 'object') {
+        badEntries += 1;
+        sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      parsed = rawParsed as { createdAt?: unknown; gameType?: unknown };
+      if (parsed.gameType !== undefined && !isGameType(parsed.gameType)) badEntries += 1;
+      const gameType = isGameType(parsed.gameType) ? parsed.gameType : 'doudizhu';
+      sizes.set(gameType, (sizes.get(gameType) ?? 0) + 1);
+      if (typeof parsed.createdAt === 'number') {
+        const age = Math.max(0, Math.round((now - parsed.createdAt) / 1000));
+        oldest.set(gameType, Math.max(oldest.get(gameType) ?? 0, age));
+      }
+    }
+
+    if (badEntries > 0) {
+      this.logger.warn(`Settle outbox gauge: ${badEntries} unparseable/invalid entr(ies) counted as doudizhu`);
+    }
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      setGame(currencySettleOutboxSize, gameType, sizes.get(gameType) ?? 0);
+      setGame(currencySettleOutboxOldestSeconds, gameType, oldest.get(gameType) ?? 0);
+    }
   }
 
   /**

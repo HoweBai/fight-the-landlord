@@ -20,7 +20,6 @@ import type { ConfigCacheService } from '../../src/config/config-cache.service';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from '../helpers/config-cache.stub';
 import { asRedis, createFakeRedis, type FakeRedis } from '../helpers/fake-redis';
 import { currencySettleResultTotal } from '../../src/metrics/room.metrics';
-import { labeledValue } from '../helpers/metric-readout';
 
 export const ROOM_CODE = 'ROOM01';
 export const VERSION = 7;
@@ -137,9 +136,14 @@ export function makeHarness(): SettleHarness {
   return { svc, redis, currency, record, robotHook, configCache, broadcasts };
 }
 
-/** 读 `currency_settle_result_total{result}` 的当前值（无序列 ⇒ 0）。 */
+/** 读 `currency_settle_result_total{result}` 的当前值（跨玩法求和；无序列 ⇒ 0）。 */
 export async function resultCount(result: string): Promise<number> {
-  return (await labeledValue(currencySettleResultTotal, { result })) ?? 0;
+  const { values } = (await currencySettleResultTotal.get()) as {
+    values: Array<{ labels: Record<string, string>; value: number }>;
+  };
+  return values
+    .filter((v) => v.labels.result === result)
+    .reduce((acc, v) => acc + v.value, 0);
 }
 
 /** 装捕获 sink（照各既有测试的 M4 纪律：用后必须还原 Logger —— 见 afterEach）。 */
