@@ -24,10 +24,16 @@ function makeService(over: { redisFail?: boolean } = {}) {
     if (sql.includes('COUNT(DISTINCT device_id)')) return [{ user_id: 'u1', devices: 2 }];
     if (sql.includes('SUM(p.won)')) return [{ user_id: 'u1', games: 10, wins: 6, last_game: '2026-10-20T00:00:00.000Z' }];
     if (sql.includes('FROM risk_reviews r')) return [{ user_id: 'u1', status: 'open' }];
+    if (sql.includes('game_record_players_pdk') && sql.includes('p.record_id')) {
+      return [{
+        record_id: 8, mode: 'gold', base_score: 15, role: null, won: 1,
+        score_change: 30, money_delta: 30, ended_at: 1761100000000,
+      }];
+    }
     if (sql.includes('SELECT p.record_id')) {
       return [{
         record_id: 7, mode: 'gold', base_score: 80, role: 'landlord', won: 1,
-        score_change: 160, money_delta: 160, ended_at: '2026-10-20T00:00:00.000Z',
+        score_change: 160, money_delta: 160, ended_at: 1760918400000,
       }];
     }
     if (sql.includes('SELECT id FROM users WHERE id')) return [{ id: 'u1' }];
@@ -108,10 +114,40 @@ describe('AdminPlayersService', () => {
     await expect(service.recentGames('missing', 20)).rejects.toBeInstanceOf(DomainError);
   });
 
-  it('最近对局映射', async () => {
+  it('最近对局：两玩法合并按 endedAt 降序、gameType 标注、PDK role=null', async () => {
     const { service } = makeService();
     const rows = await service.recentGames('u1', 20);
-    expect(rows[0]).toMatchObject({ recordId: 7, mode: 'gold', won: true, scoreChange: 160 });
+    expect(rows).toEqual([
+      {
+        recordId: 8,
+        gameType: 'paodekuai',
+        mode: 'gold',
+        baseScore: 15,
+        role: null,
+        won: true,
+        scoreChange: 30,
+        moneyDelta: 30,
+        endedAt: 1761100000000,
+      },
+      {
+        recordId: 7,
+        gameType: 'doudizhu',
+        mode: 'gold',
+        baseScore: 80,
+        role: 'landlord',
+        won: true,
+        scoreChange: 160,
+        moneyDelta: 160,
+        endedAt: 1760918400000,
+      },
+    ]);
+  });
+
+  it('最近对局：合并后按 limit 截断（两表各取 limit，排序后截断）', async () => {
+    const { service } = makeService();
+    const rows = await service.recentGames('u1', 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.recordId).toBe(8);
   });
 });
 

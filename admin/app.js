@@ -5502,8 +5502,16 @@ async function showPlayerDetail(row) {
 
   section('最近对局');
   box.append(simpleTable(
-    ['模式', '底分', '身份', '结果', '积分变化', '时间'],
-    gameRows.map((g) => [g.mode, g.baseScore, g.role, g.won ? '胜' : '负', g.scoreChange, fmtTime(g.endedAt)]),
+    ['玩法', '模式', '底分', '身份', '结果', '积分变化', '时间'],
+    gameRows.map((g) => [
+      gameLabelText(g.gameType),
+      g.mode,
+      g.baseScore,
+      g.role ?? '—',
+      g.won ? '胜' : '负',
+      g.scoreChange,
+      fmtTime(g.endedAt),
+    ]),
     '（无对局记录）',
   ));
 

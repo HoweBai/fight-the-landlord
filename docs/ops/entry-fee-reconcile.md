@@ -50,13 +50,14 @@ ORDER BY o.created_at DESC;
 ## 三、免单明细（分人分房）
 
 ```sql
-SELECT room_code, owner_id, seat, base_score, fee_amount, reason, trace_id, created_at
+SELECT room_code, owner_id, seat, game_type, base_score, fee_amount, reason, trace_id, created_at
 FROM currency_entry_fee_skips
 WHERE created_at >= NOW() - INTERVAL 7 DAY
 ORDER BY created_at DESC;
 ```
 
-（走 `idx_skips_room` / `idx_skips_created`；`reason` 三值 = `insufficient_funds` / `unknown_outcome` / `internal_error`。
+（走 `idx_skips_room` / `idx_skips_created`；`game_type` = `doudizhu` / `paodekuai`，旧行为
+`doudizhu` 默认；`reason` 三值 = `insufficient_funds` / `unknown_outcome` / `internal_error`。
 14002 冲突**不在**本表（视为已收）——冲突读 `room-service` 日志的 `entry fee conflict` 行与指标 `entry_fee_conflict_total`。）
 
 ## 四、日常观测

@@ -195,9 +195,10 @@ export class AdminPlayersService {
   async recentGames(userId: string, limit: number): Promise<
     Array<{
       recordId: number;
+      gameType: 'doudizhu' | 'paodekuai';
       mode: string;
       baseScore: number;
-      role: string;
+      role: string | null;
       won: boolean;
       scoreChange: number;
       moneyDelta: number | null;
@@ -209,23 +210,58 @@ export class AdminPlayersService {
     ])) as Array<{ id: unknown }>;
     if (users.length === 0) throw new DomainError(ErrCode.USER_NOT_FOUND, '未找到该用户');
 
-    const rows = (await this.dataSource.query(
-      `SELECT p.record_id, r.mode, r.base_score, p.role, p.won, p.score_change, p.money_delta, p.ended_at
-       FROM game_record_players p JOIN game_records r ON r.id = p.record_id
-       WHERE p.user_id = ? AND p.is_robot = 0
-       ORDER BY p.ended_at DESC, p.record_id DESC LIMIT ?`,
-      [userId, limit],
-    )) as Array<Record<string, unknown>>;
-    return rows.map((r) => ({
-      recordId: Number(r.record_id),
-      mode: String(r.mode),
-      baseScore: Number(r.base_score),
-      role: String(r.role),
-      won: Boolean(r.won),
-      scoreChange: Number(r.score_change),
-      moneyDelta: r.money_delta === null || r.money_delta === undefined ? null : Number(r.money_delta),
-      endedAt: toEpochMs(r.ended_at),
-    }));
+    // 两表各自取 limit 后合并（排序/截断在合并后做；不按 mode 过滤 —— 保留 DDZ 现行为）。
+    const [ddzRows, pdkRows] = await Promise.all([
+      this.dataSource.query(
+        `SELECT p.record_id, r.mode, r.base_score, p.role, p.won, p.score_change, p.money_delta, p.ended_at
+         FROM game_record_players p JOIN game_records r ON r.id = p.record_id
+         WHERE p.user_id = ? AND p.is_robot = 0
+         ORDER BY p.ended_at DESC, p.record_id DESC LIMIT ?`,
+        [userId, limit],
+      ) as Promise<Array<Record<string, unknown>>>,
+      this.dataSource.query(
+        `SELECT p.record_id, r.mode, r.base_score, NULL AS role, p.won, p.score_change,
+                p.money_delta, p.ended_at
+         FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id
+         WHERE p.user_id = ? AND p.is_robot = 0
+         ORDER BY p.ended_at DESC, p.record_id DESC LIMIT ?`,
+        [userId, limit],
+      ) as Promise<Array<Record<string, unknown>>>,
+    ]);
+
+    const merged = [
+      ...ddzRows.map((r) => ({
+        recordId: Number(r.record_id),
+        gameType: 'doudizhu' as const,
+        mode: String(r.mode),
+        baseScore: Number(r.base_score),
+        role: String(r.role),
+        won: Number(r.won) === 1,
+        scoreChange: Number(r.score_change),
+        moneyDelta:
+          r.money_delta === null || r.money_delta === undefined ? null : Number(r.money_delta),
+        endedAt: toEpochMs(r.ended_at),
+      })),
+      ...pdkRows.map((r) => ({
+        recordId: Number(r.record_id),
+        gameType: 'paodekuai' as const,
+        mode: String(r.mode),
+        baseScore: Number(r.base_score),
+        role: r.role === null || r.role === undefined ? null : String(r.role),
+        won: Number(r.won) === 1,
+        scoreChange: Number(r.score_change),
+        moneyDelta:
+          r.money_delta === null || r.money_delta === undefined ? null : Number(r.money_delta),
+        endedAt: Number(r.ended_at),
+      })),
+    ];
+    merged.sort(
+      (a, b) =>
+        b.endedAt - a.endedAt ||
+        b.recordId - a.recordId ||
+        a.gameType.localeCompare(b.gameType),
+    );
+    return merged.slice(0, limit);
   }
 
   /** 在线集合；Redis 失败 ⇒ null（调用方降级）。 */
