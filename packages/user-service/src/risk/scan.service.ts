@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { Redis } from 'ioredis';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { incGame, runWithTrace } from '@fight-the-landlord/shared';
 import { REDIS } from '../auth/token.service';
 import {
   ConfigCacheService,
@@ -25,6 +25,7 @@ import {
 } from './reviews.service';
 import {
   riskReviewsOpen,
+  riskScanHitsTotal,
   riskScanLastSuccessTimestampSeconds,
   riskScanRunsTotal,
 } from './risk.metrics';
@@ -355,6 +356,8 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       // 两玩法同时命中只算“胜率命中项”一项（不叠分）。
       const hit1 = ddzHit || pdkHit;
       const hit2 = stats.devices > deviceLimit;
+      if (ddzHit) incGame(riskScanHitsTotal, 'doudizhu');
+      if (pdkHit) incGame(riskScanHitsTotal, 'paodekuai');
       const score = (hit1 ? SINGLE_HIT_SCORE : 0) + (hit2 ? SINGLE_HIT_SCORE : 0);
       if (score >= SINGLE_HIT_SCORE) flagged += 1;
       const reasons: ScanReason[] = [];

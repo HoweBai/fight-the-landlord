@@ -1097,6 +1097,17 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(redis.count('del', RISK_SCAN_LOCK_KEY)).toBe(1);
     });
 
+    it('A1：胜率命中按玩法计 risk_scan_hits_total', async () => {
+      db.pdkWinRows = [{ user_id: 'u-pdk', games: 101, wins: 90 }];
+      const before = await labeledMetric('risk_scan_hits_total', '{game_type="paodekuai"}');
+      const beforeDdz = await labeledMetric('risk_scan_hits_total', '{game_type="doudizhu"}');
+
+      await mkSvc(makeScanConfig({ pdkMinGames: 100, pdkWinRateThreshold: 0.8 })).runScanOnce(T0);
+
+      expect(await labeledMetric('risk_scan_hits_total', '{game_type="paodekuai"}')).toBe(before + 1);
+      expect(await labeledMetric('risk_scan_hits_total', '{game_type="doudizhu"}')).toBe(beforeDdz);
+    });
+
     it('锁：抢到（SET key 实例id EX 600 NX）⇒ 轮末 compare-and-delete 释放；GET==我 才 DEL', async () => {
       const svc = mkSvc();
 
