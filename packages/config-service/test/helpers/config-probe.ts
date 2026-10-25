@@ -26,7 +26,7 @@ import { PlatformConfigService } from '../../src/config/platform-config.service'
  *  - **不建模行锁/并发**：T3 的用例是接口面语义（HTTP 状态码 / 信封 / 四态），
  *    并发与 version 单调由 `platform-config.service.test.ts` 的同键并发用例承担
  *    （两处都在手，砍锁是「夹具不比用例复杂」的取舍，不是遗忘）；
- *  - 九十三键种子值**逐字** = 各键的种子迁移（`1789200000000-PlatformConfig.ts` 九键 +
+ *  - 一百键种子值**逐字** = 各键的种子迁移（`1789200000000-PlatformConfig.ts` 九键 +
  *    `1789500000000-RecordRetention.ts` 第 10 键 + `1789700000000-SignupGrant.ts` 第 11 键 +
  *    `1789800000000-GoldRoom.ts` 第 12–17 键 + `1790000001000-RiskConfigSeed.ts` 风控第 18–25 键 +
  *    `1791000001000-PayConfigSeed.ts` 支付第 26–34 键 + `1794000000000-IntervalConfigSeed.ts` 节奏/清理第 35–40 键 +
@@ -152,7 +152,7 @@ export class FakePlatformDb {
   }
 }
 
-/** 九十三键种子（值逐字 = 迁移种子；`platform-config.service.test.ts` 有同一份副本）。 */
+/** 一百键种子（值逐字 = 迁移种子；`platform-config.service.test.ts` 有同一份副本）。 */
 const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['robot.skillDistribution', { beginner: 0.15, intermediate: 0.35, advanced: 0.5 }],
   ['robot.ruleFallback', true],
@@ -280,6 +280,14 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   // 跑得快风控（2026-10-25；来自 `PdkRiskConfigSeed1796700000000`）
   ['game.paodekuai.risk.winRateThreshold', 0.8],
   ['game.paodekuai.risk.minGames', 100],
+  // 跑得快按人数风控 + 自动限流（2026-10-26；来自 `PdkRiskPlayerCountSeed1796900000000`）
+  ['game.paodekuai.risk.player2.winRateThreshold', 0.8],
+  ['game.paodekuai.risk.player2.minGames', 100],
+  ['game.paodekuai.risk.player3.winRateThreshold', 0.8],
+  ['game.paodekuai.risk.player3.minGames', 100],
+  ['game.paodekuai.risk.player4.winRateThreshold', 0.8],
+  ['game.paodekuai.risk.player4.minGames', 100],
+  ['game.paodekuai.risk.autoThrottleScore', 50],
   ['currency.reliefThresholdCoins', 150],
 ];
 

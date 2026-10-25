@@ -66,6 +66,7 @@ import { computeReliefThreshold } from '../src/migration-support/relief-threshol
 import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
 import { PdkTwoPlayerSeed1796800000000 } from '../src/migrations/1796800000000-PdkTwoPlayerSeed';
+import { PdkRiskPlayerCountSeed1796900000000 } from '../src/migrations/1796900000000-PdkRiskPlayerCountSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -2012,5 +2013,130 @@ describe('PdkTwoPlayerSeed1796800000000：跑得快 2 人闸种子', () => {
       }
     }
     expect(hits).toEqual(['config-service/PdkTwoPlayerSeed1796800000000']);
+  });
+});
+
+/**
+ * 跑得快按人数风控 + 自动限流种子（2026-10-26 / spec D1/D4）：
+ * 7 键、version = 全表 MAX、INSERT IGNORE 幂等、down 只删 7 键。
+ */
+describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动限流种子', () => {
+  const KEYS: ReadonlyArray<readonly [string, unknown]> = [
+    ['game.paodekuai.risk.player2.winRateThreshold', 0.8],
+    ['game.paodekuai.risk.player2.minGames', 100],
+    ['game.paodekuai.risk.player3.winRateThreshold', 0.8],
+    ['game.paodekuai.risk.player3.minGames', 100],
+    ['game.paodekuai.risk.player4.winRateThreshold', 0.8],
+    ['game.paodekuai.risk.player4.minGames', 100],
+    ['game.paodekuai.risk.autoThrottleScore', 50],
+  ];
+
+  class PlayerCountSeedRunner {
+    readonly rows = new Map<string, { value: unknown; version: number }>();
+    readonly statements: string[] = [];
+    readonly params: unknown[][] = [];
+
+    async query(sql: string, params: unknown[] = []): Promise<unknown> {
+      this.statements.push(sql);
+      this.params.push(params);
+      if (sql.startsWith('SELECT MAX')) {
+        const max = Math.max(0, ...[...this.rows.values()].map((r) => r.version));
+        return [{ maxVersion: max === 0 ? null : max }];
+      }
+      if (sql.startsWith('INSERT IGNORE')) {
+        for (let i = 0; i < params.length; i += 4) {
+          const [key, valueJson, version] = params.slice(i, i + 3) as [string, string, number];
+          if (!this.rows.has(key)) this.rows.set(key, { value: JSON.parse(valueJson), version });
+        }
+        return undefined;
+      }
+      if (sql.startsWith('DELETE')) {
+        for (const key of params as string[]) this.rows.delete(key);
+        return undefined;
+      }
+      throw new Error(`unexpected SQL: ${sql}`);
+    }
+  }
+
+  const asRunner = (db: PlayerCountSeedRunner): QueryRunner => db as unknown as QueryRunner;
+
+  it('up()：7 键逐值、version = 全表 MAX、updated_by=seed；一条多值 INSERT IGNORE', async () => {
+    const db = new PlayerCountSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 7 });
+
+    await new PdkRiskPlayerCountSeed1796900000000().up(asRunner(db));
+
+    for (const [key, value] of KEYS) {
+      expect(db.rows.get(key)).toEqual({ value, version: 7 });
+    }
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 7 });
+    const insertAt = db.statements.findIndex((s) => s.startsWith('INSERT IGNORE'));
+    expect(insertAt).toBeGreaterThanOrEqual(0);
+    expect(db.statements[insertAt]).toContain(
+      'INSERT IGNORE INTO `platform_config` (`key`, `value`, `version`, `updated_at`, `updated_by`) VALUES',
+    );
+    expect(db.statements[insertAt]).toContain(
+      'VALUES (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?), (?, ?, ?, NOW(3), ?)',
+    );
+    expect(db.statements.filter((s) => s.startsWith('INSERT IGNORE'))).toHaveLength(1);
+    expect(db.params[insertAt]).toEqual(
+      KEYS.flatMap(([key, value]) => [key, JSON.stringify(value), 7, 'seed']),
+    );
+  });
+
+  it('空表 ⇒ MAX 为 null ⇒ version 1（不写 0）', async () => {
+    const db = new PlayerCountSeedRunner();
+    await new PdkRiskPlayerCountSeed1796900000000().up(asRunner(db));
+    for (const [key, value] of KEYS) {
+      expect(db.rows.get(key)).toEqual({ value, version: 1 });
+    }
+  });
+
+  it('重放幂等：第二次 up 不改值/版本（INSERT IGNORE 不覆盖）', async () => {
+    const db = new PlayerCountSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 3 });
+    const migration = new PdkRiskPlayerCountSeed1796900000000();
+    await migration.up(asRunner(db));
+    const before = new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]));
+    await migration.up(asRunner(db));
+    expect(new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]))).toEqual(before);
+  });
+
+  it('down()：只删 7 键，其它键保留', async () => {
+    const db = new PlayerCountSeedRunner();
+    db.rows.set('some.other.key', { value: true, version: 3 });
+    const migration = new PdkRiskPlayerCountSeed1796900000000();
+    await migration.up(asRunner(db));
+    await migration.down(asRunner(db));
+
+    for (const [key] of KEYS) expect(db.rows.has(key)).toBe(false);
+    expect(db.rows.get('some.other.key')).toEqual({ value: true, version: 3 });
+    const deletes = db.statements.filter((s) => s.startsWith('DELETE'));
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]).toContain('`key` IN (?, ?, ?, ?, ?, ?, ?)');
+    expect(db.params[db.params.length - 1]).toEqual(KEYS.map(([key]) => key));
+  });
+
+  it('形状（name/up/down）；迁移号 1796900000000 晚于 1796800000000 且全仓唯一', () => {
+    const migration = new PdkRiskPlayerCountSeed1796900000000();
+    expect(migration.name).toBe('PdkRiskPlayerCountSeed1796900000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const ts = (m: { name: string }) => Number(m.name.match(/\d+$/)?.[0]);
+    expect(ts(migration)).toBeGreaterThan(ts(new PdkTwoPlayerSeed1796800000000()));
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1796900000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/PdkRiskPlayerCountSeed1796900000000']);
   });
 });
