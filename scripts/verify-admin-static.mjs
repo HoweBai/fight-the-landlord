@@ -519,6 +519,47 @@ ok(
   '风控详情 byGame 用可选链（新 admin + 旧 user-service 窗口不崩）',
 );
 
+/* ── 5d. B 组：风控队列玩法筛选/10 列/分人数/400 升级提示 ───────── */
+ok(
+  renderRiskDetailBlock.includes('byPlayerCount') && renderRiskDetailBlock.includes('分人数'),
+  '风控详情渲染跑得快分人数（byPlayerCount/分人数）',
+);
+const riskQueryBody = functionBody(app, 'function riskQuery');
+ok(riskQueryBody !== '' && riskQueryBody.includes('gameType'), 'riskQuery 带 gameType');
+const buildRiskRowBody = functionBody(app, 'function buildRiskRow');
+ok(
+  buildRiskRowBody !== '' &&
+    buildRiskRowBody.includes('row.gameType') &&
+    buildRiskRowBody.includes('riskGameTypeLabel'),
+  'buildRiskRow 渲染玩法标签',
+);
+const toggleRiskDetailBody = functionBody(app, 'function toggleRiskDetail');
+ok(
+  toggleRiskDetailBody !== '' && toggleRiskDetailBody.includes('td.colSpan = 10'),
+  'toggleRiskDetail 详情行 colSpan=10（不是 buildRiskRow）',
+);
+const resetRiskBody = functionBody(app, 'function resetRisk');
+ok(resetRiskBody !== '' && resetRiskBody.includes('gameType'), 'resetRisk 不丢 gameType 筛选');
+ok(app.includes("$('rk-game-type')"), '搜索/重置读取 rk-game-type');
+const loadRiskQueueBody = functionBody(app, 'function loadRiskQueue');
+ok(
+  loadRiskQueueBody !== '' &&
+    loadRiskQueueBody.includes('status === 400') &&
+    loadRiskQueueBody.includes('filter.gameType') &&
+    loadRiskQueueBody.includes('请先升级 user-service'),
+  'loadRiskQueue 对旧服务 gameType 400 显示升级提示',
+);
+const riskStart = html.indexOf('id="risk-view"');
+const riskEnd = riskStart >= 0 ? html.indexOf('</main>', riskStart) : -1;
+const riskViewHtml =
+  riskStart >= 0 && riskEnd > riskStart ? html.slice(riskStart, riskEnd) : '';
+ok(riskViewHtml !== '', '找到 #risk-view 区块');
+ok((riskViewHtml.match(/<th>/g) ?? []).length === 10, `#risk-view 表头恰 10 个 <th>（实测 ${(riskViewHtml.match(/<th>/g) ?? []).length}）`);
+ok(riskViewHtml.includes('<th>玩法</th>'), '#risk-view 表头含「玩法」列');
+ok(html.includes('id="rk-game-type"'), 'index.html 含玩法筛选 #rk-game-type');
+// 判别力自证：全文件还有财务表的「玩法」表头；上面的断言必须按风险区块切片，不能用全局 includes。
+ok((html.match(/<th>玩法<\/th>/g) ?? []).length >= 2, '全文件存在多个「玩法」表头（证明风险区块切片是必要的）');
+
 /* ── 5c. 旧键只读：未分组/搜索都必须排除 LEGACY_KEY_SET ─────────── */
 const ungroupedFn = balancedBlock(app, 'function ungroupedKeys', '{', '}');
 ok(ungroupedFn !== '' && ungroupedFn.includes('LEGACY_KEY_SET'), '未分组差集排除 LEGACY_KEY_SET');

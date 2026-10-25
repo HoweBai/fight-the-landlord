@@ -1227,12 +1227,23 @@ const playersState = {
 };
 
 const riskState = {
-  filter: { status: '' },
+  filter: { status: '', gameType: '' },
   rows: [],
   nextCursor: null,
   loading: false,
   loaded: false,
 };
+
+/** 审核行玩法标签（wire 原值 → 中文；未知值原样显示）。 */
+const RISK_GAME_TYPE_LABELS = {
+  doudizhu: '斗地主',
+  paodekuai: '跑得快',
+  mixed: '混合',
+  platform: '平台',
+};
+function riskGameTypeLabel(value) {
+  return RISK_GAME_TYPE_LABELS[value] ?? value ?? '—';
+}
 
 /** 风控处置动作的中文名（按钮 / 提示文案共用；键 = wire 原值，5 值 = 管理面合法集）。 */
 const RISK_ACTION_LABELS = {
@@ -4136,6 +4147,7 @@ function resetAdChannel() {
 function riskQuery(filter, cursor, limit) {
   const p = new URLSearchParams();
   if (filter.status) p.set('status', filter.status);
+  if (filter.gameType) p.set('gameType', filter.gameType);
   if (cursor !== null && cursor !== undefined) p.set('cursor', String(cursor));
   if (limit !== null && limit !== undefined) p.set('limit', String(limit));
   const qs = p.toString();
@@ -4153,7 +4165,16 @@ async function loadRiskQueue(reset) {
   riskState.loading = false;
   if (handleAuth(status)) return;
   if (status === 0) return showMsg('无法连接服务端', 'err');
-  if (status === 400) return showMsg(`查询失败：${body?.message ?? ''}`, 'err');
+  if (status === 400) {
+    const msg = body?.message ?? '';
+    if (riskState.filter.gameType) {
+      return showMsg(
+        `查询失败：${msg}（服务端可能尚未支持玩法筛选，请先升级 user-service）`,
+        'err',
+      );
+    }
+    return showMsg(`查询失败：${msg}`, 'err');
+  }
   if (status !== 200 || !Array.isArray(body?.data?.items)) {
     return showMsg(`加载审核队列失败（HTTP ${status}）`, 'err');
   }
@@ -4171,7 +4192,7 @@ async function loadRiskQueue(reset) {
   $('rk-empty').textContent = riskState.rows.length === 0 ? '（无条目）' : '';
 }
 
-/** 队列行（9 列；末列「详情 / 处置」展开行内面板 —— 规格 §2.10 行内「详情/动作」的合并形态）。 */
+/** 队列行（10 列；末列「详情 / 处置」展开行内面板 —— 规格 §2.10 行内「详情/动作」的合并形态）。 */
 function buildRiskRow(row) {
   const tr = document.createElement('tr');
   tr.append(
@@ -4179,6 +4200,7 @@ function buildRiskRow(row) {
     textCell(row.userId),
     textCell(row.score, { num: true }),
     textCell(row.status),
+    textCell(riskGameTypeLabel(row.gameType)),
     textCell(jsonText(row.reasons)),
     timeCell(row.createdAt),
     timeCell(row.updatedAt),
@@ -4205,7 +4227,7 @@ async function toggleRiskDetail(tr, row) {
   const detail = document.createElement('tr');
   detail.className = 'detail-row';
   const td = document.createElement('td');
-  td.colSpan = 9;
+  td.colSpan = 10;
   td.textContent = '详情加载中…';
   detail.append(td);
   tr.after(detail);
@@ -4264,6 +4286,22 @@ function renderRiskDetail(td, row, d) {
     `分玩法：斗地主 ${ddzGames} 局 / ${ddzWins} 胜 · 胜率 ${ddzRate}；` +
     `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}`;
   td.append(byGame);
+
+  // 跑得快分人数（2026-10-26）：旧 user-service 无 byPlayerCount 时按 0/— 渲染。
+  const pdkByCount = d.stats?.byGame?.paodekuai?.byPlayerCount;
+  const countPart = (n) => {
+    const g = pdkByCount?.[n]?.games ?? 0;
+    const w = pdkByCount?.[n]?.wins ?? 0;
+    const r =
+      typeof pdkByCount?.[n]?.winRate === 'number' && g > 0
+        ? pdkByCount[n].winRate.toFixed(3)
+        : '—';
+    return `${n} 人 ${g} 局 / ${w} 胜 · 胜率 ${r}`;
+  };
+  const byPlayerCount = document.createElement('p');
+  byPlayerCount.className = 'hint';
+  byPlayerCount.textContent = `跑得快分人数：${[2, 3, 4].map(countPart).join('；')}`;
+  td.append(byPlayerCount);
 
   const hits = document.createElement('p');
   hits.className = 'hint';
@@ -4549,8 +4587,9 @@ function resetRisk() {
   riskState.nextCursor = null;
   riskState.loading = false;
   riskState.loaded = false;
-  riskState.filter = { status: '' };
+  riskState.filter = { status: '', gameType: '' };
   $('rk-status').value = '';
+  $('rk-game-type').value = '';
   $('rk-body').textContent = '';
   $('rk-empty').textContent = '';
   $('rk-more-btn').hidden = true;
@@ -5294,12 +5333,16 @@ function wire() {
 
   // ── 风控视图 ──
   $('rk-search-btn').addEventListener('click', () => {
-    riskState.filter = { status: $('rk-status').value };
+    riskState.filter = {
+      status: $('rk-status').value,
+      gameType: $('rk-game-type').value,
+    };
     loadRiskQueue(true);
   });
   $('rk-reset-btn').addEventListener('click', () => {
     $('rk-status').value = '';
-    riskState.filter = { status: '' };
+    $('rk-game-type').value = '';
+    riskState.filter = { status: '', gameType: '' };
     loadRiskQueue(true);
   });
   $('rk-more-btn').addEventListener('click', () => loadRiskQueue(false));
