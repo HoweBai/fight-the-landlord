@@ -693,7 +693,7 @@ export function buildPdkFeatures(session, seat): PdkRobotFeatures;
 > 1. 5.2a/5.2b 合并为一个提交（shell 与 DdzBoard 一次迁移完成，无临时 `DdzTableInner` 阶段）。
 > 2. `useTableSound`/`usePlayedCards`/重发横幅留在壳（读 store）——board 不读 store 的边界
 >    以「board 只收 props」为准；音效是视图 diff 的通用职责。
-> 3. pdk 非炸弹出牌**静音**（素材库无「通用出牌」音效；首版只播炸弹/过牌/输赢）——登记为素材缺口。
+> 3. pdk 非炸弹出牌**静音**（素材库无「通用出牌」音效；首版只播炸弹/过牌/输赢）——登记为素材缺口。**2026-10-25 语音复用 spec 已取代（牌型播报复用斗地主素材）。**
 > 4. PdkBoard 不显示「实时倍数」（视图无该字段，只有 bombCount；倍数在结算载荷）——不本地计算。
 
 ### Task 5.0 api-gateway query/出站（前置，RH10）
