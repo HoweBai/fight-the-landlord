@@ -134,3 +134,11 @@ pnpm verify:admin
 | 低 | 震动未断言 | T2 加 `vibrateLong/Short` |
 | 低 | T1 漏规则开关分支 | T1 补裸三/四带二/对子带牌/翅膀形态 |
 | 低 | `cues.ts` 头注释半真 | T4 补 |
+
+## 执行记录（2026-10-25）
+
+- T1–T4 完成：`0a63de8c`(映射) → `eec583af`(接线) → `809fa7c7`(能力位) →
+  `24a8b47b`(文档)。
+- 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
+  `pnpm verify:admin` ⇒ **377 checks passed**。
+- 代码审查结论待补。
