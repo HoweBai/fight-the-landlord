@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>代理门户 · 优比棋牌</title>
+    <link rel="stylesheet" href="/agent/style.css" />
+  </head>
+  <body>
+    <!--
+      代理门户（2026-10-26 代理分润任务 14）：纯静态、无构建、手机优先。
+      身份只来自代理令牌（Authorization: Bearer）；查询/请求体**不带 agentId**（IDOR 纪律）。
+      401 统一清 token 回登录；403「首次登录请先修改密码」进改密页；改密成功强制重新登录。
+    -->
+    <div id="login-view" class="screen" hidden>
+      <form id="login-form" class="card">
+        <h1 class="brand">代理门户</h1>
+        <p class="hint">使用平台分配的代理手机号与密码登录。</p>
+        <label class="field" for="login-phone">
+          <span class="field-label">手机号</span>
+          <input id="login-phone" type="tel" inputmode="numeric" autocomplete="username" />
+        </label>
+        <label class="field" for="login-password">
+          <span class="field-label">密码</span>
+          <input id="login-password" type="password" autocomplete="current-password" />
+        </label>
+        <button id="login-btn" type="submit" class="btn primary">登录</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+    </div>
+
+    <div id="change-password-view" class="screen" hidden>
+      <form id="change-password-form" class="card">
+        <h1 class="brand">修改密码</h1>
+        <p class="hint">首次登录或密码被重置后，必须先修改密码（10–72 字符）。</p>
+        <label class="field" for="cp-old">
+          <span class="field-label">当前密码</span>
+          <input id="cp-old" type="password" autocomplete="current-password" />
+        </label>
+        <label class="field" for="cp-new">
+          <span class="field-label">新密码</span>
+          <input id="cp-new" type="password" autocomplete="new-password" />
+        </label>
+        <label class="field" for="cp-confirm">
+          <span class="field-label">确认新密码</span>
+          <input id="cp-confirm" type="password" autocomplete="new-password" />
+        </label>
+        <button id="cp-submit" type="submit" class="btn primary">保存并重新登录</button>
+        <button id="cp-logout" type="button" class="btn">退出登录</button>
+        <p id="cp-error" class="error" hidden></p>
+      </form>
+    </div>
+
+    <div id="app-view" hidden>
+      <header class="topbar">
+        <div class="who">
+          <strong id="who-name">—</strong>
+          <span id="who-rate" class="dim"></span>
+        </div>
+        <button id="logout-btn" type="button" class="btn small">退出</button>
+      </header>
+
+      <main id="tab-overview" class="tab-panel">
+        <div id="overview-info" class="card"></div>
+        <div id="overview-cards" class="cards"></div>
+        <div id="overview-subtree" class="card" hidden></div>
+      </main>
+
+      <main id="tab-players" class="tab-panel" hidden>
+        <div id="players-list" class="list"></div>
+        <p id="players-empty" class="empty"></p>
+        <div class="pager">
+          <button id="players-prev" type="button" class="btn small">上一页</button>
+          <span id="players-page-info" class="dim"></span>
+          <button id="players-next" type="button" class="btn small">下一页</button>
+        </div>
+      </main>
+
+      <main id="tab-commissions" class="tab-panel" hidden>
+        <div id="commissions-list" class="list"></div>
+        <p id="commissions-empty" class="empty"></p>
+        <div class="pager">
+          <button id="commissions-prev" type="button" class="btn small">上一页</button>
+          <span id="commissions-page-info" class="dim"></span>
+          <button id="commissions-next" type="button" class="btn small">下一页</button>
+        </div>
+      </main>
+
+      <main id="tab-settlements" class="tab-panel" hidden>
+        <div class="card">
+          <button id="settle-apply-btn" type="button" class="btn primary">申请结算</button>
+          <p id="settle-hint" class="hint">按需结算：一代理同时只能有一张待处理结算单。</p>
+        </div>
+        <div id="settlements-list" class="list"></div>
+        <p id="settlements-empty" class="empty"></p>
+        <div class="pager">
+          <button id="settlements-prev" type="button" class="btn small">上一页</button>
+          <span id="settlements-page-info" class="dim"></span>
+          <button id="settlements-next" type="button" class="btn small">下一页</button>
+        </div>
+        <section id="settlement-detail" class="card detail" hidden>
+          <h2 class="card-title">结算单详情</h2>
+          <div id="settlement-detail-body"></div>
+          <div class="actions">
+            <button id="settle-cancel-btn" type="button" class="btn">撤回申请</button>
+            <button id="settle-detail-close" type="button" class="btn">关闭</button>
+          </div>
+        </section>
+      </main>
+
+      <main id="tab-me" class="tab-panel" hidden>
+        <div id="me-body" class="card"></div>
+        <form id="me-password-form" class="card">
+          <h2 class="card-title">修改密码</h2>
+          <p class="hint">修改成功后所有登录状态立即失效，需要重新登录。</p>
+          <label class="field" for="me-old">
+            <span class="field-label">当前密码</span>
+            <input id="me-old" type="password" autocomplete="current-password" />
+          </label>
+          <label class="field" for="me-new">
+            <span class="field-label">新密码（10–72 字符）</span>
+            <input id="me-new" type="password" autocomplete="new-password" />
+          </label>
+          <label class="field" for="me-confirm">
+            <span class="field-label">确认新密码</span>
+            <input id="me-confirm" type="password" autocomplete="new-password" />
+          </label>
+          <button id="me-submit" type="submit" class="btn primary">修改密码</button>
+          <p id="me-error" class="error" hidden></p>
+        </form>
+      </main>
+
+      <nav id="tab-nav" class="tab-nav">
+        <button id="tab-btn-overview" type="button" class="tab-btn active">概览</button>
+        <button id="tab-btn-players" type="button" class="tab-btn">玩家</button>
+        <button id="tab-btn-commissions" type="button" class="tab-btn">佣金</button>
+        <button id="tab-btn-settlements" type="button" class="tab-btn">结算</button>
+        <button id="tab-btn-me" type="button" class="tab-btn">我的</button>
+      </nav>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/agent/app.js"></script>
+  </body>
+</html>

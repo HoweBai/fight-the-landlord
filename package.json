@@ -10,6 +10,7 @@
     "ci": "bash scripts/ci.sh",
     "e2e:browser": "node scripts/browser-e2e.mjs",
     "verify:admin": "node scripts/verify-admin-static.mjs",
+    "verify:agent": "node scripts/verify-agent-static.mjs",
     "verify:admin-players": "node scripts/admin-players-probe.mjs",
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
     "clean": "turbo run clean"

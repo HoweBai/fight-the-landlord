@@ -55,6 +55,17 @@
 		file_server
 	}
 
+	# 代理分润（2026-10-26）：代理门户静态站。写法照 /admin 的实测经验：
+	# redir 必须显式给 matcher（`redir * /agent/ 301`）；精确块在 handle 组内受理裸 /agent。
+	# ⚠️ 两条都必须在 catch-all `handle {` **之前**（否则被静态站接走）。
+	handle /agent {
+		redir * /agent/ 301
+	}
+	handle /agent/* {
+		root * /srv
+		file_server
+	}
+
 	# 监控片：Grafana 看板（片内**唯一**新公网面；写法照 /admin 的实测经验：
 	# redir 必须显式给 matcher；handle 组按 matcher 重排，源码次序不是保证——2026-10-01 实测）。
 	# ⚠️ 两条都必须放在 catch-all `handle {` **之前**（否则 `/grafana` 被静态站接走 ⇒ C4 红）。
