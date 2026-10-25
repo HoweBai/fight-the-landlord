@@ -342,4 +342,61 @@ describe('S6.1：壳对 2/4 人的处置', () => {
     expect(wrapper.findAll('.pdk__seat')).toHaveLength(1);
     expect(socket.emittedOf('room.leave')).toHaveLength(0);
   });
+
+  it('收到 4 人 pdk 视图 ⇒ 正常渲染（3 个对手座 + 顶部行）', async () => {
+    const socket = new FakeSocket();
+    startGameSession(() => socket);
+    const auth = useAuthStore();
+    auth.enterAsDevUser();
+    auth.navigate('table');
+    const store = useGameStore();
+
+    store.applySnapshot(
+      pdkView({
+        playerCount: 4,
+        hand: makeCards(3, 4, 5),
+        cardCounts: [3, 12, 12, 12],
+        trustees: [false, false, false, false],
+      }),
+    );
+    const wrapper = mount(TablePage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(store.view).not.toBeNull();
+    expect(auth.page).toBe('table');
+    expect(wrapper.findAll('.pdk__seat')).toHaveLength(3);
+    expect(wrapper.find('.pdk__seat--top').exists()).toBe(true);
+    expect(socket.emittedOf('room.leave')).toHaveLength(0);
+  });
+
+  it('4 人视图：seat 3 的余额按人数投影显示（不再写死 3 座）', async () => {
+    const socket = new FakeSocket();
+    startGameSession(() => socket);
+    const auth = useAuthStore();
+    auth.enterAsDevUser();
+    auth.navigate('table');
+    const store = useGameStore();
+
+    store.applySnapshot(
+      pdkView({
+        playerCount: 4,
+        hand: makeCards(3, 4, 5),
+        cardCounts: [3, 12, 12, 12],
+        trustees: [false, false, false, false],
+      }),
+    );
+    store.applyBalances({
+      balances: [
+        { seat: 0, balance: 100 },
+        { seat: 1, balance: 200 },
+        { seat: 2, balance: 300 },
+        { seat: 3, balance: 9999 },
+      ],
+    });
+    const wrapper = mount(TablePage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    const values = wrapper.findAll('.seat__coin-value').map((w) => flat(w.text()));
+    expect(values).toContain('9999');
+  });
 });

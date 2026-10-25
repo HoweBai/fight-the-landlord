@@ -61,12 +61,12 @@ export const DEFAULT_MODE_ID: GameModeId = GAME_MODES[0]!.id;
 
 /**
  * **客户端 UI 已实现的牌桌人数**（不是规则能力 —— 规则能力在 protocol `GAME_META`）。
- * 与服务端 `games[id].supportedPlayerCounts` 取交集后才展示：服务端开 4 人时，
- * 客户端在 4 人牌桌片落地前仍只展示 2/3。
+ * 与服务端 `games[id].supportedPlayerCounts` 取交集后才展示：服务端未开的 2/4 人
+ * 不会出现在人数切换里。
  */
 export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly number[]>> = {
   doudizhu: [3],
-  paodekuai: [2, 3],
+  paodekuai: [2, 3, 4],
 };
 
 /** 按 id 查玩法；查不到返回 `undefined`（**不**编一个默认对象）。 */

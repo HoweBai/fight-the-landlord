@@ -43,17 +43,17 @@ function baseConfig(games?: Record<string, ClientGameConfig>) {
   };
 }
 
-describe('跑得快 2 人场：客户端人数能力', () => {
+describe('跑得快 2/3/4 人场：客户端人数能力', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('能力表：斗地主恒 3；跑得快实现 2/3', () => {
+  it('能力表：斗地主恒 3；跑得快实现 2/3/4', () => {
     expect(CLIENT_TABLE_PLAYER_COUNTS.doudizhu).toEqual([3]);
-    expect(CLIENT_TABLE_PLAYER_COUNTS.paodekuai).toEqual([2, 3]);
+    expect(CLIENT_TABLE_PLAYER_COUNTS.paodekuai).toEqual([2, 3, 4]);
   });
 
-  it('activePlayerCounts 与服务端取交集：4 人即使服务端开放也不展示', () => {
+  it('activePlayerCounts 与服务端取交集', () => {
     const store = useGameStore();
     store.setActiveMode('paodekuai');
 
@@ -61,10 +61,13 @@ describe('跑得快 2 人场：客户端人数能力', () => {
     expect(store.activePlayerCounts).toEqual([3]);
 
     store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3, 4]) }));
-    expect(store.activePlayerCounts).toEqual([2, 3]);
+    expect(store.activePlayerCounts).toEqual([2, 3, 4]);
 
     store.setClientConfig(baseConfig({ paodekuai: pdkConfig([3, 4]) }));
-    expect(store.activePlayerCounts).toEqual([3]);
+    expect(store.activePlayerCounts).toEqual([3, 4]);
+
+    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3]) }));
+    expect(store.activePlayerCounts).toEqual([2, 3]);
   });
 
   it('旧服务端无 games ⇒ 只有 3 人', () => {
@@ -74,28 +77,30 @@ describe('跑得快 2 人场：客户端人数能力', () => {
     expect(store.activePlayerCounts).toEqual([3]);
   });
 
-  it('effectivePlayerCount：默认 3；选 2 生效；配置收回 2 ⇒ 回落 3；4 不可选', () => {
+  it('effectivePlayerCount：默认 3；选 4 生效；配置收回 4 ⇒ 回落 3；交集外拒绝写入', () => {
     const store = useGameStore();
     store.setActiveMode('paodekuai');
-    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3]) }));
+    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3, 4]) }));
     expect(store.effectivePlayerCount).toBe(3);
 
-    store.setSelectedPlayerCount(2);
-    expect(store.effectivePlayerCount).toBe(2);
+    store.setSelectedPlayerCount(4);
+    expect(store.effectivePlayerCount).toBe(4);
 
+    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3]) }));
+    expect(store.effectivePlayerCount, '闸收回后自动回落').toBe(3);
+
+    store.setSelectedPlayerCount(2);
+    expect(store.selectedPlayerCount).toBe(2);
     store.setSelectedPlayerCount(4);
     expect(store.selectedPlayerCount, '4 不在交集内 ⇒ 拒绝写入').toBe(2);
-
-    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([3]) }));
-    expect(store.effectivePlayerCount, '闸收回后自动回落').toBe(3);
   });
 
   it('斗地主恒 3：切回斗地主后选择值不生效', () => {
     const store = useGameStore();
     store.setActiveMode('paodekuai');
-    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3]) }));
-    store.setSelectedPlayerCount(2);
-    expect(store.effectivePlayerCount).toBe(2);
+    store.setClientConfig(baseConfig({ paodekuai: pdkConfig([2, 3, 4]) }));
+    store.setSelectedPlayerCount(4);
+    expect(store.effectivePlayerCount).toBe(4);
 
     store.setActiveMode('doudizhu');
     expect(store.activePlayerCounts).toEqual([3]);

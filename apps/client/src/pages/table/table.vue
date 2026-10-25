@@ -113,13 +113,12 @@ const cardCounterGate = computed(() => {
   return false;
 });
 
-/** 按座位昵称 / 余额（board 只收投影，不读 store）。 */
+/** 按座位昵称 / 余额（board 只收投影，不读 store）；人数按视图（缺省 3）。 */
 const seatNames = computed<Record<number, string>>(() => ({ ...store.seatNicknames }));
-const balances = computed<Array<number | null>>(() => [
-  store.seatBalance(0),
-  store.seatBalance(1),
-  store.seatBalance(2),
-]);
+const balances = computed<Array<number | null>>(() => {
+  const count = store.view?.playerCount ?? 3;
+  return Array.from({ length: count }, (_, seat) => store.seatBalance(seat));
+});
 
 /**
  * S5.3：`store.view` 是 ddz/pdk 联合；斗地主壳这一侧先窄化（S6 按 gameType 渲染 board）。

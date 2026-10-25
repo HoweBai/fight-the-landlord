@@ -513,6 +513,27 @@ describe('N30③ / R454：玩法页建房入口与房间列表可点（复用唯
     expect(typeof payload.playerCount).toBe('number');
   });
 
+  it('选 4 人后开始游戏：room.match 载荷 playerCount=4', async () => {
+    const store = useGameStore();
+    store.setActiveMode('paodekuai');
+    store.setClientConfig(pdkCountsConfig([2, 3, 4]));
+    store.setSelectedBaseScore(15);
+    const { wrapper, socket } = mountGame();
+    await flushPromises();
+
+    const four = wrapper.findAll('.game__player-option').find((o) => flat(o.text()) === '4 人');
+    expect(four).toBeDefined();
+    await four!.trigger('click');
+    const start = wrapper.findAll('.game__match button').find((b) => flat(b.text()) === '开始游戏');
+    expect(start).toBeDefined();
+    await start!.trigger('click');
+    await flushPromises();
+
+    const matches = socket.emittedOf('room.match');
+    expect(matches).toHaveLength(1);
+    expect((matches[0]!.env.payload as { playerCount?: unknown }).playerCount).toBe(4);
+  });
+
   it('再来一局：上一局 2 人 ⇒ 选择回写 2 且载荷 2', async () => {
     const store = useGameStore();
     store.setActiveMode('paodekuai');
