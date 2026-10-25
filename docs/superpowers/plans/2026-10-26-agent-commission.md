@@ -6,6 +6,16 @@
 - 提交纪律：每个任务一个 commit；消息末尾 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - 全局：任何 `package.json` 改动必须同笔更新 `pnpm-lock.yaml`；假 DB 只钉控制流，并发/死锁用 slice-30 真 MySQL。
 
+## 进度（2026-10-26，新会话从这里继续）
+
+**交接文档：`docs/superpowers/plans/2026-10-26-agent-commission-handoff.md`（先读它）**
+
+- ✅ 任务 0–12 已实现并提交（`faf65bd3` … `e6e70950`）；测试基线见交接文档 §2。
+- ⬜ 任务 13：管理后台「代理」UI。
+- ⬜ 任务 14：代理门户静态站 + edge。
+- ⬜ 任务 15：slice-30 真库 + 全量验证 + 独立代码审查 + 交付报告。
+- 未推送/未部署（等用户发话）。
+
 ## 全局约束
 
 1. **写边唯一**：佣金/额度只经 `ApplyService.applyWithEffect` 的内置钩子；不新增第二条写边。
