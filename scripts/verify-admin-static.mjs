@@ -258,7 +258,28 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 63, `CONFIG_NOTES 恰 63 条（实测 ${noteKeys.length}）`);
+ok(noteKeys.length === 76, `CONFIG_NOTES 恰 76 条（实测 ${noteKeys.length}）`);
+/* 2026-10-25：跑得快规则/计分/开关 13 键补齐备注（此前落进「通用说明」兜底文案）。 */
+const PDK_NOTE_KEYS = [
+  'game.levels.paodekuai',
+  'game.paodekuai.bareTrioEnabled',
+  'game.paodekuai.trioWithPairEnabled',
+  'game.paodekuai.bareAirplaneEnabled',
+  'game.paodekuai.fourWithTwoEnabled',
+  'game.paodekuai.fourWithTwoPairKickerAllowed',
+  'game.paodekuai.airplaneWings',
+  'game.paodekuai.bombMultiplierEnabled',
+  'game.paodekuai.guanMultiplierEnabled',
+  'game.paodekuai.springMultiplierEnabled',
+  'game.paodekuai.multiplierCap',
+  'game.paodekuai.baobenEnabled',
+  'game.paodekuai.nonThreePlayerEnabled',
+];
+const missingPdkNotes = PDK_NOTE_KEYS.filter((k) => !noteKeys.includes(k));
+ok(
+  missingPdkNotes.length === 0,
+  `CONFIG_NOTES 覆盖跑得快规则/计分/开关 13 键（缺：${missingPdkNotes.join(', ') || '无'}）`,
+);
 const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', '}');
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
