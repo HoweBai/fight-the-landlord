@@ -14,7 +14,7 @@
 
 - 指标 `game_type` 值域只能是 `doudizhu` 或 `paodekuai`；缺字段/空串/未知一律经 `normalizeGameType` 归一为 `doudizhu`。
 - 所有带 `game_type` 的写点必须经 `incGame` / `setGame`；禁止直接 `.inc({...})` / `.set({...})` 带标签。**唯一豁免**：`match_queue_length`（它自带 `mode/game_type/player_count/base_score` 多标签，继续直接 `.set`，不在本片改造范围）。
-- 跨包测试前先构建 shared：`pnpm --filter @fight-the-landlord/shared build`（裸 `npx vitest` 不触发 turbo 的 build 依赖）。
+- 跨包测试前先构建依赖包：`pnpm --filter @fight-the-landlord/protocol build && pnpm --filter @fight-the-landlord/shared build`（裸 `npx vitest` 不触发 turbo 的 build 依赖；worktree 里 dist 是 gitignored 的）。
 - 失败计数器的 `reason/phase/kind` 只用枚举值；禁止把错误文本、roomCode、botId 放进标签。
 - 新增计数一律在 catch 内计数后 **rethrow**（不吞错、不改状态机）。
 - 采样类 gauge 先读后写；整条快照读取失败保留旧值；单键/单条目坏按 ddz + 汇总 WARN。
