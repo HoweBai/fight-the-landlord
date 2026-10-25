@@ -1019,3 +1019,30 @@ input[type="datetime-local"]:focus {
   background: var(--bg);
   color: var(--text);
 }
+
+/* ── 代理管理页（2026-10-26 代理分润）────────────────────────────────
+   与玩家页同视觉语言：只做门面显隐，真闸在网关 policy。 */
+.agents-secret {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.agents-secret:empty { display: none; }
+.agents-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.agents-settle-detail {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.agents-bind { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }

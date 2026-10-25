@@ -617,6 +617,129 @@ for (const needle of [
 ok(/\.players-summary\s*\{/.test(css) && /\.players-card\s*\{/.test(css), 'style.css 含玩家页样式');
 ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（玩家页同纪律）');
 
+/* ── 12. 2026-10-26 代理分润：管理后台「代理」页 ─────────────────────
+ * 读面 super_admin|finance（网关 P-ag1）；写面 super_admin（P-ag2..P-ag4）；
+ * 结算打款/驳回 finance 也可。UI 只做门面，真闸在网关 policy。 */
+for (const id of [
+  'nav-agents-btn',
+  'agents-view',
+  'ag-settings-form',
+  'ag-settings-enabled',
+  'ag-settings-default-rate',
+  'ag-settings-min-yuan',
+  'ag-settings-coin-per-yuan',
+  'ag-settings-hold-days',
+  'ag-settings-admin-limit',
+  'ag-settings-adjust-op',
+  'ag-settings-adjust-day',
+  'ag-settings-save-btn',
+  'ag-q',
+  'ag-status',
+  'ag-search-btn',
+  'ag-reset-btn',
+  'ag-create-btn',
+  'ag-create-form',
+  'ag-create-result',
+  'ag-body',
+  'ag-empty',
+  'ag-page-info',
+  'ag-prev-btn',
+  'ag-next-btn',
+  'ag-page-size',
+  'ag-detail',
+  'ag-detail-body',
+  'ag-detail-close-btn',
+  'ag-settle-status',
+  'ag-settle-refresh-btn',
+  'ag-settle-body',
+  'ag-settle-empty',
+  'ag-settle-detail',
+  'ag-settle-detail-body',
+  'ag-adjust-form',
+  'ag-adjust-agent',
+  'ag-adjust-delta',
+  'ag-adjust-reason',
+  'ag-adjust-create-btn',
+  'ag-adjust-status',
+  'ag-adjust-refresh-btn',
+  'ag-adjust-body',
+  'ag-adjust-empty',
+  'ag-recon-from',
+  'ag-recon-to',
+  'ag-recon-run-btn',
+  'ag-recon-body',
+  'ag-audit-refresh-btn',
+  'ag-audit-body',
+  'ag-audit-empty',
+  'ag-audit-prev-btn',
+  'ag-audit-next-btn',
+  'ag-audit-page-info',
+]) {
+  ok(html.includes(`id="${id}"`), `index.html 含代理页 id #${id}`);
+}
+ok(
+  app.includes("agents: { el: 'agents-view', nav: 'nav-agents-btn', roles: ['super_admin', 'finance'] }"),
+  'VIEWS.agents 角色精确（super_admin|finance）',
+);
+const viewOrderAgents = /const VIEW_ORDER = \[([^\]]*)\]/.exec(app)?.[1] ?? '';
+ok(viewOrderAgents.includes("'agents'"), 'VIEW_ORDER 含 agents');
+ok(viewOrderAgents.trim().endsWith("'agents'"), 'VIEW_ORDER 末尾为 agents（后加视图）');
+for (const needle of [
+  '/api/admin/agents',
+  '/api/admin/agents/tree',
+  '/api/admin/agents/settings',
+  '/api/admin/agent-settlements',
+  '/api/admin/agent-adjustments',
+  '/api/admin/agent-audit',
+  '/api/admin/agent-reconciliation',
+  'function loadAgents',
+  'function renderAgents',
+  'function wireAgents',
+  'function resetAgents',
+  'function loadAgentSettlements',
+  'function loadAgentAdjustments',
+  'function loadAgentReconciliation',
+  'function loadAgentAudit',
+  'const canAgentWrite',
+  'const canAgentSettle',
+  'function applyAgentRole',
+]) {
+  ok(app.includes(needle), `app.js 含代理页针脚 ${JSON.stringify(needle)}`);
+}
+ok(
+  /const canAgentWrite = \(\) => roleOf\(\) === 'super_admin';/.test(app),
+  'canAgentWrite 仅 super_admin（写面门面）',
+);
+ok(
+  /const canAgentSettle = \(\) => roleOf\(\) === 'super_admin' \|\| roleOf\(\) === 'finance';/.test(app),
+  'canAgentSettle = super_admin|finance（打款/驳回）',
+);
+const switchViewAgents = balancedBlock(app, 'function switchView', '{', '}');
+ok(
+  switchViewAgents.includes("view === 'agents'") && switchViewAgents.includes('loadAgents()'),
+  'switchView 首次激活懒加载代理页',
+);
+const loginViewAgents = balancedBlock(app, 'function showLoginView', '{', '}');
+ok(loginViewAgents.includes('resetAgents()'), 'showLoginView 清零代理页状态');
+const wireAgentsBlock = balancedBlock(app, 'function wire()', '{', '}');
+ok(wireAgentsBlock.includes('wireAgents()'), 'wire() 调用 wireAgents()');
+ok(
+  /\$\('nav-agents-btn'\)\.addEventListener\('click'/.test(wireAgentsBlock),
+  'wire() 绑定 nav-agents-btn',
+);
+const saveAgentBlock = functionBody(app, 'async function saveAgentDetail');
+ok(saveAgentBlock !== '', '找到 saveAgentDetail 函数体');
+ok(
+  ['payoutName', 'payoutAccount', 'payoutBank'].every((k) => saveAgentBlock.includes(k)),
+  'saveAgentDetail 三收款字段同笔提交（updatePayout 省略即置 NULL）',
+);
+ok(saveAgentBlock.includes('/payout'), 'saveAgentDetail 调用 payout PATCH');
+const setStatusBlock = functionBody(app, 'async function setAgentStatus');
+ok(setStatusBlock !== '' && setStatusBlock.includes('/status'), 'setAgentStatus 调 status 端点');
+ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（代理页同纪律）');
+ok(/\.agents-secret\s*\{/.test(css), 'style.css 含 .agents-secret 规则');
+ok(/\.agents-actions\s*\{/.test(css), 'style.css 含 .agents-actions 规则');
+
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {
   console.error(`admin static verify: ${failures.length} FAILED / ${checks} checks`);
