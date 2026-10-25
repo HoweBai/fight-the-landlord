@@ -1,5 +1,5 @@
 /**
- * slice-30 —— 代理分润真库组（2026-10-26，任务 15）。
+ * slice-32 —— 代理分润真库组（2026-10-26，任务 15）。
  *
  * 为什么必须有这一片：假 DB 只能钉控制流；`SAVEPOINT` / 额度首建原子 upsert / 水位结算的
  * SUM+hash 复核 / 并发 pending 闸 / 关闭期对账**只有真 MySQL**能证明。
@@ -262,7 +262,7 @@ async function putConfigAndWait(
 
 /* ── 主流程 ───────────────────────────────────────────────────── */
 
-export async function runSlice30(): Promise<{ passed: string[] }> {
+export async function runSlice32(): Promise<{ passed: string[] }> {
   const checks = new Checks();
   const admin = await adminLogin();
 
