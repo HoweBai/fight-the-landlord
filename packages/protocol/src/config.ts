@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （九十三键清单、校验函数、客户端子集）。
+ * （一百键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -165,6 +165,14 @@ export const CONFIG_KEYS = [
   /** 跑得快风控两键（2026-10-25）：与斗地主阈值独立；有对局记录即纳入扫描，无 enabled 键。 */
   'game.paodekuai.risk.winRateThreshold',
   'game.paodekuai.risk.minGames',
+  /** 跑得快风控按人数 + 自动限流（2026-10-26）：旧两键为对应人数键缺失时的回退。 */
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.winRateThreshold',
+  'game.paodekuai.risk.player4.minGames',
+  'game.paodekuai.risk.autoThrottleScore',
   /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
   'currency.reliefThresholdCoins',
 ] as const;
@@ -396,10 +404,16 @@ const GAME_CARD_COUNTER_PRICE_KEYS: readonly ConfigKey[] = [
 const GAME_RISK_WIN_RATE_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.risk.winRateThreshold',
   'game.paodekuai.risk.winRateThreshold',
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player4.winRateThreshold',
 ];
 const GAME_RISK_MIN_GAMES_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.risk.minGames',
   'game.paodekuai.risk.minGames',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.minGames',
 ];
 
 /**
@@ -468,6 +482,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'game.doudizhu.robot.modelBySkill') return parseModelBySkill(value, key);
   if (GAME_RISK_WIN_RATE_KEYS.includes(key)) return parseWinRateThreshold(value, key);
   if (GAME_RISK_MIN_GAMES_KEYS.includes(key)) return parseMinGames(value, key);
+  if (key === 'game.paodekuai.risk.autoThrottleScore') return parseAutoThrottleScore(value);
   if (key === 'currency.reliefThresholdCoins') return parseReliefThresholdCoins(value);
   throw new ProtocolError(`未知配置键：${String(key)}`);
 }
@@ -660,6 +675,18 @@ function parseMinGames(value: unknown, key = 'risk.minGames'): number {
   }
   if (value < 1 || value > 100_000) {
     throw new ProtocolError(`${key} 必须在 1 ≤ n ≤ 100000 范围内`);
+  }
+  return value;
+}
+
+/** PDK 单玩法自动限流阈值（2026-10-26）：int 25–50（25=单命中即限流；26–49 与 50 同效）。 */
+function parseAutoThrottleScore(value: unknown): number {
+  const key = 'game.paodekuai.risk.autoThrottleScore';
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new ProtocolError(`${key} 必须是整数`);
+  }
+  if (value < 25 || value > 50) {
+    throw new ProtocolError(`${key} 必须在 25 ≤ n ≤ 50 范围内`);
   }
   return value;
 }

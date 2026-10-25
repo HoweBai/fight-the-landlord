@@ -8,6 +8,7 @@ import {
   entryFeePercentsFromLevels,
   isLegacyConfigKey,
   parseConfigValue,
+  type ConfigKey,
 } from './config';
 import { ProtocolError } from './validate';
 
@@ -97,6 +98,14 @@ describe('完整键清单与客户端子集', () => {
       // 跑得快风控（2026-10-25）：两玩法独立阈值
       'game.paodekuai.risk.winRateThreshold',
       'game.paodekuai.risk.minGames',
+      // 跑得快风控按人数 + 自动限流（2026-10-26；旧两键为回退键）
+      'game.paodekuai.risk.player2.winRateThreshold',
+      'game.paodekuai.risk.player2.minGames',
+      'game.paodekuai.risk.player3.winRateThreshold',
+      'game.paodekuai.risk.player3.minGames',
+      'game.paodekuai.risk.player4.winRateThreshold',
+      'game.paodekuai.risk.player4.minGames',
+      'game.paodekuai.risk.autoThrottleScore',
       'currency.reliefThresholdCoins',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
@@ -672,6 +681,52 @@ describe('配置平行化（2026-10-24）：新键校验与旧键兼容', () => 
     expect(() => parseConfigValue('game.paodekuai.risk.minGames', '100')).toThrow(
       /game\.paodekuai\.risk\.minGames.*必须是整数/,
     );
+  });
+
+  it('跑得快按人数风控键：2/3/4 三组胜率/最少局数（错误文案带各自键名）', () => {
+    for (const n of [2, 3, 4] as const) {
+      const win = `game.paodekuai.risk.player${n}.winRateThreshold` as ConfigKey;
+      const min = `game.paodekuai.risk.player${n}.minGames` as ConfigKey;
+      expect(parseConfigValue(win, 0.5)).toBe(0.5);
+      expect(parseConfigValue(win, 0.79)).toBe(0.79);
+      expect(parseConfigValue(win, 1)).toBe(1);
+      expect(() => parseConfigValue(win, 0.785)).toThrow(
+        new RegExp(`${win.replaceAll('.', '\\.')}.*两位小数`),
+      );
+      expect(() => parseConfigValue(win, 0.49)).toThrow(
+        new RegExp(`${win.replaceAll('.', '\\.')}.*0\\.5 ≤ n ≤ 1`),
+      );
+      expect(() => parseConfigValue(win, 1.01)).toThrow(
+        new RegExp(`${win.replaceAll('.', '\\.')}.*0\\.5 ≤ n ≤ 1`),
+      );
+      expect(() => parseConfigValue(win, '0.8')).toThrow(
+        new RegExp(`${win.replaceAll('.', '\\.')}.*必须`),
+      );
+      expect(parseConfigValue(min, 1)).toBe(1);
+      expect(parseConfigValue(min, 100_000)).toBe(100_000);
+      expect(() => parseConfigValue(min, 0)).toThrow(
+        new RegExp(`${min.replaceAll('.', '\\.')}.*1 ≤ n ≤ 100000`),
+      );
+      expect(() => parseConfigValue(min, 100_001)).toThrow(
+        new RegExp(`${min.replaceAll('.', '\\.')}.*1 ≤ n ≤ 100000`),
+      );
+      expect(() => parseConfigValue(min, 3.5)).toThrow(
+        new RegExp(`${min.replaceAll('.', '\\.')}.*必须是整数`),
+      );
+      expect(() => parseConfigValue(min, '100')).toThrow(
+        new RegExp(`${min.replaceAll('.', '\\.')}.*必须是整数`),
+      );
+    }
+  });
+
+  it('跑得快自动限流阈值：int 25–50；26/49 是中间值', () => {
+    const key = 'game.paodekuai.risk.autoThrottleScore';
+    for (const v of [25, 26, 49, 50]) expect(parseConfigValue(key, v)).toBe(v);
+    for (const bad of [24, 51, 3.5, '25', null, true]) {
+      expect(() => parseConfigValue(key, bad), `autoThrottleScore=${JSON.stringify(bad)}`).toThrow(
+        /game\.paodekuai\.risk\.autoThrottleScore/,
+      );
+    }
   });
 
   it('currency.reliefThresholdCoins：整数 1..1,000,000', () => {
