@@ -46,6 +46,7 @@ import { runSlice28 } from './slices/slice-28-card-counter';
 import { runSlice29 } from './slices/slice-29-paodekuai';
 import { runSlice30 } from './slices/slice-30-pdk-metrics';
 import { runSlice31 } from './slices/slice-31-pdk-gold';
+import { runSlice32 } from './slices/slice-32-pdk-risk-gold';
 
 interface Case {
   title: string;
@@ -125,6 +126,8 @@ const CASES: Record<string, Case> = {
   'slice-30-pdk-metrics': { title: '跑得快指标（真栈：按玩法 started/ended）', run: runSlice30 },
   // 多玩法 A2/A3：PDK 金币场账本玩法维度 + 管理玩家统计（本机无 Docker，待权威轮）。
   'slice-31-pdk-gold': { title: '跑得快金币场（真栈：台费/结算/记录/管理统计玩法维度）', run: runSlice31 },
+  // B 组：PDK gold 2/4 + 风控 2/3/4 + 机器人局剔除 + 自动限流（本机无 Docker，待权威轮）。
+  'slice-32-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice32 },
 };
 
 function printUsage(): void {

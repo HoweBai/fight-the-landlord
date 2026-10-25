@@ -37,8 +37,8 @@ const PDK_TWO_PLAYER_KEY = 'game.paodekuai.twoPlayerEnabled';
 
 /* ── 风控真栈（2026-10-25）：复用本片已打完的 random 模式 PDK 对局 ───────────── */
 const USER_SERVICE_CONTAINER = 'ftl-user-service';
-const PDK_RISK_MIN_GAMES = 'game.paodekuai.risk.minGames';
-const PDK_RISK_WIN_RATE = 'game.paodekuai.risk.winRateThreshold';
+const PDK_RISK_MIN_GAMES = 'game.paodekuai.risk.player3.minGames';
+const PDK_RISK_WIN_RATE = 'game.paodekuai.risk.player3.winRateThreshold';
 const RISK_SCAN_INTERVAL = 'risk.scanIntervalMs';
 /** `record.write` 的 TCP 监听（宿主直投 = compose override 的 3101；照 slice-20）。 */
 const USER_RPC: RpcEndpoint = {
@@ -64,6 +64,7 @@ function sampleCards(offset: number, count: number): Card[] {
 function craftPdkWinningRecord(
   roomCode: string,
   winnerUserId: string,
+  otherUserIds: readonly [string, string],
   endedAt: number,
 ): RecordWriteRequest {
   const baseScore = 15;
@@ -105,17 +106,17 @@ function craftPdkWinningRecord(
       },
       {
         seat: 1,
-        userId: null,
-        isRobot: true,
-        robotId: 'bot-s29-pdk-1',
+        userId: otherUserIds[0],
+        isRobot: false,
+        robotId: null,
         hand: encodeHand(sampleCards(16, 16), 16),
         playedCount: 12,
       },
       {
         seat: 2,
-        userId: null,
-        isRobot: true,
-        robotId: 'bot-s29-pdk-2',
+        userId: otherUserIds[1],
+        isRobot: false,
+        robotId: null,
         hand: encodeHand(sampleCards(32, 16), 16),
         playedCount: 9,
       },
@@ -385,7 +386,15 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
       }
       // 真实对局只有 1 局；命中是严格 `games > minGames` ⇒ 直投第二条胜局到 2 局 2 胜。
       const craftedRoom = `P2${Date.now().toString(36).slice(-6).toUpperCase()}`;
-      const crafted = craftPdkWinningRecord(craftedRoom, winnerUser.id, Date.now());
+      const otherUserIds = room.clients
+        .map((client) => client.user.id)
+        .filter((id) => id !== winnerUser.id) as [string, string];
+      const crafted = craftPdkWinningRecord(
+        craftedRoom,
+        winnerUser.id,
+        otherUserIds,
+        Date.now(),
+      );
       const writeRes = await rpcCall<{ written: boolean }>(
         USER_RPC,
         RPC_PATTERNS.recordWrite,

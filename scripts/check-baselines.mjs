@@ -87,7 +87,19 @@ function main(argv) {
     process.exitCode = 1;
     return;
   }
-  const bad = violations(JSON.parse(readFileSync(BASELINES, 'utf8')), mode, counts);
+  const baselines = JSON.parse(readFileSync(BASELINES, 'utf8'));
+  // B 组：slice-32 是真栈片，只允许在 full 列；缺基线 = 空测。
+  if (!Object.hasOwn(baselines.full ?? {}, 'slice-32-pdk-risk-gold')) {
+    console.error('❌ baselines.full 缺 slice-32-pdk-risk-gold（真栈片必须有 full 基线）');
+    process.exitCode = 1;
+    return;
+  }
+  if (Object.hasOwn(baselines.render ?? {}, 'slice-32-pdk-risk-gold')) {
+    console.error('❌ baselines.render 不应有 slice-32-pdk-risk-gold（真栈片无 render 步骤）');
+    process.exitCode = 1;
+    return;
+  }
+  const bad = violations(baselines, mode, counts);
   for (const [name, n] of counts) console.log(`[baseline] ${mode} ${name} = ${n}`);
   if (bad.length > 0) {
     for (const line of bad) console.error(`❌ ${line}`);

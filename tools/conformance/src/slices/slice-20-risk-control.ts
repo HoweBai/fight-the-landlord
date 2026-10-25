@@ -125,12 +125,20 @@ const K_MIN_GAMES = 'game.doudizhu.risk.minGames';
 /** 2026-10-25 跑得快风控两键（与斗地主独立；有记录即纳入扫描）。 */
 const K_PDK_WIN_RATE = 'game.paodekuai.risk.winRateThreshold';
 const K_PDK_MIN_GAMES = 'game.paodekuai.risk.minGames';
+/** 2026-10-26 跑得快按人数 + 自动限流（旧两键为回退）。 */
+const K_PDK_P2_WIN = 'game.paodekuai.risk.player2.winRateThreshold';
+const K_PDK_P2_MIN = 'game.paodekuai.risk.player2.minGames';
+const K_PDK_P3_WIN = 'game.paodekuai.risk.player3.winRateThreshold';
+const K_PDK_P3_MIN = 'game.paodekuai.risk.player3.minGames';
+const K_PDK_P4_WIN = 'game.paodekuai.risk.player4.winRateThreshold';
+const K_PDK_P4_MIN = 'game.paodekuai.risk.player4.minGames';
+const K_PDK_AUTO_THROTTLE = 'game.paodekuai.risk.autoThrottleScore';
 const K_DEVICE_LIMIT = 'risk.deviceLimit';
 const K_DEVICE_WINDOW_DAYS = 'risk.deviceWindowDays';
 const K_AUTO_THROTTLE = 'risk.autoThrottle';
 const K_DEVICE_RETENTION_DAYS = 'risk.deviceRetentionDays';
 
-/** 十风控键的**种子态**（① 组逐值断言；规格 §2.1-3 表 + 2026-10-25 跑得快两键）。 */
+/** 十七风控键的**种子态**（① 组逐值断言；规格 §2.1-3 表 + 跑得快 2/3/4 与自动限流）。 */
 const RISK_SEED_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   [K_PRED_SAME_DEVICE, false],
   [K_PRED_SAME_IP, false],
@@ -138,6 +146,13 @@ const RISK_SEED_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   [K_MIN_GAMES, 100],
   [K_PDK_WIN_RATE, 0.8],
   [K_PDK_MIN_GAMES, 100],
+  [K_PDK_P2_WIN, 0.8],
+  [K_PDK_P2_MIN, 100],
+  [K_PDK_P3_WIN, 0.8],
+  [K_PDK_P3_MIN, 100],
+  [K_PDK_P4_WIN, 0.8],
+  [K_PDK_P4_MIN, 100],
+  [K_PDK_AUTO_THROTTLE, 50],
   [K_DEVICE_LIMIT, 3],
   [K_DEVICE_WINDOW_DAYS, 30],
   [K_AUTO_THROTTLE, true],
@@ -720,7 +735,7 @@ export async function runSlice20(): Promise<Checks> {
     /* ════════════════════════════════════════════════════════════════════
      * ① 配置面（§6.2-1）
      * ════════════════════════════════════════════════════════════════════ */
-    step(`① 配置面：${TOTAL_CONFIG_KEYS} 键在场 + 10 风控键种子逐值 + 非法写入（0.785）⇒ 400 且不落库`);
+    step(`① 配置面：${TOTAL_CONFIG_KEYS} 键在场 + 17 风控键种子逐值 + 非法写入（0.785）⇒ 400 且不落库`);
     const g1Cfg = await adminGetConfig<AdminConfigData>(s.adminToken);
     checks.eq(g1Cfg.body?.code, ErrCode.OK, '① GET /api/admin/config ⇒ code 0');
     const g1Keys = Object.keys(g1Cfg.body?.data?.config ?? {});
@@ -740,7 +755,7 @@ export async function runSlice20(): Promise<Checks> {
     const g1SeedActual = RISK_SEED_VALUES.map(([k]) => [k, g1Cfg.body?.data?.config?.[k]?.value]);
     checks.that(
       JSON.stringify(g1SeedActual) === JSON.stringify(RISK_SEED_VALUES.map(([k, v]) => [k, v])),
-      `① 十风控键种子逐值（sameDevice/sameIp=false · ddzWinRate=0.8 · ddzMinGames=100 · pdkWinRate=0.8 · pdkMinGames=100 · deviceLimit=3 · windowDays=30 · autoThrottle=true · retention=365）—— 实际 ${JSON.stringify(g1SeedActual)}`,
+      `① 十七风控键种子逐值（sameDevice/sameIp=false · ddzWinRate=0.8 · ddzMinGames=100 · pdkWinRate=0.8 · pdkMinGames=100 · p2/p3/p4=0.8/100 · pdkAutoThrottleScore=50 · deviceLimit=3 · windowDays=30 · autoThrottle=true · retention=365）—— 实际 ${JSON.stringify(g1SeedActual)}`,
     );
     // 非法写入（域外/三位小数都非法；0.785 是规格 §2.1-3 的点名样本）⇒ 400 且**不落库**。
     const g1Illegal = await adminPutConfig(K_WIN_RATE, 0.785, s.adminToken);
