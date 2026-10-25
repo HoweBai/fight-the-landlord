@@ -3,8 +3,8 @@
 > 适用范围：金币场台费（source = `entry_fee`，actionId = `entryfee:<房号>:<玩家ID>`，`ref_id` = 房号）。
 > 不变式（规格 §2.8）：`game_records(mode='gold')` 的**每个真人座位** ⇔ 该 `(room_code, owner_id)`
 > 的 `entry_fee` **op**（或一条 `currency_entry_fee_skips` 免单行）——二者必居其一。
-> 管理端 ops 过滤维度只有 `source/actor/ownerId/from/to/cursor/limit`（**没有** actionId/refId 过滤）
-> ⇒ 按本手册的 SQL 口径核对（照结算先例）。全部命令在部署机上执行：
+> 管理端 ops 过滤维度 = `source/gameType/actor/ownerId/from/to/cursor/limit`（**没有** actionId/refId 过滤）
+> ⇒ 按本手册的 SQL 口径核对（照结算先例）。`gameType` 用于区分斗地主 / 跑得快。全部命令在部署机上执行：
 
 ```bash
 docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 "$MYSQL_DATABASE" -e "<SQL>"'
@@ -16,16 +16,22 @@ docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --defa
 ② 旧版本窗口开的局（当时还没有收费块）；③ 未来若代码回归导致收费块整体未执行。
 
 ```sql
-SELECT r.room_code, p.user_id, r.ended_at
-FROM game_record_players p
-JOIN game_records r ON r.id = p.record_id
+SELECT x.room_code, x.user_id, x.ended_at
+FROM (
+  SELECT r.room_code, p.user_id, r.ended_at
+  FROM game_record_players p JOIN game_records r ON r.id = p.record_id
+  WHERE r.mode = 'gold' AND p.is_robot = 0 AND p.user_id IS NOT NULL
+  UNION ALL
+  SELECT r.room_code, p.user_id, FROM_UNIXTIME(r.ended_at / 1000) AS ended_at
+  FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id
+  WHERE r.mode = 'gold' AND p.is_robot = 0 AND p.user_id IS NOT NULL
+) x
 LEFT JOIN currency_ops o
-  ON o.action_id = CONCAT('entryfee:', r.room_code, ':', p.user_id)
+  ON o.action_id = CONCAT('entryfee:', x.room_code, ':', x.user_id)
 LEFT JOIN currency_entry_fee_skips s
-  ON s.room_code = r.room_code AND s.owner_id = p.user_id
-WHERE r.mode = 'gold' AND p.is_robot = 0
-  AND o.id IS NULL AND s.id IS NULL
-ORDER BY r.ended_at DESC;
+  ON s.room_code = x.room_code AND s.owner_id = x.user_id
+WHERE o.id IS NULL AND s.id IS NULL
+ORDER BY x.ended_at DESC;
 ```
 
 - 期望：**空集**。非空 ⇒ 平台白送台费（对玩家无害）；逐行看 `ended_at` 与上线时间对照分类（① 崩溃窗口 / ② 旧版本窗口 / ③ 疑似缺陷 ⇒ 上报）。
@@ -39,9 +45,16 @@ ORDER BY r.ended_at DESC;
 SELECT o.ref_id AS room_code, f.owner_id, o.action_id, f.delta, o.created_at
 FROM currency_ops o
 JOIN currency_flows f ON f.op_id = o.id
-LEFT JOIN game_records r ON r.room_code = o.ref_id AND r.mode = 'gold'
-LEFT JOIN game_record_players p ON p.record_id = r.id AND p.user_id = f.owner_id
-WHERE o.source = 'entry_fee' AND p.id IS NULL
+LEFT JOIN (
+  SELECT r.room_code, p.user_id
+  FROM game_record_players p JOIN game_records r ON r.id = p.record_id
+  WHERE r.mode = 'gold'
+  UNION ALL
+  SELECT r.room_code, p.user_id
+  FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id
+  WHERE r.mode = 'gold'
+) rec ON rec.room_code = o.ref_id AND rec.user_id = f.owner_id
+WHERE o.source = 'entry_fee' AND rec.user_id IS NULL
 ORDER BY o.created_at DESC;
 ```
 

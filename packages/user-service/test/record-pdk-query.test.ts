@@ -8,7 +8,7 @@ import { RecordsController } from '../src/records/records.controller';
  * S7.2（spec §4.9.2 / §6.3）：跑得快战绩查询。
  *
  * 判据：pdk 走**单独的两张表**（`game_record_players_pdk`/`game_records_pdk`）；
- * 身份只本人、keyset 分页、JSON 列归一、`won` 由 winner_seat 派生、
+ * 身份只本人、keyset 分页、JSON 列归一、`score_change`/`won` 读玩家列（A2）、
  * 默认（无 gameType）仍是斗地主表、非法 gameType ⇒ 10001。
  */
 const T0 = Date.parse('2026-10-24T10:00:00.000Z');

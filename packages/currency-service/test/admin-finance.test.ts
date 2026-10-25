@@ -186,6 +186,8 @@ class FakeFinanceDb {
   reversedOverride: unknown = undefined;
   /** burn 两列回值注入面（非 null 的畸形驱动回值负例；undefined = 正常）。 */
   burnedRawOverride: unknown = undefined;
+  /** A2：burnByGame 注入面（模拟跨查询快照漂移；undefined = 正常计算）。 */
+  burnByGameOverride: unknown[] | undefined = undefined;
   private nextOpId = 1;
   private nextFlowId = 1;
   private nextSkipId = 1;
@@ -275,6 +277,7 @@ class FakeFinanceDb {
     this.reversedAsString = false;
     this.reversedOverride = undefined;
     this.burnedRawOverride = undefined;
+    this.burnByGameOverride = undefined;
     this.nextOpId = 1;
     this.nextFlowId = 1;
     this.nextSkipId = 1;
@@ -407,6 +410,7 @@ class FakeFinanceDb {
 
   /** burn 按玩法：0..n 行；分组人数不存在，仅金额/条数/未记录数。 */
   private summaryBurnByGame(params: unknown[]): unknown {
+    if (this.burnByGameOverride !== undefined) return this.burnByGameOverride;
     const [from, to] = params as [Date, Date];
     const groups = new Map<string | null, { residue: number; rake: number; unrecordedOps: number }>();
     for (const op of this.ops) {
@@ -1499,5 +1503,21 @@ describe('A2 财务玩法维度（列表筛选/汇总展开/burn+漏收按玩法
     const summary = await probe.get(`/api/admin/wallet/summary.csv?${WINDOW}`, AUTH);
     expect(summary.text.startsWith('﻿分组,玩法,金额合计,流水笔数')).toBe(true);
     expect(summary.text).toContain('game_settle,跑得快');
+  });
+
+  it('跨查询快照漂移（byGame ≠ 总数）不得 500：只告警并返回读数', async () => {
+    seedSummarySample();
+    db.burnByGameOverride = [
+      { k: null, residue: String(999), rake: String(999), unrecordedOps: 9 },
+    ];
+
+    const window = `from=${T('2026-10-05T00:00:00.000Z').getTime()}&to=${T('2026-10-07T00:00:00.000Z').getTime()}`;
+    const res = await probe.get(`/api/admin/wallet/summary?${window}`, AUTH);
+    expect(res.status).toBe(200);
+    expect(res.json.data.burnByGame).toEqual([
+      { gameType: null, residue: 999, rake: 999, unrecordedOps: 9 },
+    ]);
+    // 总数仍来自独立 SQL，不被 byGame 覆盖
+    expect(res.json.data.burn).toEqual({ residue: 2, rake: 3, unrecordedOps: 0 });
   });
 });

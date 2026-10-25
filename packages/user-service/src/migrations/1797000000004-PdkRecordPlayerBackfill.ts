@@ -12,8 +12,6 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 export class PdkRecordPlayerBackfill1797000000004 implements MigrationInterface {
   name = 'PdkRecordPlayerBackfill1797000000004';
 
-  static readonly BATCH_SIZE = 500;
-
   static readonly SELECT_BATCH =
     'SELECT p.id, p.seat, r.winner_seat, r.score_changes ' +
     'FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id ' +

@@ -1402,7 +1402,7 @@ const RELIEF_QUERY_KEYS = ['claim'] as const;
 const CONFIG_CHANGES_QUERY_KEYS = ['key', 'actor', 'from', 'to', 'cursor', 'limit'] as const;
 const LOGIN_EVENTS_QUERY_KEYS = ['username', 'success', 'from', 'to', 'cursor', 'limit'] as const;
 const ACCOUNT_CHANGES_QUERY_KEYS = ['targetId', 'actor', 'action', 'from', 'to', 'cursor', 'limit'] as const;
-const WALLET_OPS_QUERY_KEYS = ['source', 'actor', 'ownerId', 'from', 'to', 'cursor', 'limit'] as const;
+const WALLET_OPS_QUERY_KEYS = ['source', 'gameType', 'actor', 'ownerId', 'from', 'to', 'cursor', 'limit'] as const;
 const WALLET_SUMMARY_QUERY_KEYS = ['from', 'to', 'groupBy'] as const;
 /** accounts 列表：不分页（⚙️10）⇒ 白名单为**空**（任何键都是未知键）。 */
 const EMPTY_QUERY_KEYS: readonly string[] = [];

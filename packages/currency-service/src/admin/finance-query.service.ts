@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { DataSource } from 'typeorm';
 
@@ -333,6 +333,8 @@ function toSummaryRow(row: Record<string, unknown>, groupBy: SummaryGroupBy): Su
 
 @Injectable()
 export class FinanceQueryService {
+  private readonly logger = new Logger(FinanceQueryService.name);
+
   constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
 
   /**
@@ -510,18 +512,25 @@ export class FinanceQueryService {
       });
     const sumOf = <T>(rows: T[], pick: (row: T) => number): number =>
       rows.reduce((acc, row) => acc + pick(row), 0);
+    // ⚠️ 这些查询是**多条自动提交语句**，不在同一快照里：活跃写流量下，总数与 by-game
+    // 分组之间可能刚好插入一笔（毫秒窗口）。守卫只作**可观测漂移**记录，**不得** 500 ——
+    // 否则管理页会间歇「加载汇总失败」。
     if (
       sumOf(burnByGame, (r) => r.residue) !== burn.residue ||
       sumOf(burnByGame, (r) => r.rake) !== burn.rake ||
       sumOf(burnByGame, (r) => r.unrecordedOps) !== burn.unrecordedOps
     ) {
-      throw new Error('summary burnByGame 与 burn 总数不一致（分组聚合不变量破坏）');
+      this.logger.warn(
+        `summary burnByGame 与 burn 总数漂移（跨查询快照窗口）：byGame=${JSON.stringify(burnByGame)} totals=${JSON.stringify(burn)}`,
+      );
     }
     if (
       sumOf(entryFeeSkipsByGame, (r) => r.cnt) !== entryFeeSkips.cnt ||
       sumOf(entryFeeSkipsByGame, (r) => r.amount) !== entryFeeSkips.amount
     ) {
-      throw new Error('summary entryFeeSkipsByGame 与 entryFeeSkips 总数不一致（分组聚合不变量破坏）');
+      this.logger.warn(
+        `summary entryFeeSkipsByGame 与 entryFeeSkips 总数漂移（跨查询快照窗口）：byGame=${JSON.stringify(entryFeeSkipsByGame)} totals=${JSON.stringify(entryFeeSkips)}`,
+      );
     }
     return {
       rows: mapped,

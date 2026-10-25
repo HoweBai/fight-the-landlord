@@ -344,6 +344,9 @@ describe('A2 账本玩法维度迁移（DDL 与回填分离）', () => {
     for (const name of ['GameTypeOnOpsDdl1797000000000', 'GameTypeOnOpsBackfill1797000000001', 'EntryFeeSkipsGameType1797000000002']) {
       expect(name, `${name} 不得匹配 /^Currency\\d+$/`).not.toMatch(/^Currency\d+$/);
     }
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('GameTypeOnOpsDdl1797000000000')).toBeLessThan(ts('GameTypeOnOpsBackfill1797000000001'));
+    expect(ts('GameTypeOnOpsBackfill1797000000001')).toBeLessThan(ts('EntryFeeSkipsGameType1797000000002'));
   });
 
   it('② currency_ops DDL：up 恰一条 ALTER（列追加表尾+索引）；down 恰一条逆操作', async () => {

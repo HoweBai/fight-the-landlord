@@ -816,6 +816,11 @@ describe('A2：PDK 记录玩法/逐座投影迁移（DDL 与回填分离）', ()
     );
     expect('PdkRecordGameTypeDdl1797000000003'.startsWith('PdkRecords')).toBe(false);
     expect('PdkRecordPlayerBackfill1797000000004'.startsWith('PdkRecords')).toBe(false);
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('PdkRecordGameTypeDdl1797000000003')).toBeGreaterThan(1796300000000);
+    expect(ts('PdkRecordPlayerBackfill1797000000004')).toBeGreaterThan(
+      ts('PdkRecordGameTypeDdl1797000000003'),
+    );
   });
 
   it('DDL up 恰两条 ALTER（父表 game_type；玩家行 score_change/won + 复合索引）；down 逆序两条', async () => {
@@ -866,10 +871,12 @@ describe('A2：PDK 记录玩法/逐座投影迁移（DDL 与回填分离）', ()
     ];
     for (let run = 0; run < 2; run += 1) {
       const updates: Array<{ sql: string; params: unknown[] }> = [];
+      const selects: unknown[] = [];
       let batch = 0;
       const runner = {
         query: async (sql: string, params: unknown[] = []) => {
           if (sql.startsWith('SELECT p.id, p.seat, r.winner_seat, r.score_changes')) {
+            selects.push(params[0]);
             return batch++ === 0 ? rows : [];
           }
           updates.push({ sql, params: [...params] });
@@ -878,6 +885,7 @@ describe('A2：PDK 记录玩法/逐座投影迁移（DDL 与回填分离）', ()
       } as unknown as QueryRunner;
 
       await new PdkRecordPlayerBackfill1797000000004().up(runner);
+      expect(selects, `第 ${run + 1} 次执行 keyset`).toEqual([0, 3]);
       expect(updates, `第 ${run + 1} 次执行`).toEqual([
         { sql: PdkRecordPlayerBackfill1797000000004.UPDATE_ROW, params: [30, 1, 1] },
         { sql: PdkRecordPlayerBackfill1797000000004.UPDATE_ROW, params: [-15, 0, 2] },

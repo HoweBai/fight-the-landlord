@@ -3009,7 +3009,7 @@ function resetFinance() {
   fin.nextCursor = null;
   fin.loading = false;
   fin.loaded = false;
-  fin.filter = { source: '', actor: '', ownerId: '', from: undefined, to: undefined };
+  fin.filter = { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined };
   fin.summaryGroupBy = 'source';
   resetFinControls();
   $('fin-flows-body').textContent = '';

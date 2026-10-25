@@ -107,7 +107,7 @@ interface PdkPageRow {
   score_changes: unknown;
 }
 
-/** pdk 玩家行形态（`won` 由父行 winner_seat 派生，不落库）。 */
+/** pdk 玩家行形态（`score_change`/`won` 为 A2 落库列；父 JSON 只用于整局向量）。 */
 interface PdkPlayerRow {
   record_id: number | string;
   seat: number | string;

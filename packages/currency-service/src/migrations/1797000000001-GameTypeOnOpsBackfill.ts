@@ -11,9 +11,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 export class GameTypeOnOpsBackfill1797000000001 implements MigrationInterface {
   name = 'GameTypeOnOpsBackfill1797000000001';
 
-  /** 批次大小（真库验证按需调；测试按此 SQL 全文识别）。 */
-  static readonly BATCH_SIZE = 500;
-
+  /** 批次 SQL（测试按此全文识别）。 */
   static readonly SELECT_BATCH =
     'SELECT `id` FROM `currency_ops` ' +
     "WHERE `game_type` IS NULL AND `source` IN ('game_settle','robot_pool','entry_fee','card_counter') " +

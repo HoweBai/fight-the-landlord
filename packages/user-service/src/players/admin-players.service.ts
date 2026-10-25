@@ -94,7 +94,8 @@ const PLAYERS_FROM_SQL = `
  * 玩家管理页读面（2026-10-22）。
  *
  * 口径（spec D18）：
- *  - `lastActiveAt = max(user_devices.last_seen_at, 最近一局 ended_at)`；两者都无 ⇒ null；
+ *  - `lastActiveAt = max(user_devices.last_seen_at, DDZ 最近一局 ended_at, PDK 最近一局 ended_at)`；
+ *    三者都无 ⇒ null；
  *  - 对局/胜场统一 `mode IN ('random','gold')`、`is_robot=0`（与风控详情同口径）；
  *  - 设备数统一 `risk.deviceWindowDays` 窗口（与风控详情同口径）。
  *

@@ -105,6 +105,7 @@ for (const needle of [
   'fin-cardcounter-purchases-line',
   'fin-cardcounter-consumptions-line',
   'fin-game-type',
+  '玩法',
 ]) {
   ok(html.includes(needle), `index.html 含 G12 针脚 ${JSON.stringify(needle)}`);
 }

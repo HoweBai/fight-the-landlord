@@ -737,7 +737,7 @@ export async function runSlice25(): Promise<Checks> {
     checks.that(skipHit.ok, `D skips 行落库（20s 轮询）—— 实际 ${JSON.stringify(skipHit.last)}`);
     checks.eq(
       mysqlText(
-        `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
+        `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount,':',game_type) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
       ),
       `insufficient_funds:${u1Seat}:${MATCH_BASE_SCORE}:${ENTRY_FEE_AMOUNT}:doudizhu`,
       'C33 skips 行逐字段（reason/seat/baseScore/feeAmount/gameType）',

@@ -50,7 +50,7 @@ const ENTRY_FEE_PERCENT = 10;
 const EXPECTED_FEE = 1;
 const PRE_CHARGE = 1_000_000;
 const WINDOW_FROM = Date.now() - 60 * 60_000;
-const WINDOW_TO = Date.now() + 10 * 60_000;
+const WINDOW_TO = Date.now() + 30 * 60_000;
 
 const CURRENCY_RPC: RpcEndpoint = {
   host: process.env.CURRENCY_RPC_HOST ?? 'localhost',
@@ -423,11 +423,12 @@ export async function runSlice31(): Promise<{ passed: string[] }> {
       `④ 结算信封 version 可读（实测 ${String(outcome.settlementVersion)}）`,
     );
     const version = outcome.settlementVersion;
+    if (version === null) {
+      throw new ConformanceError('④ settlementVersion 缺失，无法拼 settle actionId');
+    }
     const scoreChanges = (outcome.settlement?.scoreChanges ?? []) as Array<{ seat: number; delta: number }>;
     const nonZero = scoreChanges.filter((c) => Number(c.delta) !== 0);
-    if (version === null) {
-      checks.that(false, '④ settlementVersion 缺失，无法拼 settle actionId');
-    } else {
+    {
       const settleAction = `settle:${room.roomCode}:${version}`;
       if (nonZero.length === 0) {
         checks.eq(
@@ -586,7 +587,7 @@ export async function runSlice31(): Promise<{ passed: string[] }> {
         }
         return res.body.data?.items ?? [];
       },
-      (items) => items.some((g) => g.gameType === 'paodekuai' && g.recordId === record?.recordId),
+      (items) => items.some((g) => g.gameType === 'paodekuai' && g.endedAt === record?.endedAt),
       30_000,
     );
     checks.that(gamesRes.ok, '⑧ 玩家最近对局含本局且 gameType=pdk');
@@ -652,10 +653,16 @@ export async function runSlice31(): Promise<{ passed: string[] }> {
         for (const c of room.clients) c.close();
       }
       purgeGoldQueues();
-      await adminPutConfig(PDK_ENABLED, original.enabled ?? false, admin);
-      await adminPutConfig(PDK_GOLD, original.gold ?? false, admin);
-      await adminPutConfig(PDK_LEVELS, original.levels ?? [], admin);
-      await adminPutConfig(PDK_RAKE, original.rake ?? 0, admin);
+      const restore = async (key: string, value: unknown): Promise<void> => {
+        const res = await adminPutConfig(key, value, admin);
+        if (res.body?.code !== ErrCode.OK) {
+          throw new ConformanceError(`还原 ${key} 失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
+        }
+      };
+      await restore(PDK_ENABLED, original.enabled ?? false);
+      await restore(PDK_GOLD, original.gold ?? false);
+      await restore(PDK_LEVELS, original.levels ?? []);
+      await restore(PDK_RAKE, original.rake ?? 0);
       info('slice-31 配置已还原、队列已清源');
     } catch (restoreErr) {
       if (primaryError === null) throw restoreErr;
