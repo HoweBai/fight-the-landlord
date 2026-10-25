@@ -264,7 +264,7 @@ async function putConfigAndWait(
 
 export async function runSlice32(): Promise<{ passed: string[] }> {
   const checks = new Checks();
-  const admin = await adminLogin();
+  let admin = await adminLogin();
 
   let settings0: { enabled: boolean; minSettlementYuan: number } | null = null;
   let invite0: unknown = false;
@@ -1061,6 +1061,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // 否则创建角色账号会撞 429（首轮实测：finance 账号创建 HTTP 429）。
     info('等待 61s 让网关 IP 桶窗口清零（本片请求密度 >120/min）');
     await sleep(61_000);
+    // admin 写桶 = 30 次/5min，键 = token 指纹（不是用户名）⇒ 本片前面的管理写已把旧桶打满。
+    // 重新登录换一枚 jti ⇒ 新指纹/新桶；后面的角色账号创建与收尾写面都用这枚 token。
+    admin = await adminLogin();
+    checks.that(admin.length > 0, '鉴权矩阵前重新登录超管（admin 写桶按 token 指纹，旧桶已满）');
     const playerOnAgent = await getJson('/api/agent/me', u1.accessToken);
     checks.eq(playerOnAgent.status, 401, '玩家 token 调 /api/agent/me ⇒ 401');
     const agentOnAdmin = await getJson('/api/admin/agents', tokenA);
