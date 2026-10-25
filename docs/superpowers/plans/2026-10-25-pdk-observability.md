@@ -489,7 +489,7 @@ it('A1：pending_write 失败计 reason=pending_write', async () => {
 });
 ```
 
-`rooms.start.test.ts` 追加（复用 `manualRoom` / `handlers` / `service`）：
+`rooms.start.test.ts` 追加（复用 `manualRoom` / `handlers` / `service`）；顶部补 `import { exactSeriesValue } from './helpers/metric-readout';` 与 `import { gameStartFailuresTotal, gamesStartedTotal } from '../src/metrics/room.metrics';`。
 
 ```ts
 it('A1：开局成功按 game_type=doudizhu 计数', async () => {
@@ -535,11 +535,11 @@ it('A1：ddz onSeats 失败计 reason=on_seats', async () => {
 
 **注意**：`start_rpc` 还必须验证“不因 pdk 的 `failPdkStart('game.start failed')` 二次计”——用上面 PDK rules 用例与 ddz 用例的差值断言，或加一条源内调用点断言（`failPdkStart(..., null, 'game.start failed'`）。
 
-`rooms.entry-fee.test.ts` 追加（复用该文件 `service` 与收费夹具）：
+`rooms.entry-fee.test.ts`：顶部补 `import { exactSeriesValue } from './helpers/metric-readout';` 与两个台费指标 import；**不要新起场景**，在既有“余额不足免单”与“14002 冲突”用例末尾追加断言（见下）。
 
 ```ts
-it('A1：台费免单/冲突按 game_type 计数', async () => {
-  // 复用本文件"余额不足免单"夹具；把场景跑完后：
+// 追加到既有“余额不足免单”用例末尾：
+// 追加到既有“14002 冲突”用例末尾：
   expect(await exactSeriesValue(entryFeeSkippedTotal, {
     game_type: 'doudizhu', reason: 'insufficient_funds',
   })).toBeGreaterThan(0);
@@ -687,6 +687,7 @@ import {
 
 it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {
   const ctx = makeGateway();
+  const RESULT = { roomCode: 'R2', baseScore: 15, winner: 'landlord', landlordSeat: 0, farmerSeats: [1, 2], multiplier: 2, spring: 'none', landlordScoreChange: 60, farmerScoreChange: -30 } as never;
   const pdk = {
     roomCode: 'R1', gameType: 'paodekuai', playerCount: 3, baseScore: 15,
     winnerSeats: [0], scoreChanges: [{ seat: 0, delta: 30 }, { seat: 1, delta: -15 }, { seat: 2, delta: -15 }],
@@ -702,12 +703,38 @@ it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {
 });
 
 it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状不符计 record_lost', async () => {
-  // 放在既有 `describe('记录片 T5：game.ended 记录组装 + record.write 投递')` 内，复用其
-  // `recordClient` / `envelope()` / `rooms` / `ctx`（:1832-1919）：
-  // ① `recordClient.write.mockRejectedValueOnce(new Error('down'))` ⇒ kind='record' +1
-  // ② `rooms.findOne.mockResolvedValueOnce(null)` ⇒ recordWriteSkipsTotal{reason:'room_ttl'} +1
-  // ③ `rooms.findOne.mockResolvedValueOnce({ ...room, gameType: 'doudizhu' })` 而 envelope 为 pdk
-  //    ⇒ recordWriteFailuresTotal{kind:'record_lost'} +1
+  const { recordClient, rooms, ctx } = await makeRecordFixtures();
+
+  const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+    game_type: 'doudizhu', kind: 'record',
+  })) ?? 0;
+  recordClient.write.mockRejectedValueOnce(new Error('down'));
+  ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 30, result: RESULT, record: envelope() });
+  await vi.waitFor(() => expect(exactSeriesValue(recordWriteFailuresTotal, {
+    game_type: 'doudizhu', kind: 'record',
+  })).resolves.toBe(beforeRecord + 1));
+
+  const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
+    game_type: 'doudizhu', reason: 'room_ttl',
+  })) ?? 0;
+  rooms.findOne.mockResolvedValueOnce(null);
+  ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 31, result: RESULT, record: envelope() });
+  await vi.waitFor(() => expect(exactSeriesValue(recordWriteSkipsTotal, {
+    game_type: 'doudizhu', reason: 'room_ttl',
+  })).resolves.toBe(beforeSkip + 1));
+
+  const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+    game_type: 'paodekuai', kind: 'record_lost',
+  })) ?? 0;
+  rooms.findOne.mockResolvedValueOnce({ ...(await rooms.findOne()), gameType: 'doudizhu' } as never);
+  ctx.gateway.onGameEvent({
+    event: 'game.ended', roomCode: 'ROOM1', version: 32,
+    result: { ...(RESULT as object), gameType: 'paodekuai' } as never,
+    record: { ...envelope(), gameType: 'paodekuai' } as never,
+  });
+  await vi.waitFor(() => expect(exactSeriesValue(recordWriteFailuresTotal, {
+    game_type: 'paodekuai', kind: 'record_lost',
+  })).resolves.toBe(beforeLost + 1));
 });
 ```
 
@@ -862,7 +889,7 @@ it('A1：moneyDelta 失败/部分计 kind=money_delta', async () => {
 ```ts
 it('A1：recordmoney 超龄放弃计 money_delta + dropped{game_type}', async () => {
   const h = makeHarness();
-  const entry = moneyEntry({ createdAt: 0 }); // TTL 已过
+  const entry = moneyEntry({ gameType: 'paodekuai', createdAt: 0 }); // TTL 已过
   const beforeDropped = (await exactSeriesValue(currencySettleResultTotal, {
     result: 'dropped', game_type: 'paodekuai',
   })) ?? 0;
@@ -981,6 +1008,9 @@ it('A1：outbox gauge 按 game_type 分组；hgetall 失败保持旧值', async 
   const sweeper = makeSweeper(h);
   await seedSettle(h, settleEntry({ gameType: 'paodekuai', createdAt: Date.now() }));
   await seedMoney(h, moneyEntry({ createdAt: Date.now() })); // 缺省 gameType ⇒ ddz
+  // 让两条都留在箱里：settle 重发失败、money 部分匹配
+  h.currency.apply.mockRejectedValueOnce(new Error('down'));
+  h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] });
   await sweeper.sweepOnce(Date.now());
 
   const pdk = await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' });
@@ -995,10 +1025,10 @@ it('A1：outbox gauge 按 game_type 分组；hgetall 失败保持旧值', async 
   expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(ddz);
 });
 
-it('A1：坏 outbox 条目归 ddz 并汇总 WARN', async () => {
+it('A1：未知 gameType 的 outbox 条目归 ddz 并汇总 WARN', async () => {
   const h = makeHarness();
   const sweeper = makeSweeper(h);
-  await h.redis.hset('settle:outbox', 'bad', '{bad json');
+  await seedMoney(h, moneyEntry({ gameType: 'pdk', createdAt: Date.now() }));
   const before = (await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })) ?? 0;
 
   await sweeper.sweepOnce(Date.now());
@@ -1154,9 +1184,31 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: 写失败测试**
 
 ```ts
-it('A1：PDK 队列的抽选轮/不成组/谓词拒绝带 game_type=paodekuai', async () => {
-  // 复用本文件 PDK 队列夹具（queue.gameType='paodekuai'）
-  // 断言 matchSelectionRoundsTotal{game_type:'paodekuai'}、matchPredicateRejectionsTotal{game_type:'paodekuai',predicate:'sameDevice'} 增量
+it('A1：PDK 抽选轮与谓词拒绝带 game_type=paodekuai', async () => {
+  // 顶部补：import { exactSeriesValue } from './helpers/metric-readout';
+  // import { matchPredicateRejectionsTotal, matchSelectionRoundsTotal } from '../src/metrics/room.metrics';
+  const h = make();
+  enablePdk(h);
+  const beforeRounds = (await exactSeriesValue(matchSelectionRoundsTotal, {
+    game_type: 'paodekuai',
+  })) ?? 0;
+  await enqueuePdk(h, ['a1', 'a2'], 2);
+  await h.service.scanOnce();
+  expect(await exactSeriesValue(matchSelectionRoundsTotal, {
+    game_type: 'paodekuai',
+  })).toBe(beforeRounds + 1);
+
+  const beforeRej = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+    predicate: 'sameDevice', game_type: 'paodekuai',
+  })) ?? 0;
+  await (h.service as unknown as {
+    accountRejection: (...args: unknown[]) => Promise<void>;
+  }).accountRejection(
+    'a1', 'a2', { ok: false, memory: false, rejected: [{ name: 'sameDevice' }] }, T0, new Set(), 'paodekuai',
+  );
+  expect(await exactSeriesValue(matchPredicateRejectionsTotal, {
+    predicate: 'sameDevice', game_type: 'paodekuai',
+  })).toBe(beforeRej + 1);
 });
 ```
 
@@ -1206,9 +1258,23 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ```ts
 it('A1：rooms_active 按 game_type 分组；pipeline 整条失败保留旧值', async () => {
-  // scan 返回 room:A/room:B；pipeline().hget() 返回 'doudizhu' / 'paodekuai'
-  // 断言 roomsActive 两序列各 1
-  // 再让 pipeline.exec() reject，断言两序列仍为上一轮值
+  const exec = vi.fn(async () => [[null, 'doudizhu'], [null, 'paodekuai']]);
+  const pipeline = { hget: vi.fn().mockReturnThis(), exec };
+  const scan = vi.fn(async (cursor: string) =>
+    cursor === '0' ? ['0', ['room:AAA', 'room:BBB']] : ['0', []],
+  );
+  const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
+
+  await service.sampleOnce();
+  const ddz = await exactSeriesValue(roomsActive, { game_type: 'doudizhu' });
+  const pdk = await exactSeriesValue(roomsActive, { game_type: 'paodekuai' });
+  expect(ddz).toBe(1);
+  expect(pdk).toBe(1);
+
+  exec.mockRejectedValueOnce(new Error('redis down'));
+  await expect(service.sampleOnce()).rejects.toThrow('redis down');
+  expect(await exactSeriesValue(roomsActive, { game_type: 'doudizhu' })).toBe(ddz);
+  expect(await exactSeriesValue(roomsActive, { game_type: 'paodekuai' })).toBe(pdk);
 });
 ```
 
@@ -1460,7 +1526,8 @@ it('A1：PDK 规则 bot 抛错计 decision_error 并 rethrow', async () => {
     game_type: 'paodekuai', reason: 'decision_error',
   });
 
-  await expect(player.decide(pdkBad)).rejects.toThrow();
+  const { bot } = makePlayer(async () => [9]);
+  await expect(bot.decide(pdkBad)).rejects.toThrow();
 
   expect(await counterValue('robot_rule_errors_total', {
     game_type: 'paodekuai', reason: 'decision_error',
@@ -1581,24 +1648,24 @@ it('A1：记录清理按玩法分别计数（pdk 0 行也写序列）', async ()
   db.records.push({ ended_at: new Date(T0 - 401 * DAY_MS) });
   const { cache } = makeCache({ days: 365 });
   const svc = new RecordsCleanupService(db.dataSource as never, cache);
-  const beforeDdz = await labeledMetric('records_rows_deleted_total', { game_type: 'doudizhu' });
-  const beforePdk = await labeledMetric('records_rows_deleted_total', { game_type: 'paodekuai' });
+  const beforeDdz = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' });
+  const beforePdk = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'paodekuai' });
 
   await svc.runCleanupOnce(T0);
 
-  expect(await labeledMetric('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(beforeDdz + 2);
-  expect(await labeledMetric('records_rows_deleted_total', { game_type: 'paodekuai' })).toBe(beforePdk);
+  expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(beforeDdz + 2);
+  expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'paodekuai' })).toBe(beforePdk);
 });
 
 // risk-scan.test.ts（复用 mkSvc / db.pdkWinRows / callsByUser）
 it('A1：胜率命中按玩法计 risk_scan_hits_total', async () => {
   db.pdkWinRows = [{ user_id: 'u-pdk', games: 101, wins: 90 }];
-  const before = await labeledMetric('risk_scan_hits_total', { game_type: 'paodekuai' });
+  const before = await labeledMetricByGame('risk_scan_hits_total', { game_type: 'paodekuai' });
 
   await mkSvc(makeScanConfig({ pdkMinGames: 100, pdkWinRateThreshold: 0.8 })).runScanOnce(T0);
 
-  expect(await labeledMetric('risk_scan_hits_total', { game_type: 'paodekuai' })).toBe(before + 1);
-  expect(await labeledMetric('risk_scan_hits_total', { game_type: 'doudizhu' })).toBeGreaterThanOrEqual(0);
+  expect(await labeledMetricByGame('risk_scan_hits_total', { game_type: 'paodekuai' })).toBe(before + 1);
+  expect(await labeledMetricByGame('risk_scan_hits_total', { game_type: 'doudizhu' })).toBeGreaterThanOrEqual(0);
 });
 ```
 
@@ -1648,16 +1715,14 @@ if (pdkHit) incGame(riskScanHitsTotal, 'paodekuai');
 
 `records-cleanup.test.ts` 的 `simpleMetric('records_rows_deleted_total')` 是“无标签行”正则，会直接抛；改为本文件内的标签感知读数：
 ```ts
-async function labeledMetric(name: string, labels: Record<string, string>): Promise<number> {
+async function labeledMetricByGame(name: string, labels: Record<string, string>): Promise<number> {
   const text = await metricsRegistry().metrics();
-  const hit = text.split('
-').find((line) => line.startsWith(`${name}{`) &&
+  const hit = text.split('\n').find((line) => line.startsWith(`${name}{`) &&
     Object.entries(labels).every(([k, v]) => line.includes(`${k}="${v}"`)));
-  if (!hit) throw new Error(`registry 输出里没有 ${name} ${JSON.stringify(labels)}`);
-  return Number(hit.slice(hit.lastIndexOf(' ') + 1));
+  return hit ? Number(hit.slice(hit.lastIndexOf(' ') + 1)) : 0;
 }
 ```
-既有断言改为 `labeledMetric('records_rows_deleted_total', { game_type: 'doudizhu' })`。
+既有断言改为 `labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })`。`risk-scan.test.ts` 已有 `labeledMetric(name, labelsString)`，新用例统一用 `labeledMetricByGame`（两个文件各定义一份，签名一致），避免重名/对象被拼成 `[object Object]`。
 
 - [ ] **Step 4: 跑绿**
 
@@ -1686,7 +1751,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写失败测试（静态）**
 
-在 `verify-monitoring.mjs` 加入（先写会失败的检查，再补规则）：
+在 `verify-monitoring.mjs` 的 `if (failures.length)` **之前**加入（Step 1/Step 3 两段都在 exit 块之前；追加到文件末尾会成为死代码）：
 
 ```js
 const ALERT_FILE = join(ROOT, 'deploy/monitoring/prometheus/rules/ftl-alerts.yml');
