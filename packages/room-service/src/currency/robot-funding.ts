@@ -263,6 +263,7 @@ export class RobotFunding implements SettleRobotHook {
       source: ROBOT_FUNDING_SOURCE,
       refId: botId,
       entries,
+      gameType,
     });
     if (data.replayed) {
       // 同 id 同载荷 ⇒ 下游幂等回放：钱**不**再动，速率指标也不再加 —— 但留一条日志

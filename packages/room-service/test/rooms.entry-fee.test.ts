@@ -140,12 +140,14 @@ describe('RoomStartService 收费块（本片：位置/短路/逐人并发/重�
         source: 'entry_fee',
         entries: [{ ownerId: 'u1', delta: -1 }],
         refId: 'ENT03',
+        gameType: 'doudizhu',
       },
       {
         actionId: 'entryfee:ENT03:u2',
         source: 'entry_fee',
         entries: [{ ownerId: 'u2', delta: -1 }],
         refId: 'ENT03',
+        gameType: 'doudizhu',
       },
     ]);
     // 机器人零调用：载荷里不出现任何 displayId 形态的 ownerId
@@ -299,6 +301,7 @@ describe('RoomStartService 收费块（本片：位置/短路/逐人并发/重�
       baseScore: 15,
       feeAmount: 1,
       reason: 'insufficient_funds',
+      gameType: 'doudizhu',
     });
     expect((await labeledValue(entryFeeSkippedTotal, { reason: 'insufficient_funds' })) ?? 0).toBe(before + 1);
     const line = warns().find((m) => m.includes('entry_fee.skipped'));
