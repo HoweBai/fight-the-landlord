@@ -57,7 +57,7 @@ describe('RPC pattern inventory (docs/design.md §4.2, N20/P4)', () => {
    * 因此「改了常量」会同时改两端 —— 但**常量本身漂移**（例如把 `game.view` 写成 `game.getView`）
    * 会让实现整体偏离 §4.2，而单测全绿。这条把它钉死在规格上。
    */
-  it('§4.2 的二十二个 pattern 名逐字不变（片⑦ 把第八条换成 config.snapshot、记录片末位加 record.write、货币片末位加 currency.apply/currency.get、金币场末位加 record.moneyDelta、风控片末位加 risk.deviceReport、支付片末位加 currency.withdrawable.get、支付配置管理化片末位加 config.payChannel.get、通知通道管理化片末位加 config.notifyChannel.get、广告片末位加 config.adChannel.get、台费片末位加 currency.entryFeeSkip、昵称片末位加 user.nicknames.get、挂机治理片末位加 game.trustee、记牌器收费片末位加 currency.cardCounterConsume）', () => {
+  it('§4.2 的二十四个 pattern 名逐字不变（片⑦ 把第八条换成 config.snapshot、记录片末位加 record.write、货币片末位加 currency.apply/currency.get、金币场末位加 record.moneyDelta、风控片末位加 risk.deviceReport、支付片末位加 currency.withdrawable.get、支付配置管理化片末位加 config.payChannel.get、通知通道管理化片末位加 config.notifyChannel.get、广告片末位加 config.adChannel.get、台费片末位加 currency.entryFeeSkip、昵称片末位加 user.nicknames.get、挂机治理片末位加 game.trustee、记牌器收费片末位加 currency.cardCounterConsume、代理分润片末位加 agent.bind/user.agentProfile.get）', () => {
     expect(RPC_PATTERNS).toEqual({
       gameStart: 'game.start',
       gameView: 'game.view',
@@ -81,6 +81,8 @@ describe('RPC pattern inventory (docs/design.md §4.2, N20/P4)', () => {
       userNicknamesGet: 'user.nicknames.get',
       gameTrustee: 'game.trustee',
       currencyCardCounterConsume: 'currency.cardCounterConsume',
+      agentBind: 'agent.bind',
+      userAgentProfileGet: 'user.agentProfile.get',
     });
   });
 

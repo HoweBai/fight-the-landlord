@@ -1,10 +1,20 @@
 import { Module } from '@nestjs/common';
+import { ClientsModule, type ClientProxy } from '@nestjs/microservices';
 import { ConfigModule } from '../config/config.module';
 import { AgentSettingsService } from './agent-settings.service';
 import { AgentQuotaService } from './agent-quota.service';
 import { AgentQuotaMaturityService } from './agent-quota-maturity.service';
 import { AgentLedgerService } from './agent-ledger.service';
 import { AgentGapService } from './agent-gap.service';
+import { AgentInviteService } from './agent-invite.service';
+import { AgentBindingsService } from './agent-bindings.service';
+import { AgentAccountsService } from './agent-accounts.service';
+import { AgentBindRpcController } from './agent-bind.rpc.controller';
+import {
+  AGENT_USER_RPC_PROXY,
+  AgentUserClient,
+  agentUserClientOptions,
+} from './agent-user.client';
 
 /**
  * 代理分润域（spec §4/§8/§9）。
@@ -17,14 +27,36 @@ import { AgentGapService } from './agent-gap.service';
  * 本模块**不得** imports `RpcModule`（会成环；钩子不需要 ApplyService）。
  */
 @Module({
-  imports: [ConfigModule],
+  imports: [
+    ConfigModule,
+    // currency → user 的只读边（昵称/单玩家 profile）。与 config 边各自一条 TCP。
+    ClientsModule.register([{ name: AGENT_USER_RPC_PROXY, ...agentUserClientOptions() }]),
+  ],
+  controllers: [AgentBindRpcController],
   providers: [
     AgentSettingsService,
     AgentQuotaService,
     AgentQuotaMaturityService,
     AgentGapService,
+    AgentInviteService,
+    AgentBindingsService,
+    AgentAccountsService,
     AgentLedgerService,
+    {
+      provide: AgentUserClient,
+      // ⚠️ 必须 useFactory（R216：useClass 看不见带默认值的普通对象参数 ⇒ 启动即崩）。
+      useFactory: (p: ClientProxy) => new AgentUserClient(p),
+      inject: [AGENT_USER_RPC_PROXY],
+    },
   ],
-  exports: [AgentSettingsService, AgentQuotaService, AgentLedgerService],
+  exports: [
+    AgentSettingsService,
+    AgentQuotaService,
+    AgentLedgerService,
+    AgentInviteService,
+    AgentBindingsService,
+    AgentAccountsService,
+    AgentUserClient,
+  ],
 })
 export class AgentModule {}

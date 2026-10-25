@@ -15,6 +15,23 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  // 代理分润（2026-10-26）：生产环境的两个密钥 fail-closed。
+  // - `AGENT_PHONE_HMAC_KEY` 缺失 ⇒ 自玩判定会退化成公开兜底 key（不可接受）；
+  // - `AGENT_JWT_SECRET` 与 `JWT_SECRET` 都缺失 ⇒ 代理令牌可用仓库公开默认值伪造。
+  // dev/test 允许回落（与 admin middleware 的密钥链同族；生产必须显式配置）。
+  if (process.env.NODE_ENV === 'production' && !process.env.AGENT_PHONE_HMAC_KEY) {
+    console.error('AGENT_PHONE_HMAC_KEY is required in production (agent self-play HMAC)');
+    process.exit(1);
+  }
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !process.env.AGENT_JWT_SECRET &&
+    !process.env.JWT_SECRET
+  ) {
+    console.error('AGENT_JWT_SECRET or JWT_SECRET is required in production (agent portal JWT)');
+    process.exit(1);
+  }
+
   // S7（R142）：**所有** Nest 日志经统一脱敏器出站（§5.5）。
   // 必须在 `NestFactory.create` **之前**安装 —— 否则启动早期的日志不脱敏。
   Logger.overrideLogger(

@@ -87,6 +87,18 @@ export const RPC_PATTERNS = {
    */
   userNicknamesGet: 'user.nicknames.get',
   /**
+   * 代理分润（2026-10-26）：`agent.bind` —— 注册时绑定代理（user → currency，TCP 3104）。
+   * 同一事务内重校验邀请码/两个开关/代理状态；`ignored` = 功能关闭（注册照常），
+   * `AGENT_INVITE_INVALID` = 码无效。请求/响应类型 = `AgentBindRequest` / `AgentBindResponse`。
+   */
+  agentBind: 'agent.bind',
+  /**
+   * 代理分润（2026-10-26）：`user.agentProfile.get` —— 单玩家昵称 + 手机号
+   * （currency → user，TCP 3101；管理补绑算 `phone_hash` 用；只读、PII、仅内部）。
+   * 请求/响应类型 = `UserAgentProfileGetRequest` / `UserAgentProfileGetResponse`。
+   */
+  userAgentProfileGet: 'user.agentProfile.get',
+  /**
    * 风控片（规格 §2.1-4 / T4 接收侧）：`risk.deviceReport` —— 设备指纹上报（room → user，
    * 匹配**入队成功后**一次 fire-and-forget；不重试、失败即丢，⚙️21）。只报匹配路径
    * （好友房不报——谓词与检测均面向匹配对局，设计 §5.6）。
@@ -381,13 +393,41 @@ export type RecordWriteResponse = RpcResult<{ written: boolean }>;
 /** 昵称片：`user.nicknames.get` 入参。`userIds` 由调用方去重，最多 50 个。 */
 export interface UserNicknamesGetRequest {
   userIds: string[];
-}
-
-/** 单个 userId 的昵称读结果；`null` = 用户不存在或没有昵称（都是合法事实）。 */
+}/** 单个 userId 的昵称读结果；`null` = 用户不存在或没有昵称（都是合法事实）。 */
 export interface UserNicknameEntry {
   userId: string;
   nickname: string | null;
 }
+
+/** 代理绑定请求（user → currency；`source` 目前只有注册路径）。 */
+export interface AgentBindRequest {
+  ownerId: string;
+  code: string;
+  phone: string;
+  source: 'signup';
+}
+
+/** `bound` = 本次首绑；`already_bound` = 该玩家已有绑定（首绑为准）；`ignored` = 功能关闭。 */
+export type AgentBindStatus = 'bound' | 'already_bound' | 'ignored';
+
+export interface AgentBindData {
+  status: AgentBindStatus;
+}
+
+export type AgentBindResponse = RpcResult<AgentBindData>;
+
+/** 单玩家 profile（currency → user；**PII**，仅管理补绑算 phone_hash 用）。 */
+export interface UserAgentProfileGetRequest {
+  userId: string;
+}
+
+export interface UserAgentProfileData {
+  userId: string;
+  nickname: string | null;
+  phone: string | null;
+}
+
+export type UserAgentProfileGetResponse = RpcResult<UserAgentProfileData>;
 
 /** 昵称片：`user.nicknames.get` 响应（`RpcResult` 信封，与 `record.write` 同形）。 */
 export type UserNicknamesGetResponse = RpcResult<{ nicknames: UserNicknameEntry[] }>;
