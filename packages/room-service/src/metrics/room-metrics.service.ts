@@ -6,7 +6,8 @@ import {
   type OnApplicationShutdown,
   type OnModuleInit,
 } from '@nestjs/common';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { runWithTrace, setGame } from '@fight-the-landlord/shared';
+import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { Redis } from 'ioredis';
 import { roomsActive } from './room.metrics';
 
@@ -67,20 +68,45 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
-  /** 采样一次（测试与运维手动触发用，不等下一个周期）。 */
+  /** 采样一次（测试与运维手动触发用，不等下一个周期）。先读后写；整条失败保留旧值。 */
   async sampleOnce(): Promise<void> {
+    const keys: string[] = [];
     let cursor = '0';
-    let count = 0;
     do {
-      const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'room:*', 'COUNT', 100);
+      const [next, batch] = await this.redis.scan(cursor, 'MATCH', 'room:*', 'COUNT', 100);
       cursor = next;
-      for (const key of keys) {
+      for (const key of batch) {
         // 排除 room:{code}:seats / :cardcount / :bots 这类派生键（与 rooms.service 同形）
         if (key.slice('room:'.length).includes(':')) continue;
-        count += 1;
+        keys.push(key);
       }
     } while (cursor !== '0');
-    roomsActive.set(count);
+
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) pipeline.hget(key, 'gameType');
+    const results = await pipeline.exec(); // 整条失败 ⇒ 抛给 runRound，gauge 保留旧值
+
+    const counts = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    let bad = 0;
+    for (const [err, value] of results ?? []) {
+      if (err) {
+        bad += 1;
+        counts.set('doudizhu', (counts.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      if (value !== null && value !== undefined && !isGameType(value)) bad += 1;
+      const gameType = isGameType(value) ? value : 'doudizhu';
+      counts.set(gameType, (counts.get(gameType) ?? 0) + 1);
+    }
+    if (bad > 0) {
+      this.logger.warn(`rooms_active sample: ${bad} room(s) missing/invalid gameType — counted as doudizhu`);
+    }
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      setGame(roomsActive, gameType, counts.get(gameType) ?? 0);
+    }
   }
 
   onApplicationShutdown(): void {
