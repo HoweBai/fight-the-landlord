@@ -86,6 +86,7 @@ export class AgentDomain1797000000000 implements MigrationInterface {
         '`source` varchar(10) NOT NULL, ' +
         '`bound_by` varchar(50) NULL DEFAULT NULL, ' +
         '`phone_hash` char(64) NOT NULL, ' +
+        '`phone_masked` varchar(20) NOT NULL, ' +
         'PRIMARY KEY (`owner_id`), ' +
         'KEY `idx_binding_agent` (`agent_id`, `bound_at`)' +
         suffix,

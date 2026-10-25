@@ -5,20 +5,20 @@ import { DomainError } from '../http/errors';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentSettingsService } from './agent-settings.service';
 import { AgentInviteService } from './agent-invite.service';
-import { hmacPhone, normalizePhone, toDate } from './agent.util';
+import { hmacPhone, maskPhone, normalizePhone, toDate } from './agent.util';
 
 const BIND_INSERT_IGNORE_SQL =
-  'INSERT IGNORE INTO `agent_bindings` (`owner_id`, `agent_id`, `source`, `bound_by`, `phone_hash`) ' +
-  "VALUES (?, ?, 'signup', NULL, ?)";
+  'INSERT IGNORE INTO `agent_bindings` (`owner_id`, `agent_id`, `source`, `bound_by`, `phone_hash`, `phone_masked`) ' +
+  "VALUES (?, ?, 'signup', NULL, ?, ?)";
 const BIND_SELECT_SQL =
-  'SELECT `agent_id`, `phone_hash`, `bound_at`, `source` FROM `agent_bindings` WHERE `owner_id` = ?';
+  'SELECT `agent_id`, `phone_hash`, `phone_masked`, `bound_at`, `source` FROM `agent_bindings` WHERE `owner_id` = ?';
 const BIND_SELECT_FOR_UPDATE_SQL = `${BIND_SELECT_SQL} FOR UPDATE`;
 const BIND_UPDATE_SQL =
   "UPDATE `agent_bindings` SET `agent_id` = ?, `bound_at` = NOW(3), `source` = 'admin', " +
-  '`bound_by` = ?, `phone_hash` = ? WHERE `owner_id` = ?';
+  '`bound_by` = ?, `phone_hash` = ?, `phone_masked` = ? WHERE `owner_id` = ?';
 const BIND_DELETE_SQL = 'DELETE FROM `agent_bindings` WHERE `owner_id` = ?';
 const BIND_LIST_SQL =
-  'SELECT `owner_id`, `bound_at`, `source` FROM `agent_bindings` WHERE `agent_id` = ? ' +
+  'SELECT `owner_id`, `phone_masked`, `bound_at`, `source` FROM `agent_bindings` WHERE `agent_id` = ? ' +
   'ORDER BY `bound_at` DESC, `owner_id` DESC LIMIT ? OFFSET ?';
 const BIND_COUNT_SQL = 'SELECT COUNT(*) AS `cnt` FROM `agent_bindings` WHERE `agent_id` = ?';
 const BIND_CHUNK_SQL =
@@ -45,6 +45,7 @@ export interface BindingRow {
   agentId: string;
   boundAt: Date | null;
   source: string;
+  phoneMasked: string;
 }
 
 export const AGENT_BULK_REBIND_MAX = 5_000;
@@ -92,10 +93,12 @@ export class AgentBindingsService {
         throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
       }
       const phoneHash = hmacPhone(normalizePhone(input.phone));
+      const phoneMasked = maskPhone(input.phone);
       const inserted = await manager.query(BIND_INSERT_IGNORE_SQL, [
         input.ownerId,
         resolved.agentId,
         phoneHash,
+        phoneMasked,
       ]);
       if (affectedRowsOf(inserted, 'agent_bindings INSERT IGNORE') === 1) {
         await manager.query(HISTORY_INSERT_SQL, [
@@ -127,16 +130,23 @@ export class AgentBindingsService {
     return this.dataSource.transaction(async (manager) => {
       await this.assertAgentActive(manager, input.agentId);
       const phoneHash = hmacPhone(normalizePhone(input.phone));
+      const phoneMasked = maskPhone(input.phone);
       const existing = (await manager.query(BIND_SELECT_FOR_UPDATE_SQL, [input.ownerId])) as Array<
         Record<string, unknown>
       >;
       if (existing.length === 0) {
-        await manager.query(BIND_INSERT_IGNORE_SQL, [input.ownerId, input.agentId, phoneHash]);
+        await manager.query(BIND_INSERT_IGNORE_SQL, [
+          input.ownerId,
+          input.agentId,
+          phoneHash,
+          phoneMasked,
+        ]);
         // INSERT IGNORE 的首绑 source 固定 signup；管理补绑要覆盖为 admin。
         await manager.query(BIND_UPDATE_SQL, [
           input.agentId,
           input.actor,
           phoneHash,
+          phoneMasked,
           input.ownerId,
         ]);
         await manager.query(HISTORY_INSERT_SQL, [
@@ -156,6 +166,7 @@ export class AgentBindingsService {
         input.agentId,
         input.actor,
         phoneHash,
+        phoneMasked,
         input.ownerId,
       ]);
       await manager.query(HISTORY_INSERT_SQL, [
@@ -263,15 +274,20 @@ export class AgentBindingsService {
       agentId,
       boundAt: toDate(r.bound_at, 'agent_bindings.bound_at'),
       source: String(r.source),
+      phoneMasked: String(r.phone_masked),
     }));
   }
 
-  async get(ownerId: string): Promise<{ agentId: string; phoneHash: string } | null> {
+  async get(ownerId: string): Promise<{ agentId: string; phoneHash: string; phoneMasked: string } | null> {
     const rows = (await this.dataSource.query(BIND_SELECT_SQL, [ownerId])) as Array<
       Record<string, unknown>
     >;
     if (rows.length === 0) return null;
-    return { agentId: String(rows[0]!.agent_id), phoneHash: String(rows[0]!.phone_hash) };
+    return {
+      agentId: String(rows[0]!.agent_id),
+      phoneHash: String(rows[0]!.phone_hash),
+      phoneMasked: String(rows[0]!.phone_masked),
+    };
   }
 
   async countByAgent(agentId: string): Promise<number> {

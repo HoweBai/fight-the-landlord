@@ -9,6 +9,7 @@ import { hmacPhone } from '../src/agent/agent.util';
 interface BindRow {
   agent_id: string;
   phone_hash: string;
+  phone_masked: string;
   source: string;
   bound_at: Date;
 }
@@ -29,6 +30,7 @@ function makeDb(initial: Record<string, BindRow> = {}, agentStatus = 'active') {
         bindings.set(owner, {
           agent_id: String(p[1]),
           phone_hash: String(p[2]),
+          phone_masked: String(p[3]),
           source: 'signup',
           bound_at: new Date('2026-10-26T00:00:00Z'),
         });
@@ -43,14 +45,15 @@ function makeDb(initial: Record<string, BindRow> = {}, agentStatus = 'active') {
       }
       if (sql.startsWith('UPDATE `agent_bindings` SET `agent_id` = ?')) {
         if (sql.includes('`phone_hash` = ?')) {
-          // 单玩家改绑：params = [agentId, actor, phoneHash, ownerId]
-          const owner = String(p[3]);
+          // 单玩家改绑：params = [agentId, actor, phoneHash, phoneMasked, ownerId]
+          const owner = String(p[4]);
           const row = bindings.get(owner);
           if (row === undefined) return { affectedRows: 0 };
           bindings.set(owner, {
             ...row,
             agent_id: String(p[0]),
             phone_hash: String(p[2]),
+            phone_masked: String(p[3]),
             source: 'admin',
           });
           return { affectedRows: 1 };
@@ -174,7 +177,7 @@ describe('AgentBindingsService：注册绑定', () => {
 
   it('已有绑定 ⇒ already_bound（首绑为准，不覆盖）', async () => {
     const db = makeDb({
-      u1: { agent_id: 'old', phone_hash: 'x', source: 'signup', bound_at: new Date() },
+      u1: { agent_id: 'old', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
     });
     const { svc } = makeService(db);
     await expect(
@@ -187,7 +190,7 @@ describe('AgentBindingsService：注册绑定', () => {
 describe('AgentBindingsService：管理改绑/解绑/批量', () => {
   it('改绑：更新 agent + history + audit', async () => {
     const db = makeDb({
-      u1: { agent_id: 'old', phone_hash: 'x', source: 'signup', bound_at: new Date() },
+      u1: { agent_id: 'old', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
     });
     const { svc } = makeService(db);
     const res = await svc.rebind({ ownerId: 'u1', agentId: 'new', phone: '13800000001', actor: 'admin', reason: '纠错' });
@@ -208,7 +211,7 @@ describe('AgentBindingsService：管理改绑/解绑/批量', () => {
 
   it('解绑：删除 + history；无绑定 ⇒ 拒绝', async () => {
     const db = makeDb({
-      u1: { agent_id: 'old', phone_hash: 'x', source: 'signup', bound_at: new Date() },
+      u1: { agent_id: 'old', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
     });
     const { svc } = makeService(db);
     await svc.unbind({ ownerId: 'u1', actor: 'admin', reason: '离职' });
@@ -219,8 +222,8 @@ describe('AgentBindingsService：管理改绑/解绑/批量', () => {
 
   it('批量改绑：dryRun 返回人数；执行后搬移并写 history/audit', async () => {
     const db = makeDb({
-      u1: { agent_id: 'from', phone_hash: 'x', source: 'signup', bound_at: new Date() },
-      u2: { agent_id: 'from', phone_hash: 'y', source: 'signup', bound_at: new Date() },
+      u1: { agent_id: 'from', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
+      u2: { agent_id: 'from', phone_hash: 'y', phone_masked: '138****0001', source: 'signup', bound_at: new Date() },
     });
     const { svc } = makeService(db);
     await expect(

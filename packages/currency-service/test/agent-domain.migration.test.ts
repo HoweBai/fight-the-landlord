@@ -97,6 +97,7 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
     expect(sqlOf('agent_settlements')).toContain('`to_entry_id` bigint NOT NULL DEFAULT 0');
     expect(sqlOf('agent_settlements')).toContain('`items_hash` char(64) NOT NULL');
     expect(sqlOf('agent_player_quota')).toContain('PRIMARY KEY (`owner_id`)');
+    expect(sqlOf('agent_bindings')).toContain('`phone_masked` varchar(20) NOT NULL');
     expect(sqlOf('agent_quota_inflows')).toContain(
       'UNIQUE KEY `uk_qi_op_owner` (`source_op_id`, `owner_id`)',
     );
