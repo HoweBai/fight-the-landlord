@@ -90,7 +90,7 @@
 ### 跑得快（多玩法，S4/S5/S6）
 
 - `room.match` 增 `gameType?: "doudizhu" | "paodekuai"`、`playerCount?: number`（缺省斗地主/3）；
-  跑得快首版客户端只发 `playerCount: 3`。
+  跑得快客户端按人数发 2/3/4（可用集合由 `/api/config` 与服务端闸决定）。
 - `room.join` 增 `gameType?`（缺省斗地主）；REST `POST /api/rooms/:code/join` body 为
   `{ gameType? }`。旧客户端进跑得快房 ⇒ `12012`，且 REST 不占座。
 - `room.matched` / `room.state_update` 增 `gameType?` / `playerCount?`；客户端自动 join 原样回传。

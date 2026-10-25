@@ -33,7 +33,7 @@ import { haptic } from '../feedback/haptics';
 export function useTableSound(): void {
   const store = useGameStore();
 
-  /** `recentActions` 的指纹（窗口 = 2；只看内容，不看数组引用）。 */
+  /** `recentActions` 的指纹（斗地主窗口 2、跑得快按人数；只看内容，不看数组引用）。 */
   const actionsKey = (): string =>
     store.recentActions
       .map((a) => `${a.seat}:${a.cards === null ? 'pass' : a.cards.map((c) => c.r).join('.')}`)

@@ -339,7 +339,7 @@ interface GameSession {
 ```
 
 > ⚠️ **`lastPlayedHand` / `lastPlayerIdx` 不再出站**（协议 ④ 起）：出站的是由 `actionLog` 投影出的
-> `recentActions`（窗口 2，§4.2 的 `PlayerView`）。它们仍是**规则态**（跟牌目标 / 过牌合法性 /
+> `recentActions`（斗地主窗口 2；跑得快按人数，§4.2 的 `PlayerView`）。它们仍是**规则态**（跟牌目标 / 过牌合法性 /
 > 不变式 1、3），**永不下发** —— 别看到 `PlayerView` 上不再有同名段就以为它们被删了。
 
 关键变更（相对当前实现）：
@@ -589,7 +589,7 @@ interface PlayerView {
    *  随机指定地主的路径也必须写入 landlordCandidate）。 */
   landlordSeat: number | null;
   currentPlayer: number;
-  /** 桌面历史牌（协议 ④）：窗口 2、旧 → 新、「不出」占一手（`cards: null` 是**显式事实**）。
+  /** 桌面历史牌（协议 ④）：斗地主窗口 2、跑得快按人数；旧 → 新、「不出」占一手（`cards: null` 是**显式事实**）。
    *  ⚠️ 它**取代**了旧的 `lastPlayedHand` + `lastPlayerIdx`（**替换，不并存**）；**只用于展示** ——
    *  规则态（跟牌目标 `type`/`keyRank`/`length`）仍留在服务端 `GameSession.lastPlayedHand`（§3.2），永不出站。 */
   recentActions: { seat: number; cards: Card[] | null }[];
@@ -1050,7 +1050,7 @@ socket.emit(type, { version: number, payload: unknown });
 | 手牌 `hand`                                 | **完整明文**                                            | **仅张数 `cardCounts[seat]`，不含牌面** |
 | 底牌 `bottomCards`                          | 叫抢阶段恒为 `null`；`state === 'playing'` 后三家皆可见 | 同左                                    |
 | 身份标记                                    | **无 `isRobot`、无 `botId`**                            | 同左                                    |
-| 桌面历史牌 `recentActions`（协议④，窗口 2） | 明文（**只含已经打出过的牌**；不含任何未出的手牌）      | 明文                                    |
+| 桌面历史牌 `recentActions`（协议④，斗地主窗口 2 / 跑得快按人数） | 明文（**只含已经打出过的牌**；不含任何未出的手牌）      | 明文                                    |
 | 托管态 `trustees`（挂机治理片）             | 明文（`[boolean, boolean, boolean]` 按座位，三家态都给出） | 明文（「托管中」徽标据此渲染；**公开信息**） |
 
 规则：
@@ -1260,7 +1260,7 @@ socket.emit(type, { version: number, payload: unknown });
 | `game.doudizhu.risk.minGames`（**风控第 21 键**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（扫描最少局数；命中 = `games >` 本值） |
 | `game.paodekuai.risk.winRateThreshold`（**2026-10-25 跑得快风控**） | number · `0.5 ≤ n ≤ 1.0` · ≤2 位小数 | `0.8` | user-service（跑得快扫描胜率阈值；与斗地主独立；两玩法同时命中不叠分） |
 | `game.paodekuai.risk.minGames`（**2026-10-25 跑得快风控**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（跑得快扫描最少局数；命中 = `games >` 本值） |
-| `game.paodekuai.twoPlayerEnabled`（**2026-10-25 2 人场**） | 严格 `true`/`false` | `false` | room-service（2 人匹配/建房闸）+ config-service（`supportedPlayerCounts`）；4 人仍由 `game.paodekuai.nonThreePlayerEnabled` 控制 |
+| `game.paodekuai.twoPlayerEnabled`（**2026-10-25 2 人场**） | 严格 `true`/`false` | `false` | room-service（2 人匹配/建房闸）+ config-service（`supportedPlayerCounts`）；4 人仍由 `game.paodekuai.nonThreePlayerEnabled` 控制；客户端已支持 2/3/4 人牌桌 |
 | `risk.deviceLimit`（**风控第 22 键**） | 整数 · `2 ≤ n ≤ 100` | `3` | user-service（设备数阈值；命中 = 窗口内 `devices >` 本值） |
 | `risk.deviceWindowDays`（**风控第 23 键**） | 整数 · `1 ≤ n ≤ 365` | `30` | user-service（设备统计窗口，天） |
 | `risk.autoThrottle`（**风控第 24 键**） | 严格 `true`/`false` | `true` | user-service（scan 状态机：评分 ≥50 且开 ⇒ 自动上限流档；封禁恒人工） |

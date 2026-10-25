@@ -321,7 +321,7 @@ const READ_STATE = `(() => {
     gameType: store.view?.gameType ?? 'doudizhu',
     pdkPlayerCount: store.view?.playerCount ?? null,
     pdkCanPass: store.view?.canPass ?? null,
-    // 协议 ④：读窗口（旧 store.lastPlayedHand 已退役）。窗口里有非 null ⇒ 有人出过牌 ⇒ 可以过牌。
+    // 跑得快用服务端 canPass（pdkCanPass）；这里的窗口推断只服务斗地主（窗口 2）。
     // 等价性（「窗口里有非 null」⟺「lastPlayedHand !== null」）由 shared/ddz/recent.test.ts 的
     // 不变式② 钉住；不成立时这里会**静默走错分支**（表现为 30 秒超时，而不是红）—— 所以那条判据是前提。
     // ⚠️ 本注释在**模板字面量内**：不得出现反引号（会截断 READ_STATE 的字符串）。

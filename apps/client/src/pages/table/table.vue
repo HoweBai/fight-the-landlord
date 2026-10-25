@@ -133,7 +133,7 @@ const ddzSettlement = computed(() =>
   store.settlement && !isPdkSettlementResult(store.settlement) ? store.settlement : null,
 );
 
-/** S6：跑得快视图/结算（首版只做 3 人）。 */
+/** S6：跑得快视图/结算（2/3/4 人）。 */
 const pdkView = computed(() =>
   store.view && store.view.gameType === 'paodekuai' ? store.view : null,
 );
@@ -149,7 +149,7 @@ const pdkSettlement = computed(() =>
 const LEAVE_TIMEOUT_MS = 5000;
 
 /**
- * S6.1：客户端只实现 3 人跑得快 + 2 人（2026-10-25）。
+ * S6.1：客户端已实现 2/3/4 人跑得快（2026-10-25）。
  * 收到客户端未实现的人数（4）⇒ 尽力退房（必须带 roomCode，且不阻塞导航）→ 提示 → 回大厅
  *（不得把不支持的人数渲染成 3 人牌桌 —— 座位/牌数都会说谎）。
  */

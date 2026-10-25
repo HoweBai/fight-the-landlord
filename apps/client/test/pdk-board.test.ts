@@ -281,7 +281,7 @@ describe('S6.1：PdkBoard', () => {
   });
 });
 
-describe('S6.1：壳对 2/4 人的处置', () => {
+describe('S6.1：壳对 2/4/5 人的处置', () => {
   let pinia: ReturnType<typeof createPinia>;
   beforeEach(() => {
     pinia = createPinia();

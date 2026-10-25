@@ -494,7 +494,7 @@ const CONFIG_NOTES = {
     ['作用', '跑得快 4 人场开关（键名为历史命名，2026-10-25 起只影响 4 人）—— 关 ⇒ 4 人匹配 / 新建房被拒（12012）。'],
     ['取值', '严格 true / false。默认 false。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
-    ['注意', '2 人场用 game.paodekuai.twoPlayerEnabled；3 人场恒开。'],
+    ['注意', '2 人场用 game.paodekuai.twoPlayerEnabled；3 人场恒开。客户端已支持 4 人牌桌。'],
   ],
   'game.paodekuai.freeRoomEnabled': [
     ['作用', '跑得快免费场开关。开 ⇒ 大厅的跑得快玩法显示「免费场」、可匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],

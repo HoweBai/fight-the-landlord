@@ -502,7 +502,7 @@ export const useGameStore = defineStore('game', {
     bottomCards: (s): Card[] | null =>
       s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).bottomCards : null,
     /**
-     * 桌面历史牌（协议 ④）：窗口 2、旧 → 新、「不出」是显式的 `cards: null`。
+     * 桌面历史牌（协议 ④）：斗地主窗口 2；跑得快按人数（2/3→2、4→3）；旧 → 新、「不出」是显式的 `cards: null`。
      * ⚠️ 缺字段（真浏览器探针的 `seedFinishedGame` 注入的残缺视图）⇒ `[]`，**不抛错**（R661）。
      *
      * ⚠️ **这里是窗口的唯一出口**（Task B2 起）：页面按座位从这个窗口分派到各槽
@@ -856,7 +856,7 @@ export const useGameStore = defineStore('game', {
      *  ② `seatBalances`：牌桌座位余额跟着刷成结算时刻值（同一份事实的更新，不造第二份）；
      *  ③ `walletBalance`：我那一座的值**本地更新余额 chip**（§14 逐字；后续拉取仍是权威）。
      *
-     * ⚠️ 载荷形状由协议校验器钉死（恰 3 条、座位升序），这里不再复核 —— 哑终端。
+     * ⚠️ 载荷形状由协议校验器钉死（长度 = playerCount、座位升序），这里不再复核 —— 哑终端。
      */
     applyBalances(payload: { balances: { seat: number; balance: number }[] }) {
       const map: Record<number, number> = {};

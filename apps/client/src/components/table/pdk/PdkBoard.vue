@@ -4,7 +4,7 @@
  *
  * 与 `DdzBoard` 同一套边界：只收 props、只 emit（不读 store）；服务端权威 ——
  * `canPass`/`bombCount`/`cardCounts` 全部来自 `PdkPlayerView`，客户端不判规则。
- * 首版只做 **3 人**（`playerCount !== 3` 由壳提示并回大厅）。
+ * 已实现 **2/3/4 人**（4 人 = 顶部对家 + 左右对手；>4 由壳提示并回大厅）。
  *
  * 无叫抢 / 无底牌 / 无地主徽标 / 无记牌器；动作栏 = 出牌 / 不出（服务端 `canPass`）/ 提示。
  * 提示用本局 `view.pdkRules` + `protocol/pdk/rule` 枚举（S6.2）。
