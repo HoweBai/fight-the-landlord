@@ -1409,10 +1409,10 @@ const EMPTY_QUERY_KEYS: readonly string[] = [];
 
 /**
  * 风控 T7（规格 §2.9-4）：风控读口的 query 白名单 —— 逐条 = 规格点名键集
- *（`status/limit/cursor/userId/action/actor/from/to`）。与下游 T6 控制器**同套**
+ *（`status/limit/cursor/userId/action/actor/from/to`；B 组审核队列加 `gameType`）。与下游 T6 控制器**同套**
  *（键集与其 `REVIEWS_QUERY_KEYS`/`ACTIONS_QUERY_KEYS` 逐字相同；顺序即拼装顺序）。
  */
-const RISK_REVIEWS_QUERY_KEYS = ['status', 'cursor', 'limit'] as const;
+const RISK_REVIEWS_QUERY_KEYS = ['status', 'cursor', 'limit', 'gameType'] as const;
 const RISK_ACTIONS_QUERY_KEYS = ['userId', 'action', 'actor', 'from', 'to', 'cursor', 'limit'] as const;
 
 /**

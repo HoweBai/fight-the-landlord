@@ -1797,6 +1797,25 @@ describe('GatewayController（风控 T7：管理面风控路由登记 + query �
     );
   });
 
+  it('GET /api/admin/risk/reviews：gameType 在白名单内（B 组审核队列玩法筛选）', async () => {
+    const { controller, proxy } = make();
+
+    await controller.adminRiskReviews(
+      res,
+      req('/api/admin/risk/reviews', {
+        query: { status: 'open', cursor: '9', limit: '50', gameType: 'paodekuai' },
+      }),
+    );
+
+    expect(proxy.forwardToUserSvc).toHaveBeenCalledWith(
+      'GET',
+      '/api/admin/risk/reviews?status=open&cursor=9&limit=50&gameType=paodekuai',
+      null,
+      res,
+      {},
+    );
+  });
+
   it('R75 一族：query 值以编码形态进下游 URL（`,`/`&`/`=` 不得走私）', async () => {
     const { controller, proxy } = make();
 
