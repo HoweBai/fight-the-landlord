@@ -53,6 +53,44 @@ const DAY_MS = 86_400_000;
 const SUMMARY_TTL_MS = 60_000;
 
 /**
+ * A2：`lastActiveAt` 的**唯一表达式**（列表 SELECT/ORDER、activity 筛选、summaryBase 复用）。
+ *
+ * 三类时间统一换 epoch ms 再比较：
+ *  - `user_devices.last_seen_at` / DDZ `ended_at`（datetime(3)）用 `TIMESTAMPDIFF` 从
+ *    1970-01-01 字面量差微秒再 DIV 1000 —— **不做会话时区换算**（`UNIX_TIMESTAMP` 会）；
+ *  - PDK `ended_at` 本身就是 BIGINT ms。
+ */
+const LAST_ACTIVE_MS_EXPR =
+  'CASE WHEN d.last_seen IS NULL AND g.last_game IS NULL AND pg.last_game_ms IS NULL THEN NULL ' +
+  'ELSE GREATEST(' +
+  "COALESCE(TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', d.last_seen) DIV 1000, 0), " +
+  "COALESCE(TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', g.last_game) DIV 1000, 0), " +
+  'COALESCE(pg.last_game_ms, 0)' +
+  ') END';
+
+/** 玩家列表/汇总共用的 from 片段（设备 + DDZ 最近局 + PDK 最近局）。 */
+const PLAYERS_FROM_SQL = `
+  FROM users u
+  LEFT JOIN (
+    SELECT user_id, MAX(last_seen_at) AS last_seen
+    FROM user_devices GROUP BY user_id
+  ) d ON d.user_id = u.id
+  LEFT JOIN (
+    SELECT p.user_id, MAX(p.ended_at) AS last_game
+    FROM game_record_players p
+    JOIN game_records r ON r.id = p.record_id
+    WHERE p.user_id IS NOT NULL AND p.is_robot = 0 AND r.mode IN ('random','gold')
+    GROUP BY p.user_id
+  ) g ON g.user_id = u.id
+  LEFT JOIN (
+    SELECT p.user_id, MAX(p.ended_at) AS last_game_ms
+    FROM game_record_players_pdk p
+    JOIN game_records_pdk r ON r.id = p.record_id
+    WHERE p.user_id IS NOT NULL AND p.is_robot = 0 AND r.mode IN ('random','gold')
+    GROUP BY p.user_id
+  ) pg ON pg.user_id = u.id`;
+
+/**
  * 玩家管理页读面（2026-10-22）。
  *
  * 口径（spec D18）：
@@ -97,22 +135,8 @@ export class AdminPlayersService {
       };
     }
 
-    const from = `
-      FROM users u
-      LEFT JOIN (
-        SELECT user_id, MAX(last_seen_at) AS last_seen
-        FROM user_devices GROUP BY user_id
-      ) d ON d.user_id = u.id
-      LEFT JOIN (
-        SELECT p.user_id, MAX(p.ended_at) AS last_game
-        FROM game_record_players p
-        JOIN game_records r ON r.id = p.record_id
-        WHERE p.user_id IS NOT NULL AND p.is_robot = 0 AND r.mode IN ('random','gold')
-        GROUP BY p.user_id
-      ) g ON g.user_id = u.id
-    `;
-    const lastActive = `CASE WHEN d.last_seen IS NULL AND g.last_game IS NULL THEN NULL
-      ELSE GREATEST(COALESCE(d.last_seen, '1970-01-01'), COALESCE(g.last_game, '1970-01-01')) END`;
+    const from = PLAYERS_FROM_SQL;
+    const lastActive = LAST_ACTIVE_MS_EXPR;
 
     const countRows = (await this.dataSource.query(
       `SELECT COUNT(*) AS total ${from} WHERE ${where.sql}`,
@@ -122,7 +146,7 @@ export class AdminPlayersService {
 
     const order = query.sort === 'created' ? 'u.createdAt DESC, u.id DESC' : `${lastActive} DESC, u.id DESC`;
     const rows = (await this.dataSource.query(
-      `SELECT u.id, u.phone, u.nickname, u.status, u.createdAt, ${lastActive} AS last_active
+      `SELECT u.id, u.phone, u.nickname, u.status, u.createdAt, ${lastActive} AS last_active_ms
        ${from} WHERE ${where.sql} ORDER BY ${order} LIMIT ? OFFSET ?`,
       [...where.params, query.pageSize, (query.page - 1) * query.pageSize],
     )) as Array<{
@@ -131,7 +155,7 @@ export class AdminPlayersService {
       nickname: unknown;
       status: unknown;
       createdAt: unknown;
-      last_active: unknown;
+      last_active_ms: unknown;
     }>;
 
     const ids = rows.map((r) => String(r.id));
@@ -145,7 +169,10 @@ export class AdminPlayersService {
         nickname: r.nickname === null || r.nickname === undefined ? null : String(r.nickname),
         status: String(r.status),
         createdAt: toEpochMs(r.createdAt),
-        lastActiveAt: r.last_active === null || r.last_active === undefined ? null : toEpochMs(r.last_active),
+        lastActiveAt:
+          r.last_active_ms === null || r.last_active_ms === undefined
+            ? null
+            : Number(r.last_active_ms),
         online: onlineIds !== null && onlineIds.has(userId),
         deviceCount: e.devices,
         games: e.games,
@@ -256,17 +283,16 @@ export class AdminPlayersService {
     }
     if (query.activity) {
       const now = Date.now();
-      const lastActive = `(CASE WHEN d.last_seen IS NULL AND g.last_game IS NULL THEN NULL
-        ELSE GREATEST(COALESCE(d.last_seen, '1970-01-01'), COALESCE(g.last_game, '1970-01-01')) END)`;
+      const lastActive = `(${LAST_ACTIVE_MS_EXPR})`;
       if (query.activity === 'active7' || query.activity === 'active30') {
         const days = query.activity === 'active7' ? 7 : 30;
         parts.push(`${lastActive} >= ?`);
-        params.push(new Date(now - days * DAY_MS));
+        params.push(now - days * DAY_MS); // epoch ms（不是 Date）
       } else {
         const days = query.activity === 'inactive14' ? 14 : 30;
         // 排除注册不足窗口的新用户；从未活跃且已过窗口的用户计入流失。
         parts.push(`(${lastActive} IS NULL OR ${lastActive} < ?) AND u.createdAt < ?`);
-        params.push(new Date(now - days * DAY_MS), new Date(now - days * DAY_MS));
+        params.push(now - days * DAY_MS, new Date(now - days * DAY_MS));
       }
     }
     return { sql: parts.join(' AND '), params };
@@ -279,7 +305,7 @@ export class AdminPlayersService {
     const out = new Map<string, { devices: number; games: number; wins: number; lastGame: number | null; riskStatus: string | null }>();
     if (ids.length === 0) return out;
     const ph = ids.map(() => '?').join(',');
-    const [deviceRows, gameRows, riskRows] = await Promise.all([
+    const [deviceRows, gameRows, pdkGameRows, riskRows] = await Promise.all([
       this.dataSource.query(
         `SELECT user_id, COUNT(DISTINCT device_id) AS devices FROM user_devices
          WHERE user_id IN (${ph}) AND last_seen_at >= ? GROUP BY user_id`,
@@ -288,6 +314,13 @@ export class AdminPlayersService {
       this.dataSource.query(
         `SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins, MAX(p.ended_at) AS last_game
          FROM game_record_players p JOIN game_records r ON r.id = p.record_id
+         WHERE p.user_id IN (${ph}) AND p.is_robot = 0 AND r.mode IN ('random','gold')
+         GROUP BY p.user_id`,
+        ids,
+      ) as Promise<Array<Record<string, unknown>>>,
+      this.dataSource.query(
+        `SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins, MAX(p.ended_at) AS last_game_ms
+         FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id
          WHERE p.user_id IN (${ph}) AND p.is_robot = 0 AND r.mode IN ('random','gold')
          GROUP BY p.user_id`,
         ids,
@@ -306,6 +339,16 @@ export class AdminPlayersService {
       e.games = Number(r.games ?? 0);
       e.wins = Number(r.wins ?? 0);
       e.lastGame = r.last_game === null || r.last_game === undefined ? null : toEpochMs(r.last_game);
+    }
+    // A2：PDK 聚合并入（games/wins 相加；lastGame 取较晚者，BIGINT ms）
+    for (const r of pdkGameRows) {
+      const e = out.get(String(r.user_id))!;
+      e.games += Number(r.games ?? 0);
+      e.wins += Number(r.wins ?? 0);
+      if (r.last_game_ms !== null && r.last_game_ms !== undefined) {
+        const ms = Number(r.last_game_ms);
+        if (Number.isFinite(ms)) e.lastGame = e.lastGame === null ? ms : Math.max(e.lastGame, ms);
+      }
     }
     for (const r of riskRows) out.get(String(r.user_id))!.riskStatus = String(r.status);
     return out;
@@ -344,33 +387,25 @@ export class AdminPlayersService {
       `SELECT COUNT(*) AS total,
         SUM(CASE WHEN t.createdAt >= ? THEN 1 ELSE 0 END) AS new_today,
         SUM(CASE WHEN t.createdAt >= ? THEN 1 ELSE 0 END) AS new_7d,
-        SUM(CASE WHEN t.last_active >= ? THEN 1 ELSE 0 END) AS active_1d,
-        SUM(CASE WHEN t.last_active >= ? THEN 1 ELSE 0 END) AS active_7d,
-        SUM(CASE WHEN t.last_active >= ? THEN 1 ELSE 0 END) AS active_30d,
-        SUM(CASE WHEN (t.last_active IS NULL OR t.last_active < ?) AND t.createdAt < ? THEN 1 ELSE 0 END) AS inactive_14d,
-        SUM(CASE WHEN (t.last_active IS NULL OR t.last_active < ?) AND t.createdAt < ? THEN 1 ELSE 0 END) AS inactive_30d,
-        SUM(CASE WHEN t.last_active IS NULL THEN 1 ELSE 0 END) AS never_active
+        SUM(CASE WHEN t.last_active_ms >= ? THEN 1 ELSE 0 END) AS active_1d,
+        SUM(CASE WHEN t.last_active_ms >= ? THEN 1 ELSE 0 END) AS active_7d,
+        SUM(CASE WHEN t.last_active_ms >= ? THEN 1 ELSE 0 END) AS active_30d,
+        SUM(CASE WHEN (t.last_active_ms IS NULL OR t.last_active_ms < ?) AND t.createdAt < ? THEN 1 ELSE 0 END) AS inactive_14d,
+        SUM(CASE WHEN (t.last_active_ms IS NULL OR t.last_active_ms < ?) AND t.createdAt < ? THEN 1 ELSE 0 END) AS inactive_30d,
+        SUM(CASE WHEN t.last_active_ms IS NULL THEN 1 ELSE 0 END) AS never_active
        FROM (
-         SELECT u.createdAt,
-           CASE WHEN d.last_seen IS NULL AND g.last_game IS NULL THEN NULL
-             ELSE GREATEST(COALESCE(d.last_seen, '1970-01-01'), COALESCE(g.last_game, '1970-01-01')) END AS last_active
-         FROM users u
-         LEFT JOIN (SELECT user_id, MAX(last_seen_at) AS last_seen FROM user_devices GROUP BY user_id) d ON d.user_id = u.id
-         LEFT JOIN (
-           SELECT p.user_id, MAX(p.ended_at) AS last_game FROM game_record_players p
-           JOIN game_records r ON r.id = p.record_id
-           WHERE p.user_id IS NOT NULL AND p.is_robot = 0 AND r.mode IN ('random','gold') GROUP BY p.user_id
-         ) g ON g.user_id = u.id
+         SELECT u.createdAt, ${LAST_ACTIVE_MS_EXPR} AS last_active_ms
+         ${PLAYERS_FROM_SQL}
        ) t`,
       [
         new Date(dayStart),
         new Date(now - 7 * DAY_MS),
-        new Date(now - 1 * DAY_MS),
-        new Date(now - 7 * DAY_MS),
-        new Date(now - 30 * DAY_MS),
+        now - 1 * DAY_MS,
+        now - 7 * DAY_MS,
+        now - 30 * DAY_MS,
+        now - 14 * DAY_MS,
         new Date(now - 14 * DAY_MS),
-        new Date(now - 14 * DAY_MS),
-        new Date(now - 30 * DAY_MS),
+        now - 30 * DAY_MS,
         new Date(now - 30 * DAY_MS),
       ],
     )) as Array<Record<string, unknown>>;
