@@ -54,9 +54,10 @@ export interface PdkRoom {
  */
 export async function startPdkRoom(
   labelPrefix: string,
-  options: { baseScore?: number; users?: HarnessUser[] } = {},
+  options: { mode?: 'random' | 'gold'; baseScore?: number; users?: HarnessUser[] } = {},
 ): Promise<PdkRoom> {
   const baseScore = options.baseScore ?? 15;
+  const mode = options.mode ?? 'random';
   const clients: HarnessClient[] = [];
   try {
     for (let i = 0; i < 3; i += 1) {
@@ -65,7 +66,7 @@ export async function startPdkRoom(
     }
     for (const client of clients) {
       const ack = await client.send('room.match', {
-        mode: 'random',
+        mode,
         baseScore,
         gameType: 'paodekuai',
         playerCount: 3,
@@ -194,6 +195,8 @@ export interface PdkOutcome {
   passes: number;
   finishedPayload: any;
   settlement: any;
+  /** `game.settlement` 信封的 version（无消息 ⇒ null；A2 用于拼 settle actionId）。 */
+  settlementVersion: number | null;
   finalView: PdkViewWire;
 }
 
@@ -229,6 +232,7 @@ export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutc
         passes,
         finishedPayload: fin.payload,
         settlement: settlementMsg?.payload,
+        settlementVersion: settlementMsg?.version ?? null,
         finalView,
       };
     }
@@ -254,6 +258,7 @@ export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutc
         passes,
         finishedPayload: done.payload,
         settlement: settlementMsg?.payload,
+        settlementVersion: settlementMsg?.version ?? null,
         finalView: currentPdkView(reader)!,
       };
     }

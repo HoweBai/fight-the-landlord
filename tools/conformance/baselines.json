@@ -44,6 +44,7 @@
     "slice-27-idle-trustee": 112,
     "slice-28-card-counter": 66,
     "slice-29-paodekuai": 69,
-    "slice-30-pdk-metrics": 2
+    "slice-30-pdk-metrics": 2,
+    "slice-31-pdk-gold": 55
   }
 }
