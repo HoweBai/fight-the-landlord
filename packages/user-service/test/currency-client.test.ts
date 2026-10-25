@@ -25,6 +25,8 @@ import { createCapturingSink, createRedactingLogger } from '@fight-the-landlord/
 import {
   ErrCode,
   RPC_PATTERNS,
+  type AgentBindData,
+  type AgentBindRequest,
   type CurrencyApplyRequest,
   type CurrencyApplyData,
 } from '@fight-the-landlord/protocol';
@@ -180,5 +182,39 @@ describe('CurrencyClient 的 env 读取（§2.13 env 表 / §4.1 #23）', () => 
         else process.env[key] = saved[key];
       }
     }
+  });
+});
+
+
+describe('CurrencyClient.agentBind()（代理分润 2026-10-26）', () => {
+  const BIND: AgentBindRequest = {
+    ownerId: '0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9',
+    code: 'ABCD2345',
+    phone: '13800000000',
+    source: 'signup',
+  };
+  const BIND_DATA: AgentBindData = { status: 'bound' };
+
+  it('打 RPC_PATTERNS.agentBind，载荷逐字 + meta；成功返回 data', async () => {
+    const { proxy, calls } = fakeProxy(() => of({ ok: true, data: BIND_DATA }));
+    await expect(new CurrencyClient(proxy).agentBind(BIND)).resolves.toEqual(BIND_DATA);
+    expect(calls).toEqual([{ pattern: RPC_PATTERNS.agentBind, data: BIND }]);
+  });
+
+  it('业务错误原码（11006）；传输故障 10007 + 固定文案', async () => {
+    const invalid = fakeProxy(() =>
+      of({ ok: false, code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码无效' }),
+    );
+    await expect(new CurrencyClient(invalid.proxy).agentBind(BIND)).rejects.toMatchObject({
+      code: ErrCode.AGENT_INVITE_INVALID,
+      message: '邀请码无效',
+    });
+
+    const down = fakeProxy(() => throwError(() => new Error('ECONNREFUSED internal')));
+    await expect(new CurrencyClient(down.proxy).agentBind(BIND)).rejects.toMatchObject({
+      code: ErrCode.UPSTREAM_UNAVAILABLE,
+      message: TRANSPORT_FAILURE_MESSAGE,
+    });
+    expect(TRANSPORT_FAILURE_MESSAGE).not.toContain('ECONNREFUSED');
   });
 });

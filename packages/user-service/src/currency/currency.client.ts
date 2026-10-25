@@ -4,6 +4,9 @@ import { ClientProxy, Transport, type TcpClientOptions } from '@nestjs/microserv
 import {
   ErrCode,
   RPC_PATTERNS,
+  type AgentBindData,
+  type AgentBindRequest,
+  type AgentBindResponse,
   type CurrencyApplyData,
   type CurrencyApplyRequest,
   type CurrencyApplyResponse,
@@ -92,13 +95,31 @@ export class CurrencyClient {
    * (`uk_action_id`)，同一 `actionId` 的**任何**重发都不会重复入账。
    */
   async apply(request: CurrencyApplyRequest): Promise<CurrencyApplyData> {
+    return this.send<CurrencyApplyResponse, CurrencyApplyData>(
+      RPC_PATTERNS.currencyApply,
+      request,
+    );
+  }
+
+  /**
+   * 代理分润（2026-10-26）：`agent.bind` —— 注册时绑定邀请码（同一条 RPC 边的第二个 pattern）。
+   * 业务错误原码（无效码 `11006`）；传输故障 `10007`。**不重试**（与 apply 同纪律）。
+   */
+  async agentBind(request: AgentBindRequest): Promise<AgentBindData> {
+    return this.send<AgentBindResponse, AgentBindData>(RPC_PATTERNS.agentBind, request);
+  }
+
+  private async send<TRes extends { ok: boolean }, TData>(
+    pattern: string,
+    request: object,
+  ): Promise<TData> {
     try {
       const res = await lastValueFrom(
         this.proxy
           // R1104/R1105：本类是本条边的**唯一**发送点 ⇒ `meta` 只在这里加一次
           //（`...metaFromTrace()` 在 `send` 实参里 —— `meta-on-every-rpc-send` 闸扫这一处）。
           // 无 ALS ⇒ 展开 `{}` ⇒ 载荷逐字不变。
-          .send<CurrencyApplyResponse>(RPC_PATTERNS.currencyApply, {
+          .send<TRes>(pattern, {
             ...request,
             ...metaFromTrace(),
           })
@@ -107,16 +128,16 @@ export class CurrencyClient {
       if (!res?.ok) {
         // R220：下游的 5 位数字码**原样**成为 `CurrencyServiceError.code`（§11.2）
         throw new CurrencyServiceError(
-          (res?.code ?? ErrCode.UPSTREAM_UNAVAILABLE) as ErrCode,
-          res?.message ?? RPC_PATTERNS.currencyApply,
+          ((res as { code?: ErrCode }).code ?? ErrCode.UPSTREAM_UNAVAILABLE) as ErrCode,
+          (res as { message?: string }).message ?? pattern,
         );
       }
-      return res.data;
+      return (res as unknown as { data: TData }).data;
     } catch (err) {
       if (err instanceof CurrencyServiceError) throw err;
       // 传输层故障（连不上 / 超时）⇒ 10007，与 config/record 两条边**同码**；原因只进日志。
       const reason = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`currency-service RPC ${RPC_PATTERNS.currencyApply} failed: ${reason}`);
+      this.logger.warn(`currency-service RPC ${pattern} failed: ${reason}`);
       throw new CurrencyServiceError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
     }
   }
