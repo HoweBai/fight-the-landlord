@@ -1,4 +1,4 @@
-﻿﻿<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 结算面板（玩法 §8.5 / 主规格 §6.3 的 `game.settlement` 载荷）。
  *
@@ -226,24 +226,30 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
     -->
     <view class="settlement__table">
       <view class="settlement__tr settlement__tr--head">
-        <text class="settlement__th">昵称</text>
-        <text class="settlement__th">底分</text>
-        <text class="settlement__th">倍数</text>
-        <text class="settlement__th">分差</text>
+        <text class="settlement__th settlement__th--name">昵称</text>
+        <text class="settlement__th settlement__th--base">底分</text>
+        <text class="settlement__th settlement__th--multi">倍数</text>
+        <text class="settlement__th settlement__th--delta">分差</text>
         <!-- ② 金币列（§14）：只有「服务端下发过余额」的局才有这一格（免费场不加列）。 -->
-        <text v-if="showGold" class="settlement__th">金币</text>
+        <text v-if="showGold" class="settlement__th settlement__th--gold">金币</text>
       </view>
 
       <view
         class="settlement__row settlement__row--landlord"
         :class="{ 'settlement__row--me': isMyRow(settlement.landlordSeat) }"
       >
-        <text class="settlement__row-name">{{ nameOf(settlement.landlordSeat) }}</text>
+        <view class="settlement__row-name-wrap">
+          <text class="settlement__row-name">{{ nameOf(settlement.landlordSeat) }}</text>
+          <view class="settlement__badge-landlord" />
+        </view>
         <text class="settlement__base-score">{{ settlement.baseScore }}</text>
         <text class="settlement__multiplier">{{ settlement.multiplier }}</text>
-        <text class="settlement__landlord-delta">{{ settlement.landlordScoreChange }}</text>
+        <text
+          class="settlement__landlord-delta"
+          :class="settlement.landlordScoreChange >= 0 ? 'settlement__delta--pos' : 'settlement__delta--neg'"
+          >{{ settlement.landlordScoreChange }}</text
+        >
         <text v-if="showGold" class="settlement__gold">{{ goldCell(settlement.landlordSeat) }}</text>
-        <text class="settlement__row-role">地主</text>
       </view>
 
       <view
@@ -252,12 +258,17 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
         class="settlement__row settlement__row--farmer"
         :class="{ 'settlement__row--me': isMyRow(seat) }"
       >
-        <text class="settlement__row-name">{{ nameOf(seat) }}</text>
+        <view class="settlement__row-name-wrap">
+          <text class="settlement__row-name">{{ nameOf(seat) }}</text>
+        </view>
         <text class="settlement__base-score">{{ settlement.baseScore }}</text>
         <text class="settlement__multiplier">{{ settlement.multiplier }}</text>
-        <text class="settlement__farmer-delta">{{ settlement.farmerScoreChange }}</text>
+        <text
+          class="settlement__farmer-delta"
+          :class="settlement.farmerScoreChange >= 0 ? 'settlement__delta--pos' : 'settlement__delta--neg'"
+          >{{ settlement.farmerScoreChange }}</text
+        >
         <text v-if="showGold" class="settlement__gold">{{ goldCell(seat) }}</text>
-        <text class="settlement__row-role">农民</text>
       </view>
     </view>
 
@@ -348,6 +359,9 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
 .settlement__title {
   font-size: $ftl-font-lg;
   font-weight: 600;
+  /* 9-slice 拱形素材的红色视觉中心高于 border-box 几何中心 ⇒ 上移 8px 补偿 */
+  position: relative;
+  top: -8px;
 }
 /**
  * 绶带标题带（片③ 阶段 B）：素材**只做底**，文字（「结算」）仍由 DOM 画在它上面。
@@ -427,12 +441,38 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
   display: flex;
   align-items: center;
   padding: $ftl-space-3 $ftl-space-5;
+  border-radius: $ftl-radius-sm $ftl-radius-sm 0 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.15);
 }
 /** 表头：**标签住在这里**（参考图二的形态 —— 格子里只写裸值）。 */
 .settlement__th {
   flex: 1 1 0;
-  color: $ftl-color-text-muted;
+  color: rgba($ftl-color-on-primary, 0.85);
   font-size: $ftl-font-sm;
+  font-weight: 600;
+}
+/* 每列 th 与 cell 共享 text-align，保证表头与内容逐列对齐 */
+.settlement__th--name,
+.settlement__row-name-wrap {
+  text-align: left;
+}
+.settlement__th--base,
+.settlement__base-score {
+  text-align: center;
+}
+.settlement__th--multi,
+.settlement__multiplier {
+  text-align: center;
+}
+.settlement__th--delta,
+.settlement__landlord-delta,
+.settlement__farmer-delta {
+  text-align: center;
+}
+.settlement__th--gold,
+.settlement__gold {
+  text-align: right;
 }
 /**
  * 走查修复：地主/农民两行**统一中性衬底**（旧版地主绿底、农民红底 —— 红绿天然读作
@@ -445,23 +485,30 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
   gap: $ftl-space-4;
   align-items: center;
   padding: $ftl-space-4 $ftl-space-5;
-  border-radius: $ftl-radius-sm;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.08);
 }
-.settlement__row--landlord,
+.settlement__row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 $ftl-radius-sm $ftl-radius-sm;
+}
+.settlement__row:first-of-type {
+  border-radius: 0;
+}
+.settlement__row--landlord {
+}
 .settlement__row--farmer {
-  background: $ftl-color-surface-muted;
 }
 /**
  * **当前玩家整行高亮**（片② R737）：身份映射（`mySeat` vs 行的座位号），不是结果推导。
- * 参考图里那一行是橙黄渐变 —— 这里用警示底 + 强调色描边复刻（无新素材）。
+ * 深色面板上用半透金底 + 金边。
  */
 .settlement__row--me {
-  background: $ftl-color-warn-bg;
-  box-shadow: inset 0 0 0 $ftl-hairline $ftl-color-accent;
+  background: rgba($ftl-color-gold, 0.12);
+  box-shadow: inset 0 0 0 $ftl-hairline $ftl-color-gold-deep;
 }
-/* 四列等宽（昵称 / 底分 / 倍数 / 分差）+ ② 金币列（`settlement__gold`，仅金币场渲染），
-   角色徽章跟在最后不占列宽 */
-.settlement__row-name,
+/* 四列等宽（昵称 / 底分 / 倍数 / 分差）+ ② 金币列（`settlement__gold`，仅金币场渲染） */
+.settlement__row-name-wrap,
 .settlement__base-score,
 .settlement__multiplier,
 .settlement__landlord-delta,
@@ -470,22 +517,40 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
   flex: 1 1 0;
   font-size: $ftl-font-md;
 }
-.settlement__row-name {
-  color: $ftl-color-text;
+.settlement__row-name-wrap {
+  position: relative;
+  display: block;
+  color: $ftl-color-on-primary;
 }
-/** 金币列与其余数字格同色同权重（它也是服务端的真值，只是含义是钱包余额）。 */
+/** 金币列与数字格同权重（深色面板上跟底分/倍数用浅色）。 */
 .settlement__base-score,
 .settlement__multiplier,
-.settlement__landlord-delta,
-.settlement__farmer-delta,
 .settlement__gold {
-  color: $ftl-color-primary;
+  color: $ftl-color-on-primary;
   font-weight: 600;
 }
-.settlement__row-role {
-  flex: 0 0 auto;
-  color: $ftl-color-text-muted;
-  font-size: $ftl-font-xs;
+/** 分差正负分色：正金负红 */
+.settlement__landlord-delta,
+.settlement__farmer-delta {
+  font-weight: 600;
+}
+.settlement__delta--pos {
+  color: $ftl-color-gold;
+}
+.settlement__delta--neg {
+  color: $ftl-color-danger;
+}
+/** 地主徽章：复用牌桌 landlord-badge.png 竖牌素材，浮动在昵称单元格右上角 */
+.settlement__badge-landlord {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 30px;
+  background-image: $ftl-art-landlord-badge;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 .settlement__formula {
   display: block;
