@@ -5,27 +5,38 @@ import { AdminPlayersController } from '../src/players/admin-players.controller'
 import { DomainError } from '../src/http/errors';
 
 function makeService(over: { redisFail?: boolean } = {}) {
-  const query = vi.fn(async (sql: string) => {
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    void params;
+    // 顺序即判据：summary 的内层也含 pdk 子查询，必须先接。
     if (sql.includes('AS new_today')) {
       return [{ total: 2, new_today: 1, new_7d: 1, active_1d: 1, active_7d: 1, active_30d: 2, inactive_14d: 0, inactive_30d: 0, never_active: 0 }];
+    }
+    if (sql.includes('SELECT u.id, u.phone')) {
+      return [{
+        id: 'u1', phone: '13800000001', nickname: '阿明', status: 'active',
+        createdAt: '2026-10-01T00:00:00.000Z', last_active_ms: 1761100000000,
+      }];
+    }
+    if (sql.includes('game_record_players_pdk') && sql.includes('COUNT(*) AS games')) {
+      return [{ user_id: 'u1', games: 4, wins: 3, last_game_ms: 1761100000000 }];
     }
     if (sql.includes('COUNT(*) AS total')) return [{ total: 2 }];
     if (sql.includes('COUNT(DISTINCT device_id)')) return [{ user_id: 'u1', devices: 2 }];
     if (sql.includes('SUM(p.won)')) return [{ user_id: 'u1', games: 10, wins: 6, last_game: '2026-10-20T00:00:00.000Z' }];
     if (sql.includes('FROM risk_reviews r')) return [{ user_id: 'u1', status: 'open' }];
+    if (sql.includes('game_record_players_pdk') && sql.includes('p.record_id')) {
+      return [{
+        record_id: 8, mode: 'gold', base_score: 15, role: null, won: 1,
+        score_change: 30, money_delta: 30, ended_at: 1761100000000,
+      }];
+    }
     if (sql.includes('SELECT p.record_id')) {
       return [{
         record_id: 7, mode: 'gold', base_score: 80, role: 'landlord', won: 1,
-        score_change: 160, money_delta: 160, ended_at: '2026-10-20T00:00:00.000Z',
+        score_change: 160, money_delta: 160, ended_at: 1760918400000,
       }];
     }
     if (sql.includes('SELECT id FROM users WHERE id')) return [{ id: 'u1' }];
-    if (sql.includes('SELECT u.id, u.phone')) {
-      return [{
-        id: 'u1', phone: '13800000001', nickname: '阿明', status: 'active',
-        createdAt: '2026-10-01T00:00:00.000Z', last_active: '2026-10-20T00:00:00.000Z',
-      }];
-    }
     return [];
   });
   const redis = {
@@ -45,10 +56,37 @@ describe('AdminPlayersService', () => {
     expect(out.total).toBe(2);
     expect(out.items[0]).toMatchObject({
       userId: 'u1', phone: '13800000001', nickname: '阿明', online: true,
-      deviceCount: 2, games: 10, wins: 6, riskStatus: 'open',
+      deviceCount: 2, games: 14, wins: 9, riskStatus: 'open',
     });
-    expect(out.items[0]!.lastActiveAt).toBeTypeOf('number');
+    expect(out.items[0]!.lastActiveAt).toBe(1761100000000);
     expect(out.summary).toMatchObject({ totalPlayers: 2, onlineNow: 1, newToday: 1 });
+  });
+
+  it('A2：summary/lastActive 参数单位（active/inactive 阈值 = number；createdAt 阈值 = Date）', async () => {
+    const { service, query } = makeService();
+    await service.list({ page: 1, pageSize: 20, sort: 'lastActive' });
+
+    const summaryCall = query.mock.calls.find(([sql]) => String(sql).includes('AS new_today'))!;
+    const params = summaryCall[1] as unknown[];
+    expect(params).toHaveLength(9);
+    expect(params[0]).toBeInstanceOf(Date); // new_today
+    expect(params[1]).toBeInstanceOf(Date); // new_7d
+    for (const i of [2, 3, 4, 5, 7]) expect(typeof params[i], `params[${i}]`).toBe('number');
+    expect(params[6]).toBeInstanceOf(Date); // inactive14 createdAt
+    expect(params[8]).toBeInstanceOf(Date); // inactive30 createdAt
+
+    const listCall = query.mock.calls.find(([sql]) => String(sql).includes('SELECT u.id, u.phone'))!;
+    expect(String(listCall[0])).toContain('TIMESTAMPDIFF');
+    expect(String(listCall[0])).toContain('game_record_players_pdk');
+  });
+
+  it('A2：activity 筛选阈值绑 number（epoch ms），不是 Date', async () => {
+    const { service, query } = makeService();
+    await service.list({ page: 1, pageSize: 20, sort: 'lastActive', activity: 'active7' });
+    const countCall = query.mock.calls.find(([sql]) => String(sql).includes('COUNT(*) AS total'))!;
+    expect(countCall[1]).toEqual([expect.any(Number)]);
+    expect(String(countCall[0])).toContain('TIMESTAMPDIFF');
+    expect(String(countCall[0])).toContain('game_record_players_pdk');
   });
 
   it('summary 60s 缓存：第二次不再查汇总 SQL', async () => {
@@ -76,10 +114,40 @@ describe('AdminPlayersService', () => {
     await expect(service.recentGames('missing', 20)).rejects.toBeInstanceOf(DomainError);
   });
 
-  it('最近对局映射', async () => {
+  it('最近对局：两玩法合并按 endedAt 降序、gameType 标注、PDK role=null', async () => {
     const { service } = makeService();
     const rows = await service.recentGames('u1', 20);
-    expect(rows[0]).toMatchObject({ recordId: 7, mode: 'gold', won: true, scoreChange: 160 });
+    expect(rows).toEqual([
+      {
+        recordId: 8,
+        gameType: 'paodekuai',
+        mode: 'gold',
+        baseScore: 15,
+        role: null,
+        won: true,
+        scoreChange: 30,
+        moneyDelta: 30,
+        endedAt: 1761100000000,
+      },
+      {
+        recordId: 7,
+        gameType: 'doudizhu',
+        mode: 'gold',
+        baseScore: 80,
+        role: 'landlord',
+        won: true,
+        scoreChange: 160,
+        moneyDelta: 160,
+        endedAt: 1760918400000,
+      },
+    ]);
+  });
+
+  it('最近对局：合并后按 limit 截断（两表各取 limit，排序后截断）', async () => {
+    const { service } = makeService();
+    const rows = await service.recentGames('u1', 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.recordId).toBe(8);
   });
 });
 

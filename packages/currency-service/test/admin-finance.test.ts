@@ -44,7 +44,7 @@ const AUTH = { 'x-admin': '1' };
  * ------------------------------------------------------------------ */
 
 const OPS_BASE =
-  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.actor, o.reason, ' +
+  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.game_type AS gameType, o.actor, o.reason, ' +
   'o.ref_id AS refId, o.trace_id AS traceId, o.burned_residue AS burnedResidue, o.burned_rake AS burnedRake, f.owner_id AS ownerId, f.owner_type AS ownerType, ' +
   'f.delta, f.balance_after AS balanceAfter, f.created_at AS createdAt, ' +
   'u.phone, u.nickname, ' +
@@ -55,18 +55,24 @@ const OPS_BASE =
 const OPS_LIST_SUFFIX = ' ORDER BY f.id DESC LIMIT ?';
 const OPS_DETAIL_SQL = `${OPS_BASE} WHERE f.op_id = ? ORDER BY f.id`;
 const SUMMARY_SOURCE_SQL =
-  'SELECT o.source AS k, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount ' +
+  'SELECT o.source AS k, o.game_type AS game_type, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount ' +
   'FROM currency_flows f JOIN currency_ops o ON o.id=f.op_id ' +
-  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY o.source ORDER BY k';
+  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY o.source, o.game_type ORDER BY k, o.game_type';
 const SUMMARY_DAY_SQL =
-  "SELECT DATE(CONVERT_TZ(f.created_at,'+00:00','+08:00')) AS k, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount " +
+  "SELECT DATE(CONVERT_TZ(f.created_at,'+00:00','+08:00')) AS k, o.game_type AS game_type, COALESCE(SUM(f.delta),0) AS delta, COUNT(*) AS flowCount " +
   'FROM currency_flows f JOIN currency_ops o ON o.id=f.op_id ' +
-  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY k ORDER BY k';
+  'WHERE f.created_at >= ? AND f.created_at < ? GROUP BY k, o.game_type ORDER BY k, o.game_type';
 const SUMMARY_BURN_SQL =
   'SELECT COALESCE(SUM(burned_residue),0) AS residue, COALESCE(SUM(burned_rake),0) AS rake, COUNT(*) - COUNT(burned_residue) AS unrecordedOps ' +
   "FROM currency_ops WHERE source = 'game_settle' AND created_at >= ? AND created_at < ?";
 const SUMMARY_SKIPS_SQL =
   'SELECT COUNT(*) AS cnt, COUNT(DISTINCT owner_id) AS players, COALESCE(SUM(fee_amount),0) AS amount FROM currency_entry_fee_skips WHERE created_at >= ? AND created_at < ?';
+const SUMMARY_BURN_BY_GAME_SQL =
+  'SELECT o.game_type AS k, COALESCE(SUM(o.burned_residue),0) AS residue, COALESCE(SUM(o.burned_rake),0) AS rake, COUNT(*) - COUNT(o.burned_residue) AS unrecordedOps ' +
+  "FROM currency_ops o WHERE o.source='game_settle' AND o.created_at >= ? AND o.created_at < ? GROUP BY o.game_type ORDER BY k";
+const SUMMARY_SKIPS_BY_GAME_SQL =
+  'SELECT game_type AS k, COUNT(*) AS cnt, COUNT(DISTINCT owner_id) AS players, COALESCE(SUM(fee_amount),0) AS amount ' +
+  'FROM currency_entry_fee_skips WHERE created_at >= ? AND created_at < ? GROUP BY game_type ORDER BY k';
 const SUMMARY_CARD_COUNTER_PURCHASES_SQL =
   'SELECT `kind` AS k, COUNT(*) AS cnt, COUNT(DISTINCT `owner_id`) AS players, COALESCE(SUM(`price`),0) AS amount ' +
   'FROM `card_counter_purchases` WHERE `created_at` >= ? AND `created_at` < ? GROUP BY `kind` ORDER BY k';
@@ -99,6 +105,7 @@ interface FakeOp {
   id: number;
   actionId: string;
   source: string;
+  gameType: string | null;
   actor: string | null;
   reason: string | null;
   refId: string | null;
@@ -128,6 +135,7 @@ interface FakeSkipRow {
   roomCode: string;
   ownerId: string;
   seat: number | null;
+  gameType: string;
   baseScore: number;
   feeAmount: number;
   reason: string;
@@ -153,6 +161,7 @@ type Predicate = (row: { flow: FakeFlow; op: FakeOp }, value: unknown) => boolea
 
 const OPS_PREDICATES: Record<string, Predicate> = {
   'o.source = ?': (r, v) => r.op.source === v,
+  'o.game_type = ?': (r, v) => r.op.gameType === v,
   'o.actor = ?': (r, v) => r.op.actor === v,
   'f.owner_id = ?': (r, v) => r.flow.ownerId === v,
   'f.created_at >= ?': (r, v) => r.flow.createdAt.getTime() >= (v as Date).getTime(),
@@ -177,6 +186,8 @@ class FakeFinanceDb {
   reversedOverride: unknown = undefined;
   /** burn 两列回值注入面（非 null 的畸形驱动回值负例；undefined = 正常）。 */
   burnedRawOverride: unknown = undefined;
+  /** A2：burnByGame 注入面（模拟跨查询快照漂移；undefined = 正常计算）。 */
+  burnByGameOverride: unknown[] | undefined = undefined;
   private nextOpId = 1;
   private nextFlowId = 1;
   private nextSkipId = 1;
@@ -185,6 +196,7 @@ class FakeFinanceDb {
     const op: FakeOp = {
       id: this.nextOpId++,
       source: 'admin_adjust',
+      gameType: null,
       actor: 'admin',
       reason: null,
       refId: null,
@@ -233,6 +245,7 @@ class FakeFinanceDb {
       id: this.nextSkipId++,
       roomCode: 'ABC123',
       seat: null,
+      gameType: 'doudizhu',
       baseScore: 15,
       reason: 'insufficient_funds',
       ...over,
@@ -264,6 +277,7 @@ class FakeFinanceDb {
     this.reversedAsString = false;
     this.reversedOverride = undefined;
     this.burnedRawOverride = undefined;
+    this.burnByGameOverride = undefined;
     this.nextOpId = 1;
     this.nextFlowId = 1;
     this.nextSkipId = 1;
@@ -282,6 +296,8 @@ class FakeFinanceDb {
     if (sql === SUMMARY_DAY_SQL) return this.summaryByDay(params);
     if (sql === SUMMARY_BURN_SQL) return this.summaryBurn(params);
     if (sql === SUMMARY_SKIPS_SQL) return this.summarySkips(params);
+    if (sql === SUMMARY_BURN_BY_GAME_SQL) return this.summaryBurnByGame(params);
+    if (sql === SUMMARY_SKIPS_BY_GAME_SQL) return this.summarySkipsByGame(params);
     if (sql === SUMMARY_CARD_COUNTER_PURCHASES_SQL) return this.summaryCardCounterPurchases(params);
     if (sql === SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL) return this.summaryCardCounterConsumptions(params);
     if (sql === OPS_DETAIL_SQL) return this.detail(params);
@@ -326,39 +342,44 @@ class FakeFinanceDb {
       .map((row) => this.materialize(row));
   }
 
-  /** groupBy=source：k = source（字符串）、delta = DECIMAL ⇒ **字符串**、flowCount = number。 */
+  /** groupBy=source：k = source（字符串）、game_type 平铺、delta = DECIMAL ⇒ **字符串**。 */
   private summaryBySource(params: unknown[]): unknown {
     const [from, to] = params as [Date, Date];
-    const groups = new Map<string, { delta: number; flowCount: number }>();
+    const groups = new Map<string, { k: string; gameType: string | null; delta: number; flowCount: number }>();
     for (const flow of this.flows) {
       if (flow.createdAt.getTime() < from.getTime() || flow.createdAt.getTime() >= to.getTime()) continue;
       const op = this.opOf(flow);
-      const group = groups.get(op.source) ?? { delta: 0, flowCount: 0 };
+      const key = `${op.source}\u0000${op.gameType ?? ''}`;
+      const group = groups.get(key) ?? { k: op.source, gameType: op.gameType, delta: 0, flowCount: 0 };
       group.delta += flow.delta;
       group.flowCount += 1;
-      groups.set(op.source, group);
-    }
-    return [...groups.entries()]
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, g]) => ({ k, delta: String(g.delta), flowCount: g.flowCount }));
-  }
-
-  /** groupBy=day：+08:00 切天；DATE() ⇒ Date 对象（mysql2 以**本地时区**构造 DATE 值）。 */
-  private summaryByDay(params: unknown[]): unknown {
-    const [from, to] = params as [Date, Date];
-    const groups = new Map<number, { k: Date; delta: number; flowCount: number }>();
-    for (const flow of this.flows) {
-      if (flow.createdAt.getTime() < from.getTime() || flow.createdAt.getTime() >= to.getTime()) continue;
-      const shifted = new Date(flow.createdAt.getTime() + 8 * 60 * 60 * 1000);
-      const k = new Date(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
-      const group = groups.get(k.getTime()) ?? { k, delta: 0, flowCount: 0 };
-      group.delta += flow.delta;
-      group.flowCount += 1;
-      groups.set(k.getTime(), group);
+      groups.set(key, group);
     }
     return [...groups.values()]
-      .sort((a, b) => a.k.getTime() - b.k.getTime())
-      .map((g) => ({ k: g.k, delta: String(g.delta), flowCount: g.flowCount }));
+      .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : String(a.gameType).localeCompare(String(b.gameType))))
+      .map((g) => ({ k: g.k, game_type: g.gameType, delta: String(g.delta), flowCount: g.flowCount }));
+  }
+
+  /** groupBy=day：+08:00 切天；DATE() ⇒ Date 对象；按 (day, game_type) 展开。 */
+  private summaryByDay(params: unknown[]): unknown {
+    const [from, to] = params as [Date, Date];
+    const groups = new Map<string, { k: Date; gameType: string | null; delta: number; flowCount: number }>();
+    for (const flow of this.flows) {
+      if (flow.createdAt.getTime() < from.getTime() || flow.createdAt.getTime() >= to.getTime()) continue;
+      const op = this.opOf(flow);
+      const shifted = new Date(flow.createdAt.getTime() + 8 * 60 * 60 * 1000);
+      const k = new Date(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+      const key = `${k.getTime()}\u0000${op.gameType ?? ''}`;
+      const group = groups.get(key) ?? { k, gameType: op.gameType, delta: 0, flowCount: 0 };
+      group.delta += flow.delta;
+      group.flowCount += 1;
+      groups.set(key, group);
+    }
+    return [...groups.values()]
+      .sort((a, b) =>
+        a.k.getTime() - b.k.getTime() || String(a.gameType).localeCompare(String(b.gameType)),
+      )
+      .map((g) => ({ k: g.k, game_type: g.gameType, delta: String(g.delta), flowCount: g.flowCount }));
   }
 
   /** burn 块：窗口按 `op.createdAt`；residue/rake 合计（NULL 按 0）+ NULL 行数。 */
@@ -376,7 +397,7 @@ class FakeFinanceDb {
     return [{ residue: String(residue), rake: String(rake), unrecordedOps }]; // SUM ⇒ DECIMAL 字符串（S13）
   }
 
-  /** 漏收块：窗口按 `skips.createdAt`；COUNT ⇒ number、SUM ⇒ DECIMAL 字符串（S13）。 */
+  /** 漏收按玩法块：窗口按 `skips.createdAt`；COUNT ⇒ number、SUM ⇒ DECIMAL 字符串。 */
   private summarySkips(params: unknown[]): unknown {
     const [from, to] = params as [Date, Date];
     const hits = this.skips.filter(
@@ -385,6 +406,52 @@ class FakeFinanceDb {
     const players = new Set(hits.map((s) => s.ownerId)).size;
     const amount = hits.reduce((acc, s) => acc + s.feeAmount, 0);
     return [{ cnt: hits.length, players, amount: String(amount) }];
+  }
+
+  /** burn 按玩法：0..n 行；分组人数不存在，仅金额/条数/未记录数。 */
+  private summaryBurnByGame(params: unknown[]): unknown {
+    if (this.burnByGameOverride !== undefined) return this.burnByGameOverride;
+    const [from, to] = params as [Date, Date];
+    const groups = new Map<string | null, { residue: number; rake: number; unrecordedOps: number }>();
+    for (const op of this.ops) {
+      if (op.source !== 'game_settle') continue;
+      if (op.createdAt.getTime() < from.getTime() || op.createdAt.getTime() >= to.getTime()) continue;
+      const group = groups.get(op.gameType) ?? { residue: 0, rake: 0, unrecordedOps: 0 };
+      group.residue += op.burnedResidue ?? 0;
+      group.rake += op.burnedRake ?? 0;
+      if (op.burnedResidue === null) group.unrecordedOps += 1;
+      groups.set(op.gameType, group);
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) => String(a).localeCompare(String(b)))
+      .map(([k, group]) => ({
+        k,
+        residue: String(group.residue),
+        rake: String(group.rake),
+        unrecordedOps: group.unrecordedOps,
+      }));
+  }
+
+  /** 漏收按玩法：0..n 行；`players` 为**该玩法内**去重。 */
+  private summarySkipsByGame(params: unknown[]): unknown {
+    const [from, to] = params as [Date, Date];
+    const groups = new Map<string, { cnt: number; owners: Set<string>; amount: number }>();
+    for (const skip of this.skips) {
+      if (skip.createdAt.getTime() < from.getTime() || skip.createdAt.getTime() >= to.getTime()) continue;
+      const group = groups.get(skip.gameType) ?? { cnt: 0, owners: new Set<string>(), amount: 0 };
+      group.cnt += 1;
+      group.owners.add(skip.ownerId);
+      group.amount += skip.feeAmount;
+      groups.set(skip.gameType, group);
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, group]) => ({
+        k,
+        cnt: group.cnt,
+        players: group.owners.size,
+        amount: String(group.amount),
+      }));
   }
 
   private summaryCardCounterPurchases(params: unknown[]): unknown {
@@ -445,6 +512,7 @@ class FakeFinanceDb {
       opId: flow.opId,
       actionId: op.actionId,
       source: op.source,
+      gameType: op.gameType,
       actor: op.actor,
       reason: op.reason,
       refId: op.refId,
@@ -622,6 +690,7 @@ describe('GET /api/admin/wallet/ops（JSON；§2.7）', () => {
             opId: 2,
             actionId: 'signup:user-c',
             source: 'signup_grant',
+            gameType: null,
             actor: null,
             reason: null,
             refId: null,
@@ -642,6 +711,7 @@ describe('GET /api/admin/wallet/ops（JSON；§2.7）', () => {
             opId: 1,
             actionId: 'admin:t6-1',
             source: 'admin_adjust',
+            gameType: null,
             actor: 'admin',
             reason: '活动补偿',
             refId: null,
@@ -662,6 +732,7 @@ describe('GET /api/admin/wallet/ops（JSON；§2.7）', () => {
             opId: 1,
             actionId: 'admin:t6-1',
             source: 'admin_adjust',
+            gameType: null,
             actor: 'admin',
             reason: '活动补偿',
             refId: null,
@@ -888,6 +959,7 @@ describe('GET /api/admin/wallet/ops/:opId（详情；§2.7）', () => {
       opId: op.id,
       actionId: 'admin:t6-multi',
       source: 'admin_adjust',
+      gameType: null,
       actor: 'boss.super',
       reason: '三户发放',
       refId: null,
@@ -955,12 +1027,14 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
       code: ErrCode.OK,
       data: {
         rows: [
-          { k: 'admin_adjust', delta: 30, flowCount: 2 },
-          { k: 'game_settle', delta: -5, flowCount: 1 },
+          { k: 'admin_adjust', gameType: null, delta: 30, flowCount: 2 },
+          { k: 'game_settle', gameType: null, delta: -5, flowCount: 1 },
         ],
         totals: { delta: 25, flowCount: 3 },
         burn: { residue: 2, rake: 3, unrecordedOps: 0 },
+        burnByGame: [{ gameType: null, residue: 2, rake: 3, unrecordedOps: 0 }],
         entryFeeSkips: { cnt: 0, players: 0, amount: 0 },
+        entryFeeSkipsByGame: [],
         cardCounterPurchases: ZERO_CC_PURCHASES,
         cardCounterConsumptions: ZERO_CC_CONSUMPTIONS,
       },
@@ -969,13 +1043,15 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
     expect(typeof res.json.data.rows[0].k).toBe('string');
     expect(typeof res.json.data.rows[0].delta).toBe('number');
     expect(typeof res.json.data.rows[0].flowCount).toBe('number');
-    // 次序钉死：先 group 查询、后 burn 查询、后 skips 查询（同窗口参数）
+    // 次序钉死：group → burn → skips → purchases → consumptions → burnByGame → skipsByGame
     expect(db.queries).toEqual([
       { sql: SUMMARY_SOURCE_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_BURN_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_SKIPS_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_CARD_COUNTER_PURCHASES_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL, params: [new Date(from), new Date(to)] },
+      { sql: SUMMARY_BURN_BY_GAME_SQL, params: [new Date(from), new Date(to)] },
+      { sql: SUMMARY_SKIPS_BY_GAME_SQL, params: [new Date(from), new Date(to)] },
     ]);
   });
 
@@ -990,23 +1066,27 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
     // 15:59:59Z（北京 10-05 23:59:59）与 15:00:00Z 同属 10-05；16:00:00Z（北京 10-06 00:00:00）归 10-06
     expect(res.json.data).toEqual({
       rows: [
-        { k: '2026-10-05', delta: 5, flowCount: 2 },
-        { k: '2026-10-06', delta: 20, flowCount: 1 },
+        { k: '2026-10-05', gameType: null, delta: 5, flowCount: 2 },
+        { k: '2026-10-06', gameType: null, delta: 20, flowCount: 1 },
       ],
       totals: { delta: 25, flowCount: 3 },
       burn: { residue: 2, rake: 3, unrecordedOps: 0 },
+      burnByGame: [{ gameType: null, residue: 2, rake: 3, unrecordedOps: 0 }],
       entryFeeSkips: { cnt: 0, players: 0, amount: 0 },
+      entryFeeSkipsByGame: [],
         cardCounterPurchases: ZERO_CC_PURCHASES,
         cardCounterConsumptions: ZERO_CC_CONSUMPTIONS,
     });
     expect(res.json.data.rows.map((r: any) => typeof r.k)).toEqual(['string', 'string']);
-    // 次序钉死：先 group 查询、后 burn 查询、后 skips 查询（同窗口参数）
+    // 次序钉死：group → burn → skips → purchases → consumptions → burnByGame → skipsByGame
     expect(db.queries).toEqual([
       { sql: SUMMARY_DAY_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_BURN_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_SKIPS_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_CARD_COUNTER_PURCHASES_SQL, params: [new Date(from), new Date(to)] },
       { sql: SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL, params: [new Date(from), new Date(to)] },
+      { sql: SUMMARY_BURN_BY_GAME_SQL, params: [new Date(from), new Date(to)] },
+      { sql: SUMMARY_SKIPS_BY_GAME_SQL, params: [new Date(from), new Date(to)] },
     ]);
   });
 
@@ -1019,12 +1099,14 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
 
     expect(res.json.data).toEqual({
       rows: [
-        { k: 'admin_adjust', delta: 10, flowCount: 1 },
-        { k: 'game_settle', delta: -5, flowCount: 1 },
+        { k: 'admin_adjust', gameType: null, delta: 10, flowCount: 1 },
+        { k: 'game_settle', gameType: null, delta: -5, flowCount: 1 },
       ],
       totals: { delta: 5, flowCount: 2 },
       burn: { residue: 2, rake: 3, unrecordedOps: 0 },
+      burnByGame: [{ gameType: null, residue: 2, rake: 3, unrecordedOps: 0 }],
       entryFeeSkips: { cnt: 0, players: 0, amount: 0 },
+      entryFeeSkipsByGame: [],
         cardCounterPurchases: ZERO_CC_PURCHASES,
         cardCounterConsumptions: ZERO_CC_CONSUMPTIONS,
     });
@@ -1050,11 +1132,13 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
     expect(toMs - 1).toBeGreaterThanOrEqual(before);
     expect(toMs - 1).toBeLessThanOrEqual(after);
     expect(fromMs).toBe(toMs - 30 * DAY_MS);
-    expect(db.queries.at(-5)!.sql).toBe(SUMMARY_SOURCE_SQL);
-    expect(db.queries.at(-4)!.sql).toBe(SUMMARY_BURN_SQL);
-    expect(db.queries.at(-3)!.sql).toBe(SUMMARY_SKIPS_SQL);
-    expect(db.queries.at(-2)!.sql).toBe(SUMMARY_CARD_COUNTER_PURCHASES_SQL);
-    expect(db.queries.at(-1)!.sql).toBe(SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL);
+    expect(db.queries.at(-7)!.sql).toBe(SUMMARY_SOURCE_SQL);
+    expect(db.queries.at(-6)!.sql).toBe(SUMMARY_BURN_SQL);
+    expect(db.queries.at(-5)!.sql).toBe(SUMMARY_SKIPS_SQL);
+    expect(db.queries.at(-4)!.sql).toBe(SUMMARY_CARD_COUNTER_PURCHASES_SQL);
+    expect(db.queries.at(-3)!.sql).toBe(SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL);
+    expect(db.queries.at(-2)!.sql).toBe(SUMMARY_BURN_BY_GAME_SQL);
+    expect(db.queries.at(-1)!.sql).toBe(SUMMARY_SKIPS_BY_GAME_SQL);
 
     const toOnly = await probe.get(`/api/admin/wallet/summary?to=${1_800_000_000_000}`, AUTH);
     expect(toOnly.status).toBe(200);
@@ -1086,7 +1170,9 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
         rows: [],
         totals: { delta: 0, flowCount: 0 },
         burn: { residue: 0, rake: 0, unrecordedOps: 0 },
+        burnByGame: [],
         entryFeeSkips: { cnt: 0, players: 0, amount: 0 },
+        entryFeeSkipsByGame: [],
         cardCounterPurchases: ZERO_CC_PURCHASES,
         cardCounterConsumptions: ZERO_CC_CONSUMPTIONS,
       },
@@ -1121,11 +1207,13 @@ describe('GET /api/admin/wallet/summary（§2.7）', () => {
 
     expect(res.status).toBe(200);
     expect(res.json.data.entryFeeSkips).toEqual({ cnt: 3, players: 2, amount: 6 });
-    expect(db.queries.at(-5)!.sql).toBe(SUMMARY_SOURCE_SQL);
-    expect(db.queries.at(-4)!.sql).toBe(SUMMARY_BURN_SQL);
-    expect(db.queries.at(-3)!.sql).toBe(SUMMARY_SKIPS_SQL);
-    expect(db.queries.at(-2)!.sql).toBe(SUMMARY_CARD_COUNTER_PURCHASES_SQL);
-    expect(db.queries.at(-1)!.sql).toBe(SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL);
+    expect(db.queries.at(-7)!.sql).toBe(SUMMARY_SOURCE_SQL);
+    expect(db.queries.at(-6)!.sql).toBe(SUMMARY_BURN_SQL);
+    expect(db.queries.at(-5)!.sql).toBe(SUMMARY_SKIPS_SQL);
+    expect(db.queries.at(-4)!.sql).toBe(SUMMARY_CARD_COUNTER_PURCHASES_SQL);
+    expect(db.queries.at(-3)!.sql).toBe(SUMMARY_CARD_COUNTER_CONSUMPTIONS_SQL);
+    expect(db.queries.at(-2)!.sql).toBe(SUMMARY_BURN_BY_GAME_SQL);
+    expect(db.queries.at(-1)!.sql).toBe(SUMMARY_SKIPS_BY_GAME_SQL);
   });
 
   it('漏收块：窗口按 skips.created_at（半开）——窗外行不计', async () => {
@@ -1189,9 +1277,9 @@ describe('CSV 两面（§2.11）', () => {
     expect(res.text).toBe(
       CSV_BOM +
         [
-          '流水ID,操作ID,幂等锚,来源,操作者,原因,关联ID,账户ID,账户类型,金额,操作后余额,时间,手机号,昵称,已冲正',
-          `2,2,admin:t6-csv2,admin_adjust,admin,"含,逗号""引号",,csv-u2,user,-30,90,${T2.getTime()},"123,456",,false`,
-          `1,1,admin:t6-csv,admin_adjust,admin,'=cmd|生变,,csv-u1,user,120,120,${T1.getTime()},,'=1+1,false`,
+          '流水ID,操作ID,幂等锚,来源,玩法,操作者,原因,关联ID,账户ID,账户类型,金额,操作后余额,时间,手机号,昵称,已冲正',
+          `2,2,admin:t6-csv2,admin_adjust,—,admin,"含,逗号""引号",,csv-u2,user,-30,90,${T2.getTime()},"123,456",,false`,
+          `1,1,admin:t6-csv,admin_adjust,—,admin,'=cmd|生变,,csv-u1,user,120,120,${T1.getTime()},,'=1+1,false`,
         ].join('\r\n') +
         '\r\n',
     );
@@ -1243,14 +1331,22 @@ describe('CSV 两面（§2.11）', () => {
     expect([res.buffer[0], res.buffer[1], res.buffer[2]]).toEqual([0xef, 0xbb, 0xbf]);
     expect(res.text).toBe(
       CSV_BOM +
-        ['分组,金额合计,流水笔数', '2026-10-05,5,2', '2026-10-06,20,1'].join('\r\n') +
+        [
+          '分组,玩法,金额合计,流水笔数',
+          '2026-10-05,—,5,2',
+          '2026-10-06,—,20,1',
+        ].join('\r\n') +
         '\r\n',
     );
 
     const bySource = await probe.get(`/api/admin/wallet/summary.csv?from=${from}&to=${to}`, AUTH);
     expect(bySource.text).toBe(
       CSV_BOM +
-        ['分组,金额合计,流水笔数', 'admin_adjust,30,2', 'game_settle,-5,1'].join('\r\n') +
+        [
+          '分组,玩法,金额合计,流水笔数',
+          'admin_adjust,—,30,2',
+          'game_settle,—,-5,1',
+        ].join('\r\n') +
         '\r\n',
     );
 
@@ -1294,4 +1390,134 @@ describe('flows.csv 50,000 行上限（§2.11）', () => {
     },
     30_000,
   );
+});
+
+describe('A2 财务玩法维度（列表筛选/汇总展开/burn+漏收按玩法）', () => {
+  const WINDOW = `from=${T1.getTime() - 1}&to=${T3.getTime() + 1}`;
+
+  it('列表：gameType 精确筛选 + 行带 gameType；非法值 400 且未碰库', async () => {
+    const ddz = db.addOp({ actionId: 'g-ddz', source: 'game_settle', gameType: 'doudizhu' });
+    const pdk = db.addOp({ actionId: 'g-pdk', source: 'game_settle', gameType: 'paodekuai' });
+    db.addFlow(ddz, { ownerId: 'a', delta: 10, balanceAfter: 10, createdAt: T1 });
+    db.addFlow(pdk, { ownerId: 'b', delta: 20, balanceAfter: 20, createdAt: T2 });
+
+    const res = await probe.get('/api/admin/wallet/ops?gameType=paodekuai&limit=50', AUTH);
+    expect(res.status).toBe(200);
+    expect(res.json.data.rows).toHaveLength(1);
+    expect(res.json.data.rows[0]).toMatchObject({
+      actionId: 'g-pdk',
+      gameType: 'paodekuai',
+      delta: 20,
+    });
+
+    const before = db.queries.length;
+    const bad = await probe.get('/api/admin/wallet/ops?gameType=ddz', AUTH);
+    expect(bad.status).toBe(400);
+    expect(bad.json.message).toBe('gameType 非法：须为 doudizhu 或 paodekuai');
+    expect(db.queries).toHaveLength(before);
+  });
+
+  it('summary(source)：同 source 两玩法 ⇒ 两行（k 相同、gameType 不同），totals = 各行之和', async () => {
+    const ddz = db.addOp({ actionId: 'sum-ddz', source: 'game_settle', gameType: 'doudizhu' });
+    const pdk = db.addOp({ actionId: 'sum-pdk', source: 'game_settle', gameType: 'paodekuai' });
+    db.addFlow(ddz, { ownerId: 'a', delta: 10, balanceAfter: 10, createdAt: T1 });
+    db.addFlow(pdk, { ownerId: 'b', delta: 20, balanceAfter: 20, createdAt: T2 });
+    db.addFlow(pdk, { ownerId: 'c', delta: -5, balanceAfter: 15, createdAt: T2 });
+
+    const res = await probe.get(`/api/admin/wallet/summary?groupBy=source&${WINDOW}`, AUTH);
+    expect(res.status).toBe(200);
+    const rows = res.json.data.rows as Array<Record<string, unknown>>;
+    expect(rows).toEqual([
+      { k: 'game_settle', gameType: 'doudizhu', delta: 10, flowCount: 1 },
+      { k: 'game_settle', gameType: 'paodekuai', delta: 15, flowCount: 2 },
+    ]);
+    expect(res.json.data.totals).toEqual({ delta: 25, flowCount: 3 });
+  });
+
+  it('summary(day)：按 (day, gameType) 展开，同一天两玩法两行', async () => {
+    const ddz = db.addOp({ actionId: 'day-ddz', source: 'game_settle', gameType: 'doudizhu' });
+    const pdk = db.addOp({ actionId: 'day-pdk', source: 'game_settle', gameType: 'paodekuai' });
+    db.addFlow(ddz, { ownerId: 'a', delta: 10, balanceAfter: 10, createdAt: T1 });
+    db.addFlow(pdk, { ownerId: 'b', delta: 20, balanceAfter: 20, createdAt: T2 });
+
+    const res = await probe.get(`/api/admin/wallet/summary?groupBy=day&${WINDOW}`, AUTH);
+    expect(res.status).toBe(200);
+    const rows = res.json.data.rows as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.gameType).sort()).toEqual(['doudizhu', 'paodekuai']);
+    expect(res.json.data.totals).toEqual({ delta: 30, flowCount: 2 });
+  });
+
+  it('burn/漏收：保留总数（players 全局去重）并新增按玩法明细', async () => {
+    const ddz = db.addOp({
+      actionId: 'burn-ddz',
+      source: 'game_settle',
+      gameType: 'doudizhu',
+      burnedResidue: 2,
+      burnedRake: 3,
+    });
+    const pdk = db.addOp({
+      actionId: 'burn-pdk',
+      source: 'game_settle',
+      gameType: 'paodekuai',
+      burnedResidue: 1,
+      burnedRake: 0,
+    });
+    db.addFlow(ddz, { ownerId: 'a', delta: -5, balanceAfter: 5, createdAt: T1 });
+    db.addFlow(pdk, { ownerId: 'b', delta: -1, balanceAfter: 1, createdAt: T2 });
+    db.addSkip({ ownerId: 'same', feeAmount: 1, gameType: 'doudizhu', createdAt: T1 });
+    db.addSkip({ ownerId: 'same', feeAmount: 2, gameType: 'paodekuai', createdAt: T2 });
+
+    const res = await probe.get(`/api/admin/wallet/summary?${WINDOW}`, AUTH);
+    expect(res.status).toBe(200);
+    const data = res.json.data;
+    expect(data.burn).toEqual({ residue: 3, rake: 3, unrecordedOps: 0 });
+    expect(data.burnByGame).toEqual([
+      { gameType: 'doudizhu', residue: 2, rake: 3, unrecordedOps: 0 },
+      { gameType: 'paodekuai', residue: 1, rake: 0, unrecordedOps: 0 },
+    ]);
+    // 全局 players = 1（同一人），分组 players 各 1 —— 不可相加
+    expect(data.entryFeeSkips).toEqual({ cnt: 2, players: 1, amount: 3 });
+    expect(data.entryFeeSkipsByGame).toEqual([
+      { gameType: 'doudizhu', cnt: 1, players: 1, amount: 1 },
+      { gameType: 'paodekuai', cnt: 1, players: 1, amount: 2 },
+    ]);
+  });
+
+  it('空窗：by-game 数组为空、总数仍为 0/1 行形状', async () => {
+    const res = await probe.get('/api/admin/wallet/summary?from=1&to=2', AUTH);
+    expect(res.status).toBe(200);
+    expect(res.json.data.burnByGame).toEqual([]);
+    expect(res.json.data.entryFeeSkipsByGame).toEqual([]);
+    expect(res.json.data.burn).toEqual({ residue: 0, rake: 0, unrecordedOps: 0 });
+    expect(res.json.data.entryFeeSkips).toEqual({ cnt: 0, players: 0, amount: 0 });
+  });
+
+  it('CSV：流水与汇总表头均在“来源/分组”后插“玩法”', async () => {
+    const op = db.addOp({ actionId: 'csv-pdk', source: 'game_settle', gameType: 'paodekuai' });
+    db.addFlow(op, { ownerId: 'a', delta: 10, balanceAfter: 10, createdAt: T1 });
+
+    const flows = await probe.get('/api/admin/wallet/ops.csv', AUTH);
+    expect(flows.text.split('\r\n')[0]).toContain('来源,玩法,操作者');
+    expect(flows.text).toContain('game_settle,跑得快');
+
+    const summary = await probe.get(`/api/admin/wallet/summary.csv?${WINDOW}`, AUTH);
+    expect(summary.text.startsWith('﻿分组,玩法,金额合计,流水笔数')).toBe(true);
+    expect(summary.text).toContain('game_settle,跑得快');
+  });
+
+  it('跨查询快照漂移（byGame ≠ 总数）不得 500：只告警并返回读数', async () => {
+    seedSummarySample();
+    db.burnByGameOverride = [
+      { k: null, residue: String(999), rake: String(999), unrecordedOps: 9 },
+    ];
+
+    const window = `from=${T('2026-10-05T00:00:00.000Z').getTime()}&to=${T('2026-10-07T00:00:00.000Z').getTime()}`;
+    const res = await probe.get(`/api/admin/wallet/summary?${window}`, AUTH);
+    expect(res.status).toBe(200);
+    expect(res.json.data.burnByGame).toEqual([
+      { gameType: null, residue: 999, rake: 999, unrecordedOps: 9 },
+    ]);
+    // 总数仍来自独立 SQL，不被 byGame 覆盖
+    expect(res.json.data.burn).toEqual({ residue: 2, rake: 3, unrecordedOps: 0 });
+  });
 });

@@ -15,7 +15,7 @@ import { RobotClient } from '../src/gateway/robot.client';
 import { ReconnectService } from '../src/reconnect/reconnect.service';
 import { asRedis, createFakeRedis, type FakeRedis } from './helpers/fake-redis';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from './helpers/config-cache.stub';
-import { labeledValue, metricValue } from './helpers/metric-readout';
+import { labeledValue, metricValue, exactSeriesValue } from './helpers/metric-readout';
 import { entryFeeConflictTotal, entryFeeSkippedTotal } from '../src/metrics/room.metrics';
 
 /**
@@ -140,12 +140,14 @@ describe('RoomStartService 收费块（本片：位置/短路/逐人并发/重�
         source: 'entry_fee',
         entries: [{ ownerId: 'u1', delta: -1 }],
         refId: 'ENT03',
+        gameType: 'doudizhu',
       },
       {
         actionId: 'entryfee:ENT03:u2',
         source: 'entry_fee',
         entries: [{ ownerId: 'u2', delta: -1 }],
         refId: 'ENT03',
+        gameType: 'doudizhu',
       },
     ]);
     // 机器人零调用：载荷里不出现任何 displayId 形态的 ownerId
@@ -299,6 +301,7 @@ describe('RoomStartService 收费块（本片：位置/短路/逐人并发/重�
       baseScore: 15,
       feeAmount: 1,
       reason: 'insufficient_funds',
+      gameType: 'doudizhu',
     });
     expect((await labeledValue(entryFeeSkippedTotal, { reason: 'insufficient_funds' })) ?? 0).toBe(before + 1);
     const line = warns().find((m) => m.includes('entry_fee.skipped'));
@@ -452,5 +455,36 @@ describe('RoomStartService 收费块（本片：位置/短路/逐人并发/重�
     const key = roomBalancesKey('ENT91');
     expect(redis.hashes.get(key)).toEqual({ '0': '99', '1': '99', '2': '99' });
     expect(redis.ttls.get(key)).toBe(ROOM_TTL_SECONDS);
+  });
+
+  it('A1：台费免单/冲突按 game_type 计数', async () => {
+    configCache.entryFeePercents.mockReturnValue(FEE_ON);
+
+    currency.apply.mockImplementation(async () => {
+      throw new CurrencyServiceError(ErrCode.E_ACTION_CONFLICT, '该操作已存在');
+    });
+    const beforeConflict = (await exactSeriesValue(entryFeeConflictTotal, {
+      game_type: 'doudizhu',
+    })) ?? 0;
+    await goldRoom('A1F01', ['u1', 'u2', 'u3']);
+    expect(await service.startRoom('A1F01', { strict: true })).toBe(true);
+    expect(await exactSeriesValue(entryFeeConflictTotal, {
+      game_type: 'doudizhu',
+    })).toBe(beforeConflict + 3);
+
+    currency.apply.mockImplementation(async (req: { entries: Array<{ ownerId: string }> }) => {
+      if (req.entries[0]!.ownerId === 'u2') {
+        throw new CurrencyServiceError(ErrCode.E_INSUFFICIENT_FUNDS, 'ownerId=u2 余额不足');
+      }
+      return okApply(req as never);
+    });
+    const beforeSkip = (await exactSeriesValue(entryFeeSkippedTotal, {
+      game_type: 'doudizhu', reason: 'insufficient_funds',
+    })) ?? 0;
+    await goldRoom('A1F02', ['u1', 'u2', 'u3']);
+    expect(await service.startRoom('A1F02', { strict: true })).toBe(true);
+    expect(await exactSeriesValue(entryFeeSkippedTotal, {
+      game_type: 'doudizhu', reason: 'insufficient_funds',
+    })).toBe(beforeSkip + 1);
   });
 });

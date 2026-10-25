@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { QueryRunner } from 'typeorm';
-import { AgentDomain1797000000000 } from '../src/migrations/1797000000000-AgentDomain';
+import { AgentDomain1798000000000 } from '../src/migrations/1798000000000-AgentDomain';
 
 const SRC_DIR = join(fileURLToPath(new URL('..', import.meta.url)), 'src');
 
@@ -41,7 +41,7 @@ const TABLES = [
 describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
   it('up()：17 CREATE + 1 INSERT；逐表名/引擎/字符集', async () => {
     const { runner, statements } = recordingRunner();
-    await new AgentDomain1797000000000().up(runner);
+    await new AgentDomain1798000000000().up(runner);
 
     expect(statements).toHaveLength(18);
     const creates = statements.filter((s) => s.startsWith('CREATE TABLE IF NOT EXISTS'));
@@ -61,7 +61,7 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
 
   it('关键默认值：watermark/carry/token_version 非空默认 0；must_change_password 默认 1；pending 可空', async () => {
     const { runner, statements } = recordingRunner();
-    await new AgentDomain1797000000000().up(runner);
+    await new AgentDomain1798000000000().up(runner);
     const accounts = statements.find((s) => s.includes('`agent_accounts`'))!;
     for (const column of [
       '`micro_carry` bigint NOT NULL DEFAULT 0',
@@ -77,7 +77,7 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
 
   it('关键唯一键/索引：revenue/commission/settlement/quota', async () => {
     const { runner, statements } = recordingRunner();
-    await new AgentDomain1797000000000().up(runner);
+    await new AgentDomain1798000000000().up(runner);
     const sqlOf = (table: string) =>
       statements.find((s) => s.includes(`CREATE TABLE IF NOT EXISTS \`${table}\``))!;
 
@@ -106,7 +106,7 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
 
   it('down()：17 DROP、逆序（settings_history 先、settings 后）', async () => {
     const { runner, statements } = recordingRunner();
-    await new AgentDomain1797000000000().down(runner);
+    await new AgentDomain1798000000000().down(runner);
     expect(statements).toHaveLength(17);
     expect(statements[0]).toBe('DROP TABLE IF EXISTS `agent_settings_history`');
     expect(statements.at(-1)).toBe('DROP TABLE IF EXISTS `agent_settings`');
@@ -115,8 +115,8 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
     );
   });
 
-  it('类名不以 Currency 开头；时间戳 1797000000000 全仓唯一', () => {
-    expect(AgentDomain1797000000000.name).not.toMatch(/^Currency/);
+  it('类名不以 Currency 开头；时间戳 1798000000000 全仓唯一', () => {
+    expect(AgentDomain1798000000000.name).not.toMatch(/^Currency/);
     const packagesDir = join(SRC_DIR, '..', '..');
     const hits: string[] = [];
     for (const pkg of readdirSync(packagesDir)) {
@@ -124,10 +124,10 @@ describe('AgentDomain 迁移：17 张表 + settings 种子', () => {
       if (!existsSync(dir)) continue;
       for (const file of readdirSync(dir)) {
         for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
-          if (m[1]!.includes('1797000000000')) hits.push(`${pkg}/${m[1]}`);
+          if (m[1]!.includes('1798000000000')) hits.push(`${pkg}/${m[1]}`);
         }
       }
     }
-    expect(hits).toEqual(['currency-service/AgentDomain1797000000000']);
+    expect(hits).toEqual(['currency-service/AgentDomain1798000000000']);
   });
 });

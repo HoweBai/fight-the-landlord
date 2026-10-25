@@ -3,12 +3,15 @@ import type { Redis } from 'ioredis';
 import { DataSource, type EntityManager } from 'typeorm';
 import {
   CURRENCY_SOURCES,
+  DEFAULT_GAME_TYPE,
   ErrCode,
   currencyApplyHash,
+  isGameScopedCurrencySource,
   normalizeOwnerType,
   validateCurrencyApply,
   type CurrencyApplyResponse,
   type CurrencyOwnerType,
+  type GameType,
 } from '@fight-the-landlord/protocol';
 import { REDIS, setBalance } from '../redis/redis.module';
 import {
@@ -61,8 +64,18 @@ import { agentHookFailuresTotal } from '../agent/agent.metrics';
 
 /** 一次 apply = 一行 ops（§2.10 DDL 列序逐字；`created_at` 走列默认值）。 */
 const OPS_INSERT_SQL =
-  'INSERT INTO `currency_ops` (`action_id`, `request_hash`, `source`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`) ' +
-  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
+  'INSERT INTO `currency_ops` (`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`) ' +
+  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+
+/**
+ * A2（spec D4）：游戏相关来源的落库玩法；非游戏来源一律 NULL（未标注）。
+ *
+ * 缺省归一是**服务端**职责（不是协议校验）：旧 RPC/旧 outbox 不带 gameType 时，
+ * `game_settle`/`robot_pool`/`entry_fee`/`card_counter` 仍正确落 doudizhu。
+ */
+function storedGameType(source: string, gameType: GameType | undefined): GameType | null {
+  return isGameScopedCurrencySource(source) ? (gameType ?? DEFAULT_GAME_TYPE) : null;
+}
 
 /** 重放判定：读幂等锚（新事务；不复用已回滚事务的连接/快照）。 */
 const OPS_SELECT_SQL = 'SELECT `id`, `request_hash` FROM `currency_ops` WHERE `action_id` = ?';
@@ -266,6 +279,7 @@ export class ApplyService {
       reason?: string;
       refId?: string;
       burn?: { residue: number; rake: number };
+      gameType?: GameType;
       meta?: { traceId: string };
     };
     try {
@@ -297,6 +311,7 @@ export class ApplyService {
           request.actionId,
           requestHash,
           request.source,
+          storedGameType(request.source, request.gameType),
           request.actor ?? null,
           request.reason ?? null,
           request.refId ?? null,

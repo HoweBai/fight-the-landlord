@@ -9,7 +9,7 @@ import {
   supportsPlayerCount,
   type GameType,
 } from '@fight-the-landlord/protocol';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { incGame, runWithTrace } from '@fight-the-landlord/shared';
 import { CHANNELS } from '../channels';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { RobotClient } from '../gateway/robot.client';
@@ -978,7 +978,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
     // ② ≥ playerCount 人：洗牌副本 → 随机贪心取 playerCount（逐对过「记忆 ∩ 谓词」；失败即记账）
     if (alive.length >= playerCount) {
-      matchSelectionRoundsTotal.inc(); // §2.4-5：每轮桶内 alive ≥ playerCount
+      incGame(matchSelectionRoundsTotal, queue.gameType); // §2.4-5：每轮桶内 alive ≥ playerCount
       const selected = await this.randomGreedyPick(
         alive,
         tickets,
@@ -986,6 +986,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         now,
         bumped,
         playerCount,
+        queue.gameType,
       );
       if (selected.length === playerCount) {
         const started = await this.startGroup(selected, queue, bumped);
@@ -994,7 +995,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         }
         return;
       }
-      matchNoLegalGroupTotal.inc(); // §2.4-5：≥ playerCount 且本轮贪心未成组（可观测定义）
+      incGame(matchNoLegalGroupTotal, queue.gameType); // §2.4-5：≥ playerCount 且本轮贪心未成组（可观测定义）
 
       // 凑不满 ⇒ 子集/兜底路径（⚙️14）：对**最长等待者**取贪心最大合法子集 S
       const subset = await this.maxLegalSubset(alive, tickets, predicates, now, playerCount);
@@ -1103,7 +1104,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     //    子集 < playerCount ⇒ 绝不开局，直接落到 ③ 的等待提示。
     const playerCount = queue.playerCount;
     if (alive.length >= playerCount) {
-      matchSelectionRoundsTotal.inc();
+      incGame(matchSelectionRoundsTotal, queue.gameType);
       const selected = await this.randomGreedyPick(
         alive,
         tickets,
@@ -1111,12 +1112,13 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         now,
         bumped,
         playerCount,
+        queue.gameType,
       );
       if (selected.length === playerCount) {
         await this.startGroup(selected, queue, bumped);
         return;
       }
-      matchNoLegalGroupTotal.inc();
+      incGame(matchNoLegalGroupTotal, queue.gameType);
       const subset = await this.maxLegalSubset(alive, tickets, predicates, now, playerCount);
       if (subset.length === playerCount) {
         await this.startGroup(subset, queue, bumped);
@@ -1312,6 +1314,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     now: number,
     bumped: Set<string>,
     playerCount: number,
+    gameType: GameType,
   ): Promise<string[]> {
     const shuffled = this.shuffle(entries);
     const selected: string[] = [];
@@ -1340,7 +1343,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         selected.push(candidate.playerId);
         continue;
       }
-      await this.accountRejection(candidate.playerId, conflict!, rejection, now, bumped);
+      await this.accountRejection(candidate.playerId, conflict!, rejection, now, bumped, gameType);
     }
     return selected;
   }
@@ -1355,11 +1358,12 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     verdict: Extract<PairVerdict, { ok: false }>,
     now: number,
     bumped: Set<string>,
+    gameType: GameType,
   ): Promise<void> {
     if (!verdict.memory) {
       await this.redis.set(matchRejectedKey(aId, bId), String(now), 'PX', PICK_FAILURE_MARK_TTL_MS);
       for (const predicate of verdict.rejected) {
-        matchPredicateRejectionsTotal.inc({ predicate: predicate.name });
+        incGame(matchPredicateRejectionsTotal, gameType, 1, { predicate: predicate.name });
         await this.incrRiskHit(aId, predicate.name);
         await this.incrRiskHit(bId, predicate.name);
       }

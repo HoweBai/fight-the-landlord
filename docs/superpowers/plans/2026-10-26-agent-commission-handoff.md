@@ -17,7 +17,7 @@
 已完成任务 0–12（见下）。请从任务 13 继续：
 13) 管理后台「代理」UI；
 14) 代理门户静态站 + edge 路由；
-15) tools/conformance slice-30 真库 + 全量验证 + 独立代码审查 + 交付报告。
+15) tools/conformance slice-32 真库 + 全量验证 + 独立代码审查 + 交付报告。
 
 按 docs/dev-process.md 执行：每个任务 TDD/红绿、独立提交、提交信息末尾带
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>。
@@ -31,7 +31,7 @@ Critical/Important 必须修。没有用户明确发话前不要推送/部署。
 |---|---|---|
 | 0 | `faf65bd3` | currency-service 依赖 `@nestjs/jwt`/`rxjs`；compose env（`AGENT_JWT_SECRET`/`AGENT_PHONE_HMAC_KEY`/`USER_SERVICE_RPC_HOST/PORT`）；lockfile |
 | 1/2 | `569154dc` | protocol 6 错误码 + `agent.inviteEnabled`/`agentInviteEnabled` + `ClientConfig` 字段；config-service 种子迁移 `1796900000000-AgentInviteKey`；管理端配置 IA/CFG_NAV/CONTROLS/NOTES + `verify:admin` 94/78/78/73/36/66 |
-| 3 | `531a7c83` | currency 迁移 `1797000000000-AgentDomain`（17 表）+ 纯函数 `commission.math.ts`（级差/冻结/自玩/负级差/额度/取整）+ 2000 轮随机性质测试 |
+| 3 | `531a7c83` | currency 迁移 `1798000000000-AgentDomain`（17 表）+ 纯函数 `commission.math.ts`（级差/冻结/自玩/负级差/额度/取整）+ 2000 轮随机性质测试 |
 | 4 | `21bbc213` | `AgentModule` 骨架；settings/quota/maturity 服务；`ApplyService` 可见面装配；`ConfigCacheService.agentInviteEnabled()` |
 | 5 | `25de5ba6` | `ApplyService` 内置代理钩子（caller effect 之后 SAVEPOINT；语句级回滚/事务级重抛）；revenue/commission 写入；gap 独立连接；11 条 ledger + 5 条 Apply 钩子测试 |
 | 6 | `d181e39f` | 账号/邀请码/绑定服务；`agent.bind` 接收侧；`user.agentProfile.get` 接收侧；currency→user 客户端；`main.ts` 生产密钥 fail-closed；password scrypt |
@@ -43,7 +43,7 @@ Critical/Important 必须修。没有用户明确发话前不要推送/部署。
 | 12 | `e6e70950` | 登录页注册态懒拉配置 + 邀请码字段（开关开才渲染）；`signUp`/`register` 透传；docs 错误码/22 键同步 |
 | 13 | `876be015` | 管理后台「代理」UI（列表/新建/详情/设置/结算/调账/对账/审计；`verify:admin` 465 + jsdom 冒烟） |
 | 14 | `dc5e6aaf` | 代理门户静态站 + `Dockerfile.edge`/`Caddyfile` `/agent` 路由；`verify:agent` 104 + jsdom 冒烟 |
-| 15 | `56f84133` / `324d6442` / `71be4070` | slice-30 真库 + design.md env 表；r3 独立审查 Critical/Important 收口（公开 boot 配置、管理页竞态、对账区间、手机号归一、分页等） |
+| 15 | `56f84133` / `324d6442` / `71be4070` | slice-32 真库 + design.md env 表；r3 独立审查 Critical/Important 收口（公开 boot 配置、管理页竞态、对账区间、手机号归一、分页等） |
 
 ### 设计增量（相对 spec v1.1，需在 spec 的偏差台账/审查记录补一句）
 
@@ -120,7 +120,7 @@ pnpm lint                                      # turbo 18/18
   （补分页 + 结算默认 pending）。
 - **Minor**：设置逐键 bounds、rateBp 拒绝 null/空串/数组、昵称 50 分批、负 carry 显示 0、
   批量改绑每批复核 active、门户改密 6–64、verify:agent 函数体断言并接入 ci.sh、详情上级
-  下拉过滤冻结、比例 step 0.01、树旧快照不误摘上级、slice-30 低 id 行同额。
+  下拉过滤冻结、比例 step 0.01、树旧快照不误摘上级、slice-32 低 id 行同额。
 - **登记未修**：详情绑定玩家只取前 50（批量改绑兜底）；门户 token localStorage（本页零
   HTML 注入，后续可改 sessionStorage）。
 - 详细表见 spec §17.2。
@@ -132,7 +132,7 @@ pnpm lint                                      # turbo 18/18
   protocol 294 / user 367；`verify:admin` 471；`verify:agent` 104；conformance tsc 通过。
 - jsdom 冒烟：管理页 super_admin/finance 各 14+ 项；门户 26 项（首登改密/五页签/结算/401）。
 - **真库 slice-30 未在本机跑**（Docker daemon 不可用）⇒ 由 GitHub CI 跑；`baselines.json`
-  已按源码静态计数回填 `slice-30-agent = 136`（CI 实测复核）。
+  已按源码静态计数回填 `slice-32-agent = 136`（CI 实测复核）。
 
 ### 5.3 GitHub CI 运行方式
 
@@ -141,8 +141,20 @@ pnpm lint                                      # turbo 18/18
   一次性提交把 `push.branches` 扩为 `[master, dev]` 并同步 `slice-07.4-pipeline` 的期望集合，
   跑完 **revert**（用户已授权 dev 跑 CI；master/tag 不动）。
 
+### 5.4 合并 `origin/dev`（2026-10-26，A1/A2 PDK 并行片）
 
-1. **`tools/conformance/src/slices/slice-30-agent.ts`**（真 MySQL；Docker）：
+- origin/dev 领先 52 个提交（PDK 指标/金币场账本/管理统计）。合并冲突 3 处（run.ts /
+  baselines.json / verify-admin-static.mjs），已按两侧语义合并。
+- **编号冲突**：`slice-30`/`slice-31` 已被 PDK 片占用 ⇒ 本片由 `slice-30-agent` 顺延为
+  **`slice-32-agent`**（文件/导出/run.ts/baselines 全改）。
+- **迁移时间戳冲突**：A2/A3 的 `1797000000000-GameTypeOnOpsDdl` 与本片
+  `1797000000000-AgentDomain` 同号 ⇒ 本片迁移改为 **`1798000000000-AgentDomain`**
+  （类名 `AgentDomain1798000000000`；尚未部署，改名安全）。
+- 合并后计数：CONFIG_NOTES 78（PDK +11 + 代理 1）；currency 538；其余见 §5.2。
+
+
+
+1. **`tools/conformance/src/slices/slice-32-agent.ts`**（真 MySQL；Docker）：
    - 额度首建并发/死锁；SAVEPOINT 回滚后主事务；水位结算双会话；低 id 晚提交 409；驳回/打款/复核；关闭期对账；配置计数；鉴权交叉。
    - 注册到 `tools/conformance/src/run.ts`；`baselines.json` **首次由 CI 回填，本机不要手填**。
 2. **文档**：`docs/design.md §2.3` env 表补 `AGENT_JWT_SECRET`、`AGENT_PHONE_HMAC_KEY`、`USER_SERVICE_RPC_HOST/PORT`；如需强闸，把四条加进 `packages/shared/test/design-md-ai-rollout.gate.test.ts` 的 `NEW_ENVS`。
@@ -154,8 +166,8 @@ pnpm lint                                      # turbo 18/18
 
 - **r3 已修**：公开启动配置 `/api/config/boot`（第 6 条公开路径；只两键）；管理页详情竞态；
   对账启用区间从 changed_at 起；手机号数字归一（自玩特判）；结算/调账分页。
-- **仍需 CI 真库证明**：slice-30 的并发/SAVEPOINT/水位/低 id 晚提交（本机无 Docker）。
-- **真库并发未证明**：假 DB 只钉控制流；SAVEPOINT/死锁/水位/额度首建必须 slice-30 真 MySQL。
+- **仍需 CI 真库证明**：slice-32 的并发/SAVEPOINT/水位/低 id 晚提交（本机无 Docker）。
+- **真库并发未证明**：假 DB 只钉控制流；SAVEPOINT/死锁/水位/额度首建必须 slice-32 真 MySQL。
 - **`ApplyService` 钩子失败的生产行为**：语句级错误 → 保存点回滚 + `agent_ledger_gaps` + 指标，主事务继续；1213/1205/连接错误 → 重抛让 apply 失败（room-service 幂等重试）。
 - **结算水位**：申请后低 id 晚提交会让打款 SUM/hash 不一致 → 409；恢复 = 撤回/驳回后重新申请。
 - **`updatePayout`**：管理端 PATCH 省略字段会置 NULL —— UI 必须三个字段一起提交。
@@ -169,7 +181,7 @@ pnpm lint                                      # turbo 18/18
 
 - spec：`docs/superpowers/specs/2026-10-26-agent-commission-design.md`
 - plan：`docs/superpowers/plans/2026-10-26-agent-commission.md`
-- 迁移：`packages/currency-service/src/migrations/1797000000000-AgentDomain.ts`
+- 迁移：`packages/currency-service/src/migrations/1798000000000-AgentDomain.ts`
 - 纯函数：`packages/currency-service/src/agent/commission.math.ts`
 - 写边：`packages/currency-service/src/apply/apply.service.ts`、`src/agent/agent-ledger.service.ts`
 - 结算：`packages/currency-service/src/agent/agent-settlement.service.ts`

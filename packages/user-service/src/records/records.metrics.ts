@@ -43,7 +43,8 @@ export const recordsCleanupFailuresTotal: ReturnType<typeof createCounter> = cre
  */
 export const recordsRowsDeletedTotal: ReturnType<typeof createCounter> = createCounter(
   'records_rows_deleted_total',
-  '记录清理累计删除的 game_records 行数（值 = 每轮 recordsDeleted；players 侧删除量见日志行）。',
+  '记录清理累计删除的 game_records 行数（按玩法；值 = 每轮 recordsDeleted；players 侧删除量见日志行）。',
+  ['game_type'],
 );
 
 /**

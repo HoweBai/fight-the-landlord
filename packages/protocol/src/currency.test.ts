@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import {
   CURRENCY_OWNER_TYPES,
   CURRENCY_SOURCES,
+  GAME_SCOPED_CURRENCY_SOURCES,
   MAX_ABS_DELTA_BY_SOURCE,
   currencyApplyHash,
+  isGameScopedCurrencySource,
   normalizeOwnerType,
   validateCurrencyApply,
   validateCurrencyCardCounterConsume,
@@ -70,6 +72,101 @@ describe('currency 契约面导出（规格 §2.2 逐字）', () => {
     ]);
     expect(CURRENCY_SOURCES.length).toBe(13);
     expect(CURRENCY_OWNER_TYPES).toEqual(['user', 'robot']);
+  });
+});
+
+describe('gameType 契约（A2：游戏相关来源限定 + 不参与指纹）', () => {
+  it('GAME_SCOPED_CURRENCY_SOURCES 逐字且 isGameScopedCurrencySource 只认这四源', () => {
+    expect(GAME_SCOPED_CURRENCY_SOURCES).toEqual([
+      'game_settle',
+      'robot_pool',
+      'entry_fee',
+      'card_counter',
+    ]);
+    for (const source of CURRENCY_SOURCES) {
+      expect(isGameScopedCurrencySource(source)).toBe(
+        (GAME_SCOPED_CURRENCY_SOURCES as readonly string[]).includes(source),
+      );
+    }
+  });
+
+  const applyBase = (over: Record<string, unknown> = {}) => ({
+    actionId: 'a2-game-type',
+    source: 'game_settle',
+    entries: [{ ownerId: 'u-1', delta: 1 }],
+    ...over,
+  });
+
+  it('四个游戏来源接受 doudizhu/paodekuai，也接受缺席', () => {
+    for (const source of GAME_SCOPED_CURRENCY_SOURCES) {
+      const req = applyBase({ source });
+      expect(() => validateCurrencyApply(req), `${source} 缺席`).not.toThrow();
+      for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+        expect(() => validateCurrencyApply({ ...req, gameType }), `${source}/${gameType}`).not.toThrow();
+      }
+    }
+  });
+
+  it('非游戏来源携带 gameType ⇒ 中文 ProtocolError（admin 两源补齐 actor/reason，确保命中 gameType 分支）', () => {
+    const cases: Array<Record<string, unknown>> = [
+      { source: 'signup_grant', refId: 'u-1' },
+      { source: 'admin_adjust', actor: 'admin', reason: 'x' },
+      { source: 'admin_reverse', actor: 'admin', reason: 'x' },
+      { source: 'recharge' },
+      { source: 'refund_hold' },
+      { source: 'refund_rollback' },
+      { source: 'withdraw_hold' },
+      { source: 'withdraw_rollback' },
+      { source: 'relief_grant' },
+    ];
+    for (const c of cases) {
+      const req = applyBase({ ...c, gameType: 'paodekuai' });
+      expect(() => validateCurrencyApply(req), `source=${String(c.source)}`).toThrow(ProtocolError);
+      expect(() => validateCurrencyApply(req)).toThrow(/不接受 gameType/);
+    }
+  });
+
+  it('非法 gameType（空串/ddz/null/数字/布尔/对象）⇒ 中文 ProtocolError', () => {
+    for (const bad of ['', 'ddz', null, 0, 1, true, {}, []]) {
+      const req = applyBase({ gameType: bad });
+      expect(() => validateCurrencyApply(req), `gameType=${JSON.stringify(bad)}`).toThrow(
+        ProtocolError,
+      );
+      expect(() => validateCurrencyApply(req)).toThrow(/gameType 必须是/);
+    }
+  });
+
+  it('entryFeeSkip：doudizhu/paodekuai/缺席合法；非法值 ⇒ 中文 ProtocolError', () => {
+    const base = {
+      roomCode: 'ABC123',
+      ownerId: 'u-1',
+      baseScore: 15,
+      feeAmount: 1,
+      reason: 'insufficient_funds',
+    };
+    expect(() => validateCurrencyEntryFeeSkip(base)).not.toThrow();
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      expect(() => validateCurrencyEntryFeeSkip({ ...base, gameType })).not.toThrow();
+    }
+    for (const bad of ['', 'ddz', null, 1, {}, []]) {
+      expect(() => validateCurrencyEntryFeeSkip({ ...base, gameType: bad })).toThrow(ProtocolError);
+      expect(() => validateCurrencyEntryFeeSkip({ ...base, gameType: bad })).toThrow(
+        /gameType 必须是/,
+      );
+    }
+  });
+
+  it('gameType 不参与 request_hash：缺席 / undefined / doudizhu / paodekuai 全同 hash', () => {
+    const base = {
+      source: 'game_settle',
+      entries: [{ ownerId: 'u-1', delta: 1 }],
+      refId: 'r-1',
+    };
+    const h = currencyApplyHash(base);
+    expect(h).toBe(nodeSha256(canonical(base)));
+    expect(currencyApplyHash({ ...base, gameType: undefined })).toBe(h);
+    expect(currencyApplyHash({ ...base, gameType: 'doudizhu' })).toBe(h);
+    expect(currencyApplyHash({ ...base, gameType: 'paodekuai' })).toBe(h);
   });
 });
 

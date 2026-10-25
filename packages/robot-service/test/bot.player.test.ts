@@ -18,6 +18,7 @@ import type { Card, PlayerView, RobotDecideRequest, DdzRobotFeatures } from '@fi
 import { BotPlayer } from '../src/robot/bot.player';
 import type { DouZeroClient } from '../src/robot/douzero.client';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
+import { counterValue } from './helpers/metrics';
 
 /**
  * R696：**两类夹具要分清**——
@@ -217,5 +218,27 @@ describe('BotPlayer —— lastMoveMeta 键缺失的一次性告警（Minor 5）
     });
     await freshBot.decide(request({ skillLevel: 'beginner', features: features({ lastMoveMeta: null }) }));
     expect(records.filter((r) => r.msg.includes('lastMoveMeta'))).toHaveLength(1);
+  });
+});
+
+describe('A1：PDK 规则 bot 错误指标', () => {
+  it('feature 形状不符 ⇒ decision_error 计数 +1 并 rethrow', async () => {
+    const { bot } = makePlayer(async () => []);
+    const pdkBad = {
+      roomCode: 'R1',
+      botId: 'bot-1',
+      skillLevel: 'advanced',
+      view: { gameType: 'paodekuai', state: 'playing', seat: 0, hand: [], cardCounts: [0, 0, 0], canPass: false },
+      features: { gameType: 'doudizhu' },
+    } as never;
+    const before = await counterValue('robot_rule_errors_total', {
+      reason: 'decision_error',
+    }, 'paodekuai');
+
+    await expect(bot.decide(pdkBad)).rejects.toThrow();
+
+    expect(await counterValue('robot_rule_errors_total', {
+      reason: 'decision_error',
+    }, 'paodekuai')).toBe(before + 1);
   });
 });

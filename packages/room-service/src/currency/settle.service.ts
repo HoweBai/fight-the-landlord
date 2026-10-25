@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import {
   DEFAULT_GAME_TYPE,
   ErrCode,
+  isGameType,
   isPdkSettlementResult,
   type CurrencyApplyData,
   type CurrencyBurn,
@@ -11,6 +12,7 @@ import {
   type GameType,
   type SettlementResult,
 } from '@fight-the-landlord/protocol';
+import { incGame } from '@fight-the-landlord/shared';
 import type { Room } from '../rooms/rooms.service';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { RecordClient } from '../gateway/record.client';
@@ -18,6 +20,7 @@ import { CurrencyClient, CurrencyServiceError } from './currency.client';
 import {
   currencySettleResidueTotal,
   currencySettleResultTotal,
+  recordWriteFailuresTotal,
 } from '../metrics/room.metrics';
 
 /**
@@ -310,7 +313,9 @@ export class SettleService {
     } catch (err) {
       // 顶层兜底：settle 的调用方是 `void …` ⇒ 任何逃逸的 rejection 都会把进程打成
       // crash-loop（Node 默认 --unhandled-rejections=throw）。宁可账面可见地响一声。
-      this.dropError(input.roomCode, input.version, 'unexpected error', err);
+      const topGameType = input.result !== undefined && isPdkSettlementResult(input.result)
+        ? 'paodekuai' : 'doudizhu';
+      this.dropError(input.roomCode, input.version, topGameType, 'unexpected error', err);
     }
   }
 
@@ -327,13 +332,14 @@ export class SettleService {
       return;
     }
     const room = input.room;
+    const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
 
     // ── 守卫②：mode==='gold'（免费场/好友房是**正常路径** ⇒ 静默返回，不 WARN 不指标）──
     if (room.mode !== 'gold') return;
 
     // ── 守卫③：result 存在 ─────────────────────────────────────────────
     if (!input.result) {
-      this.dropWarn(roomCode, input.version, 'game.ended carries no result');
+      this.dropWarn(roomCode, input.version, gameType, 'game.ended carries no result');
       return;
     }
     const result = input.result;
@@ -344,6 +350,7 @@ export class SettleService {
       this.dropWarn(
         roomCode,
         version,
+        gameType,
         'game.ended carries no version (settle:<room>:undefined would collide with 10001)',
       );
       return;
@@ -353,24 +360,24 @@ export class SettleService {
      * 多玩法（Task 2.5）：玩法/人数 = **房间元数据**（`RoomMeta.gameType`/`maxPlayers`）。
      * 结果与房间必须同玩法/同人数（pdk 的 `playerCount` 由结算向量自带）。
      */
-    const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
     const playerCount = room.maxPlayers;
     const resultIsPdk = isPdkSettlementResult(result);
     if (resultIsPdk !== (gameType === 'paodekuai')) {
-      this.dropWarn(roomCode, version, `settlement gameType mismatch (room=${gameType})`);
+      this.dropWarn(roomCode, version, gameType, `settlement gameType mismatch (room=${gameType})`);
       return;
     }
     if (resultIsPdk && result.playerCount !== playerCount) {
       this.dropWarn(
         roomCode,
         version,
+        gameType,
         `settlement playerCount mismatch (result=${result.playerCount}, room=${playerCount})`,
       );
       return;
     }
 
     // ── 守卫⑤：座位齐（0..playerCount-1） + 机器人座映射齐（映射来自入参透传 —— 不得重读 bots 键）────
-    const seats = this.resolveSeats(room, input.botBySeat, version, playerCount);
+    const seats = this.resolveSeats(room, input.botBySeat, version, playerCount, gameType);
     if (!seats) return;
 
     const rakePercent = this.configCache.rakePercent(gameType);
@@ -378,9 +385,9 @@ export class SettleService {
     // ── 读边：结算前余额（截断/分摊的输入）──────────────────────────────
     let balances: ReadonlyMap<string, number>;
     try {
-      balances = await this.readBalances(seats.map((s) => s.ownerId));
+      balances = await this.readBalances(seats.map((s) => s.ownerId), gameType);
     } catch (err) {
-      this.dropError(roomCode, version, 'balance read failed', err);
+      this.dropError(roomCode, version, gameType, 'balance read failed', err);
       return;
     }
 
@@ -399,7 +406,7 @@ export class SettleService {
 
     if (computed.entries.length === 0) {
       // 全零（规格 §4/§5）：不调 apply；仍走「广播 + moneyDelta(全 0)」收尾（三态之二）。
-      currencySettleResultTotal.inc({ result: 'ok' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'ok' });
       this.logger.log(
         `Currency settle for room ${roomCode} (version ${version}): all deltas zero — no apply (broadcast + moneyDelta only)`,
       );
@@ -410,16 +417,16 @@ export class SettleService {
     let outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
       residue: computed.residue,
       rake: computed.rakeTotal,
-    });
+    }, gameType);
 
     if (outcome.kind === 'r2') {
       // ── 14001 ⇒ 重读余额、重算，`:r2` 重发**至多一轮**（规格 §5）────────────
-      currencySettleResultTotal.inc({ result: 'r2' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'r2' });
       let balances2: ReadonlyMap<string, number>;
       try {
-        balances2 = await this.readBalances(seats.map((s) => s.ownerId));
+        balances2 = await this.readBalances(seats.map((s) => s.ownerId), gameType);
       } catch (err) {
-        this.dropError(roomCode, version, 'balance re-read for :r2 failed', err);
+        this.dropError(roomCode, version, gameType, 'balance re-read for :r2 failed', err);
         return;
       }
       balancesUsed = balances2;
@@ -435,14 +442,14 @@ export class SettleService {
       });
       if (computed.entries.length === 0) {
         // 重算后全零（P 被新余额截到 0 —— 理论极罕见）：与全零局同处置。
-        currencySettleResultTotal.inc({ result: 'ok' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'ok' });
         await this.finalize({ roomCode, version, seats, computed, data: null, preBalances: balances2, gameType, playerCount });
         return;
       }
       outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
         residue: computed.residue,
         rake: computed.rakeTotal,
-      });
+      }, gameType);
       if (outcome.kind === 'r2') {
         // 仍 14001（规格 §5：至多一轮 ⇒ 入 outbox；不再重算）。
         outcome = { kind: 'outboxed', error: new Error('14001 persisted after :r2 recompute') };
@@ -479,19 +486,20 @@ export class SettleService {
         this.dropError(
           roomCode,
           version,
+          gameType,
           `settle outbox write failed (round ${round}) — entry NOT queued; manual reconciliation by actionId=${computed.actionId}`,
           err,
         );
         return;
       }
-      currencySettleResultTotal.inc({ result: 'outboxed' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'outboxed' });
       this.logger.error(
         `Currency settle outboxed for room ${roomCode} (version ${version}, round ${round}): apply failed after retries — sweeper will resend (actionId=${computed.actionId})`,
       );
       return;
     }
 
-    currencySettleResultTotal.inc({ result: outcome.kind });
+    incGame(currencySettleResultTotal, gameType, 1, { result: outcome.kind });
     await this.finalize({
       roomCode,
       version,
@@ -516,12 +524,13 @@ export class SettleService {
     version: number,
     round: 1 | 2,
     burn: CurrencyBurn,
+    gameType: GameType,
   ): Promise<ApplyOutcome> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= SETTLE_RETRY_BACKOFF_MS.length; attempt += 1) {
       if (attempt > 0) {
         await sleep(SETTLE_RETRY_BACKOFF_MS[attempt - 1]!);
-        currencySettleResultTotal.inc({ result: 'retried' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'retried' });
       }
       try {
         const data = await this.currency.apply({
@@ -530,6 +539,7 @@ export class SettleService {
           entries,
           refId: `${roomCode}:${version}`,
           burn,
+          gameType,
         });
         return data.replayed ? { kind: 'replayed', data } : { kind: 'ok', data };
       } catch (err) {
@@ -541,6 +551,7 @@ export class SettleService {
             this.dropError(
               roomCode,
               version,
+              gameType,
               `apply rejected as invalid (10001, round ${round}; deterministic — not retried, not outboxed)`,
               err,
             );
@@ -549,6 +560,7 @@ export class SettleService {
             this.dropError(
               roomCode,
               version,
+              gameType,
               `apply conflict (14002, round ${round}; another settlement won — money_delta stays NULL, reconcile via currency_flows)`,
               err,
             );
@@ -570,12 +582,12 @@ export class SettleService {
    *
    * `exists=false` 的账户契约上 `balance` 就是 0 ⇒ 直接采用（缺失条目按 0 兜底）。
    */
-  private async readBalances(ownerIds: string[]): Promise<Map<string, number>> {
+  private async readBalances(ownerIds: string[], gameType: GameType): Promise<Map<string, number>> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= SETTLE_RETRY_BACKOFF_MS.length; attempt += 1) {
       if (attempt > 0) {
         await sleep(SETTLE_RETRY_BACKOFF_MS[attempt - 1]!);
-        currencySettleResultTotal.inc({ result: 'retried' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'retried' });
       }
       try {
         const { balances } = await this.currency.get({ ownerIds });
@@ -602,6 +614,7 @@ export class SettleService {
     botBySeat: ReadonlyMap<number, string>,
     version: number,
     playerCount: number,
+    gameType: GameType,
   ): SettleSeatRef[] | null {
     const players = room.players;
     const seatIndexes = Array.from({ length: playerCount }, (_, seat) => seat);
@@ -611,6 +624,7 @@ export class SettleService {
       this.dropWarn(
         room.code,
         version,
+        gameType,
         `room seats incomplete (expected ${playerCount}, players=[${players.map((p) => p.seat).join(',')}])`,
       );
       return null;
@@ -624,7 +638,7 @@ export class SettleService {
         return botId ? { seat: p.seat, ownerId: botId, ownerType: 'robot' as const } : null;
       });
     if (refs.some((ref) => ref === null)) {
-      this.dropWarn(room.code, version, 'robot seat mapping missing (botBySeat incomplete)');
+      this.dropWarn(room.code, version, gameType, 'robot seat mapping missing (botBySeat incomplete)');
       return null;
     }
     return refs as SettleSeatRef[];
@@ -648,7 +662,7 @@ export class SettleService {
     const { roomCode, version, seats, computed, data, preBalances, gameType, playerCount } = args;
 
     // 残差销毁记账（§4）：**零和局也 inc 0** —— 任何金币局之后该序列必然出现（H 组据此核对）。
-    currencySettleResidueTotal.inc(computed.residue);
+    incGame(currencySettleResidueTotal, gameType, computed.residue);
     if (computed.residue > 0 || computed.rakeTotal > 0) {
       this.logger.log(
         `Currency settle residue for room ${roomCode} (version ${version}): residue=${computed.residue} rake=${computed.rakeTotal} (destroyed — cross-check via currency_flows)`,
@@ -678,6 +692,7 @@ export class SettleService {
     try {
       await this.pushMoneyDelta(roomCode, version, computed.deltas, gameType, playerCount);
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.error(
         `Currency moneyDelta queueing failed for room ${roomCode} (version ${version}): ${String(err)}`,
       );
@@ -749,10 +764,12 @@ export class SettleService {
         );
         return;
       }
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `record.moneyDelta partial for room ${roomCode} (version ${version}): matched=[${matched.join(',')}] — queued for sweep`,
       );
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `record.moneyDelta failed for room ${roomCode} (version ${version}): ${String(err)} — queued for sweep`,
       );
@@ -779,9 +796,10 @@ export class SettleService {
    * 清除在后**（规格 §5 字面顺序；崩在两者之间只多一次幂等重放，不留永久缺失）。
    */
   async resendSettleOutboxEntry(field: string, entry: SettleOutboxEntry, now: number): Promise<void> {
+    const gameType = isGameType(entry.gameType) ? entry.gameType : DEFAULT_GAME_TYPE;
     if (now - entry.createdAt > SETTLE_OUTBOX_TTL_MS) {
       await this.redis.hdel(SETTLE_OUTBOX_KEY, field);
-      currencySettleResultTotal.inc({ result: 'dropped' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
       this.logger.error(
         `Currency settle outbox entry abandoned for room ${entry.roomCode} (version ${entry.gameVersion}, round ${entry.round}): age exceeded 1h — manual runbook (reconcile via currency_flows by actionId=${entry.actionId})`,
       );
@@ -800,8 +818,10 @@ export class SettleService {
         entries: entry.entries,
         refId: `${entry.roomCode}:${entry.gameVersion}`,
         ...burnPayload,
+        // A2：旧条目（无 gameType）不得凭空补 ddz；新条目原样带回。
+        ...(entry.gameType === undefined ? {} : { gameType: entry.gameType }),
       });
-      currencySettleResultTotal.inc({ result: data.replayed ? 'replayed' : 'ok' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: data.replayed ? 'replayed' : 'ok' });
       this.logger.log(
         `Currency settle outbox entry delivered for room ${entry.roomCode} (version ${entry.gameVersion}, round ${entry.round}, replayed=${String(data.replayed)})`,
       );
@@ -825,7 +845,7 @@ export class SettleService {
         data,
         preBalances: new Map(),
         // 多玩法（Task 2.5 / N2）：从**条目**取（旧条目缺字段 ⇒ 斗地主/3）。
-        gameType: entry.gameType ?? DEFAULT_GAME_TYPE,
+        gameType,
         playerCount: entry.playerCount ?? 3,
       });
       await this.redis.hdel(SETTLE_OUTBOX_KEY, field);
@@ -838,6 +858,7 @@ export class SettleService {
         this.dropError(
           entry.roomCode,
           entry.gameVersion,
+          gameType,
           `outbox resend terminal (code ${err.code}; money_delta stays NULL)`,
           err,
         );
@@ -856,9 +877,11 @@ export class SettleService {
     entry: RecordMoneyOutboxEntry,
     now: number,
   ): Promise<void> {
+    const gameType = isGameType(entry.gameType) ? entry.gameType : DEFAULT_GAME_TYPE;
     if (now - entry.createdAt > SETTLE_OUTBOX_TTL_MS) {
       await this.redis.hdel(RECORD_MONEY_OUTBOX_KEY, field);
-      currencySettleResultTotal.inc({ result: 'dropped' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.error(
         `recordmoney:outbox entry abandoned for room ${entry.roomCode} (version ${entry.gameVersion}): age exceeded 1h — money_delta stays NULL (manual runbook)`,
       );
@@ -866,7 +889,6 @@ export class SettleService {
     }
     try {
       // 多玩法（Task 2.5 / H6）：从**条目**取（旧条目缺字段 ⇒ 斗地主/3）。
-      const gameType = entry.gameType ?? DEFAULT_GAME_TYPE;
       const playerCount = entry.playerCount ?? 3;
       const meta = gameMetaOf(gameType, playerCount);
       const { matched } = await this.record.moneyDelta({
@@ -882,10 +904,12 @@ export class SettleService {
         );
         return;
       }
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `recordmoney:outbox resend still partial for room ${entry.roomCode} (version ${entry.gameVersion}): matched=[${matched.join(',')}] — kept for next sweep`,
       );
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `recordmoney:outbox resend failed for room ${entry.roomCode} (version ${entry.gameVersion}): ${String(err)} — kept for next sweep`,
       );
@@ -895,8 +919,13 @@ export class SettleService {
   // ─── 日志 / 指标小工具 ─────────────────────────────────────────────
 
   /** 守卫不齐（金币局异常终局，人工核；理论不发生）⇒ WARN + `dropped` 指标、不结算。 */
-  private dropWarn(roomCode: string, version: number | undefined, reason: string): void {
-    currencySettleResultTotal.inc({ result: 'dropped' });
+  private dropWarn(
+    roomCode: string,
+    version: number | undefined,
+    gameType: GameType,
+    reason: string,
+  ): void {
+    incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
     this.logger.warn(
       `Currency settle skipped for room ${roomCode} (version ${String(version)}): ${reason}`,
     );
@@ -906,10 +935,11 @@ export class SettleService {
   private dropError(
     roomCode: string,
     version: number | undefined,
+    gameType: GameType,
     reason: string,
     err?: unknown,
   ): void {
-    currencySettleResultTotal.inc({ result: 'dropped' });
+    incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
     this.logger.error(
       `Currency settle failed for room ${roomCode} (version ${String(version)}): ${reason}${err === undefined ? '' : ` — ${String(err)}`}`,
     );

@@ -33,7 +33,7 @@ import {
 import type { ConfigCacheService } from '../../src/config/config-cache.service';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from '../helpers/config-cache.stub';
 import { installSink, restoreLogger } from './helpers';
-import { labeledValue, metricValue } from '../helpers/metric-readout';
+import { labeledValue } from '../helpers/metric-readout';
 import {
   currencyRobotEnsureFailedTotal,
   currencyRobotTopupTotal,
@@ -84,10 +84,13 @@ function makeHarness(): FundingHarness {
   return { svc, currency, configCache };
 }
 
-const topupCount = async (action: 'refill' | 'recall'): Promise<number> =>
-  (await labeledValue(currencyRobotTopupTotal, { action })) ?? 0;
-const ensureFailedCount = async (): Promise<number> =>
-  metricValue(currencyRobotEnsureFailedTotal);
+const topupCount = async (
+  action: 'refill' | 'recall',
+  gameType = 'doudizhu',
+): Promise<number> =>
+  (await labeledValue(currencyRobotTopupTotal, { action, game_type: gameType })) ?? 0;
+const ensureFailedCount = async (gameType = 'doudizhu'): Promise<number> =>
+  (await labeledValue(currencyRobotEnsureFailedTotal, { game_type: gameType })) ?? 0;
 
 describe('RobotFunding.ensureBots：补给观测 → 注资（规格 §7 上半）', () => {
   let h: FundingHarness;
@@ -114,6 +117,7 @@ describe('RobotFunding.ensureBots：补给观测 → 注资（规格 §7 上半�
       actionId: `rr:${BOT}:${LEVELS.target}:0`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -LEVELS.target },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target },
@@ -144,6 +148,7 @@ describe('RobotFunding.ensureBots：补给观测 → 注资（规格 §7 上半�
       actionId: `rr:${BOT}:${LEVELS.target}:5000`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -(LEVELS.target - 5000) },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target - 5000 },
@@ -300,6 +305,7 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
       actionId: `rr:${BOT}:${LEVELS.target}:${after}`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: -(LEVELS.target - after) },
         { ownerId: BOT, ownerType: 'robot', delta: LEVELS.target - after },
@@ -318,6 +324,7 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
       actionId: `rc:${BOT}:${LEVELS.target}:${after}`,
       source: 'robot_pool',
       refId: BOT,
+      gameType: 'doudizhu',
       entries: [
         { ownerId: BOT, ownerType: 'robot', delta: -(after - LEVELS.target) },
         { ownerId: ROBOT_POOL_OWNER_ID, ownerType: 'robot', delta: after - LEVELS.target },
@@ -436,6 +443,7 @@ describe('RobotFunding：水位按玩法取档位/倍率（2026-10-24 平行化�
     expect(h.currency.apply.mock.calls[0]![0].actionId).toBe(
       `rr:${BOT}:${robotWaterLevels(BOT, pdkTop).target}:0`,
     );
+    expect(h.currency.apply.mock.calls[0]![0].gameType).toBe('paodekuai');
 
     h.currency.apply.mockClear();
     await h.svc.ensureBots([BOT], 'doudizhu');
@@ -443,5 +451,17 @@ describe('RobotFunding：水位按玩法取档位/倍率（2026-10-24 平行化�
     expect(h.currency.apply.mock.calls[0]![0].actionId).toBe(
       `rr:${BOT}:${robotWaterLevels(BOT, ddzTop).target}:0`,
     );
+  });
+
+  it('A1：补款与 ensure 失败按 game_type 计数', async () => {
+    const h = makeHarness();
+    const beforeRefill = await topupCount('refill', 'paodekuai');
+    await h.svc.ensureBots(['bot-1'], 'paodekuai');
+    expect(await topupCount('refill', 'paodekuai')).toBe(beforeRefill + 1);
+
+    const beforeFailed = await ensureFailedCount('paodekuai');
+    h.currency.get.mockRejectedValueOnce(new Error('down'));
+    await h.svc.ensureBots(['bot-2'], 'paodekuai').catch(() => undefined);
+    expect(await ensureFailedCount('paodekuai')).toBe(beforeFailed + 1);
   });
 });

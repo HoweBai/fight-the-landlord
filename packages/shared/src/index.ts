@@ -34,6 +34,7 @@ export * from './logging/capturing-sink';
 export * from './metrics/registry';
 export * from './metrics/http-metrics';
 export * from './metrics/metrics-listener';
+export * from './metrics/game-label';
 
 // 玩家管理页（2026-10-22）：在线 presence 键/窗口 + 玩家汇总快照键的跨服务单一真源。
 export * from './presence/online';

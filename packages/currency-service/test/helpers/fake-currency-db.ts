@@ -34,6 +34,8 @@ export interface FakeOpRow {
   actionId: string;
   requestHash: string;
   source: string;
+  /** A2：游戏相关来源的玩法；非游戏来源 NULL。 */
+  gameType: string | null;
   actor: string | null;
   reason: string | null;
   refId: string | null;
@@ -57,6 +59,8 @@ export interface FakeSkipRow {
   roomCode: string;
   ownerId: string;
   seat: number | null;
+  /** A2：免单所属玩法（旧载荷缺省 = doudizhu）。 */
+  gameType: string;
   baseScore: number;
   feeAmount: number;
   reason: string;
@@ -121,7 +125,7 @@ interface Scratch {
 
 /** 本实现的语句形状（逐字；与 `apply.service.ts` 的常量一一对应）。 */
 const SQL = {
-  opsInsert: /^INSERT INTO `currency_ops` \(`action_id`, `request_hash`, `source`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`\) VALUES \(/,
+  opsInsert: /^INSERT INTO `currency_ops` \(`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`\) VALUES \(/,
   opsSelect: /^SELECT `id`, `request_hash` FROM `currency_ops` WHERE `action_id` = \?$/,
   typeSelect: /^SELECT `owner_type` FROM `currency_accounts` WHERE `owner_id` = \?$/,
   /** ⚙️14②：⚙️12 重查的锁定读形态（与步 a 的普通读**分认**，可判别实现漂移）。 */
@@ -135,7 +139,7 @@ const SQL = {
     /^SELECT `balance`, `owner_type` FROM `currency_accounts` WHERE `owner_id` = \? FOR UPDATE$/,
   flowInsert: /^INSERT INTO `currency_flows` \(`op_id`, `owner_id`, `owner_type`, `delta`, `balance_after`\) VALUES \(/,
   flowsByOp: /^SELECT `owner_id`, `balance_after` FROM `currency_flows` WHERE `op_id` = \? ORDER BY `owner_id`$/,
-  skipInsertIgnore: /^INSERT IGNORE INTO `currency_entry_fee_skips` \(`room_code`, `owner_id`, `seat`, `base_score`, `fee_amount`, `reason`, `trace_id`\) VALUES \(/,
+  skipInsertIgnore: /^INSERT IGNORE INTO `currency_entry_fee_skips` \(`room_code`, `owner_id`, `seat`, `game_type`, `base_score`, `fee_amount`, `reason`, `trace_id`\) VALUES \(/,
   // 记牌器收费片：购买/权益/消费
   purchaseInsert: /^INSERT INTO `card_counter_purchases` \(`action_id`, `owner_id`, `kind`, `hours`, `credits`, `price`\) VALUES \(/,
   entitlementGameUpsert: /^INSERT INTO `card_counter_entitlements` \(`owner_id`, `credits`, `pass_expires_at`\) VALUES \(\?, \?, NULL\) ON DUPLICATE KEY UPDATE `credits` = `credits` \+ \?$/,
@@ -268,6 +272,7 @@ export class FakeCurrencyDb {
       actionId: op.actionId,
       requestHash: op.requestHash,
       source: op.source ?? 'admin_adjust',
+      gameType: null,
       actor: 'admin',
       reason: 'seed',
       refId: null,
@@ -309,15 +314,15 @@ export class FakeCurrencyDb {
       if (SQL.skipInsertIgnore.test(sql)) {
         // 本片 T3：skip 写边经 `dataSource.query` 非事务直写（幂等写 = 唯一键 + INSERT IGNORE）。
         // 「重复 ⇒ affectedRows 0」语义照 `accountInsertIgnore` 先例（行数与内容都不变）。
-        const [roomCode, ownerId, seat, baseScore, feeAmount, reason, traceId] = params as [
-          string, string, number | null, number, number, string, string | null,
+        const [roomCode, ownerId, seat, gameType, baseScore, feeAmount, reason, traceId] = params as [
+          string, string, number | null, string, number, number, string, string | null,
         ];
         if (this.skips.some((s) => s.roomCode === roomCode && s.ownerId === ownerId)) {
           return Promise.resolve({ affectedRows: 0 });
         }
         this.skips.push({
           id: this.nextSkipId++,
-          roomCode, ownerId, seat, baseScore, feeAmount, reason, traceId,
+          roomCode, ownerId, seat, gameType, baseScore, feeAmount, reason, traceId,
         });
         return Promise.resolve({ affectedRows: 1 });
       }
@@ -493,12 +498,13 @@ export class FakeCurrencyDb {
         actionId,
         requestHash: params[1] as string,
         source: params[2] as string,
-        actor: (params[3] ?? null) as string | null,
-        reason: (params[4] ?? null) as string | null,
-        refId: (params[5] ?? null) as string | null,
-        traceId: (params[6] ?? null) as string | null,
-        burnedResidue: (params[7] ?? null) as number | null,
-        burnedRake: (params[8] ?? null) as number | null,
+        gameType: (params[3] ?? null) as string | null,
+        actor: (params[4] ?? null) as string | null,
+        reason: (params[5] ?? null) as string | null,
+        refId: (params[6] ?? null) as string | null,
+        traceId: (params[7] ?? null) as string | null,
+        burnedResidue: (params[8] ?? null) as number | null,
+        burnedRake: (params[9] ?? null) as number | null,
       });
       return Promise.resolve({ insertId: id, affectedRows: 1 });
     }

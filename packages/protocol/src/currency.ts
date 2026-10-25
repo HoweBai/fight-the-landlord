@@ -11,6 +11,7 @@
  * 其逐字节正确性由 `currency.test.ts` 用 `node:crypto`（仅测试侧）交叉复算兜住。
  */
 import type { RpcMeta, RpcResult } from './rpc';
+import { GAME_TYPES, isGameType, type GameType } from './game';
 import { ProtocolError } from './validate';
 
 /** source allowlist（② 金币场已扩容：+game_settle/+robot_pool/+relief_grant；③ T1：+admin_reverse——写入口单点；
@@ -37,6 +38,24 @@ export type CurrencySource = (typeof CURRENCY_SOURCES)[number];
 /** ownerType allowlist（`robot` 为 ② 的机器人虚拟币池预埋，本片无写入者）。 */
 export const CURRENCY_OWNER_TYPES = ['user', 'robot'] as const;
 export type CurrencyOwnerType = (typeof CURRENCY_OWNER_TYPES)[number];
+
+/**
+ * 可携带 `gameType` 的**游戏相关来源**（A2 / spec D1）。
+ *
+ * 其余来源（注册赠送、管理调整/冲正、支付五源、救助）不属于某一局玩法：携带 gameType ⇒ 10001。
+ * 本片所有 `currency_ops.game_type` 的非空值都来自这四个来源；非游戏来源落 NULL。
+ */
+export const GAME_SCOPED_CURRENCY_SOURCES = [
+  'game_settle',
+  'robot_pool',
+  'entry_fee',
+  'card_counter',
+] as const;
+export type GameScopedCurrencySource = (typeof GAME_SCOPED_CURRENCY_SOURCES)[number];
+
+export function isGameScopedCurrencySource(source: string): source is GameScopedCurrencySource {
+  return (GAME_SCOPED_CURRENCY_SOURCES as readonly string[]).includes(source);
+}
 
 export interface CurrencyEntryIn {
   ownerId: string;
@@ -71,6 +90,12 @@ export interface CurrencyApplyRequest {
   refId?: string;
   /** 仅 `game_settle` 可携带（结算销毁两列的来源）；「在场」谓词统一 = `!== undefined`。 */
   burn?: CurrencyBurn;
+  /**
+   * A2：游戏相关来源（`game_settle`/`robot_pool`/`entry_fee`/`card_counter`）可携带；
+   * 缺席由 currency-service 按来源归一（游戏相关 ⇒ `doudizhu`，历史 RPC 兼容）。
+   * **不参与 `request_hash`**（spec D3）：旧 outbox/旧 RPC 指纹逐字节不变。
+   */
+  gameType?: GameType;
   meta?: RpcMeta;
 }
 
@@ -166,13 +191,26 @@ export function normalizeOwnerType(v: unknown): CurrencyOwnerType {
  */
 export function validateCurrencyApply(req: unknown): void {
   if (!isObj(req)) throw new ProtocolError('currency.apply 请求必须是对象');
-  const { actionId, source, entries, actor, reason, refId, burn } = req;
+  const { actionId, source, entries, actor, reason, refId, burn, gameType } = req;
 
   if (typeof actionId !== 'string' || actionId.length === 0 || actionId.length > 128) {
     throw new ProtocolError(`actionId 必须是 1..128 字符的非空字符串（收到 ${JSON.stringify(actionId)}）`);
   }
   if (typeof source !== 'string' || !(CURRENCY_SOURCES as readonly string[]).includes(source)) {
     throw new ProtocolError(`source 必须是 ${CURRENCY_SOURCES.join(' / ')} 之一（收到 ${JSON.stringify(source)}）`);
+  }
+  // A2（D1）：gameType 只允许游戏相关来源；非法值/越界来源都在**进库前**拒。
+  if (gameType !== undefined) {
+    if (!isGameType(gameType)) {
+      throw new ProtocolError(
+        `gameType 必须是 ${GAME_TYPES.join(' / ')} 之一（收到 ${JSON.stringify(gameType)}）`,
+      );
+    }
+    if (!isGameScopedCurrencySource(source)) {
+      throw new ProtocolError(
+        `source=${source} 不接受 gameType（仅 ${GAME_SCOPED_CURRENCY_SOURCES.join(' / ')}）`,
+      );
+    }
   }
   // source 已过 allowlist ⇒ 收窄安全（§8 逐字：缺省 1e6；消息里的上限显示 cap）
   const cap = MAX_ABS_DELTA_BY_SOURCE[source as CurrencySource] ?? MAX_ABS_DELTA;
@@ -293,6 +331,8 @@ export interface CurrencyEntryFeeSkipRequest {
   /** 单笔台费（正整数 ≤ 1,000,000；公式上界 8191，此界为域哨兵）。 */
   feeAmount: number;
   reason: EntryFeeSkipReason;
+  /** A2（D6）：缺席 = doudizhu；仅接受 `GameType`。 */
+  gameType?: GameType;
   meta?: RpcMeta;
 }
 
@@ -344,7 +384,7 @@ export function validateCurrencyCardCounterConsume(req: unknown): void {
  */
 export function validateCurrencyEntryFeeSkip(req: unknown): void {
   if (!isObj(req)) throw new ProtocolError('currency.entryFeeSkip 请求必须是对象');
-  const { roomCode, ownerId, seat, baseScore, feeAmount, reason } = req;
+  const { roomCode, ownerId, seat, baseScore, feeAmount, reason, gameType } = req;
 
   if (typeof roomCode !== 'string' || roomCode.length === 0 || roomCode.length > 16) {
     throw new ProtocolError(`roomCode 必须是 1..16 字符的非空字符串（收到 ${JSON.stringify(roomCode)}）`);
@@ -366,6 +406,11 @@ export function validateCurrencyEntryFeeSkip(req: unknown): void {
       `reason 必须是 ${ENTRY_FEE_SKIP_REASONS.join(' / ')} 之一（收到 ${JSON.stringify(reason)}）`,
     );
   }
+  if (gameType !== undefined && !isGameType(gameType)) {
+    throw new ProtocolError(
+      `gameType 必须是 ${GAME_TYPES.join(' / ')} 之一（收到 ${JSON.stringify(gameType)}）`,
+    );
+  }
 }
 
 /**
@@ -384,6 +429,11 @@ export function currencyApplyHash(input: {
   reason?: string;
   refId?: string;
   burn?: CurrencyBurn;
+  /**
+   * A2（D3）：**刻意不写入 canonical**。类型上保留是为了让调用方/测试可以原样传
+   * `CurrencyApplyRequest`，同时钉住「gameType 不参与指纹」的兼容契约。
+   */
+  gameType?: GameType;
 }): string {
   const entries = [...input.entries]
     .sort((a, b) => (a.ownerId < b.ownerId ? -1 : a.ownerId > b.ownerId ? 1 : 0))

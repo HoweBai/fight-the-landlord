@@ -38,7 +38,11 @@ import { RobotFunding } from '../currency/robot-funding';
 import { ReconnectService } from '../reconnect/reconnect.service';
 import { ConfigCacheService } from '../config/config-cache.service';
 // 监控片（规格 §2.2）：模块级计数常量（不做成注入 —— 见 room.metrics.ts 头注）。
-import { gamesStartedTotal } from '../metrics/room.metrics';
+import { gameStartFailuresTotal, gamesStartedTotal } from '../metrics/room.metrics';
+import { incGame } from '@fight-the-landlord/shared';
+
+/** A1：failPdkStart 的指标 reason 枚举；null = start_rpc 已在 startAndAnnounce 的 catch 计过。 */
+type PdkStartFailureReason = 'bot_fill' | 'pending_write' | 'rules' | null;
 import { entryFeeConflictTotal, entryFeeSkippedTotal } from '../metrics/room.metrics';
 import { cardCounterConsumedTotal, cardCounterConsumeErrorTotal } from '../metrics/room.metrics';
 
@@ -220,9 +224,11 @@ export class RoomStartService {
 
     const filled = await this.fillBots(code, room);
     if (!filled) {
-      return isPdk
-        ? this.failPdkStart(code, room, room.players, 'bot fill failed', options.onSeats)
-        : 'fatal';
+      if (isPdk) {
+        return this.failPdkStart(code, room, room.players, 'bot_fill', 'bot fill failed', options.onSeats);
+      }
+      incGame(gameStartFailuresTotal, gameType, 1, { reason: 'bot_fill' });
+      return 'fatal';
     }
 
     /**
@@ -270,9 +276,13 @@ export class RoomStartService {
       }
     } catch (err) {
       this.logger.error(`Failed to store match:pending / reconnect record for ${code}: ${String(err)}`);
-      return isPdk
-        ? this.failPdkStart(code, room, filled.seats, 'match:pending write failed', options.onSeats)
-        : 'fatal';
+      if (isPdk) {
+        return this.failPdkStart(
+          code, room, filled.seats, 'pending_write', 'match:pending write failed', options.onSeats,
+        );
+      }
+      incGame(gameStartFailuresTotal, gameType, 1, { reason: 'pending_write' });
+      return 'fatal';
     }
 
     /**
@@ -302,6 +312,7 @@ export class RoomStartService {
           code,
           room,
           filled.seats,
+          'rules',
           `pdk rules unavailable: ${err instanceof Error ? err.message : String(err)}`,
           options.onSeats,
         );
@@ -313,6 +324,7 @@ export class RoomStartService {
       try {
         await options.onSeats(filled.seats);
       } catch (err) {
+        incGame(gameStartFailuresTotal, gameType, 1, { reason: 'on_seats' });
         this.logger.error(`onSeats hook failed for ${code}: ${String(err)}`);
         return 'fatal';
       }
@@ -334,7 +346,8 @@ export class RoomStartService {
 
     if (!ok) {
       if (isPdk) {
-        return this.failPdkStart(code, room, filled.seats, 'game.start failed', options.onSeats);
+        // start_rpc 已在 startAndAnnounce 的 catch 计过；这里只做重试/取消
+        return this.failPdkStart(code, room, filled.seats, null, 'game.start failed', options.onSeats);
       }
       // 斗地主旧语义：strict 失败 ⇒ fatal（startGroup 的 cancel 分支）；
       // strict:false 的失败仍写 playing（N36）⇒ legacy-failed（包装层 false、不加 cancel）。
@@ -382,20 +395,25 @@ export class RoomStartService {
     code: string,
     room: Room,
     seats: Seat[],
-    reason: string,
+    metricReason: PdkStartFailureReason,
+    detail: string,
     onSeats?: (seats: Seat[]) => Promise<void>,
   ): Promise<StartRoomOutcome> {
     const key = startAttemptsKey(code);
     const attempts = await this.redis.incr(key);
     await this.redis.expire(key, ROOM_TTL_SECONDS);
+    if (metricReason !== null) {
+      incGame(gameStartFailuresTotal, 'paodekuai', 1, { reason: metricReason });
+    }
     const expired = isWaitingExpired(room, this.rooms.now());
     this.logger.warn(
-      `pdk start failed for ${code} (attempt ${attempts}/${START_ATTEMPTS_MAX}${expired ? ', waiting expired' : ''}): ${reason}`,
+      `pdk start failed for ${code} (attempt ${attempts}/${START_ATTEMPTS_MAX}${expired ? ', waiting expired' : ''}): ${detail}`,
     );
 
     if (attempts >= START_ATTEMPTS_MAX || expired) {
       const cancelled = await this.rooms.cancelIfStillWaiting(code);
       if (cancelled) {
+        incGame(gameStartFailuresTotal, 'paodekuai', 1, { reason: 'cancelled' });
         // spec §4.6.3：终局取消**要清票**（按 queueKeyOfTicket —— 由匹配侧的 onSeats 回调完成）。
         // 与 retryable 的「不取消票」相对：重试期间票必须留着，否则人票两空。
         if (onSeats) {
@@ -773,7 +791,7 @@ export class RoomStartService {
         await new Promise((resolve) => setTimeout(resolve, ENTRY_FEE_RETRY_BACKOFF_MS[attempt - 1]!));
       }
       try {
-        const data = await this.currency.apply({ actionId, source: ENTRY_FEE_SOURCE, entries, refId: code });
+        const data = await this.currency.apply({ actionId, source: ENTRY_FEE_SOURCE, entries, refId: code, gameType });
         await this.writeBackFeeBalance(code, seat, ownerId, data);
         return;
       } catch (err) {
@@ -788,7 +806,7 @@ export class RoomStartService {
             this.logger.error(
               `entry fee conflict（同锚已有成功提交，视为已收——不记漏收）room=${code} owner=${ownerId} actionId=${actionId}`,
             );
-            entryFeeConflictTotal.inc();
+            incGame(entryFeeConflictTotal, gameType, 1);
             return;
           }
           if (err.code === ErrCode.UPSTREAM_UNAVAILABLE) {
@@ -865,15 +883,16 @@ export class RoomStartService {
         baseScore,
         feeAmount: fee,
         reason,
+        gameType,
       });
       if (!inserted) {
         this.logger.debug(`entry_fee.skipped（同房重复，未新增行）${fields}`);
         return;
       }
-      entryFeeSkippedTotal.inc({ reason });
+      incGame(entryFeeSkippedTotal, gameType, 1, { reason });
       this.logger.warn(`entry_fee.skipped ${fields}`);
     } catch (err) {
-      entryFeeSkippedTotal.inc({ reason });
+      incGame(entryFeeSkippedTotal, gameType, 1, { reason });
       this.logger.warn(`entry_fee.skipped（落行失败）${fields} —— ${String(err)}`);
     }
   }
@@ -926,6 +945,7 @@ export class RoomStartService {
         ...(testHooks.testDeck === undefined ? {} : { testDeck: testHooks.testDeck }),
       });
     } catch (err) {
+      incGame(gameStartFailuresTotal, gameType, 1, { reason: 'start_rpc' });
       this.logger.error(`Failed to start game for room ${code}: ${String(err)}`);
       ok = false;
     }
@@ -946,7 +966,7 @@ export class RoomStartService {
      *     `game.start` 幂等复用会话、状态写成功后**恰补记一次** —— 若放在 `game.start`
      *     之后，这条重试会把同一局计两次。
      */
-    if (ok) gamesStartedTotal.inc();
+    if (ok) incGame(gamesStartedTotal, gameType);
     if (!announceFirst) await this.announce(code, seats, gameType, playerCount);
     return ok;
   }

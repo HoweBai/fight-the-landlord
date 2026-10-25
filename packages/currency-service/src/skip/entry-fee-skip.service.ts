@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
+  DEFAULT_GAME_TYPE,
   ErrCode,
   validateCurrencyEntryFeeSkip,
   type CurrencyEntryFeeSkipResponse,
+  type GameType,
 } from '@fight-the-landlord/protocol';
 
 /**
@@ -21,8 +23,8 @@ import {
  *  - **不建账**：审计表，非资金表；任何情况下不动钱、不抛业务错以外的异常。
  */
 const SKIP_INSERT_SQL =
-  'INSERT IGNORE INTO `currency_entry_fee_skips` (`room_code`, `owner_id`, `seat`, `base_score`, `fee_amount`, `reason`, `trace_id`) ' +
-  'VALUES (?, ?, ?, ?, ?, ?, ?)';
+  'INSERT IGNORE INTO `currency_entry_fee_skips` (`room_code`, `owner_id`, `seat`, `game_type`, `base_score`, `fee_amount`, `reason`, `trace_id`) ' +
+  'VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
 
 @Injectable()
 export class EntryFeeSkipService {
@@ -39,6 +41,7 @@ export class EntryFeeSkipService {
       baseScore: number;
       feeAmount: number;
       reason: 'insufficient_funds' | 'unknown_outcome' | 'internal_error';
+      gameType?: GameType;
       meta?: { traceId: string };
     };
     try {
@@ -54,6 +57,7 @@ export class EntryFeeSkipService {
       request.roomCode,
       request.ownerId,
       request.seat ?? null,
+      request.gameType ?? DEFAULT_GAME_TYPE,
       request.baseScore,
       request.feeAmount,
       request.reason,

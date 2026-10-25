@@ -548,7 +548,7 @@ for agent in chain:
 | `agent.inviteEnabled` | 严格 boolean | false | 可见（裸名 `agentInviteEnabled`） |
 
 - `parseConfigValue` 增加分支；`CLIENT_CONFIG_KEYS` 增加裸名；`ClientConfig` 接口增加 `agentInviteEnabled: boolean`；客户端配置控制器读 `agent.inviteEnabled ?? false`；客户端 `ClientConfigState`/`FAILSAFE_CLIENT_CONFIG`/`normalizeClientConfig` 同步补字段（缺省 false）。
-- 计数闸：protocol 93→94、active 77→78、`verify:admin` IA 77→78、`CONFIG_CONTROLS` 72→73、`BOOL_KEYS` 35→36、`CONFIG_NOTES` 65→66。
+- 计数闸：protocol 93→94、active 77→78、`verify:admin` IA 77→78、`CONFIG_CONTROLS` 72→73、`BOOL_KEYS` 35→36、`CONFIG_NOTES` 65→66（**2026-10-26 合并 A1/A2 后 = 78**：PDK 备注 +11、代理 +1）。
 - IA 放新「代理」域的 `switches` 页签；`CONFIG_CONTROLS` 加 `type:'bool'`。
 - 写权限：网关字面路由 `PUT /api/admin/config/agent.inviteEnabled` → **super_admin**（先于 P4）。
 - 迁移种子：`('agent.inviteEnabled','false',1,NOW(3),'seed')`。
@@ -635,12 +635,12 @@ for agent in chain:
 8. **故障隔离**：注入语句级失败钩子 ⇒ 台费 apply 成功、无免单、gap + 指标；注入 1213/1205 ⇒ apply 失败（不空提交）；额度行首建并发不死锁。
 9. **树/比例不变量**：随机 reparent/改率 ⇒ `parent ≥ self ≥ max(child)` 或拒绝；无环；深度 ≤ 5；重复 agent 硬告警。
 10. **开关/生效时点**：`enabled` × `inviteEnabled` 2×2；`effective_from` 之前的 op 不产生任何行；`enabled=1 && effective_from IS NULL` ⇒ 不生效。
-11. **配置闸**：`CONFIG_KEYS` 恰 94、`CLIENT_CONFIG_KEYS` 恰 22、`verify:admin` IA 78 / CONTROLS 73 / BOOL 36 / NOTES 66；`errors.test.ts` SPEC_CODES 与 `CLIENT_ACTION` 全量。
+11. **配置闸**：`CONFIG_KEYS` 恰 94、`CLIENT_CONFIG_KEYS` 恰 22、`verify:admin` IA 78 / CONTROLS 73 / BOOL 36 / NOTES **78**（A1/A2 合并后）；`errors.test.ts` SPEC_CODES 与 `CLIENT_ACTION` 全量。
 12. **财务对账**：模拟一天，`E = ΣT×10000 + C + U`；每笔启用区间内的 entry_fee op 有 revenue event（含 unbound/skipped）或 gap；`fee = base + no-quota`；已付 ≤ 已结金币；关闭期 op 不计缺口。
 
 ### 14.2 真 MySQL / conformance
 
-- 新增 `tools/conformance/src/slices/slice-30-agent.ts`：死锁注入（额度首建并发）、保存点回滚后主事务、水位结算双会话、驳回/打款/复核、配置计数。
+- 新增 `tools/conformance/src/slices/slice-32-agent.ts`：死锁注入（额度首建并发）、保存点回滚后主事务、水位结算双会话、驳回/打款/复核、配置计数。
 - 假 DB 只能钉控制流；**不得**用它声称原子性。Docker 未跑时在交付报告里明说。
 
 ### 14.3 命令
@@ -652,13 +652,13 @@ for agent in chain:
 - `pnpm -C packages/api-gateway test && pnpm -C packages/api-gateway run lint`
 - `pnpm -C apps/client test && pnpm -C apps/client run lint`
 - `pnpm verify:admin`
-- 真栈 slice-30（需 Docker）。
+- 真栈 slice-32（需 Docker）。
 
 ---
 
 ## 15. 上线与回滚
 
-1. 迁移（currency `1797000000000-AgentDomain.ts`；config 用另一时间戳）→ 所有服务部署。
+1. 迁移（currency `1798000000000-AgentDomain.ts`；config 用另一时间戳）→ 所有服务部署。
 2. `agent_settings.enabled=false`、`agent.inviteEnabled=false`（暗上线）。
 3. 后台建测试代理 → 设比例 → 发码 → 测试玩家注册 → 打一局 → 看佣金/额度 → 申请/打款/驳回全链。
 4. 开 `enabled`（写 `effective_from`）→ 开 `inviteEnabled` → 客户端硬刷新。
@@ -672,7 +672,7 @@ for agent in chain:
 
 - `packages/protocol/src/config.ts`、`config.test.ts`、`errors.ts`、`errors.test.ts`、`rpc.ts`、`messages.test.ts`、`index.ts`
 - `apps/client/src/net/copy.ts`、`src/stores/game.ts`、`src/composables/useClientConfig.ts`
-- `packages/currency-service/src/agent/**`（新模块：ledger/math/accounts/bindings/settlements/portal/admin/auth/settings/metrics）、`apply/apply.service.ts`、`rpc/rpc.module.ts`、`app.module.ts`、`migrations/1797000000000-AgentDomain.ts`、`http/errors.ts`、`config/config-cache.service.ts`（如需）、`package.json`（jsonwebtoken）、测试
+- `packages/currency-service/src/agent/**`（新模块：ledger/math/accounts/bindings/settlements/portal/admin/auth/settings/metrics）、`apply/apply.service.ts`、`rpc/rpc.module.ts`、`app.module.ts`、`migrations/1798000000000-AgentDomain.ts`、`http/errors.ts`、`config/config-cache.service.ts`（如需）、`package.json`（jsonwebtoken）、测试
 - `packages/user-service/src/users/users.dto.ts`、`auth/auth.service.ts`、`auth/auth.module.ts`、`currency/currency.client.ts`、`rpc/user-agent-profile.rpc.controller.ts`（新）、`app.module.ts`、`http/errors.ts`、测试
 - `packages/api-gateway/src/auth/agent.middleware.ts`（新）、`auth/jwt.middleware.ts`、`auth/public-paths.ts`、`auth/identity-headers.ts`、`auth/admin-policy.ts`、`http/http-rate-limit.middleware.ts`、`http/rate-limit.ts`、`gateway/gateway.controller.ts`、`gateway/proxy.gateway.ts`、`app.module.ts`、测试
 - `packages/config-service/src/config/client-config.controller.ts`、`migrations/<ts>-AgentInviteKey.ts`、`test/migration.test.ts`、`test/client-config.test.ts`、`test/platform-config.service.test.ts`、`admin/app.js`（IA/controls/notes/CFG_NAV）、`admin/index.html`（代理配置叶锚点）、`scripts/verify-admin-static.mjs`
@@ -680,7 +680,7 @@ for agent in chain:
 - `agent/index.html`、`agent/app.js`、`agent/style.css`
 - `apps/client/src/pages/login/login.vue`、`src/net/rest.ts`、`src/stores/auth.ts`、config 类型/存储、测试
 - `Dockerfile.edge`、`deploy/Caddyfile`、`docker-compose.yml`（env：`AGENT_JWT_SECRET`、`AGENT_PHONE_HMAC_KEY`、`USER_SERVICE_RPC_HOST/PORT`）
-- `tools/conformance/src/slices/slice-30-agent.ts`、`tools/conformance/src/run.ts`、`tools/conformance/baselines.json`
+- `tools/conformance/src/slices/slice-32-agent.ts`、`tools/conformance/src/run.ts`、`tools/conformance/baselines.json`
 - `scripts/verify-agent-static.mjs`、根 `package.json`（`verify:agent` 脚本）
 - `docs/design.md`（§11.2 错误码）
 - `docs/superpowers/specs/2026-10-26-agent-commission-design.md`、`docs/superpowers/plans/2026-10-26-agent-commission.md`
@@ -724,7 +724,7 @@ for agent in chain:
 | 高 H21 | pending 期间调账/已付错账 | 本单冻结、调账进下一单；已付错账走应收台账 |
 | 高 H22 | 财务单位混用 | 内部统一 micro；恒等式 `E=ΣT×10000+C+U`；RMB 用专用汇率 |
 | 高 H23 | 昵称 RPC 边/搜索/局数口径 | 新增 currency→user 边 + compose env；v1 去搜索；局数=revenue event 数 |
-| 高 H24 | 假 DB 无法证明并发 | 新增 slice-30 真 MySQL；改写 #1/#5/#12 |
+| 高 H24 | 假 DB 无法证明并发 | 新增 slice-32 真 MySQL；改写 #1/#5/#12 |
 | 高 H25 | 登录仅 IP 桶/重置后旧 token 仍可用/首登可绕过 | 按手机号锁定 + `token_version` + `AgentGuard` 服务端强制改密 |
 | 高 H26 | 结算范围锁阻塞台费插入 | 改为 ID 水位，不锁佣金行；结算事务最短 |
 | 高 H27 | 批量改绑单事务 5000 | 500/批、keyset、独立事务、目标 active、索引 |

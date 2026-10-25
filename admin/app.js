@@ -131,11 +131,13 @@ const ROLE_KEY = 'ftl-admin-role';
 const PAGE_LIMIT = 20;
 
 /**
- * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；跑得快 24 键中 12 键有备注，其余 12 键（23 个简单控件中的 11 个 + 档位表结构化键）暂走控件标签 + 服务端校验（无备注条目时展示通用说明）。
+ * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
+ * **77 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
- *  - 语义 / 默认值 / 消费方 = `docs/design.md` §7.5；
+ *  - 语义 / 默认值 / 消费方 = `docs/design.md` §7.5；跑得快规则/计分键另以
+ *    `packages/shared/src/pdk/rules.ts`（默认值）+ 跑得快设计 spec §4.7.1 / §5.6 为准；
  *  - 运维措辞（≤60s 上界 / 好友房默认关 / 30s 无匹配文案）= `docs/ops/first-deploy.md`「怎么改配置」。
  *
  * ⚠️ 与 R4（「页面不含**配置值**」）的口径说明：本表只含**静态说明文案**（出厂默认值随文引用
@@ -149,8 +151,9 @@ const PAGE_LIMIT = 20;
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
- *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键后
- *    **65 条备注 / 77 个 active 键**（16 个旧键只读、无备注）。
+ *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
+ *    **77 条备注 / 77 个 active 键（全覆盖）**
+ *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
   'agent.inviteEnabled': [
@@ -212,6 +215,12 @@ const CONFIG_NOTES = {
     ['取值', '非空数组，每项 {name, baseScore, entryFeePercent}：name 非空字符串、baseScore 正整数且 ≤ 8191（上限 = 金币金额列 int 的容量上界，超出会被拒绝）、档位值不得重复；entryFeePercent 为 0–100 的整数百分比（0 = 不收台费，100 = 入场费等于底分，缺省即 0）；省略底分时取表内最低档。默认 15 / 80 / 480 / 1200（台费全 0）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新表（已打开的页面刷新一次最快拿到）。'],
     ['注意', '**台费就在本表第三列**（旧「台费费率表」键已删除）；档位可自由增删（含 15）；省略底分时取表内最低档。改动只影响之后的新开局，已在途房间不受影响。'],
+  ],
+  'game.levels.paodekuai': [
+    ['作用', '跑得快底分档位表（大厅的跑得快底分卡）—— 可选底分与台费都出自这张表；与斗地主档位表相互独立。'],
+    ['取值', '非空数组，每项 {name, baseScore, entryFeePercent}：name 非空字符串、baseScore 正整数且 ≤ 8191、档位值不得重复；entryFeePercent 为 0–100 的整数百分比（0 = 不收台费，100 = 入场费等于底分，缺省即 0）；省略底分时取表内最低档。默认 15 / 80 / 480 / 1200（台费全 0）。'],
+    ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新表（已打开的页面刷新一次最快拿到）。'],
+    ['注意', '跑得快**不回落**斗地主档位表（`game.levels.doudizhu` 改这里不受影响）；档位可自由增删；改动只影响之后的新开局，已在途房间不受影响。'],
   ],
   'game.doudizhu.cardCounterEnabled': [
     ['作用', '记牌器总开关（客户端）。开 ⇒ 牌桌左上角显示记牌器入口与横条；关 ⇒ 入口不渲染、记牌累积器不启动。'],
@@ -489,6 +498,72 @@ const CONFIG_NOTES = {
     ['取值', '严格 true / false。默认 false（暗上线）。'],
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
     ['注意', '两个玩法都关闭时大厅没有可选玩法；关闭期间已入队的票保留，重新开放后继续匹配。'],
+  ],
+  'game.paodekuai.bareTrioEnabled': [
+    ['作用', '裸三张（三张同点、不带牌）是否可作为合法牌型打出。关 ⇒ 三张同点只能带牌出（三带一；三带二另看开关）或拆开打。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '客户端「提示」与机器人使用同一份规则快照，关掉后不会再给出裸三张；四张 A 在跑得快牌堆里不存在（缺黑桃 A）⇒ 三张 A 只按本开关处理。'],
+  ],
+  'game.paodekuai.trioWithPairEnabled': [
+    ['作用', '三带二（三张同点 + 一对）是否合法。'],
+    ['取值', '严格 true / false。默认 false（关 —— 只允许三带一）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '三带一与三带二是不同牌型（长度不同），不能互相压；关掉后 3+2 只能拆成三张与对子分别处理。'],
+  ],
+  'game.paodekuai.bareAirplaneEnabled': [
+    ['作用', '裸飞机（≥2 个连续三张、不带翅膀）是否合法。'],
+    ['取值', '严格 true / false。默认 false（关 —— 飞机必须带翅膀）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '关裸飞机时，连续三张必须带翅膀（翅膀口径见「飞机翅膀」键）或拆开出；不能把相邻的第 4 个三张拆成翅膀来凑飞机。'],
+  ],
+  'game.paodekuai.fourWithTwoEnabled': [
+    ['作用', '四带二（四张同点 + 2 张带牌）是否合法。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '带牌默认必须是不同点单牌（能否带对子另看「四带二允许对子」键）；四张同点当炸弹还是四带二由玩家选择，只有**裸四张**计入炸弹数与炸弹翻倍。'],
+  ],
+  'game.paodekuai.fourWithTwoPairKickerAllowed': [
+    ['作用', '四带二的两张带牌是否允许同点成对。开 ⇒ 可带一对；关 ⇒ 必须两张不同点单牌。'],
+    ['取值', '严格 true / false。默认 false（只允许不同点单牌）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '仅在「四带二」开放时有意义；开「四带二」本身不等于开本键。'],
+  ],
+  'game.paodekuai.airplaneWings': [
+    ['作用', '飞机带翅膀的翅膀口径 —— 翅膀与主三张的搭配方式。'],
+    ['取值', "'pairs' = 恰 n 个对子（默认）；'singles' = 恰 n 张不同点单牌；'both' = 先按对子解析、失败再按单牌解析。逐字填写（区分大小写），其它值会被拒绝。"],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '翅膀不能与三张同点、翅膀之间点数互不相同；飞机带单与飞机带对是不同形状，不能互压；both 模式下按实际解析出的形状比较。'],
+  ],
+  'game.paodekuai.bombMultiplierEnabled': [
+    ['作用', '炸弹是否参与翻倍 —— 每打出一枚裸四张炸弹，结算倍数 ×2（多枚累乘）。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '只统计**裸四张**炸弹；四带二与三张同点不计；与关牌 / 春天叠乘后再由「倍数封顶」键夹住。'],
+  ],
+  'game.paodekuai.guanMultiplierEnabled': [
+    ['作用', '关牌是否 ×2 —— 结算时只要有输家一张牌都没出（playedCount = 0）即成立。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '春天成立时关牌必然成立 ⇒ 两项会叠乘（春天合计 ×4）；不想叠乘可关本键或春天键之一。'],
+  ],
+  'game.paodekuai.springMultiplierEnabled': [
+    ['作用', '春天是否 ×2 —— 3/4 人局里所有输家一张牌都没出。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '2 人局不适用；春天成立时关牌必然成立，两项叠乘（合计 ×4）。'],
+  ],
+  'game.paodekuai.multiplierCap': [
+    ['作用', '结算倍数封顶 —— 炸弹 × 关牌 × 春天叠乘后的总倍数上限。'],
+    ['取值', '整数 1 ≤ n ≤ 1024。默认 64。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '封顶只夹结算倍数，不影响能否出炸弹；调小可收紧爆分。'],
+  ],
+  'game.paodekuai.baobenEnabled': [
+    ['作用', '保本 —— 输家中「手牌只剩 1 张」的人本局付 0。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '所有输家都保本时赢家本局所得为 0（对局记录照写）；与倍数无关（直接免单）。'],
   ],
   'game.paodekuai.twoPlayerEnabled': [
     ['作用', '跑得快 2 人场开关 —— 关 ⇒ 2 人匹配 / 新建房被拒（12012）；进行中的对局不受影响。'],
@@ -1081,7 +1156,7 @@ const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet'
 /** 财务视图状态（③ T10）。 */
 const fin = {
   /** 已生效的过滤（epoch ms 边界缺省 = 不传该参数）。 */
-  filter: { source: '', actor: '', ownerId: '', from: undefined, to: undefined },
+  filter: { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined },
   /** 已累计的流水行（新 → 旧；keyset 追加）。 */
   rows: [],
   nextCursor: null,
@@ -1554,7 +1629,7 @@ function buildEffectAndDetail(card, key) {
   const detail = el('div', 'row-detail');
   const notes = Object.hasOwn(CONFIG_NOTES, key) ? CONFIG_NOTES[key] : null;
   if (!notes) {
-    effect.textContent = '（IA 表未收录的键：按快照原值进行 JSON 编辑；合法性由服务端校验。）';
+    effect.textContent = '（暂无该键的说明文案：按快照原值以 JSON 编辑，保存时由服务端校验合法性。）';
     return { effect, detail };
   }
   effect.textContent = `${notes[0][1]} `;
@@ -2391,6 +2466,7 @@ async function showOwnerIdentity(userId, elId) {
 function opsQuery(filter, cursor, limit) {
   const p = new URLSearchParams();
   if (filter.source) p.set('source', filter.source);
+  if (filter.gameType) p.set('gameType', filter.gameType);
   if (filter.actor) p.set('actor', filter.actor);
   if (filter.ownerId) p.set('ownerId', filter.ownerId);
   if (filter.from !== undefined) p.set('from', String(filter.from));
@@ -2611,6 +2687,7 @@ async function financeSearch() {
   const bounds = rangeBounds($('fin-range').value, $('fin-from'), $('fin-to'));
   fin.filter = {
     source: $('fin-source').value,
+    gameType: $('fin-game-type').value,
     actor: $('fin-actor').value.trim(),
     ownerId: owner ?? '',
     from: bounds.from,
@@ -2624,6 +2701,7 @@ async function financeSearch() {
 /** 过滤控件复位（不含数据面；登出与「重置」共用）。 */
 function resetFinControls() {
   $('fin-source').value = '';
+  $('fin-game-type').value = '';
   $('fin-actor').value = '';
   $('fin-owner').value = '';
   $('fin-owner-info').textContent = '';
@@ -2674,13 +2752,21 @@ function textCell(value, { num = false } = {}) {
   return td;
 }
 
-/** 流水行（财务视图：11 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
+/** A2：玩法中文标签（null/undefined = 未标注/非游戏流水）。 */
+function gameLabelText(gameType) {
+  if (gameType === 'doudizhu') return '斗地主';
+  if (gameType === 'paodekuai') return '跑得快';
+  return '—';
+}
+
+/** 流水行（财务视图：12 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
 function buildFinFlowRow(row) {
   const tr = document.createElement('tr');
   tr.append(
     textCell(row.flowId),
     timeCell(row.createdAt),
     textCell(row.source),
+    textCell(gameLabelText(row.gameType)),
     textCell(row.actor),
     textCell(row.ownerId),
     textCell(row.nickname),
@@ -2724,7 +2810,7 @@ async function toggleFinDetail(tr, row) {
   const detail = document.createElement('tr');
   detail.className = 'detail-row';
   const td = document.createElement('td');
-  td.colSpan = 11;
+  td.colSpan = 12;
   td.textContent = '详情加载中…';
   detail.append(td);
   tr.after(detail);
@@ -2753,8 +2839,8 @@ function renderFinDetail(td, rows) {
   const info = document.createElement('p');
   info.className = 'hint';
   info.textContent =
-    `op #${first.opId} · actionId=${first.actionId} · refId=${first.refId ?? '—'} · ` +
-    `traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
+    `op #${first.opId} · actionId=${first.actionId} · 玩法=${gameLabelText(first.gameType)} · ` +
+    `refId=${first.refId ?? '—'} · traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
   td.append(info);
   if (
     first.burnedResidue !== null &&
@@ -2856,8 +2942,8 @@ function renderFinSummary(data) {
   const hr = document.createElement('tr');
   const labels =
     fin.summaryGroupBy === 'day'
-      ? ['日期（北京）', '金额合计', '流水笔数']
-      : ['来源', '金额合计', '流水笔数'];
+      ? ['日期（北京）', '玩法', '金额合计', '流水笔数']
+      : ['来源', '玩法', '金额合计', '流水笔数'];
   for (const label of labels) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -2868,14 +2954,19 @@ function renderFinSummary(data) {
   if (rows.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 3;
+    td.colSpan = 4;
     td.textContent = '（无数据）';
     tr.append(td);
     body.append(tr);
   } else {
     for (const row of rows) {
       const tr = document.createElement('tr');
-      tr.append(textCell(row.k), textCell(row.delta, { num: true }), textCell(row.flowCount, { num: true }));
+      tr.append(
+        textCell(row.k),
+        textCell(gameLabelText(row.gameType)),
+        textCell(row.delta, { num: true }),
+        textCell(row.flowCount, { num: true }),
+      );
       body.append(tr);
     }
   }
@@ -2887,7 +2978,13 @@ function renderFinSummary(data) {
     burnLine.textContent = '';
   } else {
     const note = burn.unrecordedOps > 0 ? `（含 ${burn.unrecordedOps} 条历史未记录）` : '';
-    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}`;
+    const byGame = Array.isArray(data?.burnByGame) ? data.burnByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((b) => `${gameLabelText(b.gameType)} 残差 ${b.residue}/抽水 ${b.rake}`)
+          .join(' · ')}`
+      : '';
+    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}${detail}`;
   }
   const skips =
     data && typeof data.entryFeeSkips === 'object' && data.entryFeeSkips !== null ? data.entryFeeSkips : null;
@@ -2896,7 +2993,13 @@ function renderFinSummary(data) {
     skipLine.textContent = '';
   } else {
     // 恒显（照 burn 行先例；0/0/0 也是有效读数——「本周零漏收」是运维要看的信息）。
-    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}`;
+    const byGame = Array.isArray(data?.entryFeeSkipsByGame) ? data.entryFeeSkipsByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((s) => `${gameLabelText(s.gameType)} 笔数 ${s.cnt}/人数 ${s.players}/金额 ${s.amount}`)
+          .join(' · ')}`
+      : '';
+    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}${detail}`;
   }
   // 记牌器收费片：购买（收入；正）/ 使用（含 none = 未开通局次）。
   const purchases = Array.isArray(data?.cardCounterPurchases) ? data.cardCounterPurchases : null;
@@ -2984,7 +3087,7 @@ function resetFinance() {
   fin.nextCursor = null;
   fin.loading = false;
   fin.loaded = false;
-  fin.filter = { source: '', actor: '', ownerId: '', from: undefined, to: undefined };
+  fin.filter = { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined };
   fin.summaryGroupBy = 'source';
   resetFinControls();
   $('fin-flows-body').textContent = '';
@@ -5481,8 +5584,16 @@ async function showPlayerDetail(row) {
 
   section('最近对局');
   box.append(simpleTable(
-    ['模式', '底分', '身份', '结果', '积分变化', '时间'],
-    gameRows.map((g) => [g.mode, g.baseScore, g.role, g.won ? '胜' : '负', g.scoreChange, fmtTime(g.endedAt)]),
+    ['玩法', '模式', '底分', '身份', '结果', '积分变化', '时间'],
+    gameRows.map((g) => [
+      gameLabelText(g.gameType),
+      g.mode,
+      g.baseScore,
+      g.role ?? '—',
+      g.won ? '胜' : '负',
+      g.scoreChange,
+      fmtTime(g.endedAt),
+    ]),
     '（无对局记录）',
   ));
 

@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { makeMatchServiceHarness, type MatchServiceHarness } from './helpers/match-service-harness';
+import { exactSeriesValue } from './helpers/metric-readout';
+import { matchPredicateRejectionsTotal, matchSelectionRoundsTotal } from '../src/metrics/room.metrics';
 
 const T0 = 1_700_000_000_000;
 
@@ -142,5 +144,30 @@ describe('2/3/4 人匹配参数化（Task 2.3）', () => {
       'paodekuai',
       4,
     );
+  });
+
+  it('A1：PDK 抽选轮与谓词拒绝带 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    const beforeRounds = (await exactSeriesValue(matchSelectionRoundsTotal, {
+      game_type: 'paodekuai',
+    })) ?? 0;
+    await enqueuePdk(h, ['a1', 'a2'], 2);
+    await h.service.scanOnce();
+    expect(await exactSeriesValue(matchSelectionRoundsTotal, {
+      game_type: 'paodekuai',
+    })).toBe(beforeRounds + 1);
+
+    const beforeRej = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice', game_type: 'paodekuai',
+    })) ?? 0;
+    await (h.service as unknown as {
+      accountRejection: (...args: unknown[]) => Promise<void>;
+    }).accountRejection(
+      'a1', 'a2', { ok: false, memory: false, rejected: [{ name: 'sameDevice' }] }, T0, new Set(), 'paodekuai',
+    );
+    expect(await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice', game_type: 'paodekuai',
+    })).toBe(beforeRej + 1);
   });
 });

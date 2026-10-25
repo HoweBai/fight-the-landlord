@@ -1556,19 +1556,19 @@ describe('GatewayController（③ T5：管理面路由登记 + query 白名单�
     );
   });
 
-  it('GET /api/admin/wallet/ops：白名单 = source/actor/ownerId/from/to/cursor/limit', async () => {
+  it('GET /api/admin/wallet/ops：白名单 = source/gameType/actor/ownerId/from/to/cursor/limit', async () => {
     const { controller, proxy } = make();
 
     await controller.adminWalletOps(
       res,
       req('/api/admin/wallet/ops', {
-        query: { source: 'admin_adjust', actor: 'admin', ownerId: '42', from: '1', to: '2', cursor: '8', limit: '100' },
+        query: { source: 'admin_adjust', gameType: 'paodekuai', actor: 'admin', ownerId: '42', from: '1', to: '2', cursor: '8', limit: '100' },
       }),
     );
 
     expect(proxy.forwardToCurrencySvc).toHaveBeenCalledWith(
       'GET',
-      '/api/admin/wallet/ops?source=admin_adjust&actor=admin&ownerId=42&from=1&to=2&cursor=8&limit=100',
+      '/api/admin/wallet/ops?source=admin_adjust&gameType=paodekuai&actor=admin&ownerId=42&from=1&to=2&cursor=8&limit=100',
       null,
       res,
       {},

@@ -6,15 +6,15 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * 设计真源：`docs/superpowers/specs/2026-10-26-agent-commission-design.md` §3。
  *
  * ⚠️ 类名**不得**以 `Currency` 开头：`test/migration.test.ts` 按 `/^Currency\d+$/` 取
- * 首个匹配（会抢位）。本类名 = `AgentDomain1797000000000`。
+ * 首个匹配（会抢位）。本类名 = `AgentDomain1798000000000`。
  * ⚠️ 时间戳与 config-service 的 `1796900000000-AgentInviteKey` **不同号**。
  * ⚠️ 全部 `CREATE TABLE IF NOT EXISTS`（`migrationsRun` 可在现有库上重跑）；
  * charset/collation 与既有表一致（进 JOIN 的 owner_id 与 users.id 同口径）。
  * ⚠️ 资金算术列（micro/carry/watermark）一律 `BIGINT NOT NULL DEFAULT 0` ——
  * NULL 会让 `floor((NULL+total)/10000)` 变 NaN、`id > NULL` 恒空。
  */
-export class AgentDomain1797000000000 implements MigrationInterface {
-  name = 'AgentDomain1797000000000';
+export class AgentDomain1798000000000 implements MigrationInterface {
+  name = 'AgentDomain1798000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const suffix =

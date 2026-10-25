@@ -177,6 +177,79 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     expect(redis.store.get('currency:balance:u-1')).toBe('250');
   });
 
+  it('A2：gameType 落库（游戏来源缺席=doudizhu / 显式=pdk；非游戏来源=NULL）', async () => {
+    const settleDefault = mkReq({
+      actionId: 'settle:s-a:1',
+      source: 'game_settle',
+      actor: undefined,
+      reason: undefined,
+      refId: 's-a:1',
+      entries: [{ ownerId: 'gt-a', delta: 10 }],
+    });
+    expectOk(await service.apply(settleDefault));
+    expect(db.ops[0]!.gameType).toBe('doudizhu');
+
+    const settlePdk = mkReq({
+      actionId: 'settle:s-b:1',
+      source: 'game_settle',
+      gameType: 'paodekuai',
+      actor: undefined,
+      reason: undefined,
+      refId: 's-b:1',
+      entries: [{ ownerId: 'gt-b', delta: 10 }],
+    });
+    expectOk(await service.apply(settlePdk));
+    expect(db.ops[1]!.gameType).toBe('paodekuai');
+
+    const admin = mkReq({ actionId: 'admin:gt-c', entries: [{ ownerId: 'gt-c', delta: 10 }] });
+    expectOk(await service.apply(admin));
+    expect(db.ops[2]!.gameType).toBeNull();
+
+    const signup = mkReq({
+      actionId: 'signup:gt-d',
+      source: 'signup_grant',
+      actor: undefined,
+      reason: undefined,
+      refId: 'gt-d',
+      entries: [{ ownerId: 'gt-d', delta: 10 }],
+    });
+    expectOk(await service.apply(signup));
+    expect(db.ops[3]!.gameType).toBeNull();
+
+    // card_counter 能力仅斗地主：room 不传 gameType ⇒ 来源归一 ddz（不是 NULL）
+    db.seedAccount('gt-e', 'user', 10);
+    const cardCounter = mkReq({
+      actionId: 'cc:gt-e',
+      source: 'card_counter',
+      actor: undefined,
+      reason: undefined,
+      entries: [{ ownerId: 'gt-e', delta: -1 }],
+    });
+    expectOk(await service.apply(cardCounter));
+    expect(db.ops[4]!.gameType).toBe('doudizhu');
+  });
+
+  it('A2：同 actionId 异 gameType ⇒ 重放（gameType 不入指纹），库内玩法取首写值', async () => {
+    const first = mkReq({
+      actionId: 'settle:gt-replay:1',
+      source: 'game_settle',
+      gameType: 'paodekuai',
+      actor: undefined,
+      reason: undefined,
+      refId: 'gt-replay:1',
+      entries: [{ ownerId: 'gt-r', delta: 10 }],
+    });
+    expectOk(await service.apply(first));
+    expect(db.ops[0]!.gameType).toBe('paodekuai');
+
+    const second = await service.apply({ ...first, gameType: 'doudizhu' });
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new Error('expected replay');
+    expect(second.data.replayed).toBe(true);
+    expect(db.ops).toHaveLength(1);
+    expect(db.ops[0]!.gameType).toBe('paodekuai'); // 重放不更新归因
+  });
+
   it('扣账：既有行条件更新一次命中；meta.traceId 落 ops.trace_id；余额 100 → 70', async () => {
     db.seedAccount('u-b', 'user', 100);
     const req = mkReq({

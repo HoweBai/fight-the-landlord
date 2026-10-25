@@ -4,7 +4,7 @@
 - Spec：`docs/superpowers/specs/2026-10-26-agent-commission-design.md`（v1.1，设计 r1 + 计划 r2 已处置）
 - 分支：`dev`（不推 master、不打 tag、不部署，除非用户明确发话）
 - 提交纪律：每个任务一个 commit；消息末尾 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-- 全局：任何 `package.json` 改动必须同笔更新 `pnpm-lock.yaml`；假 DB 只钉控制流，并发/死锁用 slice-30 真 MySQL。
+- 全局：任何 `package.json` 改动必须同笔更新 `pnpm-lock.yaml`；假 DB 只钉控制流，并发/死锁用 slice-32 真 MySQL。
 
 ## 进度（2026-10-26，新会话从这里继续）
 
@@ -13,7 +13,7 @@
 - ✅ 任务 0–12 已实现并提交（`faf65bd3` … `e6e70950`）；测试基线见交接文档 §2。
 - ✅ 任务 13：管理后台「代理」UI（`876be015`；`verify:admin` 471 条 + jsdom 冒烟）。
 - ✅ 任务 14：代理门户静态站 + edge（`dc5e6aaf`；`verify:agent` 104 条 + jsdom 冒烟）。
-- ✅ 任务 15（代码）：slice-30 真库 + design.md env 表（`56f84133`）；r3 独立审查 Critical/Important
+- ✅ 任务 15（代码）：slice-32 真库 + design.md env 表（`56f84133`）；r3 独立审查 Critical/Important
   修复（`324d6442` / `71be4070`）；本机全量绿（`pnpm test` 29/29、`pnpm lint` 18/18）。
 - 🔸 任务 15（真库）：slice-30 由 GitHub CI 跑；`baselines.json` 已静态回填 136，待 CI 复核。
 - dev 尚未推送；master / tag / 部署未动（等用户发话）。
@@ -24,7 +24,7 @@
 2. **故障隔离**：钩子只吞语句级错误；1213/1205/连接错误/保存点回滚失败一律重抛；SAVEPOINT 在 **caller effect 之后**创建。
 3. **幂等**：`uk_action_id` + `revenue_events(source_op_id, owner_id)` + `commission_entries(source_op_id, agent_id)`。
 4. **归属只从 token 取**：代理门户查询强制 `WHERE agent_id = token.sub`。
-5. **计数闸**：protocol 94 / active 78 / client 22 / verify:admin IA 78 / CONTROLS 73 / BOOL 36 / NOTES 66；`errors.test.ts` SPEC_CODES + `CLIENT_ACTION`；`messages.test.ts` 24 pattern。
+5. **计数闸**：protocol 94 / active 78 / client 22 / verify:admin IA 78 / CONTROLS 73 / BOOL 36 / NOTES **78**（A1/A2 合并后）；`errors.test.ts` SPEC_CODES + `CLIENT_ACTION`；`messages.test.ts` 24 pattern。
 6. **不新增容器/端口**；edge 只加 `/agent` 静态路由；currency→user 新增内部 RPC 边。
 7. **bigint**：所有读回经 `toSafeInt`；假 DB 要有字符串回执用例。
 8. **JWT**：用 `@nestjs/jwt`（仓内先例），密钥链逐字 `process.env.AGENT_JWT_SECRET || process.env.JWT_SECRET || 'dev-secret-change-in-production'`，网关/currency 各一份 + 跨服务源码闸。
@@ -96,7 +96,7 @@
 ## 任务 3：currency 迁移（17 表）+ 纯函数
 
 **Files**
-- `packages/currency-service/src/migrations/1797000000000-AgentDomain.ts`
+- `packages/currency-service/src/migrations/1798000000000-AgentDomain.ts`
 - `.../agent/agent.constants.ts`（source×用途矩阵、默认值、错误文案）
 - `.../agent/commission.math.ts`
 - `test/agent-domain.migration.test.ts`、`test/agent-commission-math.test.ts`
@@ -317,8 +317,8 @@
 ## 任务 15：conformance slice-30 + 全量验证 + 代码审查
 
 **Files**
-- `tools/conformance/src/slices/slice-30-agent.ts`
-- `tools/conformance/src/run.ts`（追加 `'slice-30-agent'`）
+- `tools/conformance/src/slices/slice-32-agent.ts`
+- `tools/conformance/src/run.ts`（追加 `'slice-32-agent'`）
 - `tools/conformance/baselines.json`（首次由 CI 回填；本机不填）
 - `docs/design.md` §11.2（6 码）
 - 交付报告/计划勾选
@@ -350,6 +350,6 @@
 ## 风险与回退
 
 - 每任务独立 commit；出问题可单任务回退。
-- 钩子/结算/鉴权关键任务先过 slice-30 真库用例再合 master。
+- 钩子/结算/鉴权关键任务先过 slice-32 真库用例再合 master。
 - 暗上线默认关；任何阶段 `enabled=false` 停新增。
 - 不推送/不部署，直到用户明确发话。

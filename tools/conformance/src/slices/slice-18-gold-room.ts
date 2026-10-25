@@ -22,7 +22,7 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 27 条
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 31 条
  *     （13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
@@ -363,6 +363,12 @@ function sumMetric(text: string, name: string): number {
 }
 
 /** 某指标**恰好匹配这些标签**的序列值（缺席返回 `null` —— 与「值是 0」分开）。 */
+function sumMetricWhere(text: string, name: string, labels: Record<string, string>): number {
+  return parseProm(text)
+    .filter((s) => s.name === name && Object.entries(labels).every(([k, v]) => s.labels[k] === v))
+    .reduce((acc, s) => acc + (Number.isFinite(s.value) ? s.value : 0), 0);
+}
+
 function seriesValue(text: string, name: string, want: Record<string, string>): number | null {
   for (const s of parseProm(text)) {
     if (s.name !== name) continue;
@@ -1310,7 +1316,20 @@ export async function runSlice18(): Promise<Checks> {
       `F PUT rakePercent=10 ⇒ 200 且 room-service 快照生效（version=${putRake.expected} 计数 ${putRake.baseline}→${putRake.observed}）`,
     );
     // 同 E：房间已在 runGoldGame 内「创建即 push」入 openRooms（R156）。
+    const gamesEndedBefore = seriesValue(readRoomMetrics(), 'games_ended_total', { game_type: 'doudizhu' }) ?? 0;
     const evF = await runGoldGame(checks, admin, 'F 抽水局', 'S18F', openRooms);
+    let endedNow: number | null = null;
+    const endedDeadline = Date.now() + 30_000;
+    for (;;) {
+      endedNow = seriesValue(readRoomMetrics(), 'games_ended_total', { game_type: 'doudizhu' });
+      if (endedNow !== null && endedNow >= gamesEndedBefore + 1) break;
+      if (Date.now() >= endedDeadline) break;
+      await sleep(1_000);
+    }
+    checks.that(
+      endedNow !== null && endedNow >= gamesEndedBefore + 1,
+      `F：games_ended_total{game_type="doudizhu"} ≥ 基线+1（${gamesEndedBefore} → ${endedNow}）`,
+    );
     checks.eq(evF.balancesVersion, evF.settlementVersion, 'F game.balances.version = game.settlement.version');
     const recountF = await assertGoldGame(checks, admin, evF, 10, 'F');
     checks.that(recountF.rakeTotal > 0, `F 抽水总额 > 0（实测 ${recountF.rakeTotal}；赢家实收已逐座 = g − floor(g×10/100) 口径）`);
@@ -1524,8 +1543,8 @@ export async function runSlice18(): Promise<Checks> {
       checks.that(roomMetrics.includes(name), `H room-service /metrics 含 ${name}`);
     }
     const terminalSettles =
-      (seriesValue(roomMetrics, 'currency_settle_result_total', { result: 'ok' }) ?? 0) +
-      (seriesValue(roomMetrics, 'currency_settle_result_total', { result: 'replayed' }) ?? 0);
+      sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'ok' }) +
+      sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'replayed' });
     checks.that(
       terminalSettles >= 1,
       `H 终态结算序列（ok|replayed）≥ 1（实测 ${terminalSettles}；E/F 两局必现）`,
@@ -1534,8 +1553,8 @@ export async function runSlice18(): Promise<Checks> {
       seriesValue(roomMetrics, 'currency_settle_residue_total', {}) !== null,
       'H 残差序列在场（零和局也 inc 0）',
     );
-    const outboxSize = seriesValue(roomMetrics, 'currency_settle_outbox_size', {});
-    const outboxOldest = seriesValue(roomMetrics, 'currency_settle_outbox_oldest_seconds', {});
+    const outboxSize = sumMetric(roomMetrics, 'currency_settle_outbox_size');
+    const outboxOldest = sumMetric(roomMetrics, 'currency_settle_outbox_oldest_seconds');
     checks.that(
       outboxSize === 0 && outboxOldest === 0,
       `H 补偿队列静默：outbox_size=${outboxSize}、oldest=${outboxOldest}（E/F 全成功 ⇒ 两箱空）`,
@@ -1572,7 +1591,7 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 27, 'H Prometheus /api/v1/rules 恰 27 条（13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 同步）');
+    checks.eq(ruleNames.length, 31, 'H Prometheus /api/v1/rules 恰 31 条（27 既有 + 4 多玩法 A1；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
 

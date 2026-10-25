@@ -51,7 +51,8 @@ function makeDom(role) {
     if (u.startsWith('/api/admin/config')) return json(200, { code: 0, data: { config: {}, version: 0 } });
     if (u.startsWith('/api/admin/players/') && u.includes('/games')) {
       return json(200, { code: 0, data: { items: [
-        { recordId: 7, mode: 'gold', baseScore: 80, role: 'landlord', won: true, scoreChange: 160, moneyDelta: 160, endedAt: 1761000000000 },
+        { recordId: 8, gameType: 'paodekuai', mode: 'gold', baseScore: 15, role: null, won: true, scoreChange: 30, moneyDelta: 30, endedAt: 1761110000000 },
+        { recordId: 7, gameType: 'doudizhu', mode: 'gold', baseScore: 80, role: 'landlord', won: true, scoreChange: 160, moneyDelta: 160, endedAt: 1761000000000 },
       ] } });
     }
     if (u.startsWith('/api/admin/players')) return json(200, {
@@ -112,6 +113,14 @@ await sleep(60);
 ok($(window, 'pl-detail').hidden === false, '详情面板打开');
 ok($(window, 'pl-detail-body').textContent.includes('余额'), '详情含余额');
 ok($(window, 'pl-detail-body').textContent.includes('最近对局'), '详情含最近对局');
+const recentTable = [...$(window, 'pl-detail-body').querySelectorAll('table')].find(
+  (t) => t.textContent.includes('玩法') && t.textContent.includes('身份'),
+);
+const pdkRow = recentTable === undefined
+  ? undefined
+  : [...recentTable.querySelectorAll('tbody tr')].find((tr) => tr.cells[0]?.textContent === '跑得快');
+ok(pdkRow !== undefined, '最近对局表含“玩法”列且渲染跑得快行');
+ok(pdkRow?.cells[3]?.textContent === '—', `跑得快行身份列显示 —（实测 ${pdkRow?.cells[3]?.textContent}）`);
 const unbindBtn = [...$(window, 'pl-detail-body').querySelectorAll('button')].find((b) => b.textContent === '解绑设备');
 ok(unbindBtn !== undefined, '已绑定设备时显示解绑按钮');
 unbindBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
