@@ -653,6 +653,11 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       { status: 'active', reason: 's30-unfreeze' },
       admin,
     );
+    // ⚠️ 冻结会 `token_version++`（spec D10）⇒ 第二次冻结之后必须重新登录，否则后面
+    //    用 tokenA 申请结算会 401（首轮实测：S3 失败即此）。
+    const reloginA = await agentLogin(agentA.account.phone, 'agent-pass-1');
+    tokenA = String(reloginA.body?.data?.token ?? '');
+    checks.that(tokenA !== '', '第二次冻结/解冻后重新登录 A ⇒ 新 token（旧 ver 已失效）');
 
     // ══════════════════════════════════════════════════════════════════════
     // ⑥ 并发首建额度 + SAVEPOINT
@@ -881,7 +886,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       tokenA,
     );
     const s3 = s3Res.body?.data;
-    checks.that(s3Res.status === 200 && s3?.id !== undefined, 'A 申请 S3 ⇒ pending');
+    checks.that(
+      s3Res.status === 200 && s3?.id !== undefined,
+      `A 申请 S3 ⇒ pending —— 实际 HTTP ${s3Res.status} ${JSON.stringify(s3Res.body)}`,
+    );
     const cancel = await postJson(`/api/agent/settlements/${s3?.id}/cancel`, {}, tokenA);
     checks.eq(cancel.status, 200, 'A 撤回 S3 ⇒ 200');
     checks.eq(
