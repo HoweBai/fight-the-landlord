@@ -92,6 +92,7 @@ export interface ClientConfigState
     | 'cardCounterEnabled'
     | 'cardCounterPricePerGameCoins'
     | 'cardCounterPricePerHourCoins'
+    | 'agentInviteEnabled'
   > {
   entryMultiplier: number | null;
   coinPerYuan: number | null;
@@ -106,6 +107,8 @@ export interface ClientConfigState
   /** 记牌器收费片（第 51/52 键裸名）：`null` = 旧服务端/缺键/非数字 ⇒ 购买面板不渲染。 */
   cardCounterPricePerGameCoins?: number | null;
   cardCounterPricePerHourCoins?: number | null;
+  /** 代理分润：邀请码入口（缺省/旧服务端 ⇒ false）。 */
+  agentInviteEnabled?: boolean;
 }
 
 /** 记牌器收费片：本局开通状态（`game.card_counter` 载荷；按 roomCode 存）。 */
@@ -265,6 +268,11 @@ export const useGameStore = defineStore('game', {
      * `playRewardedAd`（合法性由服务端第 41 键的 parse 保证）。
      */
     reliefAdpid: '',
+    /**
+     * 代理分润（2026-10-26）：注册页邀请码输入框门控（`agent.inviteEnabled` 裸名）。
+     * 初值/fail-safe = `false`（未知/旧服务端 ⇒ 不渲染；登录页会懒拉一次配置）。
+     */
+    agentInviteEnabled: false,
     /**
      * 入场门槛倍率（`currency.entryMultiplier`，客户端可见的唯一货币键）。
      *
@@ -730,6 +738,7 @@ export const useGameStore = defineStore('game', {
       this.cardCounterPricePerGameCoins = cfg.cardCounterPricePerGameCoins ?? null;
       this.cardCounterPricePerHourCoins = cfg.cardCounterPricePerHourCoins ?? null;
       this.reliefAdpid = cfg.reliefAdpid;
+      this.agentInviteEnabled = cfg.agentInviteEnabled === true;
       this.entryMultiplier = cfg.entryMultiplier;
       this.rechargeEnabled = cfg.rechargeEnabled;
       this.withdrawEnabled = cfg.withdrawEnabled;

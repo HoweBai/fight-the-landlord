@@ -13,6 +13,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import LoginPage from '../src/pages/login/login.vue';
 import { useAuthStore } from '../src/stores/auth';
+import { useGameStore } from '../src/stores/game';
 import { startGameSession, stopGameSession } from '../src/composables/useGameSession';
 import { collectSourceFiles } from './helpers/source-scan';
 import { FakeSocket } from './helpers/fake-socket';
@@ -96,6 +97,37 @@ describe('➊ 登录/注册屏', () => {
     // …再用当前形态唯一的主按钮提交
     await wrapper.find('.login__actions .btn--primary').trigger('click');
     expect(signUp).toHaveBeenCalledWith('13800000000', 'secret123', '阿豆');
+  });
+
+  it('邀请码开关开：注册态多一个邀请码字段；提交带 trim+大写码（2026-10-26）', async () => {
+    const { wrapper, auth } = mountLogin();
+    useGameStore().$patch({ agentInviteEnabled: true, clientConfigVersion: 1 });
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+
+    await wrapper.find('.login__field--phone input').setValue('13800000010');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    expect(wrapper.find('.login__field--invite').exists()).toBe(true);
+    expect(wrapper.findAll('.login__field input')).toHaveLength(5);
+    await wrapper.find('.login__field--invite input').setValue(' abcd2345 ');
+    await wrapper.find('.login__actions .btn--primary').trigger('click');
+    expect(signUp).toHaveBeenCalledWith('13800000010', 'secret123', '阿豆', 'ABCD2345');
+  });
+
+  it('邀请码开关关：注册态仍 4 个输入框；提交不带第 4 参', async () => {
+    const { wrapper, auth } = mountLogin();
+    useGameStore().$patch({ agentInviteEnabled: false, clientConfigVersion: 1 });
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+    await wrapper.find('.login__field--phone input').setValue('13800000011');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    expect(wrapper.find('.login__field--invite').exists()).toBe(false);
+    await wrapper.find('.login__actions .btn--primary').trigger('click');
+    expect(signUp).toHaveBeenCalledWith('13800000011', 'secret123', '阿豆');
   });
 
   it('注册态昵称为空 ⇒ 就地报错且不发请求', async () => {

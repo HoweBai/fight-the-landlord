@@ -49,7 +49,7 @@
 | 5 | `GET /api/rooms` | ✅ Bearer | — | `RoomInfo[]` |
 | 6 | `POST /api/rooms` | ✅ Bearer | `{ mode: 'random' \| 'practice', baseScore?: number }` | `RoomInfo` |
 | 7 | `POST /api/rooms/:code/join` | ✅ Bearer | `{}` | `RoomInfo` |
-| 8 | `GET /api/config` | ✅ Bearer | — | `{ baseScoreLevels: { name, baseScore, entryFeePercent?: number }[]; friendRoomEnabled: boolean; freeRoomEnabled: boolean; goldRoomEnabled: boolean; reliefEnabled: boolean; entryMultiplier: number; rechargeEnabled: boolean; withdrawEnabled: boolean; coinPerYuan: number; rechargePackages: number[]; withdrawMinCoins: number; withdrawMaxCoinsPerOrder: number; withdrawDailyMaxCoins: number; withdrawReAuthEnabled: boolean; reliefAdpid: string; cardCounterEnabled: boolean; cardCounterPricePerGameCoins: number; cardCounterPricePerHourCoins: number; games?: Partial<Record<'doudizhu' | 'paodekuai', { enabled: boolean; supportedPlayerCounts: number[]; defaultPlayerCount: number; baseScoreLevels: { name: string; baseScore: number }[]; freeRoomEnabled?: boolean; goldRoomEnabled?: boolean; friendRoomEnabled?: boolean; entryMultiplier?: number }>>; reliefThresholdCoins?: number | null; version: number }`（`entryFeePercent` 是档位项的可选台费；**阶段 2 起不再下发派生字段 `entryFeePercents`**，客户端用 `entryFeeOfLevel(level)` 算入场费） |
+| 8 | `GET /api/config` | ✅ Bearer | — | `{ baseScoreLevels: { name, baseScore, entryFeePercent?: number }[]; friendRoomEnabled: boolean; freeRoomEnabled: boolean; goldRoomEnabled: boolean; reliefEnabled: boolean; entryMultiplier: number; rechargeEnabled: boolean; withdrawEnabled: boolean; coinPerYuan: number; rechargePackages: number[]; withdrawMinCoins: number; withdrawMaxCoinsPerOrder: number; withdrawDailyMaxCoins: number; withdrawReAuthEnabled: boolean; reliefAdpid: string; cardCounterEnabled: boolean; cardCounterPricePerGameCoins: number; cardCounterPricePerHourCoins: number; games?: Partial<Record<'doudizhu' | 'paodekuai', { enabled: boolean; supportedPlayerCounts: number[]; defaultPlayerCount: number; baseScoreLevels: { name: string; baseScore: number }[]; freeRoomEnabled?: boolean; goldRoomEnabled?: boolean; friendRoomEnabled?: boolean; entryMultiplier?: number }>>; reliefThresholdCoins?: number | null; agentInviteEnabled: boolean; version: number }`（`entryFeePercent` 是档位项的可选台费；**阶段 2 起不再下发派生字段 `entryFeePercents`**，客户端用 `entryFeeOfLevel(level)` 算入场费） |
 
 ⚠️ `nickname` **必填**（trim 后 1–20 字符，**不唯一**）；存量用户可能没有昵称（`user.nickname = null`），
 牌桌展示回落「玩家N」。`room.join` ack / `room.state_update` 的 `RoomPlayer` 可带可选 `nickname`；
@@ -114,7 +114,7 @@
 
 ### 支付面（九条，钱包页用；全 ✅ Bearer）
 
-错误码见第 7 节（`15001`–`15009`）。钱包页需要的**开关与限额**都在第 8 条 `GET /api/config` 的 21 键里
+错误码见第 7 节（`15001`–`15009`）。钱包页需要的**开关与限额**都在第 8 条 `GET /api/config` 的 22 键里
 （`rechargeEnabled` / `withdrawEnabled` / `coinPerYuan` / `rechargePackages` / `withdrawMinCoins` /
 `withdrawMaxCoinsPerOrder` / `withdrawDailyMaxCoins`）——**两开关为 `false` 时对应区块不要渲染**。
 
@@ -315,6 +315,8 @@ ack 的形状：`{ code: number, message?: string, data?: unknown }` —— 同�
 | `11003` | USER_BANNED | 账号被封（登录失败文案 =「该账号已被封禁，如有异议请联系客服」；**申诉不做**——封禁解除 = 联系客服走人工复核） | **回大厅/登录页** |
 | `11004` | USER_NOT_FOUND | 用户不存在 | **回大厅/登录页** |
 | `11005` | DEVICE_MISMATCH | 账号已绑定其他设备（设备绑定开关开启后，REST 登录/注册/刷新与 WS 握手双闸拒绝；本机使用需管理员在后台解绑） | `toast`（文案 =「账号已绑定其他设备，如需在本机使用请联系管理员解绑」） |
+| `11006` | AGENT_INVITE_INVALID | 邀请码无效（无效/停用/代理冻结/关闭期） | `toast`（「邀请码无效，请确认后重试」） |
+| `11007` | AGENT_FROZEN | 冻结代理被禁止的动作（预留） | `toast` |
 | `12001` | ROOM_NOT_FOUND | 房间不存在 | **回大厅/登录页** |
 | `12002` | ROOM_FULL | 房间已满 | **回大厅/登录页** |
 | `12003` | NOT_YOUR_TURN | 没轮到你 | `ignore` |
@@ -342,6 +344,10 @@ ack 的形状：`{ code: number, message?: string, data?: unknown }` —— 同�
 | `14008` | E_CARD_COUNTER_UNAVAILABLE | 记牌器未开放（总开关关 / 商品价 0；无配置快照走 10007） | `toast`（记牌器收费片；文案走 message） |
 | `14009` | E_CARD_COUNTER_PRICE_CHANGED | 记牌器价格已更新（确认价 ≠ 服务端当前价） | `toast`（刷新价格后由玩家重新确认） |
 | `14010` | E_CARD_COUNTER_REQUEST_CONFLICT | 同一请求号被不同商品/时长复用 | `toast`（换新请求号重试） |
+| `14011` | AGENT_SETTLEMENT_MIN | 未达最低结算额 / 暂无可结佣金 | `toast`（message 含当前/最低金币） |
+| `14012` | AGENT_SETTLEMENT_PENDING | 已有待处理结算单 | `toast` |
+| `14013` | AGENT_SETTLEMENT_STATE | 结算状态已变化 / 金额或 hash 复核失败（并发入账 ⇒ 撤回重申请） | `toast` |
+| `14014` | AGENT_RATE_INVALID | 分成比例/代理树不变量违反（0–100、上级 ≥ 下级、深度 ≤5、无环） | `toast` |
 | `15001` | PAY_CHANNEL_ERROR | 支付渠道调用失败（下单/查询不可用） | `toast`（文案走 message；可重试提示） |
 | `15002` | PAY_ORDER_NOT_FOUND | 订单不存在或非本人 | `toast` |
 | `15003` | PAY_WITHDRAW_UNAVAILABLE | 提现不可用（开关关/在途已有/低于门槛） | `toast`（文案区分） |

@@ -171,11 +171,15 @@ export function register(
   phone: string,
   password: string,
   nickname: string,
+  inviteCode?: string,
 ): Promise<RestResponse<LoginResult>> {
   return post<LoginResult>('/auth/register', {
     phone,
     password,
     nickname,
+    ...(typeof inviteCode === 'string' && inviteCode.trim() !== ''
+      ? { inviteCode: inviteCode.trim().toUpperCase() }
+      : {}),
     deviceId: getDeviceId(),
   });
 }
