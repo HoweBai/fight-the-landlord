@@ -32,7 +32,7 @@ export async function counterValue(
   labels: Record<string, string>,
   gameType = 'doudizhu',
 ): Promise<number> {
-  const want = { ...labels, game_type: gameType };
+  const want: Record<string, string> = { ...labels, game_type: gameType };
   const keys = Object.keys(want);
   const hit = (await series(name)).find(
     (s) => Object.keys(s.labels).length === keys.length && keys.every((k) => s.labels[k] === want[k]),

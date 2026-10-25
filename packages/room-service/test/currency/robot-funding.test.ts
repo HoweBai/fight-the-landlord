@@ -33,7 +33,7 @@ import {
 import type { ConfigCacheService } from '../../src/config/config-cache.service';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from '../helpers/config-cache.stub';
 import { installSink, restoreLogger } from './helpers';
-import { labeledValue, metricValue } from '../helpers/metric-readout';
+import { labeledValue } from '../helpers/metric-readout';
 import {
   currencyRobotEnsureFailedTotal,
   currencyRobotTopupTotal,

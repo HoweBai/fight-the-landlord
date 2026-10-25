@@ -404,11 +404,9 @@ describe('自重排链：10s 常量周期 + 关停闸（照 rooms.reaper 成例�
     const sweeper = makeSweeper(h);
     await seedMoney(h, moneyEntry({ gameType: 'pdk', createdAt: Date.now() }));
     h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] }); // 部分匹配 ⇒ 留箱
-    const before = (await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })) ?? 0;
-
     await sweeper.sweepOnce(Date.now());
 
-    // gauge 是**绝对快照**（不是累计）：本用例箱里恰 1 条 ⇒ ddz=1（before 可能被前序用例抬高）
+    // gauge 是**绝对快照**（不是累计）：本用例箱里恰 1 条 ⇒ ddz=1
     expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(1);
     expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' })).toBe(0);
   });

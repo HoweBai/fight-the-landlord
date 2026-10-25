@@ -208,11 +208,11 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
 
   it('A1：pending_write 失败计 reason=pending_write', async () => {
     await pdkRoom('PDKM3');
-    const originalHset = redis.hset.bind(redis);
-    vi.spyOn(redis, 'hset').mockImplementation(async (key: string, ...args: never[]) => {
+    const originalHset = redis.hset;
+    redis.hset = (async (key: string, fieldOrObject: unknown, value?: string) => {
       if (String(key).startsWith('match:pending:')) throw new Error('redis down');
-      return originalHset(key, ...(args as never[]));
-    });
+      return originalHset(key, fieldOrObject as never, value);
+    }) as never;
     const before = (await exactSeriesValue(gameStartFailuresTotal, {
       game_type: 'paodekuai', reason: 'pending_write',
     })) ?? 0;
