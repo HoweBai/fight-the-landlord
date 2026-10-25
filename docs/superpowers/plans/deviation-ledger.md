@@ -710,3 +710,7 @@
   与 DDZ 同构，B 组按 D29 不改，经济面/反洗钱另立片。
 - **旧 `risk_reviews` 行 `game_type` 默认 ddz**：**文档过期/已知限制** —— U5 显式选择；
   旧行的 `paodekuai`/`mixed`/`platform` 筛选可能漏，冻结保护用 reasons 兜底。
+- **冻结②续旗覆盖范围**：**仍开放（观察项）** —— 冻结②只在用户进入本轮扫描并集
+  （`applyScanResult` 被调用）时续 `risk:limit`；长期无对局的 throttled(auto) 用户
+  若对侧玩法 SQL 持续失败 >7d，旗会自然过期（DB 行仍 throttled）。按 D21“无近期对局=
+  非活跃风险”接受；若要求“DB throttled 永不失效”，需全量扫 DB throttled 行，另立片。

@@ -30,7 +30,7 @@ import { DeviceBindingsService } from './device-bindings.service';
 /**
  * 风控管理端点（风控片 T6 / 规格 §2.8 四端点逐字；判据 C19 的 HTTP 半边）。
  *
- *  - `GET    /api/admin/risk/reviews`      —— 队列列表（`status&limit(≤100)&cursor`，keyset）。
+ *  - `GET    /api/admin/risk/reviews`      —— 队列列表（`status&limit(≤100)&cursor&gameType`，keyset）。
  *  - `GET    /api/admin/risk/users/:userId` —— 详情聚合（stats/devices+others/entries/hits/binding）。
  *  - `POST   /api/admin/risk/actions`      —— 五动作（写面；actor fail-closed 在 guard）。
  *  - `GET    /api/admin/risk/actions(.csv)` —— 审计读口 + CSV 变体（BOM/消毒/附件名）。
@@ -49,7 +49,7 @@ import { DeviceBindingsService } from './device-bindings.service';
 
 type QueryMap = Record<string, unknown>;
 
-/** `GET reviews` 白名单（§2.8：`status&limit&cursor`）。 */
+/** `GET reviews` 白名单（§2.8：`status&limit&cursor`；B 组加 `gameType`）。 */
 export const REVIEWS_QUERY_KEYS: readonly string[] = ['status', 'cursor', 'limit', 'gameType'];
 /** `GET actions(.csv)` 白名单（§2.8：`userId&action&actor&from&to` + keyset 两键）。 */
 export const ACTIONS_QUERY_KEYS: readonly string[] = [

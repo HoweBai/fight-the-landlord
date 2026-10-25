@@ -642,8 +642,10 @@ describe('风控片 T6：管理端点（C19）', () => {
       expect(RISK_USER_STATUS_UPDATE_SQL).toBe(SPEC_USER_STATUS_UPDATE_SQL);
     });
 
-    it('SQL 常量全文 == 规格逐字：跑得快详情 stats（mode/is_robot/user 三子句）', () => {
+    it('SQL 常量全文 == 规格逐字：跑得快详情 stats（mode/is_robot/整局剔除；刻意不含 users.status）', () => {
       expect(RISK_STATS_PDK_SQL).toBe(SPEC_RISK_STATS_PDK_SQL);
+      expect(RISK_STATS_PDK_SQL).not.toContain('users.status');
+      expect(RISK_STATS_SQL).not.toContain('users.status');
     });
 
     // ── dismiss ────────────────────────────────────────────────────────

@@ -437,6 +437,9 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     expect(RISK_UPSERT_LOCK_SQL).toBe(SPEC_RISK_UPSERT_LOCK_SQL);
     expect(RISK_WIN_RATE_SQL).toBe(SPEC_RISK_WIN_RATE_SQL);
     expect(RISK_WIN_RATE_PDK_SQL).toBe(SPEC_RISK_WIN_RATE_PDK_SQL);
+    // D10：扫描 SQL 带 active 过滤（诊断详情 SQL 刻意不带，见 risk-admin 测试）。
+    expect(RISK_WIN_RATE_PDK_SQL).toContain("u.status = 'active'");
+    expect(RISK_WIN_RATE_SQL).toContain("u.status='active'");
     expect(RISK_DEVICE_COUNT_SQL).toBe(SPEC_RISK_DEVICE_COUNT_SQL);
     expect(RISK_BANNED_USERS_SQL).toBe(SPEC_RISK_BANNED_USERS_SQL);
     expect(RISK_USER_STATUS_SQL).toBe(SPEC_RISK_USER_STATUS_SQL);
@@ -1367,7 +1370,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       });
     });
 
-    it('扫描把 degradedGames（本任务恒空）作为第 5 参传给状态机', async () => {
+    it('扫描把 degradedGames（失败隔离输入）作为第 5 参传给状态机', async () => {
       db.winRows = [{ user_id: 'u-A', games: 5, wins: 5 }];
       await mkSvc(makeScanConfig({ minGames: 1 })).runScanOnce(T0);
       expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual([]);
