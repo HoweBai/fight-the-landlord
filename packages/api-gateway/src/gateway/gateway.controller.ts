@@ -18,6 +18,8 @@ import {
   ADMIN_ACTOR_HEADER,
   ADMIN_HEADER,
   ADMIN_ROLE_HEADER,
+  AGENT_ID_HEADER,
+  AGENT_VER_HEADER,
   AUTHORIZATION_HEADER,
   REAUTH_TICKET_HEADER,
   TOKEN_JTI_HEADER,
@@ -30,7 +32,7 @@ import {
 } from '../auth/identity-headers';
 // ③ T5（§2.10）：登录路径判定（clientIp 产出的唯一开关）—— 与中间件豁免/限流登录桶
 // 共用同一份（`public-paths.ts` 单一真源）。
-import { isAdminLoginPath } from '../auth/public-paths';
+import { isAdminLoginPath, isAgentLoginPath, isAgentPath } from '../auth/public-paths';
 // ③ T5：clientIp 的**派生**实现（peer 派生 + 可信表解析；与限流共用同一份口径）。
 import { requestClientIp } from '../http/trusted-client-ip';
 
@@ -429,6 +431,130 @@ export class GatewayController {
     );
   }
 
+  // ─── 代理门户（2026-10-26）────────────────────────────────────────────────
+  // 鉴权：JwtMiddleware 跳过 `/api/agent/*`；AgentAuthMiddleware 验代理令牌后注入
+  // `X-Agent-Id`/`X-Agent-Ver`（login 是唯一豁免）；policy 不涉及（代理路由不进 admin policy）。
+  // query 白名单：列表面恰 `page,pageSize`（R75 同族）。
+
+  @Post('agent/login')
+  @HttpCode(200)
+  async agentLogin(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/agent/login',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('agent/password')
+  @HttpCode(200)
+  async agentPassword(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/agent/password',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/me')
+  async agentMe(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc('GET', '/api/agent/me', null, res, headersOf(req));
+  }
+
+  @Get('agent/overview')
+  async agentOverview(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      '/api/agent/overview',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/players')
+  async agentPlayers(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/agent/players${strictQueryOf(req, ['page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/commissions')
+  async agentCommissions(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/agent/commissions${strictQueryOf(req, ['page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/subtree')
+  async agentSubtree(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      '/api/agent/subtree',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/settlements')
+  async agentSettlements(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/agent/settlements${strictQueryOf(req, ['page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('agent/settlements')
+  @HttpCode(200)
+  async agentCreateSettlement(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/agent/settlements',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/settlements/:id')
+  async agentSettlementDetail(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/agent/settlements/${encodeURIComponent(id)}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('agent/settlements/:id/cancel')
+  @HttpCode(200)
+  async agentCancelSettlement(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/agent/settlements/${encodeURIComponent(id)}/cancel`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
   /**
    * `POST /api/admin/wallet/adjust`：管理调整（body 透传照 `PUT /api/admin/config/:key`
    * 先例）。本网关**不**解析/校验 body —— 契约的单一真源在 currency-service
@@ -774,6 +900,297 @@ export class GatewayController {
     return this.proxyGateway.forwardToPaymentSvc(
       'POST',
       '/api/admin/pay/players/summary',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  // ─── 代理管理（2026-10-26）────────────────────────────────────────────────
+  // 授权在 gateway policy（显式 P 条目先于 P8/P4）；下游 `XAdminGuard` 再验 `X-Admin`/actor。
+  // 路由声明序：**字面量先于 `:id`**（Nest/Express 按声明序匹配）。
+
+  @Get('admin/agents')
+  async adminAgents(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agents${strictQueryOf(req, ['status', 'q', 'page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents')
+  @HttpCode(200)
+  async adminCreateAgent(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/admin/agents',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agents/tree')
+  async adminAgentTree(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      '/api/admin/agents/tree',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agents/settings')
+  async adminAgentSettings(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      '/api/admin/agents/settings',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Patch('admin/agents/settings')
+  async adminUpdateAgentSettings(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'PATCH',
+      '/api/admin/agents/settings',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agent-audit')
+  async adminAgentAudit(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agent-audit${strictQueryOf(req, ['page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agent-reconciliation')
+  async adminAgentReconciliation(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agent-reconciliation${strictQueryOf(req, ['from', 'to'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/bind')
+  @HttpCode(200)
+  async adminAgentBind(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/admin/agents/bind',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/unbind')
+  @HttpCode(200)
+  async adminAgentUnbind(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/admin/agents/unbind',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agents/:id')
+  async adminAgentDetail(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agents/${encodeURIComponent(id)}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Patch('admin/agents/:id')
+  async adminUpdateAgent(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'PATCH',
+      `/api/admin/agents/${encodeURIComponent(id)}`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/status')
+  @HttpCode(200)
+  async adminAgentStatus(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/status`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/reset-password')
+  @HttpCode(200)
+  async adminAgentResetPassword(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/reset-password`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/invite-code/rotate')
+  @HttpCode(200)
+  async adminAgentRotateCode(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/invite-code/rotate`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Patch('admin/agents/:id/payout')
+  async adminAgentPayout(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'PATCH',
+      `/api/admin/agents/${encodeURIComponent(id)}/payout`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agents/:id/bindings')
+  async adminAgentBindings(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agents/${encodeURIComponent(id)}/bindings${strictQueryOf(req, ['page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/bindings/bulk')
+  @HttpCode(200)
+  async adminAgentBulkRebind(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/bindings/bulk`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/adjustments')
+  @HttpCode(200)
+  async adminAgentAdjustment(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/adjustments`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agent-settlements')
+  async adminAgentSettlements(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agent-settlements${strictQueryOf(req, ['status', 'page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agent-settlements/:id')
+  async adminAgentSettlementDetail(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agent-settlements/${encodeURIComponent(id)}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agent-settlements/:id/pay')
+  @HttpCode(200)
+  async adminAgentSettlementPay(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agent-settlements/${encodeURIComponent(id)}/pay`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agent-settlements/:id/reject')
+  @HttpCode(200)
+  async adminAgentSettlementReject(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agent-settlements/${encodeURIComponent(id)}/reject`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agent-adjustments')
+  async adminAgentAdjustments(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agent-adjustments${strictQueryOf(req, ['agentId', 'status', 'page', 'pageSize'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agent-adjustments/:id/approve')
+  @HttpCode(200)
+  async adminAgentAdjustmentApprove(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agent-adjustments/${encodeURIComponent(id)}/approve`,
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agent-adjustments/:id/reject')
+  @HttpCode(200)
+  async adminAgentAdjustmentReject(@Param('id') id: string, @Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agent-adjustments/${encodeURIComponent(id)}/reject`,
       body,
       res,
       headersOf(req),
@@ -1493,6 +1910,15 @@ function headersOf(req: any): DownstreamHeaders {
   if (typeof adminRole === 'string') headers.adminRole = adminRole;
 
   const path: string = String(req?.originalUrl ?? req?.url ?? '').split('?')[0] ?? '';
+
+  // 代理门户（2026-10-26）：仅 `/api/agent/*`（非 login）产出。
+  // 值来自 `AgentAuthMiddleware` 验签后的注入（客户端伪造头已先剥）。
+  if (isAgentPath(path) && !isAgentLoginPath(path)) {
+    const agentId = req?.headers?.[AGENT_ID_HEADER];
+    const agentVer = req?.headers?.[AGENT_VER_HEADER];
+    if (typeof agentId === 'string') headers.agentId = agentId;
+    if (typeof agentVer === 'string') headers.agentVer = agentVer;
+  }
 
   // ③ T5（§2.10「登录路径 clientIp 注入」）：仅 `POST /api/admin/login` 产出 ——
   // 值由网关**派生**（`requestClientIp`：socket → req.ip → 'unknown' + 可信表解析），

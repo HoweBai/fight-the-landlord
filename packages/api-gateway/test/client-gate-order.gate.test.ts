@@ -22,7 +22,13 @@ const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const APP_MODULE = join(REPO, 'packages', 'api-gateway', 'src', 'app.module.ts');
 
 /** 生产链的**预期序**（逐字 = 规格 §5.1 + app.module.ts「顺序即契约」注释）。 */
-const EXPECTED_ORDER = ['ClientGateMiddleware', 'JwtMiddleware', 'AdminAuthMiddleware', 'HttpRateLimitMiddleware'];
+const EXPECTED_ORDER = [
+  'ClientGateMiddleware',
+  'JwtMiddleware',
+  'AdminAuthMiddleware',
+  'AgentAuthMiddleware',
+  'HttpRateLimitMiddleware',
+];
 
 export interface ApplyChain {
   /** `consumer.apply(...)` 里的中间件类名（按出现序）。 */
@@ -83,7 +89,7 @@ export function orderViolations(chain: ApplyChain): string[] {
 }
 
 describe('C14b 真链序机械闸：app.module.ts 的中间件注册序列', () => {
-  it('apply 链 = [ClientGateMiddleware → JwtMiddleware → AdminAuthMiddleware → HttpRateLimitMiddleware] 且以 {/*splat} 收尾（逐字）', () => {
+  it('apply 链 = [ClientGateMiddleware → JwtMiddleware → AdminAuthMiddleware → AgentAuthMiddleware → HttpRateLimitMiddleware] 且以 {/*splat} 收尾（逐字）', () => {
     const chain = parseApplyChain(readFileSync(APP_MODULE, 'utf-8'));
 
     // ① 逐字序（含第 0 步最先）与注册形态 —— 违规输出定位串，红时直接指认漂移处。
@@ -94,7 +100,7 @@ describe('C14b 真链序机械闸：app.module.ts 的中间件注册序列', () 
   });
 
   it('探针判别力自证：换序 / 旧形态 / 缺员 / 多链**都必须**被判出来（防恒绿）', () => {
-    const good = `consumer.apply(ClientGateMiddleware, JwtMiddleware, AdminAuthMiddleware, HttpRateLimitMiddleware).forRoutes('{/*splat}');`;
+    const good = `consumer.apply(ClientGateMiddleware, JwtMiddleware, AdminAuthMiddleware, AgentAuthMiddleware, HttpRateLimitMiddleware).forRoutes('{/*splat}');`;
 
     // ① 正对照：好形态零违规（否则下面的判红可能只是「闸恒红」）。
     expect(orderViolations(parseApplyChain(good))).toEqual([]);

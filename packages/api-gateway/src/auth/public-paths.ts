@@ -124,6 +124,27 @@ export function isAdminPath(path: string): boolean {
 }
 
 /**
+ * 代理门户前缀（2026-10-26）：`/api/agent` —— `JwtMiddleware` 对 `isAgentPath()` 为真的路径
+ * **整段跳过玩家验签**（代理令牌由紧随 `AdminAuthMiddleware` 之后的 `AgentAuthMiddleware` 自证）。
+ *
+ * ⚠️ 与 `PUBLIC_PATHS` **分列**（语义不同：这里是「不适用玩家凭据」，不是「无需凭据」）。
+ * ⚠️ 边界必须是 `${AGENT_PREFIX}/`（`/api/agentx` 不得被吞进代理面）。
+ * ⚠️ 大小写不敏感（与 `isAdminPath` 同族：Express 路由大小写不敏感，否则 `/API/agent/*`
+ * 会落回玩家验签 ⇒ 401，或绕过代理中间件）。
+ */
+export const AGENT_PREFIX = '/api/agent';
+
+export function isAgentPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower === AGENT_PREFIX || lower.startsWith(`${AGENT_PREFIX}/`);
+}
+
+/** 代理登录入口（**精确、原值**；`AgentAuthMiddleware` 的唯一豁免）。 */
+export function isAgentLoginPath(path: string): boolean {
+  return path === `${AGENT_PREFIX}/login`;
+}
+
+/**
  * ③ T5（规格 §2.10 第 3 步 + 「登录路径 clientIp 注入」）：管理登录**入口**路径 ——
  * 豁免的**唯一**一条。
  *
