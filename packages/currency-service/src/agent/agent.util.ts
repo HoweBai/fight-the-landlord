@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 /** 从库里读出的 number/bigint ⇒ 安全整数（读不出 ⇒ 抛，不静默转 NaN/字符串）。 */
 export function toSafeInt(value: unknown, context: string): number {
@@ -19,6 +19,12 @@ export function maskPhone(phone: string): string {
   const p = normalizePhone(phone);
   if (p.length < 7) return p;
   return `${p.slice(0, 3)}****${p.slice(-4)}`;
+}
+
+/** 手机号 HMAC（自玩判定）。production 缺 key 由 `main.ts` 启动 fail-closed。 */
+export function hmacPhone(phone: string): string {
+  const key = process.env.AGENT_PHONE_HMAC_KEY || 'dev-agent-phone-hmac-key';
+  return createHmac('sha256', key).update(normalizePhone(phone)).digest('hex');
 }
 
 /** SHA-256 hex（items_hash / 审计指纹）。 */

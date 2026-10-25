@@ -4,6 +4,7 @@ import { AgentSettingsService } from './agent-settings.service';
 import { AgentQuotaService } from './agent-quota.service';
 import { AgentQuotaMaturityService } from './agent-quota-maturity.service';
 import { AgentLedgerService } from './agent-ledger.service';
+import { AgentGapService } from './agent-gap.service';
 
 /**
  * 代理分润域（spec §4/§8/§9）。
@@ -21,6 +22,7 @@ import { AgentLedgerService } from './agent-ledger.service';
     AgentSettingsService,
     AgentQuotaService,
     AgentQuotaMaturityService,
+    AgentGapService,
     AgentLedgerService,
   ],
   exports: [AgentSettingsService, AgentQuotaService, AgentLedgerService],
