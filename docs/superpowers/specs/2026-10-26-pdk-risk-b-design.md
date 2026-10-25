@@ -484,7 +484,9 @@ export const riskScanSqlFailuresTotal = createCounter(
 与 `baselines.json`。覆盖：
 
 - ⓪ 配置快照/开启：pdk enabled/two/nonThree/gold；`game.levels.paodekuai` 15 档台费 10%；
-  `game.paodekuai.rakePercent=10`；`player2/3/4.*` 阈值 0.5/1；`autoThrottleScore=25`。
+  `game.paodekuai.rakePercent=10`；`player2/3/4.*` 阈值 0.5/1；
+  **DDZ 风控 `game.doudizhu.risk.minGames=1` / `winRateThreshold=0.5`（mixed 组需要）**；
+  `autoThrottleScore=25`；`risk.scanIntervalMs=5000`。
 - ① 14003（2/4 各一）：0 余额 ⇒ 14003 + 消息含 needed（15×10=150）；补足 150 ⇒ 入队。
 - ② PDK gold 2 人：两真人匹配、开局、打到终局；断言 2 座结算零和、rake>0、
   `game.balances` 2 座、余额不为负；记录 `player_count=2`、`mode='gold'`。
@@ -502,7 +504,8 @@ export const riskScanSqlFailuresTotal = createCounter(
   - reasons 含 `playerCount` 且按 2/3/4 升序；`stats.byGame.paodekuai.byPlayerCount` 正确；
   - 含机器人座的整局不计入：2 人桶 games=2（不是 3）、wins=2；
   - `gameType=paodekuai` 筛选能看到 mixed/paodekuai 行；`doudizhu` 不含纯 PDK 行；
-    `mixed` 精确筛选命中“DDZ+PDK 双命中”用户；
+    `mixed` 精确筛选命中“DDZ+PDK 双命中”用户（该用户注入 2 条 DDZ 纯人类胜局 +
+    2 条 PDK 3 人胜局）；
   - `autoThrottleScore=25` 时第二轮扫描把 PDK 25 分条目自动限流（`risk:limit` 旗）。
 - ⑤ 收尾：还原配置/队列/旗；对自动限流条目人工 `unthrottle`/`dismiss` 清理。
 - 真栈不可用 ⇒ 只跑 `tsc`，报告中登记“待权威轮”，不得声称已跑。
