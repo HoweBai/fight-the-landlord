@@ -203,3 +203,9 @@
 protocol 增加 2/3 人负向回归（3 条必须拒）；4 人 hint/target 用例落 `pdk-board.test.ts`
 （`pdk-hint` 不吃 recentActions）且用「含 ≤目标的牌」防假绿；余额断言锚 `.seat__coin-value`；
 e2e 按文本选「4 人」且 `canPass` 读 `pdkCanPass`。
+
+## 10. 代码审查记录（2026-10-25）
+
+独立 reviewer：**Critical 1 / Important 0 / Minor 0**。Critical = slice-29 的 3 人房
+WS 未及时关闭，⑧ 4 人组会把同 IP 并发顶到 7 > 网关上限 5（真栈不可达）。
+已修：⑥ 用完后立即关闭 3 人房 3 条 WS（⑦ 峰值 2、⑧ 峰值 4），外层 finally 幂等重复关闭。

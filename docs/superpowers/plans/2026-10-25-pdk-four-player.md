@@ -178,3 +178,12 @@ node scripts/browser-e2e.mjs --scenario pdk4   # 环境可用时
   只有源码级判据；`slice-29` 基线按源码静态计数 89→117 回填（零 `skip()`、固定 4 客户端循环），
   Docker 恢复后按实测校正。
 - 代码审查结论待补。
+
+## 代码审查记录（2026-10-25，独立 reviewer）
+
+范围 `ff52b152..HEAD`：**Critical 1 / Important 0 / Minor 0**。
+
+- **Critical（已修）**：slice-29 的 3 人房 `room.clients` 到切片末尾才关，⑧ 再开 4 条
+  ⇒ 同 IP WS 峰值 7 > 网关 `WS_CONN_LIMIT.max=5`，4 人组在真栈不可能绿。
+  处置：⑥ 用完后立即关闭 3 人房 3 条 WS（⑦ 峰值 2、⑧ 峰值 4）；外层 `finally`
+  的重复 `close()` 幂等。基线计数不变（117）。

@@ -480,6 +480,10 @@ export async function runSlice29(): Promise<{ passed: string[] }> {
           info(`⑥ 配置还原失败（保留原始错误）：${String(restoreErr)}`);
         }
       }
+    // ⑥ 用完 3 人房后立即关掉它的 3 条 WS：网关同 IP 并发上限 = 5
+    //（`WS_CONN_LIMIT.max`）。⑦/⑧ 还要各开 2/4 条，不关会顶到 7 条 ⇒ 握手被拒。
+    for (const c of room.clients) c.close();
+
     step('⑦ 2 人场：闸负对照 → 开闸 → 2 人成局/16 张/零和/记录');
     const admin2p = await adminLogin();
     await putConfigOrThrow(admin2p, PDK_TWO_PLAYER_KEY, false, '2 人闸置 false ');
