@@ -11,9 +11,11 @@
 **交接文档：`docs/superpowers/plans/2026-10-26-agent-commission-handoff.md`（先读它）**
 
 - ✅ 任务 0–12 已实现并提交（`faf65bd3` … `e6e70950`）；测试基线见交接文档 §2。
-- ✅ 任务 13：管理后台「代理」UI（`876be015`；`verify:admin` 465 条 + jsdom 冒烟）。
+- ✅ 任务 13：管理后台「代理」UI（`876be015`；`verify:admin` 471 条 + jsdom 冒烟）。
 - ✅ 任务 14：代理门户静态站 + edge（`dc5e6aaf`；`verify:agent` 104 条 + jsdom 冒烟）。
-- 🔸 任务 15：slice-30 真库 + design.md env 表已提交（`56f84133`）；独立代码审查与 GitHub CI 真库轮待完成。
+- ✅ 任务 15（代码）：slice-30 真库 + design.md env 表（`56f84133`）；r3 独立审查 Critical/Important
+  修复（`324d6442` / `71be4070`）；本机全量绿（`pnpm test` 29/29、`pnpm lint` 18/18）。
+- 🔸 任务 15（真库）：slice-30 由 GitHub CI 跑；`baselines.json` 已静态回填 136，待 CI 复核。
 - dev 尚未推送；master / tag / 部署未动（等用户发话）。
 
 ## 全局约束
