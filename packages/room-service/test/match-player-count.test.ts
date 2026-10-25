@@ -170,4 +170,66 @@ describe('2/3/4 人匹配参数化（Task 2.3）', () => {
       predicate: 'sameDevice', game_type: 'paodekuai',
     })).toBe(beforeRej + 1);
   });
+
+  it('B 组：2 人 PDK 同 device 票不同房；谓词拒绝指标 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    h.configCache.riskPredicateSameDevice.mockReturnValue(true);
+    h.clock.set(T0);
+    for (const id of ['a1', 'a2']) {
+      await h.service.addToQueue(id, 'random', 15, undefined, { deviceId: 'dev-1' }, {
+        gameType: 'paodekuai',
+        playerCount: 2,
+      });
+    }
+    const before = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice',
+      game_type: 'paodekuai',
+    })) ?? 0;
+    h.clock.set(T0 + 31_000);
+    await h.service.scanOnce();
+
+    for (const call of h.rooms.createGameRoom.mock.calls) {
+      const ids = call[0] as string[];
+      expect(ids.includes('a1') && ids.includes('a2')).toBe(false);
+    }
+    expect(
+      await exactSeriesValue(matchPredicateRejectionsTotal, {
+        predicate: 'sameDevice',
+        game_type: 'paodekuai',
+      }),
+    ).toBeGreaterThan(before);
+  });
+
+  it('B 组：4 人 PDK 全同 device 不会两人同房；谓词拒绝指标 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    h.configCache.riskPredicateSameDevice.mockReturnValue(true);
+    h.clock.set(T0);
+    for (const id of ['a1', 'a2', 'a3', 'a4']) {
+      await h.service.addToQueue(id, 'random', 15, undefined, { deviceId: 'dev-1' }, {
+        gameType: 'paodekuai',
+        playerCount: 4,
+      });
+    }
+    const before = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice',
+      game_type: 'paodekuai',
+    })) ?? 0;
+    h.clock.set(T0 + 31_000);
+    await h.service.scanOnce();
+
+    for (const call of h.rooms.createGameRoom.mock.calls) {
+      const ids = call[0] as string[];
+      // 同 device 的任意两人都不得同组；全同 device 时最多只应有一个真人进组。
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids.length).toBeLessThanOrEqual(1);
+    }
+    expect(
+      await exactSeriesValue(matchPredicateRejectionsTotal, {
+        predicate: 'sameDevice',
+        game_type: 'paodekuai',
+      }),
+    ).toBeGreaterThan(before);
+  });
 });

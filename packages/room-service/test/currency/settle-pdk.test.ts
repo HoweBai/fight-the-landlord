@@ -115,6 +115,54 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
     );
   });
 
+  it('2 人：bot 输家余额 1 < 应付 960 ⇒ 截断为 1 + afterSettle 带 paodekuai/余额 0', async () => {
+    const h = makeHarness();
+    const result = pdkResult(2, [960, -960]);
+    const room = pdkRoom(2);
+    room.players[1] = { seat: 1, userId: 'p_bot', isRobot: true };
+    h.currency.get.mockResolvedValue({
+      balances: [
+        { ownerId: 'u0', balance: 1000, exists: true },
+        { ownerId: 'bot-int-1', balance: 1, exists: true },
+      ],
+    });
+    h.currency.apply.mockImplementation(
+      async (req: {
+        actionId: string;
+        entries: Array<{ ownerId: string; delta: number }>;
+      }) =>
+        applyOk(req.actionId, req.entries, {
+          u0: 1001,
+          'bot-int-1': 0,
+        }),
+    );
+
+    await h.svc.settle({
+      roomCode: 'ROOM01',
+      version: 7,
+      result,
+      room,
+      botBySeat: new Map([[1, 'bot-int-1']]),
+    });
+
+    expect(h.currency.apply).toHaveBeenCalledTimes(1);
+    expect(h.currency.apply.mock.calls[0]![0]).toMatchObject({
+      gameType: 'paodekuai',
+      entries: [
+        { ownerId: 'u0', ownerType: 'user', delta: 1 },
+        { ownerId: 'bot-int-1', ownerType: 'robot', delta: -1 },
+      ],
+    });
+    expect(h.broadcasts[0]!.balances).toEqual([
+      { seat: 0, balance: 1001 },
+      { seat: 1, balance: 0 },
+    ]);
+    expect(h.robotHook.afterSettle).toHaveBeenCalledWith(
+      [{ botId: 'bot-int-1', balanceAfter: 0 }],
+      'paodekuai',
+    );
+  });
+
   it('座位/人数不符（pdk 2 人结果、房间 3 座）⇒ dropped，不结算', async () => {
     const h = makeHarness();
     const result = pdkResult(2, [15, -15]);

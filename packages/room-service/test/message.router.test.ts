@@ -694,6 +694,58 @@ describe('routeClientMessage', () => {
       expect(ack.code).toBe(14003);
     });
 
+    it('C4：PDK 2/3/4 人金币场门槛仍 = 底分 × entryMultiplier（149 ⇒ 14003、150 ⇒ 入队）', async () => {
+      for (const playerCount of [2, 3, 4] as const) {
+        const { deps, match, configCache, currency } = makeDeps();
+        configCache.paodekuaiEnabled.mockReturnValue(true);
+        configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
+        configCache.paodekuaiNonThreePlayerEnabled.mockReturnValue(true);
+        configCache.goldRoomEnabled.mockReturnValue(true);
+        configCache.entryMultiplier.mockReturnValue(10);
+        currency.get.mockResolvedValue({
+          balances: [{ ownerId: 'alice', balance: 149, exists: true }],
+        });
+
+        const ack = await route(
+          deps,
+          makeSocket('alice'),
+          C('room.match', {
+            mode: 'gold',
+            baseScore: 15,
+            gameType: 'paodekuai',
+            playerCount,
+          }),
+        );
+
+        expect(ack.code, `pdk ${playerCount}p 149`).toBe(14003);
+        expect(ack.message).toBe('金币不足：该场次需要 ≥ 150');
+        expect(match.addToQueue).not.toHaveBeenCalled();
+
+        currency.get.mockResolvedValue({
+          balances: [{ ownerId: 'alice', balance: 150, exists: true }],
+        });
+        const okAck = await route(
+          deps,
+          makeSocket('alice'),
+          C('room.match', {
+            mode: 'gold',
+            baseScore: 15,
+            gameType: 'paodekuai',
+            playerCount,
+          }),
+        );
+        expect(okAck.code, `pdk ${playerCount}p 150`).toBe(0);
+        expect(match.addToQueue).toHaveBeenLastCalledWith(
+          'alice',
+          'gold',
+          15,
+          undefined,
+          {},
+          { gameType: 'paodekuai', playerCount },
+        );
+      }
+    });
+
     it('C4：免费场（random）**不查资金** —— get 零调用、余额为 0 也照常入队', async () => {
       const { deps, match, currency } = makeDeps();
       // 若实现误把门槛套到免费场，这个会抛的替身会让用例以 10007/13001 变红。

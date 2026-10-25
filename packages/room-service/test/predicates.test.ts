@@ -110,3 +110,28 @@ describe('机器人透明（§2.4-6 · C1：调用方保证，断言文档化）
     expect(canFormTable([a, b], [sameDevice])).toBe(false);
   });
 });
+
+describe('B 组：2/4 人全两两谓词（2026-10-26）', () => {
+  it('2 人：同 device/同 IP 拒绝；不同允许', () => {
+    const a = ticket('a', { deviceId: 'dev-1', ip: '1.1.1.1' });
+    const b = ticket('b', { deviceId: 'dev-1', ip: '1.1.1.1' });
+    const c = ticket('c', { deviceId: 'dev-2', ip: '2.2.2.2' });
+    expect(canFormTable([a, b], [sameDevice])).toBe(false);
+    expect(canFormTable([a, b], [sameIp])).toBe(false);
+    expect(canFormTable([a, c], [sameDevice, sameIp])).toBe(true);
+  });
+
+  it('4 人：任一对同 device ⇒ 整组拒绝；四台不同 ⇒ 允许', () => {
+    const a = ticket('a', { deviceId: 'dev-1' });
+    const b = ticket('b', { deviceId: 'dev-1' });
+    const c = ticket('c', { deviceId: 'dev-2' });
+    const d = ticket('d', { deviceId: 'dev-3' });
+    expect(canFormTable([a, b, c, d], [sameDevice])).toBe(false);
+    expect(
+      canFormTable(
+        [a, ticket('b2', { deviceId: 'dev-2' }), ticket('c2', { deviceId: 'dev-3' }), ticket('d2', { deviceId: 'dev-4' })],
+        [sameDevice],
+      ),
+    ).toBe(true);
+  });
+});

@@ -9,7 +9,7 @@
  * entries 非零过滤与座位序、actionId（含 `:r2`）。
  */
 import { describe, expect, it } from 'vitest';
-import type { DdzSettlementResult } from '@fight-the-landlord/protocol';
+import type { DdzSettlementResult, PdkSettlementResult } from '@fight-the-landlord/protocol';
 import { computeSettlement, type SettleSeatRef } from '../../src/currency/settle.service';
 
 const SEATS: SettleSeatRef[] = [
@@ -234,5 +234,114 @@ describe('computeSettlement：全零 / 余额缺失（exists=false 按 0）', ()
       { seat: 1, delta: 0 },
       { seat: 2, delta: 0 },
     ]);
+  });
+});
+
+describe('B 组：PDK 2/4 人输光截断（2026-10-26）', () => {
+  const pdk2Seats: SettleSeatRef[] = [
+    { seat: 0, ownerId: 'alice', ownerType: 'user' },
+    { seat: 1, ownerId: 'bob', ownerType: 'user' },
+  ];
+  const pdk4Seats: SettleSeatRef[] = [
+    { seat: 0, ownerId: 'alice', ownerType: 'user' },
+    { seat: 1, ownerId: 'bob', ownerType: 'user' },
+    { seat: 2, ownerId: 'carol', ownerType: 'user' },
+    { seat: 3, ownerId: 'dave', ownerType: 'user' },
+  ];
+  const pdk2 = (over: Partial<PdkSettlementResult> = {}): PdkSettlementResult => ({
+    roomCode: 'ROOM01',
+    gameType: 'paodekuai',
+    playerCount: 2,
+    baseScore: 15,
+    winnerSeats: [0],
+    scoreChanges: [
+      { seat: 0, delta: 960 },
+      { seat: 1, delta: -960 },
+    ],
+    remaining: [0, 16],
+    multiplier: 64,
+    bombCount: 0,
+    guan: false,
+    spring: false,
+    baobenSeats: [],
+    ...over,
+  });
+  const pdk4 = (over: Partial<PdkSettlementResult> = {}): PdkSettlementResult => ({
+    roomCode: 'ROOM01',
+    gameType: 'paodekuai',
+    playerCount: 4,
+    baseScore: 15,
+    winnerSeats: [0],
+    scoreChanges: [
+      { seat: 0, delta: 30 },
+      { seat: 1, delta: -10 },
+      { seat: 2, delta: -10 },
+      { seat: 3, delta: -10 },
+    ],
+    remaining: [0, 4, 4, 4],
+    multiplier: 1,
+    bombCount: 0,
+    guan: false,
+    spring: false,
+    baobenSeats: [],
+    ...over,
+  });
+
+  it('2 人：输家余额 1 < 应付 960 ⇒ 实付 1、赢家池 1、零残差/抽水、无负余额', () => {
+    const out = computeSettlement({
+      roomCode: 'ROOM01',
+      version: 1,
+      round: 1,
+      result: pdk2(),
+      seats: pdk2Seats,
+      balances: balances({ alice: 1000, bob: 1 }),
+      rakePercent: 0,
+    });
+    expect(out.deltas).toEqual([
+      { seat: 0, delta: 1 },
+      { seat: 1, delta: -1 },
+    ]);
+    expect(out.entries).toEqual([
+      { ownerId: 'alice', ownerType: 'user', delta: 1 },
+      { ownerId: 'bob', ownerType: 'user', delta: -1 },
+    ]);
+    expect(out.residue).toBe(0);
+    expect(out.rakeTotal).toBe(0);
+  });
+
+  it('4 人：一个输家余额 1、其余 1000 ⇒ 实付 1/10/10、赢家池 21、零残差、无负余额', () => {
+    const out = computeSettlement({
+      roomCode: 'ROOM01',
+      version: 1,
+      round: 1,
+      result: pdk4(),
+      seats: pdk4Seats,
+      balances: balances({ alice: 1000, bob: 1, carol: 1000, dave: 1000 }),
+      rakePercent: 0,
+    });
+    expect(out.deltas).toEqual([
+      { seat: 0, delta: 21 },
+      { seat: 1, delta: -1 },
+      { seat: 2, delta: -10 },
+      { seat: 3, delta: -10 },
+    ]);
+    expect(out.residue).toBe(0);
+    expect(out.rakeTotal).toBe(0);
+  });
+
+  it('4 人 + rake 10%：按实际池 21 抽水 2、赢家实收 19、残差 0', () => {
+    const out = computeSettlement({
+      roomCode: 'ROOM01',
+      version: 1,
+      round: 1,
+      result: pdk4(),
+      seats: pdk4Seats,
+      balances: balances({ alice: 1000, bob: 1, carol: 1000, dave: 1000 }),
+      rakePercent: 10,
+    });
+    expect(out.rakeTotal).toBe(2);
+    expect(out.residue).toBe(0);
+    expect(out.deltas[0]).toEqual({ seat: 0, delta: 19 });
+    expect(out.deltas.reduce((sum, d) => sum + d.delta, 0)).toBe(-2); // 赢家 19 - 输家 21
   });
 });

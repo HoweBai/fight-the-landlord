@@ -314,6 +314,21 @@ describe('RobotFunding.afterSettle：结算后动作（规格 §7 下半；fail-
     await expect(topupCount('refill')).resolves.toBe(before + 1);
   });
 
+  it('paodekuai：afterSettle 的 gameType/actionId/topup 标签均为 paodekuai', async () => {
+    const after = LEVELS.refillLine - 100;
+    const before = await topupCount('refill', 'paodekuai');
+
+    await h.svc.afterSettle([{ botId: BOT, balanceAfter: after }], 'paodekuai');
+
+    expect(h.currency.apply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: `rr:${BOT}:${LEVELS.target}:${after}`,
+        gameType: 'paodekuai',
+      }),
+    );
+    await expect(topupCount('refill', 'paodekuai')).resolves.toBe(before + 1);
+  });
+
   it('balanceAfter > recallLine ⇒ rc 回收至 target（bot→pool 方向）+ topup{recall} +1', async () => {
     const after = LEVELS.recallLine + 5000;
     const before = await topupCount('recall');
