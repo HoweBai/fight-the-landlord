@@ -21,8 +21,9 @@
 | 4 人 | 12 | 48 张洗牌后连续切 4 份 | 无 |
 
 - 2 人局扣下的牌**不公开**，任何玩家（包括对手和客户端）都无法看到或推导。
-- 首版客户端只开放 3 人牌桌；2/4 人由服务端引擎支持，是否开放由配置
-  `game.paodekuai.nonThreePlayerEnabled`（默认 `false`）控制。
+- 客户端已开放 **2 / 3 人**牌桌（2 人场 2026-10-25 起）；4 人由服务端引擎支持，
+  是否开放由配置 `game.paodekuai.nonThreePlayerEnabled`（默认 `false`，只关 4 人）控制；
+  2 人由 `game.paodekuai.twoPlayerEnabled`（默认 `false`）控制。
 
 ## 3. 谁先出牌
 
@@ -138,7 +139,8 @@
 | 配置键 | 默认值 | 说明 |
 |---|---|---|
 | `game.paodekuai.enabled` | `false` | 玩法总开关（默认暗上线） |
-| `game.paodekuai.nonThreePlayerEnabled` | `false` | 是否开放 2/4 人 |
+| `game.paodekuai.twoPlayerEnabled` | `false` | 是否开放 2 人场 |
+| `game.paodekuai.nonThreePlayerEnabled` | `false` | 是否开放 4 人场（键名为历史命名） |
 | `game.levels.paodekuai` | 休闲 15 / 标准 80 / 竞技 480 / 豪侠 1200 | 底分档位表（台费 = 各档 `entryFeePercent`，默认 0） |
 | `game.paodekuai.freeRoomEnabled` | `true` | 跑得快免费场开关（保守灰度：先开免费场） |
 | `game.paodekuai.goldRoomEnabled` | `false` | 跑得快金币场开关（保守灰度：先不碰真钱） |

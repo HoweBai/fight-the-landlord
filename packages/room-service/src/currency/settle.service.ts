@@ -29,7 +29,7 @@ import {
  *    早返**之前**调 `settle()`（fire-and-forget；结算**独立于**记录链）。
  *  - 读边 `currency.get`（结算前余额 → 截断/分摊的输入）；写边 `currency.apply`
  *    （唯一写点，`actionId=settle:<room>:<ver>` 幂等锚）；回写边 `record.moneyDelta`
- *    （三人向量含 0；`matched` 齐三座才算收敛）。
+ *    （人数向量含 0；`matched` 齐 playerCount 座才算收敛）。
  *  - 失败分级（规格 §5 表逐字）：**超时/传输/10007** ⇒ 同 id 同载荷重发 ≤2 次
  *    （退避 300ms/1s）⇒ 仍失败入 `settle:outbox`；**14001** ⇒ 重读余额重算、
  *    `actionId :r2` 至多一轮 ⇒ 仍 14001 入 `settle:outbox`；**10001/14002** ⇒ 终态
@@ -130,7 +130,7 @@ export interface SettleOutboxEntry {
   residue: number;
   /** 本局销毁（本片）：抽水。 */
   rakeTotal: number;
-  /** 收尾链（广播三座/机器人钩子）用的座位身份快照。 */
+  /** 收尾链（广播各座/机器人钩子）用的座位身份快照。 */
   seats: SettleSeatRef[];
   createdAt: number;
   /** 多玩法（Task 2.5 / N2）：本局玩法/人数。**旧条目可能缺失** ⇒ 斗地主/3。 */
@@ -253,7 +253,7 @@ function gameMetaOf(
   return gameType === 'paodekuai' || playerCount !== 3 ? { gameType, playerCount } : undefined;
 }
 
-/** 从 outbox 条目还原三人向量（entries 只含非零 ⇒ 其余座补 0）。 */
+/** 从 outbox 条目还原人数向量（entries 只含非零 ⇒ 其余座补 0）。 */
 function deltasFromEntry(entry: SettleOutboxEntry): Array<{ seat: number; delta: number }> {
   return [...entry.seats]
     .sort((a, b) => a.seat - b.seat)
@@ -302,7 +302,7 @@ export class SettleService {
    *
    * 守卫（缺任 ⇒ WARN + `dropped` 指标 + 不结算；mode 非 gold ⇒ 静默返回）：
    * 房间存在 ∧ `mode==='gold'` ∧ `result` 存在 ∧ `version` 非空（正整数）∧
-   * 三座位齐（恰 0/1/2）∧ 机器人座映射齐（`botBySeat`，C25）。
+   * 座位齐（恰 0..playerCount-1）∧ 机器人座映射齐（`botBySeat`，C25）。
    */
   async settle(input: SettleInput): Promise<void> {
     try {
@@ -703,7 +703,7 @@ export class SettleService {
   }
 
   /**
-   * 三座余额 → 广播载荷（座位升序、恰 3 条）。
+   * 各座余额 → 广播载荷（座位升序、恰 playerCount 条）。
    *
    * 有 entry 的座 ⇒ apply 响应的 `balanceAfter`；**零 delta 座**（无 entry）⇒ 结算前读数
    * （in-process 路径）或现读一次（outbox 重发路径 —— 那时「结算前读数」已不在手上）。
@@ -850,7 +850,7 @@ export class SettleService {
     }
   }
 
-  /** 处置一条 `recordmoney:outbox`：超龄 ⇒ 放弃；否则重发，`matched` 齐三座 ⇒ 清除。 */
+  /** 处置一条 `recordmoney:outbox`：超龄 ⇒ 放弃；否则重发，`matched` 齐 playerCount 座 ⇒ 清除。 */
   async resendRecordMoneyOutboxEntry(
     field: string,
     entry: RecordMoneyOutboxEntry,
