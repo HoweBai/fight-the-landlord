@@ -376,4 +376,40 @@ describe('自重排链：10s 常量周期 + 关停闸（照 rooms.reaper 成例�
       game_type: 'paodekuai', kind: 'money_delta',
     })).toBe(beforeMoney + 1);
   });
+
+  it('A1：outbox gauge 按 game_type 分组；hgetall 失败保持旧值', async () => {
+    const h = makeHarness();
+    const sweeper = makeSweeper(h);
+    await seedSettle(h, settleEntry({ gameType: 'paodekuai', createdAt: Date.now() }));
+    await seedMoney(h, moneyEntry({ createdAt: Date.now() })); // 缺省 gameType ⇒ ddz
+    // 让两条都留在箱里：settle 重发失败、money 部分匹配
+    h.currency.apply.mockRejectedValueOnce(new Error('down'));
+    h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] });
+    await sweeper.sweepOnce(Date.now());
+
+    const pdk = await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' });
+    const ddz = await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' });
+    expect(pdk).toBe(1);
+    expect(ddz).toBe(1);
+
+    h.redis.hgetall.mockRejectedValueOnce(new Error('redis down'));
+    await sweeper.sweepOnce(Date.now()).catch(() => undefined);
+
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' })).toBe(pdk);
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(ddz);
+  });
+
+  it('A1：未知 gameType 的 outbox 条目归 ddz 并汇总 WARN', async () => {
+    const h = makeHarness();
+    const sweeper = makeSweeper(h);
+    await seedMoney(h, moneyEntry({ gameType: 'pdk', createdAt: Date.now() }));
+    h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] }); // 部分匹配 ⇒ 留箱
+    const before = (await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })) ?? 0;
+
+    await sweeper.sweepOnce(Date.now());
+
+    // gauge 是**绝对快照**（不是累计）：本用例箱里恰 1 条 ⇒ ddz=1（before 可能被前序用例抬高）
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(1);
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' })).toBe(0);
+  });
 });
