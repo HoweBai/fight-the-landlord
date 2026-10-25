@@ -56,19 +56,19 @@ Critical/Important 必须修。没有用户明确发话前不要推送/部署。
 ## 2. 测试基线（2026-10-26 本机全绿）
 
 ```bash
-pnpm -C packages/protocol test                 # 294
-pnpm -C packages/currency-service test         # 524（含 r3 新增用例）
+pnpm -C packages/protocol test                 # 300
+pnpm -C packages/currency-service test         # 538（含 r3/合并新增）
 pnpm -C packages/currency-service run lint
-pnpm -C packages/user-service test             # 367
+pnpm -C packages/user-service test             # 377
 pnpm -C packages/user-service run lint
 pnpm -C packages/config-service test           # 484（含 /api/config/boot）
 pnpm -C packages/api-gateway test              # 500（含公开面六条）
 pnpm -C packages/api-gateway run lint
 pnpm -C apps/client test                       # 1524 passed / 2 skipped
 pnpm -C apps/client run lint
-pnpm verify:admin                              # 471 checks
+pnpm verify:admin                              # 476 checks
 pnpm verify:agent                              # 104 checks
-pnpm -C packages/shared test                   # 393
+pnpm -C packages/shared test                   # 399
 pnpm test                                      # turbo 29/29
 pnpm lint                                      # turbo 18/18
 ```
@@ -128,8 +128,8 @@ pnpm lint                                      # turbo 18/18
 ### 5.2 本机验证（2026-10-26）
 
 - `pnpm test` 29/29；`pnpm lint` 18/18；room-service 895（含 `meta-on-every-rpc-send` 闸）。
-- currency 524 / config 484 / gateway 500 / client 1524（2 skipped）/ shared 393 /
-  protocol 294 / user 367；`verify:admin` 471；`verify:agent` 104；conformance tsc 通过。
+- currency 538 / config 484 / gateway 500 / client 1525（2 skipped）/ shared 399 /
+  protocol 300 / user 377 / room 917；`verify:admin` 476；`verify:agent` 104；conformance tsc 通过。
 - jsdom 冒烟：管理页 super_admin/finance 各 14+ 项；门户 26 项（首登改密/五页签/结算/401）。
 - **真库 slice-30 未在本机跑**（Docker daemon 不可用）⇒ 由 GitHub CI 跑；`baselines.json`
   已按源码静态计数回填 `slice-32-agent = 136`（CI 实测复核）。
