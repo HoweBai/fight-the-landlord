@@ -38,6 +38,7 @@ export const FAILSAFE_CLIENT_CONFIG: ClientConfigState = {
   withdrawMaxCoinsPerOrder: null,
   withdrawDailyMaxCoins: null,
   withdrawReAuthEnabled: false,
+  agentInviteEnabled: false,
   version: 0,
 };
 
@@ -91,6 +92,7 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
         ? raw.withdrawDailyMaxCoins
         : null,
     withdrawReAuthEnabled: raw?.withdrawReAuthEnabled === true,
+    agentInviteEnabled: raw?.agentInviteEnabled === true,
     // 多玩法（S5.4）：新服务端下发 `games`；缺省 = 旧服务端（只有斗地主可见）。
     games: raw?.games,
     version: raw?.version ?? 0,

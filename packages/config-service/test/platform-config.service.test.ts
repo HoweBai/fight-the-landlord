@@ -333,7 +333,8 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.risk.winRateThreshold', 0.8],
   ['game.paodekuai.risk.minGames', 100],
   ['currency.reliefThresholdCoins', 150],
-
+  // 代理分润（2026-10-26；来自 `AgentInviteKey1796900000000`）
+  ['agent.inviteEnabled', false],
 ];
 
 const FRIEND_KEY = 'game.doudizhu.friendRoomEnabled';
@@ -375,14 +376,14 @@ afterEach(() => {
  * ------------------------------------------------------------------ */
 
 describe('PlatformConfigService（规格 §2.1 / A6）', () => {
-  it('① list() 首查命中九十三键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
+  it('① list() 首查命中九十四键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
     const { svc, db, repo } = makeService(new FakeDb());
     seed(db);
 
     const rows = await svc.list();
 
-    expect(rows).toHaveLength(93);
-    // SEED 与 CONFIG_KEYS 同步为 93 键（含跑得快 2 人闸与风控两键）。
+    expect(rows).toHaveLength(94);
+    // SEED 与 CONFIG_KEYS 同步为 94 键（含跑得快 2 人闸与风控两键、代理邀请码开关）。
     expect(rows.map((r) => r.key).sort()).toEqual(SEED.map(([key]) => key).sort());
     for (const r of rows) {
       expect(r.version).toBe(1);

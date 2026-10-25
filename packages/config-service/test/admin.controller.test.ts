@@ -17,7 +17,7 @@ import { FakeAdminDb, makeService, seedDb, startHttpProbe, type HttpProbe } from
  *    **碰不到 handler**（PUT 被拦时值必须原样））；
  *  - `PUT` 非法 ⇒ **400 + 原因**且**不落库**（C5：「400 了却先落库」是最像正确答案的错实现）；
  *  - `PUT` 成功 ⇒ `{saved:true, announced, version}`（announced 如实透传 C12）；
- *  - `GET /api/admin/config` ⇒ 全量九十三键 + 每键 `{value, version}` + 全局 MAX；
+ *  - `GET /api/admin/config` ⇒ 全量九十四键 + 每键 `{value, version}` + 全局 MAX；
  *  - ③ T4：`PUT` 的 `X-Admin-Actor` 缺失/非法 ⇒ **401 fail-closed**（不回退）；成功写 ⇒
  *    `config_changes` 留痕行 `{key, oldValue, newValue, actor}` + `updated_by = actor`（§2.6）。
  *
@@ -166,7 +166,7 @@ describe('PUT /api/admin/config/:key（C5 集成半边 / C12 面）', () => {
     expect(row(db, 'room.reapIntervalMs')).toMatchObject({ value: 61000, version: v0 + 1 });
   });
 
-  it('GET /api/admin/config：全量 CONFIG_KEYS（93 键）、每键 {value, version}、全局 version = MAX', async () => {
+  it('GET /api/admin/config：全量 CONFIG_KEYS（94 键）、每键 {value, version}、全局 version = MAX', async () => {
     const res = await probe.get('/api/admin/config', AUTH);
 
     expect(res.status).toBe(200);

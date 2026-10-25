@@ -98,6 +98,8 @@ describe('完整键清单与客户端子集', () => {
       'game.paodekuai.risk.winRateThreshold',
       'game.paodekuai.risk.minGames',
       'currency.reliefThresholdCoins',
+      // 代理分润（2026-10-26）：客户端邀请码开关（裸名 agentInviteEnabled）
+      'agent.inviteEnabled',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
       'baseScoreLevels', 'friendRoomEnabled', 'freeRoomEnabled', 'goldRoomEnabled',
@@ -116,6 +118,8 @@ describe('完整键清单与客户端子集', () => {
       'games',
       'reliefThresholdCoins',
       'version',
+      // 代理分润：邀请码输入框门控（缺键/旧服务端 ⇒ false）
+      'agentInviteEnabled',
     ]);
   });
 
@@ -167,6 +171,12 @@ describe('parseConfigValue', () => {
     expect(parseConfigValue('game.cardCounterEnabled', false)).toBe(false);
     expect(() => parseConfigValue('game.cardCounterEnabled', 'true')).toThrow(/boolean/);
     expect(() => parseConfigValue('game.cardCounterEnabled', 1)).toThrow(/boolean/);
+  });
+  it('代理第 94 键 agent.inviteEnabled：严格 boolean（拒字符串/数字）', () => {
+    expect(parseConfigValue('agent.inviteEnabled', true)).toBe(true);
+    expect(parseConfigValue('agent.inviteEnabled', false)).toBe(false);
+    expect(() => parseConfigValue('agent.inviteEnabled', 'true')).toThrow(/boolean/);
+    expect(() => parseConfigValue('agent.inviteEnabled', 1)).toThrow(/boolean/);
   });
   it('modelBySkill：三键齐全且值 ∈ 三档模型名', () => {
     expect(parseConfigValue('robot.modelBySkill', { beginner: 'sl', intermediate: 'douzero_WP', advanced: 'douzero_ADP' }))

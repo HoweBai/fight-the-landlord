@@ -240,6 +240,8 @@ export class ClientConfigController {
         // （空串经 `String('')` 仍是空串；写入侧的严格类型由 protocol `parseConfigValue` 拦）。
         reliefAdpid: String(byKey.get('ad.reliefAdpid') ?? ''),
         games,
+        // 代理分润：邀请码输入框门控（缺键/旧快照 ⇒ false）。
+        agentInviteEnabled: readBoolean(byKey, 'agent.inviteEnabled', undefined, false),
         version: maxVersion(rows),
       },
     };

@@ -167,6 +167,8 @@ export const CONFIG_KEYS = [
   'game.paodekuai.risk.minGames',
   /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
   'currency.reliefThresholdCoins',
+  /** 代理分润（2026-10-26）：客户端注册邀请码输入框开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteEnabled`）。 */
+  'agent.inviteEnabled',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
@@ -229,6 +231,8 @@ export const CLIENT_CONFIG_KEYS = [
   /** 多玩法配置平行化：平台级救助绝对门槛（合法值或 null）。 */
   'reliefThresholdCoins',
   'version',
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  'agentInviteEnabled',
 ] as const;
 
 export interface BaseScoreLevel {
@@ -299,6 +303,8 @@ export interface ClientConfig {
   games?: Partial<Record<GameType, ClientGameConfig>>;
   /** 平行化：平台级救助绝对门槛；旧服务端缺失 / 新服务端坏值 ⇒ null（客户端回退旧算法）。 */
   reliefThresholdCoins?: number | null;
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  agentInviteEnabled: boolean;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -444,6 +450,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'ad.reliefAdpid') return parseReliefAdpid(value);
   if (key === 'client.appEnabled') return parseStrictBoolean(key, value);
   if (key === 'client.h5Enabled') return parseStrictBoolean(key, value);
+  if (key === 'agent.inviteEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.freeBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.goldBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.matchNoBotMaxWaitMs') return parseNoBotMaxWaitMs(value);

@@ -153,6 +153,12 @@ const PAGE_LIMIT = 20;
  *    **65 条备注 / 77 个 active 键**（16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
+  'agent.inviteEnabled': [
+    ['作用', '注册页是否显示可选的代理邀请码输入框；开 ⇒ 玩家填码后永久归属该代理，关 ⇒ 不显示、注册不带码。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
+    ['生效', '保存后客户端下次拉取配置即生效（通常 ≤60s；H5 可硬刷新立即生效）。'],
+    ['注意', '真正的计佣开关在代理设置（`agent_settings.enabled`，仅超级管理员）；本键只管客户端是否显示输入框。两个开关都开才会绑定。'],
+  ],
   'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}，各 ≥ 0，合计须 > 0；可写权重（如 15 / 35 / 50），保存时按合计归一化成占比。默认 0.15 / 0.35 / 0.5。'],
@@ -788,6 +794,17 @@ const CONFIG_IA = [
         ],
       },
       {
+        id: 'agent',
+        name: '代理',
+        tabs: [
+          {
+            id: 'switches',
+            name: '开关',
+            keys: ['agent.inviteEnabled'],
+          },
+        ],
+      },
+      {
         id: 'dataAds',
         name: '广告',
         tabs: [
@@ -879,6 +896,7 @@ const CFG_NAV = [
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
   { leaf: 'nav-cfg-dataad-btn', count: 'nav-count-dataad', domain: 'dataAds' },
+  { leaf: 'nav-cfg-agent-btn', count: 'nav-count-agent', domain: 'agent' },
   { leaf: 'nav-cfg-ungrouped-btn', count: 'nav-count-ungrouped', domain: UNGROUPED_DOMAIN_ID },
 ];
 
@@ -938,6 +956,7 @@ const CONFIG_CONTROLS = {
   'currency.reliefEnabled': { label: '每日救助开关', type: 'bool' },
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
   'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
+  'agent.inviteEnabled': { label: '注册邀请码入口', type: 'bool' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },

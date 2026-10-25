@@ -281,6 +281,8 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.risk.winRateThreshold', 0.8],
   ['game.paodekuai.risk.minGames', 100],
   ['currency.reliefThresholdCoins', 150],
+  // 代理分润（2026-10-26；来自 `AgentInviteKey1796900000000`）
+  ['agent.inviteEnabled', false],
 ];
 
 export function seedDb(): FakePlatformDb {

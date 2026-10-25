@@ -10,7 +10,7 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 77 个 active 键
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 78 个 active 键
  *     （72 简单 + 5 结构化）。
  *  3. 控件定稿表：72 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
@@ -209,9 +209,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 93, `protocol CONFIG_KEYS 恰 93 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 77, `active = CONFIG_KEYS − LEGACY 恰 77 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 77, `CONFIG_IA 覆盖 77 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 94, `protocol CONFIG_KEYS 恰 94 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 78, `active = CONFIG_KEYS − LEGACY 恰 78 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 78, `CONFIG_IA 覆盖 78 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -275,7 +275,7 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 65, `CONFIG_NOTES 恰 65 条（实测 ${noteKeys.length}）`);
+ok(noteKeys.length === 66, `CONFIG_NOTES 恰 66 条（实测 ${noteKeys.length}）`);
 const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', '}');
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
@@ -308,7 +308,7 @@ ok(
 );
 ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnabledGameWarning：缺键按默认值判定');
 
-/* ── 5. CONFIG_CONTROLS：72 简单键 + 5 结构化键 = 77；定稿表 ─── */
+/* ── 5. CONFIG_CONTROLS：73 简单键 + 5 结构化键 = 78；定稿表 ─── */
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
@@ -332,6 +332,7 @@ const BOOL_KEYS = [
   'pay.withdrawEnabled',
   'client.appEnabled',
   'client.h5Enabled',
+  'agent.inviteEnabled',
   'risk.withdrawReAuthEnabled',
   'game.doudizhu.cardCounterEnabled',
   // 跑得快 5 个场次/好友房/补位开关
@@ -405,12 +406,12 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 72, `CONFIG_CONTROLS 恰 72 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 73, `CONFIG_CONTROLS 恰 73 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '77 键 = 72 简单 ∪ 5 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '35 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 35 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '35 布尔键 type=bool');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '78 键 = 73 简单 ∪ 5 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
+ok(BOOL_KEYS.length === 36 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '36 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
 ok(numberKeys.length === 35, `数字键定论表 35 个（实测 ${numberKeys.length}）`);
