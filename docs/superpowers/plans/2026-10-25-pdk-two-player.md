@@ -245,6 +245,21 @@ pnpm -C tools/conformance lint
 node scripts/browser-e2e.mjs --scenario pdk2   # 环境可用时
 ```
 
+## 执行记录（2026-10-25）
+
+- T1–T10 全部完成，一任务一 commit：
+  `00cbc16a`(protocol) → `3b58f62a`(config-service) → `f5bac66d`(room-service) →
+  `720938b1`(admin) → `3a6227d8`(client 核心) → `b0c0bb8e`(开始游戏页) →
+  `15416bf4`(牌桌/历史) → `3f85336f`(文档) → `7f012bfe`(conformance) →
+  `d26567d1`(e2e)。
+- 全量：`pnpm exec turbo run test lint --force` ⇒ **44/44 tasks，0 cached**；
+  client **1501 passed / 2 skipped**；`pnpm verify:admin` ⇒ **375 checks passed**；
+  conformance lint + build 通过。
+- **真栈未跑**：本机 Docker daemon 未运行（`docker info` 无 endpoint）⇒ slice-29 的
+  ⑦ 2 人组与 `--scenario pdk2` 只有源码级判据；`slice-29` 基线按源码静态计数
+  69→88 回填（零 `skip()`、固定 2 客户端循环），Docker 恢复后按实测校正。
+- 计划审查与设计审查记录见上；代码审查结论待补。
+
 ## 计划审查记录（2026-10-25，独立 reviewer）
 
 结论：**阻断 3 / 高 3 / 低 11**，全部处置如下。
