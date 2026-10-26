@@ -25,8 +25,8 @@
 ### Task 1: `computeSettlement` 最大余数法 + 判据矩阵
 
 **Files:**
-- Modify: `packages/room-service/src/currency/settle.service.ts:162-241`（算法 + 注释）
-- Test: `packages/room-service/test/currency/settle-algorithm.test.ts:89-132`（改）+ 新 describe 块
+- Modify: `packages/room-service/src/currency/settle.service.ts:215-226`（算法）+ 同文件 132/162-181/664 注释
+- Test: `packages/room-service/test/currency/settle-algorithm.test.ts:89-113`（改；**115-131 的「三座余额都充足」用例保留不动**）+ 文件末尾新增 describe
 - Test: `packages/room-service/test/currency/settle-failure.test.ts:263-273`（r2 断言）
 
 **Interfaces:**
@@ -34,7 +34,7 @@
 
 - [ ] **Step 1: 写失败测试（先改既有截断用例 + 新增矩阵）**
 
-`settle-algorithm.test.ts` 把 89-113 行的截断用例替换为：
+`settle-algorithm.test.ts` 把 **89-113 行**的截断用例替换为（**不要动 115-131**）：
 
 ```ts
 describe('computeSettlement：单输家截断 + 双赢家分摊（最大余数法）', () => {
@@ -107,7 +107,7 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
     expect(out.residue).toBe(0);
   });
 
-  it('C6b 零头先分发后抽水：raw 10/10、P=19、rake 10% ⇒ 9/9（旧基数会得 10/9）', () => {
+  it('C6b 零头先分发后抽水：raw 10/10、P=19、rake 10% ⇒ 9/9', () => {
     const out = computeSettlement({
       roomCode: 'ROOM01', version: 13, round: 1,
       result: FARMERS_WIN({ landlordScoreChange: -20, farmerScoreChange: 10 }),
@@ -119,6 +119,8 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
     ]);
     expect(out.rakeTotal).toBe(1);
     expect(out.residue).toBe(0);
+    // 判别力：residue/rakeTotal 抓当前实现（无 LRM ⇒ residue 1 / rake 0）；
+    // deltas 抓「LRM + 旧抽水基数」（会得 −19/10/9）
   });
 
   it('C8 精度回归（合成算例）：大数整除不得少 1、残差不得虚增', () => {
@@ -136,6 +138,8 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
     ]);
     expect(out.residue).toBe(0);
   });
+  // 覆盖限制：C8 只钉「旧 double 截断实现」；「LRM + double」在协议可达输入下不可观测
+  //（P≤S、DDZ 双农民等 raw / PDK 单赢家），BigInt 属硬化项（spec §1.3），不另补非守恒向量。
 
   it('C11 防御：无赢家（三方全负）⇒ residue=P、不抛错', () => {
     const out = computeSettlement({
@@ -153,8 +157,23 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
 });
 ```
 
-`settle-failure.test.ts:263-273` 改三处：
+`settle-failure.test.ts:263-273` 精确替换（原文 → 新文，无省略）：
 
+原文：
+```ts
+    // 重算：P=25、g=floor(30×25/60)=12 ⇒ 残差 1
+    expect(second.entries).toEqual([
+      { ownerId: 'alice', ownerType: 'user', delta: -25 },
+      { ownerId: 'bot-int-1', ownerType: 'robot', delta: 12 },
+      { ownerId: 'carol', ownerType: 'user', delta: 12 },
+    ]);
+    expect(first.burn).toEqual({ residue: 0, rake: 0 }); // 第一轮 alice 付满 60 ⇒ 无销毁
+    expect(second.burn).toEqual({ residue: 1, rake: 0 }); // 重算截断 ⇒ 残差 1
+    await expect(resultCount('r2')).resolves.toBe(r2Before + 1);
+    // 残差指标 +1（第一轮无截断残差 0、第二轮残差 1）
+    await expect(metricValue(currencySettleResidueTotal)).resolves.toBe(residueBefore + 1);
+```
+新文：
 ```ts
     // 重算：P=25、g=floor(30×25/60)=12，余数 1 给座位小者 ⇒ 13/12；residue 0
     expect(second.entries).toEqual([
@@ -162,9 +181,9 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
       { ownerId: 'bot-int-1', ownerType: 'robot', delta: 13 },
       { ownerId: 'carol', ownerType: 'user', delta: 12 },
     ]);
-    expect(first.burn).toEqual({ residue: 0, rake: 0 });
-    expect(second.burn).toEqual({ residue: 0, rake: 0 });
-    ...
+    expect(first.burn).toEqual({ residue: 0, rake: 0 }); // 第一轮 alice 付满 60 ⇒ 无销毁
+    expect(second.burn).toEqual({ residue: 0, rake: 0 }); // 零头分给赢家 ⇒ 无销毁
+    await expect(resultCount('r2')).resolves.toBe(r2Before + 1);
     // 两轮 residue 均 0 ⇒ 指标不变
     await expect(metricValue(currencySettleResidueTotal)).resolves.toBe(residueBefore);
 ```
@@ -174,7 +193,7 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
 Run: `pnpm -C packages/room-service exec vitest run test/currency/settle-algorithm.test.ts test/currency/settle-failure.test.ts`
 Expected: FAIL —— C1 得 12/12（期望 13/12）、C3–C8 与 r2 断言同红。
 
-- [ ] **Step 3: 实现（替换 `settle.service.ts` 215-228 行）**
+- [ ] **Step 3: 实现（替换 `settle.service.ts` 215-226 行；**228 行 `const residue = pool - gainedSum;` 保留不动**）**
 
 ```ts
   const winnerRawSum = winners.reduce((acc, s) => acc + rawOf(s), 0);
@@ -240,12 +259,13 @@ git commit -m "feat(settle): 零头改最大余数法分给赢家；抽水按最
 ### Task 2: conformance 复算同步（slice-18）
 
 **Files:**
-- Modify: `tools/conformance/src/slices/slice-18-gold-room.ts:619-664`（`SettleRecount` 注释 + `recountSettlement`）、`:786-798`（断言文本）、`:1289-1292`/`:1347-1348`（文案）
+- Modify: `tools/conformance/src/slices/slice-18-gold-room.ts:618-664`（`SettleRecount` 注释 + `recountSettlement`）、`:786-798`（断言文本）、`:1308`（step 文案）
+- Modify: `tools/conformance/src/slices/slice-17-currency.ts:1100`（注释澄清）
 
 **Interfaces:**
 - `recountSettlement(s, preBalances, rakePercent): SettleRecount` 签名不变；`residue` 新口径恒 0。
 
-- [ ] **Step 1: 替换 `recountSettlement` 的赢家段（现 653-663 行）**
+- [ ] **Step 1: 替换 `recountSettlement` 的赢家段（现 652-663 行，含 652 的 `const winnerIdx`）**
 
 ```ts
   const winnerIdx = seats.map((_, i) => i).filter((i) => raw[i]! > 0);
@@ -278,7 +298,12 @@ git commit -m "feat(settle): 零头改最大余数法分给赢家；抽水按最
 
 - [ ] **Step 2: 断言与注释文案**
 
-- `SettleRecount.residue` 注释（现 620-621 行）：`P − Σg` → `P − Σ最终 g（新口径恒 0；非 0 即实现回归）`。
+- `SettleRecount.residue` 注释（现 **618-619** 行）：`P − Σg` → `P − Σ最终 g（新口径恒 0；非 0 即实现回归）`。
+- `SettleRecount.winners` 注释（现 620-621 行）→ `赢家数（诊断用）`（断言不再用它做上界）。
+- `slice-17-currency.ts:1100` 注释「用户示例局（−25/+12/+12，残差 1）」补一句：
+  `（手工 burn 载荷；2026-10-26 起结算算法不再产生该残差）`。
+- `slice-18:1308` step 文案「赢家实收 = g − floor(g×10/100)」→
+  `赢家实收 = finalGain − floor(finalGain×10/100)（finalGain 含分得的零头）`。
 - 786-798 行：`recount.residue >= 0 && recount.residue < recount.winners` 改为
   `recount.residue === 0`，消息改为
   `` `${what}：新口径残留应恒 0（residue=${recount.residue}）—— 口径：P=${recount.pool} − Σ最终 g（最大余数法，零头已分给赢家）` ``。
@@ -305,7 +330,7 @@ git commit -m "test(conformance): slice-18 复算同步最大余数法与抽水�
 - Modify: `packages/protocol/src/currency.ts:68-77`
 - Modify: `packages/room-service/src/metrics/room.metrics.ts:144-151`
 - Modify: `docs/superpowers/specs/2026-10-04-gold-room-spec.md`（§4 标题下、§12.1 E）
-- Modify: `docs/superpowers/specs/2026-10-04-gold-room-design.md:98-103`
+- Modify: `docs/superpowers/specs/2026-10-04-gold-room-design.md:98-103` 与 `:178`（D11 指标描述）
 - Modify: `docs/superpowers/specs/2026-10-14-burn-on-op-spec.md:74-77`
 - Modify: `deploy/monitoring/grafana/dashboards/05-currency.json`（图例 + 标题）
 - Modify: `scripts/verify-monitoring.mjs:149`
@@ -319,26 +344,30 @@ git commit -m "test(conformance): slice-18 复算同步最大余数法与抽水�
  * **2026-10-26 起**：零头改分给赢家 ⇒ `residue` 正常路径恒 0（防御路径可能非 0）；
  * 字段保留，历史载荷/旧 outbox 条目照旧合法。两值上限 2^31−1 = int 列容量哨兵。
 ```
-`room.metrics.ts` 注释改为：
+`room.metrics.ts` 注释改为（**同时改 150 行 help 串**）：
 ```
 /**
  * 残差（回归哨兵）：新口径正常路径恒 0；非 0 = 分配算法回归（历史值仍属销毁）。
  * **零和局也 inc 0**（保证任何一局金币局之后该序列必然出现）。
  */
 ```
+createCounter help 串 → `'残差（应恒 0，非 0 即回归；按玩法；历史值属销毁）。'`
+`currency.ts:74` 字段注释 → `/** 截断残差：正常路径恒 0（零头已分给赢家）；防御路径可能非 0；`0 ≤ n ≤ 2^31−1`。 */`
 
 - [ ] **Step 2: 历史文档指针（各一行）**
 
 统一插入文本（措辞可随上下文）：
 `> **2026-10-26 起**：零头改按最大余数法分给赢家（residue 恒 0），见 docs/superpowers/specs/2026-10-26-settle-remainder-to-winners-design.md。`
 
-插入位置：gold-room spec `## §4 结算算法` 标题下；gold-room spec §12.1 E 的「炸弹局…产生残差」句尾；
-gold-room design D3「残差 … 销毁」条目下；burn-on-op spec 的 `CurrencyBurn` 注释块下。
+插入位置：gold-room spec `## §4 结算算法（⚙️4）` 标题下；gold-room spec §12.1 E 的「炸弹局…产生残差」句尾；
+gold-room design D3「残差 … 销毁」条目下与 `:178` D11 指标描述行；burn-on-op spec 的 `CurrencyBurn` 注释块下。
 
 - [ ] **Step 3: Grafana 面板**
 
 `05-currency.json`：`"legendFormat": "{{game_type}} 残差销毁"` → `"{{game_type}} 残差"`；
-`"title": "残差销毁增速"` → `"title": "残差（应恒 0，非 0 即回归）"`。
+`"title": "残差销毁增速"` → `"title": "残差（应恒 0，非 0 即回归）"`；
+并在同一 panel 对象内、`"title"` 之前新增
+`"description": "2026-10-26 起零头分给赢家：正常路径应恒 0；非 0 即分配算法回归",`。
 `scripts/verify-monitoring.mjs:149`：期望标题同步改为 `残差（应恒 0，非 0 即回归）`。
 
 - [ ] **Step 4: 验证**
@@ -373,12 +402,16 @@ Expected: 全绿；若红，按 `ci-flake-known` 单跑确认是否已知假红�
 
 - [ ] **Step 3: 独立代码审查**
 
-派独立 reviewer（sonnet）审 `2fdaceac..HEAD` diff，对照 spec v1.1 逐条核对：
+派独立 reviewer（sonnet）审 `1109f11b..HEAD` diff，对照 spec v1.1 逐条核对：
 Critical/Important 必须修；Minor 登记或顺手修。审查结论回填 spec §9「代码审查记录」。
 
-- [ ] **Step 4: 修复后复跑**
+- [ ] **Step 4: 修复后复跑 + 提交审查记录**
 
-受影响测试 + lint 复跑绿；工作区干净。
+受影响测试 + lint 复跑绿；把 spec §9 代码审查记录与修复一并提交：
+
+```bash
+git add -A && git commit -m "docs(spec): 回填代码审查记录与修复"
+```
 
 - [ ] **Step 5: 推送 dev**
 
@@ -387,3 +420,20 @@ Critical/Important 必须修；Minor 登记或顺手修。审查结论回填 spe
 - [ ] **Step 6: 交付报告**
 
 变更、验证证据（测试数/结果）、提交 SHA、已推 dev、已知边界（真栈 slice-18 E/F 不保证覆盖 R>0；部署待用户发话）。
+
+---
+
+## 计划审查记录
+
+**计划对抗审查（2026-10-26，独立 reviewer，sonnet）**：结论「可开工 Yes，0 阻断 / 0 高 / 9 低」；
+全部期望值经独立 BigInt 复算一致；既有测试冲突无遗漏。处置：
+- 低-1（三处行号漂移）→ 已修（215-226 / 652-663 / 618-619）；
+- 低-2（误删 115-131）→ 已明确保留；
+- 低-3（片段含 `...`）→ 已改为精确新旧文；
+- 低-4（C8 不钉 LRM+double）→ 登记为覆盖限制（spec §7 + 任务 1 注记）；
+- 低-5（C6b 括注）→ 已澄清判别力来源；
+- 低-6（slice-17:1100 / slice-18:1308 残留措辞）→ 已列入 Task 2；
+- 低-7（`winners` 死字段注释）→ 已列；
+- 低-8（面板 description 未落地）→ 已补；
+- 低-9（注释/文档清单不全）→ 已补 protocol:74 / metrics help / :178 / 标题全名；
+- 低-10（Task 4 无提交步骤、diff 基线）→ 已补 `1109f11b..HEAD` 与提交步骤。
