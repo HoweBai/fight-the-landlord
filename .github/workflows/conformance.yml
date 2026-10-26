@@ -16,8 +16,7 @@ name: conformance
 
 on:
   push:
-    # ⚠️ 2026-10-26 临时：B 组需在 GitHub 上跑真栈（用户已授权；跑完 revert 本行）。
-    branches: [master, feature/pdk-risk-b]
+    branches: [master]
     tags-ignore: ['**']
   workflow_call:
     inputs:
