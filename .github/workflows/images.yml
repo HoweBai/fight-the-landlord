@@ -41,6 +41,31 @@ jobs:
       # ⚠️ `-af` 只在 **runner 侧**允许（一次性机器）；服务器侧只许 `-f`（R1307/R1314）。
       - name: 清理 runner 磁盘
         run: docker image prune -af || true
+      # 2026-10-27：APK 不入库 ⇒ 从 GitHub Release 资产拉进 `deploy/download/` 再烘进 edge。
+      # **fail-closed**：拉不到就失败 —— 否则线上 `/download/*.apk` 会静默 404（README 的既有坑）。
+      - name: 拉取 APK（Release 资产）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_RELEASE_TAG: ${{ vars.APK_RELEASE_TAG || 'apk-latest' }}
+        run: |
+          mkdir -p deploy/download
+          rm -f deploy/download/*.apk
+          if ! gh release download "$APK_RELEASE_TAG" --pattern '*.apk' --dir deploy/download --clobber; then
+            echo "❌ 无法从 Release '$APK_RELEASE_TAG' 下载 APK —— /download/*.apk 会 404，拒绝构建。" >&2
+            echo "   处置：bash scripts/deploy/publish-apk.sh <apk路径>（上传后再重跑）" >&2
+            exit 1
+          fi
+          N="$(ls deploy/download/*.apk 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$N" != "1" ]; then
+            echo "❌ Release 资产里应恰有 1 个 .apk（实测 $N 个）" >&2
+            exit 1
+          fi
+          APK="$(ls deploy/download/*.apk | head -1)"
+          # 资产名为 ASCII（gh/Windows 会丢中文）；线上文件名必须是 uni-ad 表单里的「优比棋牌.apk」。
+          if [ "$(basename "$APK")" != "优比棋牌.apk" ]; then
+            mv "$APK" "deploy/download/优比棋牌.apk"
+          fi
+          ls -l deploy/download
       - name: 构建并推送 14 个镜像
         env:
           IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord

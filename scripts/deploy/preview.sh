@@ -2,12 +2,13 @@
 # 测试服**快速预览**（静态秒传，2026-10-27）。不构建镜像、不重启容器：
 #   admin/**      → tar 流直投 ftl-edge:/srv/admin   （Caddy 立即读到）
 #   agent/**      → tar 流直投 ftl-edge:/srv/agent
+#   deploy/download/** → APK/下载文件直投 ftl-edge:/srv/download
 #   apps/client/** → 本地 `uni build:h5` 后投 /srv（H5 根；**不需要本机 Docker**）
 #
 # 用法：
 #   bash scripts/deploy/preview.sh --dry-run           # 只打印变更分类，不动服务器
 #   bash scripts/deploy/preview.sh auto                # 默认：按分类同步（有需重建镜像的改动则拒绝）
-#   bash scripts/deploy/preview.sh admin|agent|client  # 强制同步某一面（显式覆盖分类）
+#   bash scripts/deploy/preview.sh admin|agent|client|download  # 强制同步某一面（显式覆盖分类）
 #   选项：--base <ref>   分类基线（默认 = 服务器上正在运行的 dev-* tag）
 #
 # ⚠️ 这是**预览通道**，不是部署：
@@ -23,11 +24,11 @@ DRY=0
 BASE_REF=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,18p' "$0"; exit 0 ;;
     --dry-run) DRY=1; shift ;;
     --base) BASE_REF="${2:?--base 需要 ref}"; shift 2 ;;
-    auto | admin | agent | client) MODE="$1"; shift ;;
-    *) printf '用法：bash scripts/deploy/preview.sh [auto|admin|agent|client] [--dry-run] [--base <ref>]\n' >&2; exit 2 ;;
+    auto | admin | agent | client | download) MODE="$1"; shift ;;
+    *) printf '用法：bash scripts/deploy/preview.sh [auto|admin|agent|client|download] [--dry-run] [--base <ref>]\n' >&2; exit 2 ;;
   esac
 done
 
@@ -63,13 +64,14 @@ trap 'rm -f "$PATHS"' EXIT
   git status --porcelain=v1 2>/dev/null | sed -E 's/^[ MARCUD?!]{1,2} +//' | sed 's/.* -> //'
 } | sed '/^$/d' | sort -u >"$PATHS"
 
-NEED_ADMIN=0; NEED_AGENT=0; NEED_CLIENT=0
+NEED_ADMIN=0; NEED_AGENT=0; NEED_CLIENT=0; NEED_DOWNLOAD=0
 BLOCKED=(); NOOP=()
 while IFS= read -r p; do
   case "$p" in
     admin/*) NEED_ADMIN=1 ;;
     agent/*) NEED_AGENT=1 ;;
     apps/client/*) NEED_CLIENT=1 ;;
+    deploy/download/*) NEED_DOWNLOAD=1 ;;
     docs/* | scripts/* | .github/* | .superpowers/* | *.md | LICENSE* | .gitignore) NOOP+=("$p") ;;
     *) BLOCKED+=("$p") ;;
   esac
@@ -79,7 +81,7 @@ printf 'ℹ️ [preview] 模式=%s · %s · 变更 %s 个文件\n' "$MODE" "$BAS
 [ "${#NOOP[@]}" -gt 0 ] && printf '   （忽略 %s 个不参与部署的改动）\n' "${#NOOP[@]}"
 
 if [ "$DRY" = 1 ]; then
-  printf '   静态可秒传：admin=%s agent=%s client(H5)=%s\n' "$NEED_ADMIN" "$NEED_AGENT" "$NEED_CLIENT"
+  printf '   静态可秒传：admin=%s agent=%s client(H5)=%s download=%s\n' "$NEED_ADMIN" "$NEED_AGENT" "$NEED_CLIENT" "$NEED_DOWNLOAD"
   if [ "${#BLOCKED[@]}" -gt 0 ]; then
     printf '   ⛔ 需要重建镜像（%s 个）：\n' "${#BLOCKED[@]}"
     printf '     %s\n' "${BLOCKED[@]}" | head -20
@@ -95,7 +97,7 @@ if [ "$MODE" = "auto" ] && [ "${#BLOCKED[@]}" -gt 0 ]; then
   printf '   只想预览 H5（即使 protocol/shared 有改动）：bash scripts/deploy/preview.sh client\n' >&2
   exit 2
 fi
-if [ "$MODE" = "auto" ] && [ "$NEED_ADMIN$NEED_AGENT$NEED_CLIENT" = "000" ]; then
+if [ "$MODE" = "auto" ] && [ "$NEED_ADMIN$NEED_AGENT$NEED_CLIENT$NEED_DOWNLOAD" = "0000" ]; then
   printf 'ℹ️ [preview] 没有可秒传的静态改动 —— 无需操作。\n'
   exit 0
 fi
@@ -120,12 +122,13 @@ verify_file() { # <local_file> <remote_file> <label>
   printf '✅ [preview] %s 已生效（sha256 %s…）\n' "$3" "${ll:0:12}"
 }
 
-DO_ADMIN=0; DO_AGENT=0; DO_CLIENT=0
+DO_ADMIN=0; DO_AGENT=0; DO_CLIENT=0; DO_DOWNLOAD=0
 case "$MODE" in
-  auto) DO_ADMIN=$NEED_ADMIN; DO_AGENT=$NEED_AGENT; DO_CLIENT=$NEED_CLIENT ;;
+  auto) DO_ADMIN=$NEED_ADMIN; DO_AGENT=$NEED_AGENT; DO_CLIENT=$NEED_CLIENT; DO_DOWNLOAD=$NEED_DOWNLOAD ;;
   admin) DO_ADMIN=1 ;;
   agent) DO_AGENT=1 ;;
   client) DO_CLIENT=1 ;;
+  download) DO_DOWNLOAD=1 ;;
 esac
 
 if [ "$DO_ADMIN" = 1 ]; then
@@ -140,6 +143,12 @@ if [ "$DO_AGENT" = 1 ]; then
 ' >&2; exit 1; }
   sync_dir agent /srv/agent 'agent/'
   verify_file agent/app.js /srv/agent/app.js 'agent/app.js'
+fi
+if [ "$DO_DOWNLOAD" = 1 ]; then
+  APK_LOCAL="$(ls deploy/download/*.apk 2>/dev/null | head -1 || true)"
+  [ -n "$APK_LOCAL" ] || { echo "❌ [preview] deploy/download 下没有 .apk" >&2; exit 1; }
+  sync_dir deploy/download /srv/download "download/"
+  verify_file "$APK_LOCAL" "/srv/download/$(basename "$APK_LOCAL")" "$(basename "$APK_LOCAL")"
 fi
 if [ "$DO_CLIENT" = 1 ]; then
   [ -f packages/protocol/dist/index.js ] || pnpm -C packages/protocol build
