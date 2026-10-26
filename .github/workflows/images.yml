@@ -10,6 +10,9 @@ name: images
 on:
   push:
     branches: [master]
+    # 2026-10-27：测试服/ dev tag 触发 GitHub 构建（tag 上的 workflow 文件即生效，
+    # 不要求该触发器已在默认分支）。`dev-*` 只构建推送同名 tag，不碰 `latest`。
+    tags: ['dev-*']
   workflow_dispatch:
     inputs:
       image_tag:
@@ -41,12 +44,16 @@ jobs:
       - name: 构建并推送 14 个镜像
         env:
           IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord
-          # 手动入口的 tag 走 env（自由文本不得直接插进 run: 的 shell 源码）。
+          # 手动入口的 tag 与 tag push 的 ref 名都走 env（自由文本不得直接插进 run: 的 shell 源码）。
           IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           SHORT="$(git rev-parse HEAD | cut -c1-7)"
           if [ -n "$IMAGE_TAG_INPUT" ]; then
             bash scripts/deploy/build-images.sh "$IMAGE_TAG_INPUT"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            bash scripts/deploy/build-images.sh "$REF_NAME"
           else
             bash scripts/deploy/build-images.sh "sha-$SHORT" latest
           fi
