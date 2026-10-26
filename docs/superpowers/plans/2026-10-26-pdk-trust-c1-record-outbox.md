@@ -285,4 +285,9 @@
     bcrypt 原生绑定未构建）——三包单独复跑分别 489/489、538/538、404/404 全绿；已修 bcrypt 后串行重跑（结果见交接）。
 - 真栈：本机 Docker 不可用；`slice-15-records` C9 扩展与 `slice-34-record-outbox` 只做 tsc，
   **待权威轮**。
-- 代码审查：独立 reviewer 审 `origin/dev..HEAD`（结果见交接/最终修复提交）。
+- 代码审查（2026-10-26，独立 reviewer 审 `origin/dev..HEAD`）：**0 Critical / 1 Important / 5 Minor**。
+  - Important：sweep 失败/清理/自愈日志逐条刷屏 ⇒ 已改按轮聚合（`72794727`），补聚合用例。
+  - Minor：enqueue/ack 意外抛兜底、HSETNX 并发删除重试、repair/drop 分支用例、测试缺口、注释 32→35
+    ⇒ 已修/补测；仅「repair 异常仍投递一次」与设计文字一致，无偏离。
+  - 复审确认：所有权/CAS/conflict 不直投/unavailable 仍直投/write=false 与 ack=false 语义均正确；
+    未发现仍会误删或丢记录的路径。
