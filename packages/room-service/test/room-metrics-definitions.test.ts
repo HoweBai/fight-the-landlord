@@ -1,11 +1,14 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { incGame } from '@fight-the-landlord/shared';
+import { incGame, setGame } from '@fight-the-landlord/shared';
 import {
   entryFeeConflictTotal,
   gameStartFailuresTotal,
   gamesEndedTotal,
   gamesStartedTotal,
+  recordOutboxOldestSeconds,
+  recordOutboxResendTotal,
+  recordOutboxSize,
   recordWriteFailuresTotal,
   recordWriteSkipsTotal,
 } from '../src/metrics/room.metrics';
@@ -38,5 +41,21 @@ describe('room 指标定义（A1）', () => {
 
     incGame(entryFeeConflictTotal, 'paodekuai');
     expect(await exactSeriesValue(entryFeeConflictTotal, { game_type: 'paodekuai' })).toBeGreaterThan(0);
+  });
+
+  it('C1 record outbox 指标带 game_type 且 result 有界', async () => {
+    setGame(recordOutboxSize, 'paodekuai', 2);
+    expect(await exactSeriesValue(recordOutboxSize, { game_type: 'paodekuai' })).toBe(2);
+
+    setGame(recordOutboxOldestSeconds, 'doudizhu', 601);
+    expect(await exactSeriesValue(recordOutboxOldestSeconds, { game_type: 'doudizhu' })).toBe(601);
+
+    incGame(recordOutboxResendTotal, 'paodekuai', 1, { result: 'abandoned' });
+    expect(
+      await exactSeriesValue(recordOutboxResendTotal, {
+        game_type: 'paodekuai',
+        result: 'abandoned',
+      }),
+    ).toBe(1);
   });
 });
