@@ -1283,6 +1283,7 @@ https://<你的域名>/grafana/
 
 **多玩法（2026-10-25）**：新增 4 条按玩法（`game_type`）分维的告警 —— `GameStartFailuresHigh`（开局失败/取消）、`GameSettleFailures`（局终失败）、`SettleDroppedByGame`（金币结算 dropped）、`RecordWriteFailuresHigh`（记录写失败/丢失）。`currency_settle_outbox_size` / `_oldest_seconds` 现按玩法多条序列：查询/面板用 `sum by (game_type)` 或 `sum()`，不要再假设单序列。
 **B 组（2026-10-26）**：新增 `RiskScanSqlFailures`（`scope=doudizhu|paodekuai|device`，10m 任意失败即 warning）。单玩法 SQL 失败时该玩法本轮冻结、其他玩法继续；device SQL 失败会整轮失败。先查 scope 对应表/权限，再看 user-service 扫描 ERROR 日志与 `risk_scan_last_success_timestamp_seconds`。
+**C1（2026-10-26）**：新增 `RecordOutboxStuck`（warning，记录补偿队列最老 >10m）、`RecordOutboxAbandoned`（critical，24h 内 TTL 超龄/坏条目/确定性拒收 >0）、`RecordLost`（critical，15m 内 `record_write_failures_total{kind="record_lost"}` >0）。`RecordWriteFailuresHigh` 的 `kind=record` 表示「首次失败但已入箱待重投」，先看前两条；`record_lost` 才是永久丢失。
 
 ⚠️ **心跳邮件（「监控活着」）**：邮箱配好之后，大约**每 24 小时**你会收到一封「监控活着」的邮件（内容里带 `Watchdog` 字样）—— 它证明**整条告警链**（收数据 → 判规则 → 发通知）活着。判读口径 = **「多久没收到」**：
 
@@ -1448,12 +1449,15 @@ $ curl -sS https://<你的域名>/api/admin/wallet/accounts/robot-pool \
 > 余额不足、或撞上「算法 bug 哨兵」）。**失败不影响打完的局本身**，但**钱会停在半路**。服务端有一个
 > **补偿队列**会每 10 秒自动重试多数失败，绝大多数几分钟内自愈；本条 = 自愈不了时你怎么接手。
 
-**两个补偿队列**（都住在 Redis，各是一个 Hash；重发成功 ⇒ 自动清除）：
+**三个补偿队列**（都住在 Redis，各是一个 Hash；重发成功 ⇒ 自动清除）：
 
 | 队列                 | 放什么                 | 含义                                                        |
 | -------------------- | ---------------------- | ----------------------------------------------------------- |
 | `settle:outbox`      | 待重发的**结算**       | 该局金币**尚未入账**（钱还没动）——最要紧的一类              |
 | `recordmoney:outbox` | 待回写的**战绩金币列** | 钱**已入账**，只是该局记录的金币列（`money_delta`）还没标上 |
+| `record:outbox`      | 待投递的**对局记录**   | 钱与余额不受影响，只是该局记录尚未落库（C1；24h 重投）       |
+
+**C1 记录队列（`record:outbox`）**：每 10 秒重投、最老优先、单轮 2s 预算；条目 24h 超龄 ⇒ `abandoned`（`RecordOutboxAbandoned` critical），坏条目/确定性拒收 ⇒ `corrupt`/`rejected`（同一 critical）。`RecordOutboxStuck`（oldest>600s, warning）表示下游长时间不可达；`RecordLost`（critical）表示永久丢失（形状不符 / outbox conflict / 入箱不可用且直投失败）。查看：`docker exec -it ftl-redis redis-cli HGETALL record:outbox`；**不要手删**。回滚前先等 `HLEN record:outbox = 0`（或导出后重放）。
 
 **`dropped` 是什么**：监控指标 `currency_settle_result_total{result="dropped"}` —— 结算的**终态放弃**计数：这一局服务端不会再自己动了。共六类：① 结算金额撞上 int 上限哨兵（算法 bug 信号，**永不重试**）；② 极罕见的重放冲突（`14002`，他方已结、本局不再动钱）；③ 守卫不齐（金币局缺 result/version、三座位或机器人座映射不全 —— 理论不发生，发生即人工核）；④ 余额读最终失败（重试阶梯走完仍读不到）；⑤ 写箱失败（补偿队列也进不去 —— 条目不存在，钱没动）；⑥ outbox 超龄放弃（`settle:outbox` 或 `recordmoney:outbox` 条目满 1 小时被清）。⚠️ 六类里**只有 ⑥ 的 `recordmoney` 是「钱已动」**（那局钱已入账，只是战绩的金币列永久留空、显示「—」——不需要补钱）；其余五类钱都没动。看到它不是「现在就要动手」，而是「这一局服务端不会再自己动了，走下面的核对」——核对手势不变：按 actionId 查 `currency_flows`。
 
@@ -1473,7 +1477,7 @@ $ curl -sS https://<你的域名>/api/admin/wallet/accounts/robot-pool \
    ```
    （`-p` 的密码 = `.env` 里 `DB_PASSWORD` 的值。）**查得到行** ⇒ 钱已经入账（队列很快自愈清掉，无需动手）；**查不到行** ⇒ 钱没动 —— 队列还在就等重试；条目已超 1 小时被清掉（终态）⇒ 人工定夺（见下）。
 4. **条目满 1 小时**：服务端**放弃**该条目（ERROR 日志 + `dropped` 计数）并删除 —— 此后没人再重试。钱的裁决只能人工做：以上一步的核账为准，用管理面 `POST /api/admin/wallet/adjust`（同上一节命令形态，`userId`/`ownerType` 按座位是真人还是机器人填）逐座补/扣，`reason` 里写明房间号与版本号。（若是 `recordmoney:outbox` 超龄被清 ⇒ 该局记录的金币列永久留空、玩家战绩里显示「—」；钱已入账，不影响余额。）
-5. ⚠️ **别手动删 Redis 里的队列条目** —— 删掉 = 服务端永远不再重试（要看可以：`docker exec -it ftl-redis redis-cli HGETALL settle:outbox`）。
+5. ⚠️ **别手动删 Redis 里的队列条目** —— 删掉 = 服务端永远不再重试（要看可以：`docker exec -it ftl-redis redis-cli HGETALL settle:outbox`，或 `HGETALL record:outbox` / `HGETALL recordmoney:outbox`）。
 
 ---
 
