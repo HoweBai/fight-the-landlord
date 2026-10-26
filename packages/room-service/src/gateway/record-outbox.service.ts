@@ -43,6 +43,8 @@ export interface RecordOutboxEnqueueResult {
   status: RecordOutboxEnqueueStatus;
   /** 本请求拥有的 field 当前 raw（conflict/unavailable 时缺省）。 */
   raw?: string;
+  /** conflict 时旧条目的 endedAt（日志/错误定位用）。 */
+  existingEndedAt?: number;
 }
 
 export type RecordOutboxResult =
@@ -52,6 +54,31 @@ export type RecordOutboxResult =
   | 'abandoned'
   | 'corrupt'
   | 'rejected';
+
+/** 首次投递失败（owned=入箱成功/已存在；false=conflict/unavailable）。 */
+export class RecordWriteAttemptError extends Error {
+  constructor(
+    readonly cause: unknown,
+    readonly owned: boolean,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'RecordWriteAttemptError';
+  }
+}
+
+/** 同 field 不同载荷（N51 room code 复用）：不直投、不覆盖旧条目。 */
+export class RecordConflictError extends Error {
+  constructor(
+    readonly field: string,
+    readonly existingEndedAt: number,
+    readonly newEndedAt: number,
+  ) {
+    super(
+      `record outbox conflict for ${field}: existing endedAt=${existingEndedAt}, new endedAt=${newEndedAt}`,
+    );
+    this.name = 'RecordConflictError';
+  }
+}
 
 export function recordOutboxField(
   request: Pick<RecordWriteRequest, 'roomCode' | 'gameVersion'>,
@@ -128,7 +155,7 @@ export class RecordOutboxService {
       this.logger.error(
         `record outbox conflict for ${field}: existing endedAt=${existingRequest.endedAt}, new endedAt=${request.endedAt} (not overwritten)`,
       );
-      return { status: 'conflict' };
+      return { status: 'conflict', existingEndedAt: existingRequest.endedAt };
     } catch (err) {
       this.logger.error(`record outbox enqueue failed for ${field}: ${String(err)}`);
       return { status: 'unavailable' };
