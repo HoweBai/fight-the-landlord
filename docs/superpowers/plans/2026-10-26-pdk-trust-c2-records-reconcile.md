@@ -156,7 +156,7 @@
 - 分支/worktree：`feature/pdk-trust-c` @ `D:/Code/ftl-trust-c`（C1 同分支）。
 - 提交（按序）：Task 1 `e2845aa5`（指标/档位/SQL）→ Task 2 `7d784fac`（服务/RR/分页/判定 + fake DB）→
   Task 3 `2579d68c`（admin GET 加性）→ Task 4 `2c174265`（告警 38/35 + 静态闸）→
-  Task 5 `1e039b39`（slice-35 + baselines）→ 基准 `b333f835` → 代码审查修复（本批）。
+  Task 5 `1e039b39`（slice-35 + baselines）→ 基准 `b333f835` → 代码审查修复 `20f1518b`。
 - 本机验证（最终树）：
   - currency-service：52 文件 / **586 tests** 全绿；lint（tsc 双配置）通过。
   - `node scripts/verify-monitoring.mjs`：**267 checks**；判别力自证「severity 移出 labels ⇒ 1 FAILED」已执行并恢复。
@@ -169,6 +169,9 @@
     重跑均全绿（与 C1 登记同类）。
   - 基准（假库按 recordId 建索引后）：10k ops/10k players **52.6ms**；20k/20k **128.6ms**
     （修复前假库 O(记录×玩家)：507ms / 3248ms；>5s 项已消除，无优化登记）。
+  - **审查修复后的最终树复跑**：turbo lint 18/18；turbo test 25/25（首跑 robot-service 1 例
+    环境 flake，单跑 145/145 绿后全序复跑 25/25）；config-service 489/489；mock-server 10/10。
+  - 定向：currency-service 586/586；verify-monitoring 267；verify:admin 520；conformance tsc。
 - 真栈：本机 Docker 不可用；slice-35 只做 tsc，**待权威轮**。slice-35 未过权威轮不得称 C2 完成/不得合 dev。
 
 ## 代码审查记录（2026-10-26，独立 reviewer 审 `a374409d..HEAD`）
