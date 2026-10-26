@@ -15,6 +15,11 @@ import {
   currencySettleOutboxOldestSeconds,
   currencySettleOutboxSize,
 } from '../metrics/room.metrics';
+import {
+  RECORD_OUTBOX_KEY,
+  RECORD_OUTBOX_PHASE_BUDGET_MS,
+  RecordOutboxService,
+} from '../gateway/record-outbox.service';
 
 /**
  * 补偿队列的清扫周期（规格 §5 逐字：常量 **10s**、**不设配置键**）。
@@ -28,10 +33,13 @@ export const SETTLE_SWEEP_INTERVAL_MS = 10_000;
  * `{traceId: randomUUID(), source: 'timer'}`、轮级 catch、关停闸拦住迟到自重排）。
  *
  * 每轮（10s）：
- *  1. 遍历 `settle:outbox`：逐条目调 `SettleService.resendSettleOutboxEntry`
+ *  1. **C1 record 阶段（最先、隔离、5s 硬超时 + 在途闸）**：读 `record:outbox` 快照交给
+ *     `RecordOutboxService.sweep`（分类/自愈/投递/清理/gauge）；失败/超时只记日志，
+ *     不阻塞下面两箱；在途时本轮跳过 record；
+ *  2. 遍历 `settle:outbox`：逐条目调 `SettleService.resendSettleOutboxEntry`
  *     （超龄放弃 / 原样重发 / 成功 ⇒ 完整收尾）；坏 JSON 条目 ⇒ ERROR + 删（否则每轮刷屏）；
- *  2. 遍历 `recordmoney:outbox`：逐条目调 `resendRecordMoneyOutboxEntry`（`matched` 齐三座 ⇒ 清除）；
- *  3. 刷新两个 gauge：`currency_settle_outbox_size`（**两箱之和**）与
+ *  3. 遍历 `recordmoney:outbox`：逐条目调 `resendRecordMoneyOutboxEntry`（`matched` 齐三座 ⇒ 清除）；
+ *  4. 刷新两个 gauge：`currency_settle_outbox_size`（**两箱之和**）与
  *     `currency_settle_outbox_oldest_seconds`（空队列 ⇒ 0；告警阈值 >300s —— 告警先于 TTL 到达）。
  *
  * ⚠️ 单条目失败只记日志、**继续下一条**（一条坏条目/一次下游抖动不该让整轮停摆）；
@@ -44,10 +52,13 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** 关停闸：在途一轮的迟到自重排不得复活循环。 */
   private shuttingDown = false;
+  /** C1：record 阶段在途闸（5s 超时后底层 promise 可能仍在跑；下一轮跳过，防堆叠）。 */
+  private recordPhaseInFlight = false;
 
   constructor(
     private readonly redis: Redis,
     private readonly settle: SettleService,
+    private readonly recordOutbox: RecordOutboxService,
   ) {}
 
   onModuleInit(): void {
@@ -80,6 +91,9 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
 
   /** 立即清扫一轮（测试与运维用，不等下一个周期）。 */
   async sweepOnce(now: number = Date.now()): Promise<void> {
+    // C1：record 阶段最先（独立预算/超时/在途闸）；失败不阻塞既有两箱。
+    await this.sweepRecordPhase(now);
+
     const settleRaw = (await this.redis.hgetall(SETTLE_OUTBOX_KEY)) ?? {};
     for (const [field, raw] of Object.entries(settleRaw)) {
       const entry = this.parseEntry<SettleOutboxEntry>(SETTLE_OUTBOX_KEY, field, raw);
@@ -105,6 +119,28 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
     // 指标：**处置之后**重读一次（上面这轮可能已投递/清除/放弃若干条目 —— 用开头的
     // 快照会让 gauge 落后一轮，告警阈值（>300s）会晚一个周期才看到已被清掉的滞留）。
     await this.refreshOutboxGauges(now);
+  }
+
+  /** C1 record 阶段：读快照 → 服务 sweep；5s 硬超时 + 在途闸；任何失败只记日志。 */
+  private async sweepRecordPhase(now: number): Promise<void> {
+    if (this.recordPhaseInFlight) {
+      this.logger.warn('record outbox sweep still in flight; skip this round');
+      return;
+    }
+    this.recordPhaseInFlight = true;
+    const phase = (async () => {
+      const raw = (await this.redis.hgetall(RECORD_OUTBOX_KEY)) ?? {};
+      await this.recordOutbox.sweep(raw, now);
+    })()
+      .catch((err) => this.logger.error(`record outbox sweep failed: ${String(err)}`))
+      .finally(() => {
+        this.recordPhaseInFlight = false;
+      });
+    await withTimeout(phase, RECORD_OUTBOX_PHASE_BUDGET_MS).catch(() =>
+      this.logger.error(
+        `record outbox sweep exceeded ${RECORD_OUTBOX_PHASE_BUDGET_MS}ms; legacy continues`,
+      ),
+    );
   }
 
   /** 刷新两个 gauge：按玩法分组；先读后写（整条 hgetall 失败 ⇒ 抛给 runOnce，旧值保留）。 */
@@ -180,4 +216,21 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
       this.timer = null;
     }
   }
+}
+
+/** C1：record 阶段的硬超时；超时后底层 promise 继续跑（在途闸阻止下一轮堆叠）。 */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
