@@ -55,6 +55,20 @@ export type RecordOutboxResult =
   | 'corrupt'
   | 'rejected';
 
+/** sweep 内单条投递的结局（不直接打日志，由 sweep 每轮聚合）。 */
+interface ResendResult {
+  removed: boolean;
+  result?: RecordOutboxResult;
+  ackSkipped: boolean;
+  error?: string;
+}
+
+/** sweep 内单条 createdAt 自愈的结局（不直接打日志）。 */
+interface RepairResult {
+  raw: string | null;
+  outcome: 'repaired' | 'skipped' | 'failed';
+}
+
 /** 首次投递失败（owned=入箱成功/已存在；false=conflict/unavailable）。 */
 export class RecordWriteAttemptError extends Error {
   constructor(
@@ -137,7 +151,11 @@ export class RecordOutboxService {
       const added = await this.redis.hsetnx(RECORD_OUTBOX_KEY, field, raw);
       if (added === 1) return { status: 'queued', raw };
       const existingRaw = await this.redis.hget(RECORD_OUTBOX_KEY, field);
-      if (existingRaw === null) return { status: 'unavailable' };
+      if (existingRaw === null) {
+        // 两步之间被另一实例 CAS 删除（极小窗口）：重试一次 HSETNX，别白丢 durable 兜底。
+        const retried = await this.redis.hsetnx(RECORD_OUTBOX_KEY, field, raw);
+        return retried === 1 ? { status: 'queued', raw } : { status: 'unavailable' };
+      }
       const existingRequest = parseRequest(existingRaw);
       if (existingRequest === null) {
         this.logger.error(
@@ -163,7 +181,7 @@ export class RecordOutboxService {
   }
 
   /** CAS 删除（只有 raw 仍等于本请求写入的值才删）。返回是否删除。 */
-  async ack(field: string, raw: string): Promise<boolean> {
+  async ack(field: string, raw: string, quiet = false): Promise<boolean> {
     try {
       const removed = await this.redis.eval(
         CAS_HDEL_RECORD_OUTBOX_LUA,
@@ -174,7 +192,7 @@ export class RecordOutboxService {
       );
       return Number(removed) > 0;
     } catch (err) {
-      this.logger.warn(`record outbox ack failed for ${field}: ${String(err)}`);
+      if (!quiet) this.logger.warn(`record outbox ack failed for ${field}: ${String(err)}`);
       return false;
     }
   }
@@ -193,6 +211,8 @@ export class RecordOutboxService {
     const corrupt: CleanupItem[] = [];
     const abandoned: CleanupItem[] = [];
     const candidates: Candidate[] = [];
+    let repairFailed = 0;
+    let repairSkipped = 0;
 
     for (const [field, raw] of snapshot) {
       const parsed = parseStored(raw);
@@ -208,8 +228,12 @@ export class RecordOutboxService {
         createdAt > now + RECORD_OUTBOX_FUTURE_TOLERANCE_MS
       ) {
         const repaired = await this.repairCreatedAt(field, raw, parsed.entry, now, gameType);
-        if (repaired === null) continue; // CAS 失配：field 已被替换，跳过本快照项
-        candidates.push({ field, raw: repaired, entry: parsed.entry, createdAt: now, gameType });
+        if (repaired.outcome === 'failed') repairFailed += 1;
+        if (repaired.raw === null) {
+          repairSkipped += 1;
+          continue; // CAS 失配：field 已被替换，跳过本快照项
+        }
+        candidates.push({ field, raw: repaired.raw, entry: parsed.entry, createdAt: now, gameType });
         continue;
       }
       if (now - createdAt > RECORD_OUTBOX_TTL_MS) {
@@ -222,9 +246,21 @@ export class RecordOutboxService {
     candidates.sort((a, b) => a.createdAt - b.createdAt);
     const removed = new Set<string>();
     const deliveryStart = nowFn();
+    let failed = 0;
+    let rejected = 0;
+    let ackSkipped = 0;
+    let failedSample = '';
     for (const candidate of candidates.slice(0, RECORD_OUTBOX_MAX_PER_SWEEP)) {
       if (nowFn() - deliveryStart >= RECORD_OUTBOX_DELIVERY_BUDGET_MS) break;
-      if (await this.resendOne(candidate)) removed.add(candidate.field);
+      const r = await this.resendOne(candidate);
+      if (r.removed) removed.add(candidate.field);
+      if (r.ackSkipped) ackSkipped += 1;
+      if (r.result === 'failed') {
+        failed += 1;
+        if (failedSample === '') failedSample = `${candidate.field}: ${r.error ?? 'unknown'}`;
+      } else if (r.result === 'rejected') {
+        rejected += 1;
+      }
     }
 
     const cleanup: Array<{ item: CleanupItem; result: 'corrupt' | 'abandoned' }> = [
@@ -236,8 +272,42 @@ export class RecordOutboxService {
         `record outbox cleanup backlog: ${corrupt.length + abandoned.length - cleanup.length} entr(ies) deferred to next round`,
       );
     }
+    let corruptDropped = 0;
+    let abandonedDropped = 0;
     for (const { item, result } of cleanup) {
-      if (await this.drop(item, result)) removed.add(item.field);
+      if (await this.drop(item, result)) {
+        removed.add(item.field);
+        if (result === 'corrupt') corruptDropped += 1;
+        else abandonedDropped += 1;
+      } else {
+        ackSkipped += 1;
+      }
+    }
+
+    // C1：每轮聚合日志（不逐条刷屏；细节留在指标/样本里）。
+    if (repairFailed > 0) {
+      this.logger.error(
+        `record outbox sweep: ${repairFailed} createdAt repair failure(s) (delivered once; entry kept if write fails)`,
+      );
+    }
+    if (repairSkipped > 0) {
+      this.logger.warn(`record outbox sweep: ${repairSkipped} createdAt repair skip(s) (entry changed)`);
+    }
+    if (rejected > 0) {
+      this.logger.error(`record outbox sweep: ${rejected} rejection(s) (BadParam; dropped)`);
+    }
+    if (failed > 0) {
+      this.logger.warn(
+        `record outbox sweep: ${failed} resend failure(s) kept for retry (sample ${failedSample})`,
+      );
+    }
+    if (ackSkipped > 0) {
+      this.logger.warn(`record outbox sweep: ${ackSkipped} ack/drop ownership skip(s)`);
+    }
+    if (corruptDropped + abandonedDropped > 0) {
+      this.logger.error(
+        `record outbox sweep dropped corrupt=${corruptDropped} abandoned=${abandonedDropped}`,
+      );
     }
 
     this.setGauges(now, snapshot, removed);
@@ -250,7 +320,7 @@ export class RecordOutboxService {
     entry: RecordOutboxEntry,
     now: number,
     gameType: GameType,
-  ): Promise<string | null> {
+  ): Promise<RepairResult> {
     const nextRaw = JSON.stringify({ ...entry, createdAt: now, gameType } satisfies RecordOutboxEntry);
     try {
       const res = await this.redis.eval(
@@ -261,59 +331,46 @@ export class RecordOutboxService {
         raw,
         nextRaw,
       );
-      if (Number(res) === 1) {
-        this.logger.warn(`record outbox createdAt repaired for ${field} (was invalid/future)`);
-        return nextRaw;
-      }
-      this.logger.warn(`record outbox createdAt repair skipped for ${field} (entry changed)`);
-      return null;
-    } catch (err) {
-      this.logger.error(`record outbox createdAt repair failed for ${field}: ${String(err)}`);
-      return raw; // 仍投递一次；CAS ack 若 raw 未变仍可删除
+      if (Number(res) === 1) return { raw: nextRaw, outcome: 'repaired' };
+      return { raw: null, outcome: 'skipped' };
+    } catch {
+      return { raw, outcome: 'failed' }; // 仍投递一次；CAS ack 若 raw 未变仍可删除
     }
   }
 
-  /** 投递一条；成功/幂等/确定性 10001 都 CAS 删除（删除成功才计数）。返回是否删除。 */
-  private async resendOne(candidate: Candidate): Promise<boolean> {
+  /** 投递一条；成功/幂等/确定性 10001 都 CAS 删除（删除成功才计数）。不直接打日志（由 sweep 聚合）。 */
+  private async resendOne(candidate: Candidate): Promise<ResendResult> {
     try {
       const written = await this.record.write(candidate.entry.request);
-      const removed = await this.ack(candidate.field, candidate.raw);
+      const removed = await this.ack(candidate.field, candidate.raw, true);
       if (removed) {
         incGame(recordOutboxResendTotal, candidate.gameType, 1, {
           result: written ? 'ok' : 'replayed',
         });
-      } else {
-        this.logger.warn(
-          `record outbox ack skipped for ${candidate.field} (entry changed or already removed)`,
-        );
       }
-      return removed;
+      return { removed, result: written ? 'ok' : 'replayed', ackSkipped: !removed };
     } catch (err) {
       if (err instanceof RecordClientError && err.code === ErrCode.BAD_PARAM) {
-        const removed = await this.ack(candidate.field, candidate.raw);
+        const removed = await this.ack(candidate.field, candidate.raw, true);
         if (removed) {
           incGame(recordOutboxResendTotal, candidate.gameType, 1, { result: 'rejected' });
-          this.logger.error(`record outbox rejected for ${candidate.field}: ${err.message}`);
         }
-        return removed;
+        return {
+          removed,
+          result: removed ? 'rejected' : undefined,
+          ackSkipped: !removed,
+          error: err.message,
+        };
       }
       incGame(recordOutboxResendTotal, candidate.gameType, 1, { result: 'failed' });
-      this.logger.warn(`record outbox resend failed for ${candidate.field}: ${String(err)}`);
-      return false;
+      return { removed: false, result: 'failed', ackSkipped: false, error: String(err) };
     }
   }
 
-  /** CAS 删除一个 corrupt/abandoned 条目；删除成功才计数 + ERROR。 */
+  /** CAS 删除一个 corrupt/abandoned 条目；删除成功才计数。不直接打日志（由 sweep 聚合）。 */
   private async drop(item: CleanupItem, result: 'corrupt' | 'abandoned'): Promise<boolean> {
-    const removed = await this.ack(item.field, item.raw);
-    if (removed) {
-      incGame(recordOutboxResendTotal, item.gameType, 1, { result });
-      this.logger.error(`record outbox ${result} entry dropped for ${item.field}`);
-    } else {
-      this.logger.warn(
-        `record outbox ${result} drop skipped for ${item.field} (entry changed or already removed)`,
-      );
-    }
+    const removed = await this.ack(item.field, item.raw, true);
+    if (removed) incGame(recordOutboxResendTotal, item.gameType, 1, { result });
     return removed;
   }
 

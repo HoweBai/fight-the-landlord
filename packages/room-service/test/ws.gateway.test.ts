@@ -2231,6 +2231,9 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     expect(recordOutbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ roomCode: 'ROOM1', gameVersion: 40 }),
     );
+    expect((recordOutbox.enqueue.mock.calls[0] as unknown[])[0]).toEqual(
+      (recordClient.write.mock.calls[0] as unknown[])[0],
+    );
     await vi.waitFor(() => expect(recordOutbox.ack).toHaveBeenCalledTimes(1));
   });
 
@@ -2250,6 +2253,7 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
   });
 
   it('C1：conflict ⇒ 不直投 + record_lost；unavailable+成功 ⇒ 无失败指标', async () => {
+    const records = installSink();
     // conflict：旧 pending 保留，新请求不直投
     const conflictOutbox = {
       enqueue: vi.fn().mockResolvedValue({ status: 'conflict', existingEndedAt: 123 }),
@@ -2273,6 +2277,7 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     });
     expect(conflictFixtures.recordClient.write).not.toHaveBeenCalled();
     expect(conflictOutbox.ack).not.toHaveBeenCalled();
+    expect(records.some((r) => r.msg.includes('conflict'))).toBe(true);
 
     // unavailable + 直投成功：记录已落库，但未 durable；不计失败
     const unavailableOutbox = {
@@ -2282,6 +2287,9 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     const unavailableFixtures = await makeRecordFixtures({ recordOutbox: unavailableOutbox });
     const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
       game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost2 = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
     })) ?? 0;
     unavailableFixtures.ctx.gateway.onGameEvent({
       event: 'game.ended',
@@ -2295,6 +2303,9 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     expect(await exactSeriesValue(recordWriteFailuresTotal, {
       game_type: 'doudizhu', kind: 'record',
     })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost2);
   });
 
   it('C1：write=false 视为成功；ack=false 不计失败', async () => {
@@ -2370,6 +2381,86 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
       })).toBe(beforeSkip + 1);
     });
     expect(recordOutbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('C1：!record||!version ⇒ 零指标 + enqueue 零调用', async () => {
+    const { ctx, recordOutbox } = await makeRecordFixtures();
+    const records = installSink();
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: undefined as never,
+      result: RESULT,
+    });
+    await vi.waitFor(() =>
+      expect(records.some((r) => r.msg.startsWith('Record write skipped'))).toBe(true),
+    );
+    expect(recordOutbox.enqueue).not.toHaveBeenCalled();
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+  });
+
+  it('C1：enqueue 意外抛 ⇒ 仍直投、不计 record_lost', async () => {
+    const records = installSink();
+    const recordOutbox = {
+      enqueue: vi.fn().mockRejectedValueOnce(new Error('enqueue boom')),
+      ack: vi.fn().mockResolvedValue(true),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 47,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+    expect(records.some((r) => r.msg.includes('enqueue threw'))).toBe(true);
+  });
+
+  it('C1：ack 意外抛 ⇒ 已成功写入不计失败', async () => {
+    const recordOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'queued' as const, raw: 'raw' }),
+      ack: vi.fn().mockRejectedValueOnce(new Error('ack boom')),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 48,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordOutbox.ack).toHaveBeenCalledTimes(1));
+    expect(recordClient.write).toHaveBeenCalledTimes(1);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
   });
 });
 

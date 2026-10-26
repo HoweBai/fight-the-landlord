@@ -63,6 +63,7 @@ import { StartModule } from '../src/rooms/start.module';
 // C1：WsGateway 第 14 个构造依赖 + 模块装配（单例身份判定对象）。
 import { RecordOutboxService } from '../src/gateway/record-outbox.service';
 import { RecordOutboxModule } from '../src/gateway/record-outbox.module';
+import { RedisProviderModule } from '../src/redis.provider.module';
 
 /** 假的**裸** `ClientProxy`（就是 `ClientsModule.register` 本该提供的东西）。 */
 const fakeProxy = (tag: string) => ({ tag, send: () => undefined });
@@ -501,6 +502,7 @@ describe('room-service 装配门禁：CurrencyModule + WsModule 的新依赖 imp
     const providers = (Reflect.getMetadata('providers', RecordOutboxModule) as unknown[] | undefined) ?? [];
     const exportsMeta = (Reflect.getMetadata('exports', RecordOutboxModule) as unknown[] | undefined) ?? [];
     expect(imports).toContain(RpcClientsModule);
+    expect(imports).toContain(RedisProviderModule);
     expect(providers).toContain(RecordOutboxService);
     expect(exportsMeta).toContain(RecordOutboxService);
     const currencyImports = (Reflect.getMetadata('imports', CurrencyModule) as unknown[] | undefined) ?? [];

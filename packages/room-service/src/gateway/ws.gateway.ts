@@ -1307,7 +1307,16 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       endedAt,
     };
 
-    const enqueue = await this.recordOutbox.enqueue(request);
+    let enqueue: RecordOutboxEnqueueResult;
+    try {
+      enqueue = await this.recordOutbox.enqueue(request);
+    } catch (err) {
+      // 纵深防御（enqueue 契约上不抛）：仍然直投；这条按 unavailable 记。
+      this.logger.error(
+        `Record outbox enqueue threw for room ${event.roomCode} (version ${event.version}): ${String(err)}`,
+      );
+      enqueue = { status: 'unavailable' };
+    }
     return { request, enqueue };
   }
 
@@ -1331,10 +1340,17 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     try {
       const written = await this.record.write(request);
       if (owned) {
-        const removed = await this.recordOutbox.ack(recordOutboxField(request), enqueue.raw!);
-        if (!removed) {
+        // 纵深防御：ack 合同上不抛；若意外抛，已成功的写入不得被计成失败。
+        try {
+          const removed = await this.recordOutbox.ack(recordOutboxField(request), enqueue.raw!);
+          if (!removed) {
+            this.logger.warn(
+              `Record outbox ack skipped for room ${request.roomCode} (version ${request.gameVersion}; entry changed or already removed)`,
+            );
+          }
+        } catch (ackErr) {
           this.logger.warn(
-            `Record outbox ack skipped for room ${request.roomCode} (version ${request.gameVersion}; entry changed or already removed)`,
+            `Record outbox ack threw for room ${request.roomCode} (version ${request.gameVersion}): ${String(ackErr)}`,
           );
         }
       } else {

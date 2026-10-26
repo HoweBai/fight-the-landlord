@@ -1,5 +1,5 @@
 // packages/room-service/test/record-outbox.test.ts
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ErrCode, type RecordWriteRequest } from '@fight-the-landlord/protocol';
 import {
   RECORD_OUTBOX_KEY,
@@ -139,6 +139,9 @@ describe('C1 RecordOutboxService：enqueue/ack（CAS）', () => {
 
 describe('C1 RecordOutboxService.sweep', () => {
   const NOW = 1_700_000_000_000;
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
   const entry = (over: Partial<RecordWriteRequest> = {}, createdAt = NOW, gameType = 'doudizhu'): string =>
     JSON.stringify({ request: REQUEST(over), createdAt, gameType });
 
@@ -312,6 +315,71 @@ describe('C1 RecordOutboxService.sweep', () => {
     // eslint-disable-next-line no-console
     console.info(`[C1] 10k record outbox classify+sort: ${elapsed.toFixed(1)}ms`);
     expect(elapsed).toBeLessThan(5_000);
+  });
+
+  it('HSETNX=0 后 HGET=null（并发删除窗口）⇒ 重试一次 HSETNX，成功按 queued', async () => {
+    const { redis, svc } = makeSvc();
+    const hsetnx = redis.hsetnx as unknown as ReturnType<typeof vi.fn>;
+    hsetnx.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+    (redis.hget as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await svc.enqueue(REQUEST());
+    expect(result.status).toBe('queued');
+    expect(hsetnx).toHaveBeenCalledTimes(2);
+  });
+
+  it('repair CAS_HSET 抛异常 ⇒ 仍投递一次，成功后按原 raw 删除', async () => {
+    const { redis, record, svc } = makeSvc();
+    await redis.hset(RECORD_OUTBOX_KEY, 'REP:1', entry({}, Number.NaN));
+    (redis.eval as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('redis write down'),
+    );
+    await svc.sweep({ ...(await redis.hgetall(RECORD_OUTBOX_KEY)) }, NOW);
+    expect(record.write).toHaveBeenCalledTimes(1);
+    expect(await redis.hget(RECORD_OUTBOX_KEY, 'REP:1')).toBeNull();
+  });
+
+  it('快照后 corrupt 条目被新载荷替换 ⇒ drop CAS 不删新', async () => {
+    const { redis, svc } = makeSvc();
+    await redis.hset(RECORD_OUTBOX_KEY, 'DROP:1', 'bad');
+    const snapshot = { ...(await redis.hgetall(RECORD_OUTBOX_KEY)) };
+    const newRaw = entry({}, NOW);
+    await redis.hset(RECORD_OUTBOX_KEY, 'DROP:1', newRaw);
+    await svc.sweep(snapshot, NOW);
+    expect(await redis.hget(RECORD_OUTBOX_KEY, 'DROP:1')).toBe(newRaw);
+  });
+
+  it('sweep 日志按轮聚合：3 条失败只出一条 WARN，3 条 corrupt 只出一条 ERROR', async () => {
+    const { redis, record, svc } = makeSvc();
+    record.write.mockRejectedValue(new Error('down'));
+    await redis.hset(RECORD_OUTBOX_KEY, 'AGG:1', entry({ gameVersion: 1 }));
+    await redis.hset(RECORD_OUTBOX_KEY, 'AGG:2', entry({ gameVersion: 2 }));
+    await redis.hset(RECORD_OUTBOX_KEY, 'AGG:3', entry({ gameVersion: 3 }));
+    const logger = (svc as unknown as {
+      logger: { warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+    }).logger;
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+    await svc.sweep(await redis.hgetall(RECORD_OUTBOX_KEY), NOW);
+    const warnMsgs = warn.mock.calls.map((c) => String(c[0]));
+    const errorMsgs = error.mock.calls.map((c) => String(c[0]));
+    expect(warnMsgs.filter((m) => m.includes('resend failure'))).toHaveLength(1);
+    expect(warnMsgs.find((m) => m.includes('resend failure'))).toContain('3 resend failure');
+    expect(warnMsgs.some((m) => m.includes('record outbox resend failed for'))).toBe(false);
+    expect(errorMsgs.filter((m) => m.includes('dropped corrupt='))).toHaveLength(0);
+
+    const { redis: redis2, svc: svc2 } = makeSvc();
+    await redis2.hset(RECORD_OUTBOX_KEY, 'C:1', 'bad');
+    await redis2.hset(RECORD_OUTBOX_KEY, 'C:2', 'bad');
+    await redis2.hset(RECORD_OUTBOX_KEY, 'C:3', 'bad');
+    const logger2 = (svc2 as unknown as {
+      logger: { warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+    }).logger;
+    const error2 = vi.spyOn(logger2, 'error').mockImplementation(() => undefined);
+    await svc2.sweep(await redis2.hgetall(RECORD_OUTBOX_KEY), NOW);
+    const errorMsgs2 = error2.mock.calls.map((c) => String(c[0]));
+    expect(errorMsgs2.filter((m) => m.includes('dropped corrupt=3'))).toHaveLength(1);
+    expect(errorMsgs2.some((m) => m.includes('entry dropped for'))).toBe(false);
   });
 });
 

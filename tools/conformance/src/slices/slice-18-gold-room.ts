@@ -22,8 +22,8 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 32 条
- *     （13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助）；
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 35 条
+ *     （含 C1 三条记录 outbox；分类计数以断言处为准）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
  *     **与两个 robot gauge 的新鲜值**（默认 1h 间隔下启动轮早于 E 的池注资 ⇒ H 只断言序列
