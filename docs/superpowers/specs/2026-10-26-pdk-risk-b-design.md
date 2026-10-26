@@ -6,6 +6,12 @@
 > 前置阅读：`docs/dev-process.md`、`2026-10-25-pdk-observability-design.md`、
 > `2026-10-25-pdk-risk-scan-design.md`、`2026-10-25-pdk-two-player-design.md`、
 > `2026-10-25-pdk-four-player-design.md`、`docs/games/paodekuai.md`。
+>
+> ⚠️ **2026-10-26 合并后记**：`origin/dev` 已前进到 `ccc4efd6`（代理分润片），与本片撞号后：
+> conformance 片顺延 **`slice-33-pdk-risk-gold`**；config 种子迁移改号
+> **`1797000000006-PdkRiskPlayerCountSeed`**（dev 的 `AgentInviteKey1796900000000` 已占号）。
+> 本文其余设计与决策不变；执行记录与实测见
+> `docs/superpowers/plans/2026-10-26-pdk-risk-b.md`。
 
 ## 0. 用户裁决（2026-10-26）
 
