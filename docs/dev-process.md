@@ -109,7 +109,7 @@
 
 - 推 `dev`（零 CI）；需要发版时合 `master`（权威轮），打 `v*` tag 出包。
 - 测试服部署：`bash scripts/deploy/deploy-dev.sh`
-  （tag → build/push → deploy → 钉 IP 复核）。
+  （tag → **GitHub Actions 构建** → deploy → 钉 IP 复核；本机不需要 Docker，需 `gh` 已登录）。
 - 合并远端新提交后必须**重新跑验证**再推送。
 - 合并完成后清理已合入的本地/远端分支（远端删除需用户明确授权）。
 - 更新交接文档/台账；`.superpowers/sdd/` 仅供本机过程记录（gitignored，不入库）。
