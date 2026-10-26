@@ -142,11 +142,22 @@ Files：`scripts/admin-agents-probe.mjs`、按失败修 `admin/*`
 | 12-14 | Important | reset 断言脆弱、finance 可见性假绿、settingsReq 命名漂移 | 正则/`actions.hidden`/统一 `settingsReq` |
 | 15-22 | Minor | jsdom 入口、sleep、孤儿叶、注释残留、armed 时序等 | 已并入 T1/T3 步骤 |
 
+## 代码审查记录
+
+独立 reviewer 审 `bce1c8a5..HEAD`：Critical 0；Important 4（探针吞异常假绿、三页签未断言请求、收权/版本刷新无用例、探针未接 CI）；Minor 7。
+处置：
+- Important 1-4 全部修复（operator 改走隐藏叶真实点击；adjustments/recon/audit 计数断言 + recon armed 只跑一次；邀请码保存后版本号刷新用例 + operator 配置搜索只读用例；`scripts/ci.sh` 增 `verify:admin-agents`）。
+- Minor 5/8：`ensureConfigSnapshot` 同 epoch 去重；ensure* 捕获本地 flags，旧会话 finally 不清新会话 loading。
+- Minor 6/7：收敛邀请码行重建点（loader 不再重建）；占位文案区分「加载中/未加载」。
+- Minor 9：`applyAgentTabUI` 与 `resetAgents` 对新增 DOM 加 null 守卫（部署混载）。
+- Minor 10：闸补 `treeReq` 复位、`agent-tab-list` 初始 active、`#ag-invite-row` 在表单外、`applyAgentRole` 守卫。
+- Minor 11：探针 login 桩恒 super_admin，登记（仅用于 super_admin 窗口）。
+
 ## 验收清单
 
-- [ ] `pnpm verify:admin` 全绿
-- [ ] `node scripts/admin-agents-probe.mjs` 全绿
-- [ ] `pnpm verify:admin-players` 全绿
-- [ ] `node --check admin/app.js`
-- [ ] 工作区仅剩无关的 `PdkSettlement.vue` 未提交改动
+- [x] `pnpm verify:admin` 全绿（601 项）
+- [x] `node scripts/admin-agents-probe.mjs` 全绿（42 项）
+- [x] `pnpm verify:admin-players` 全绿（回归）
+- [x] `node --check admin/app.js`
+- [x] 工作区仅剩无关的 `PdkSettlement.vue` 未提交改动
 - [ ] 推 dev（零 CI）
