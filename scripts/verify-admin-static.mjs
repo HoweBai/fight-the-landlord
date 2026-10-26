@@ -923,7 +923,7 @@ const resetAgentsBlock = functionBody(app, 'function resetAgents');
 ok(/tab\s*=\s*'list'/.test(resetAgentsBlock), "resetAgents 复位 tab = 'list'");
 ok(/epoch\s*\+=\s*1|epoch\+\+/.test(resetAgentsBlock), 'resetAgents 递增 epoch');
 ok(/roleApplied\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 roleApplied');
-ok(/recon\.armed\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
+ok(/armed:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
 ok(/list\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 list.loaded');
 ok(
   /settingsReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock),
