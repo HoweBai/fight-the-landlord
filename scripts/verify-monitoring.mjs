@@ -98,11 +98,12 @@ const EXPECTED_ALERTS = [
   'ReliefCallbackBroken', 'ReliefGrantZero',
   'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
   'RiskScanSqlFailures',
+  'RecordOutboxStuck', 'RecordOutboxAbandoned', 'RecordLost',
 ];
 const alertText = readFileSync(ALERT_FILE, 'utf8')
   .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
 const alertRaw = readFileSync(ALERT_FILE, 'utf8');
-ok(alertRaw.includes('**32 条**') && alertRaw.includes('32 条 = 29 类'), '告警头注释为 32 条 / 29 类');
+ok(alertRaw.includes('**35 条**') && alertRaw.includes('35 条 = 32 类'), '告警头注释为 35 条 / 32 类');
 const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
 ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
 ok(
@@ -114,6 +115,9 @@ const ALERT_PREDICATES = {
   GameSettleFailures: ['phase', '> 0'],
   SettleDroppedByGame: ['result="dropped"'],
   RecordWriteFailuresHigh: ['kind="record_lost"', '>= 3'],
+  RecordOutboxStuck: ['record_outbox_oldest_seconds', '> 600'],
+  RecordOutboxAbandoned: ['result=~"abandoned|corrupt|rejected"', '24h'],
+  RecordLost: ['kind="record_lost"', '> 0'],
 };
 for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
   const block = new RegExp(`- alert: ${name}[\\s\\S]*?(?=\\n\\s*- alert:|$)`).exec(alertText)?.[0] ?? '';

@@ -110,6 +110,8 @@ const EXPECTED_RULES = [
   'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
   // B 组（2026-10-26）：一条 SQL 失败规则（数量 31→32）。
   'RiskScanSqlFailures',
+  // C1（2026-10-26）：记录 outbox 三条规则（数量 32→35）。
+  'RecordOutboxStuck', 'RecordOutboxAbandoned', 'RecordLost',
 ] as const;
 
 /** C1：九个目标的 exec 探测面（八 Nest + douzero；指标端口**不发布宿主口**——D2）。 */

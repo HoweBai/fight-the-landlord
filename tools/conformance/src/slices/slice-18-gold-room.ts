@@ -1591,7 +1591,7 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 32, 'H Prometheus /api/v1/rules 恰 32 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组同步）');
+    checks.eq(ruleNames.length, 35, 'H Prometheus /api/v1/rules 恰 35 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
 
