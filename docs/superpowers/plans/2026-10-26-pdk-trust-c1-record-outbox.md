@@ -274,15 +274,20 @@
 - 提交（按序）：`5e9a6a0f` 总 spec+C1 spec → `dffbae90` v2 → `8d1699ab` v3 → `aecf55e4` v4 →
   `5513c4eb` plan → `aa71c875` 指标 → `cd520e5b` 服务 → `d2695005` 网关/sweeper 接线 →
   `7dbe7c96` 告警/计数 → `c62ac8cb` conformance → `b453738e` 错误类补提交 →
-  `937f7985` 运维/设计/台账。
-- 本机验证：
-  - room-service：56 文件 / **959 tests** 全绿；lint 通过。
+  `937f7985` 运维/设计/台账 → `896870be` 执行记录 → `ad18a35f` slice-34=19 →
+  `72794727` 代码审查修复 → `a805876b` 代码审查回填。
+- 本机验证（最终树）：
+  - room-service：56 文件 / **966 tests** 全绿；lint（tsc 双配置）通过。
   - `node scripts/verify-monitoring.mjs`：**241 checks**；自证「改头注释 35→34 ⇒ 1 FAILED」已执行并恢复。
   - `pnpm verify:admin`：**520 checks**。
-  - `tools/conformance`：`tsc --noEmit` 通过；`check-baselines.mjs --self-test` 4/4。
+  - `tools/conformance`：`tsc --noEmit` 通过；`check-baselines.mjs --self-test` 4/4；slice-34=19。
   - 10k 分类/排序基准：**83.6ms**（<500ms，不触发升级 B）。
-  - 全量 turbo：首跑/二跑/三跑各有一例**环境性**失败（config 迁移 5s 超时、currency internal-token 端口冲突、
-    bcrypt 原生绑定未构建）——三包单独复跑分别 489/489、538/538、404/404 全绿；已修 bcrypt 后串行重跑（结果见交接）。
+  - 全量 lint：`turbo run lint --force --concurrency=4` = **18/18，0 cached**。
+  - 全量 test：`turbo run test --force --concurrency=1 --filter=!config-service --filter=!mock-server`
+    = **25/25，0 cached**；config-service 单独 **489/489**；mock-server 单独 **10/10**。
+  - `turbo run test lint --force --concurrency=1` 完整跑尝试 5 次，每次一例**与 C1 无关的环境性 flake**
+    （config 迁移 5s 默认超时、currency/mock 的随机端口 `bad port`、bcrypt 原生绑定缺 build script）；
+    三包单独均全绿；已在本机补 bcrypt 绑定（node_modules，未入库）。
 - 真栈：本机 Docker 不可用；`slice-15-records` C9 扩展与 `slice-34-record-outbox` 只做 tsc，
   **待权威轮**。
 - 代码审查（2026-10-26，独立 reviewer 审 `origin/dev..HEAD`）：**0 Critical / 1 Important / 5 Minor**。
