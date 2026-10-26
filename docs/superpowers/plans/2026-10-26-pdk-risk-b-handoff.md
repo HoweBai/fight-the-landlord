@@ -45,8 +45,11 @@
 - 首轮 run `40259979512`：起栈阶段发现 slice-33 管理写桶可预见红（`ADMIN_WRITE` 30/5min
   按令牌指纹；20 次配置写 + 14 次钱包调整写），主动取消；修复 `b23f7a95`
   （写段重登换令牌 + 起手 61s 清 IP 桶；断言仍 60）。
-- 次轮 run `40260432256`：**结果待回填**；覆盖全序切片，重点
-  slice-16/18/20/24/29/31/33 与 `slice-33-pdk-risk-gold`。
+- 次轮 run `40260432256`（47m58s）：**唯一红点 = dev 的 `slice-32-agent`** 硬编码
+  94 键（合并后 101）；其余 37 片全绿。B 相关实测：slice-16 **91**、18 **151**、
+  20 **181**、24 **225**、29 **117**、31 **59**、33 **60/60（129.5s）**。
+  修复 `69d9c74b`（代理片改用 `CONFIG_KEYS.length` / `CLIENT_CONFIG_KEYS.length`；
+  slice-16 基线 87→91）。重跑 run `40264759914`：**结果待回填**。
 - `03dccc10` 已还原 conformance 触发（`push.branches=[master]`），并加入临时迁移 workflow。
 - **最终清理**：迁移 run 完成后删除 `.github/workflows/risk-b-migrations-temp.yml` 与
   `scripts/temp/`，再跑 `node tools/conformance/dist/run.js slice-07.4-pipeline --render`
