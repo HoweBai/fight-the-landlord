@@ -1,5 +1,8 @@
 # push→master 时把 14 个自建镜像构建并推到 GHCR（R1304 的触发分级：feature 分支**不**跑）。
 #
+# 2026-10-27：增加 **workflow_dispatch** 入口 —— 给 dev/测试服手动出镜像，避免本机构建。
+# 手动路径**只推 input 指定的 tag，不推 `latest`**（防止 dev 镜像覆盖 master 的 latest）。
+#
 # ⚠️ 为什么不放在 `ci.yml` 里：`ci.yml` 只是六阶段（`scripts/ci.sh`）的薄调用；
 #    把构建塞进去会让「六阶段」不再是规格里那张表。
 name: images
@@ -7,6 +10,13 @@ name: images
 on:
   push:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        # 自由文本：经 env 传入、在 shell 里带引号引用（同 release.yml 的 REF_NAME 纪律）。
+        description: '要构建推送的镜像 tag（如 dev-cbab81f）；只构建推送，不部署'
+        required: true
+        type: string
 
 jobs:
   images:
@@ -31,6 +41,12 @@ jobs:
       - name: 构建并推送 14 个镜像
         env:
           IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord
+          # 手动入口的 tag 走 env（自由文本不得直接插进 run: 的 shell 源码）。
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
         run: |
           SHORT="$(git rev-parse HEAD | cut -c1-7)"
-          bash scripts/deploy/build-images.sh "sha-$SHORT" latest
+          if [ -n "$IMAGE_TAG_INPUT" ]; then
+            bash scripts/deploy/build-images.sh "$IMAGE_TAG_INPUT"
+          else
+            bash scripts/deploy/build-images.sh "sha-$SHORT" latest
+          fi
