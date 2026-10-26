@@ -49,6 +49,7 @@ import { runSlice31 } from './slices/slice-31-pdk-gold';
 import { runSlice32 } from './slices/slice-32-agent';
 import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
 import { runSlice34 } from './slices/slice-34-record-outbox';
+import { runSlice35 } from './slices/slice-35-records-reconcile';
 
 interface Case {
   title: string;
@@ -138,6 +139,8 @@ const CASES: Record<string, Case> = {
   'slice-33-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice33 },
   // C1：记录 outbox 五态（sweeper 真栈；不依赖停服）。
   'slice-34-record-outbox': { title: '记录 outbox（真栈：ok/replayed/corrupt/abandoned/rejected）', run: runSlice34 },
+  // C2：资金↔记录对账（三轮：基线/注入/pdk 清零；分页 sentinel + 零写 + GET/gauge 一致）。
+  'slice-35-records-reconcile': { title: '记录对账（真栈：GET/gauge/分页/跨界/台费/零写）', run: runSlice35 },
 };
 
 function printUsage(): void {
