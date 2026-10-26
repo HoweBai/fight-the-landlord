@@ -129,7 +129,7 @@ export interface SettleOutboxEntry {
   gameVersion: number;
   /** 1 = 首发；2 = 14001 后的 `:r2` 重算轮（至多一轮）。 */
   round: 1 | 2;
-  /** 本局销毁（本片）：残差——随 apply 载荷捎带；**旧条目可能缺失**（读侧按 `typeof === 'number'` 判）。 */
+  /** 本局销毁：残差（2026-10-26 起正常路径恒 0；旧条目可能非 0/缺失，读侧按 `typeof === 'number'` 判）。 */
   residue: number;
   /** 本局销毁（本片）：抽水。 */
   rakeTotal: number;
@@ -159,23 +159,25 @@ export interface SettleComputation {
   entries: CurrencyEntryIn[];
   /** 三人语义向量（座位升序、**含 0**）—— `record.moneyDelta` 的原样载荷。 */
   deltas: Array<{ seat: number; delta: number }>;
-  /** `P − Σg[i]`（销毁；∈ [0, 赢家数)）。 */
+  /** 正常路径恒 0（零头已分给赢家）；防御路径（赢家空/Σraw≤0）= P。 */
   residue: number;
   /** `Σrake[i]`（销毁；随 residue 一并可核对）。 */
   rakeTotal: number;
 }
 
 /**
- * 结算算法（规格 §4 伪码**逐字**；纯函数 —— 单测矩阵直接打它）。
+ * 结算算法（spec 2026-10-26 起为**最大余数法**；纯函数 —— 单测矩阵直接打它）。
  *
  * ```
  * raw[i]   = seat i 是 landlord ? result.landlordScoreChange : result.farmerScoreChange
  * 输家 i:  pay[i] = min(−raw[i], balance[i])    // balance 缺失（exists=false）按 0
  *          delta[i] = −pay[i];  P += pay[i]
- * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // Σraw[赢家] = Σraw[输家]（玩法守恒）
- *          rake[i] = floor(g[i] × rakePercent / 100)
+ * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // 基础分摊（BigInt 精确）
+ *          frac[i] = raw[i] × P − g[i] × Σraw     // 精确余数 ∈ [0, Σraw)
+ *          R = P − Σg[i]（∈ [0, 赢家数)）⇒ 按 frac 降序、座位升序前 R 名各 +1
+ *          rake[i] = floor(g[i] × rakePercent / 100)   // 基数 = 分发零头后的最终所得
  *          delta[i] = g[i] − rake[i]
- * residue  = P − Σg[i]     // ∈ [0, 赢家数)；销毁，计 currency_settle_residue_total
+ * residue  = P − Σg[i] ≡ 0（正常路径；赢家空/Σraw≤0 的防御路径 = P，仍销毁）
  * entries  = 非零 delta 的 {ownerId, ownerType, delta}
  * ```
  * 分差为 0 的座位（理论不发生）⇒ 不产生 entry，但 `deltas` 向量仍含 0（规格 §4 末行）。
@@ -216,11 +218,34 @@ export function computeSettlement(input: {
   let gainedSum = 0;
   let rakeTotal = 0;
   if (winners.length > 0 && winnerRawSum > 0) {
-    for (const s of winners) {
-      const gain = Math.floor((rawOf(s) * pool) / winnerRawSum); // 截断后的 P 按原始分差分摊
-      const rake = Math.floor((gain * rakePercent) / 100);
-      deltaBySeat.set(s.seat, gain - rake);
-      gainedSum += gain;
+    // 最大余数法（spec 2026-10-26 D1/D4）：零头分给赢家，精确整数运算。
+    if (!Number.isSafeInteger(pool) || pool < 0 || !Number.isSafeInteger(winnerRawSum)) {
+      throw new Error(`settlement allocation input invalid: pool=${pool}, winnerRawSum=${winnerRawSum}`);
+    }
+    const bigS = BigInt(winnerRawSum);
+    const bigPool = BigInt(pool);
+    const rows = winners.map((s) => {
+      const raw = rawOf(s);
+      if (!Number.isSafeInteger(raw) || raw <= 0) {
+        throw new Error(`settlement allocation input invalid: raw(${s.seat})=${raw}`);
+      }
+      const num = BigInt(raw) * bigPool;
+      return { seat: s.seat, gain: num / bigS, frac: num % bigS };
+    });
+    const grantedBase = rows.reduce((acc, r) => acc + Number(r.gain), 0);
+    const remainder = pool - grantedBase; // 精确算术下 ∈ [0, 赢家数)
+    if (remainder < 0 || remainder >= winners.length) {
+      throw new Error(`settlement remainder out of range: R=${remainder} (winners=${winners.length}, P=${pool})`);
+    }
+    const byFraction = [...rows].sort((a, b) =>
+      a.frac === b.frac ? a.seat - b.seat : a.frac > b.frac ? -1 : 1,
+    );
+    for (let i = 0; i < remainder; i += 1) byFraction[i]!.gain += 1n;
+    for (const r of rows) {
+      const finalGain = Number(r.gain); // 前置断言保证安全整数
+      const rake = Math.floor((finalGain * rakePercent) / 100); // D2：基数 = 最终所得
+      deltaBySeat.set(r.seat, finalGain - rake);
+      gainedSum += finalGain;
       rakeTotal += rake;
     }
   }
@@ -661,7 +686,7 @@ export class SettleService {
   }): Promise<void> {
     const { roomCode, version, seats, computed, data, preBalances, gameType, playerCount } = args;
 
-    // 残差销毁记账（§4）：**零和局也 inc 0** —— 任何金币局之后该序列必然出现（H 组据此核对）。
+    // 残差（回归哨兵，§4）：新口径正常路径恒 0；**零和局也 inc 0** —— 任何金币局之后该序列必然出现。
     incGame(currencySettleResidueTotal, gameType, computed.residue);
     if (computed.residue > 0 || computed.rakeTotal > 0) {
       this.logger.log(
