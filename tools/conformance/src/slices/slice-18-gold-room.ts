@@ -615,7 +615,7 @@ interface SettleRecount {
   expected: number[];
   /** 输光截断前的应付池 `P`。 */
   pool: number;
-  /** `P − Σ最终 g`（新口径恒 0；非 0 即实现回归）。 */
+  /** `P − Σ最终 g`（复算自证：复算自身分发后相减；新口径期望恒 0）。 */
   residue: number;
   /** 赢家数（诊断用）。 */
   winners: number;
@@ -800,8 +800,9 @@ async function assertGoldGame(
   const recount = recountSettlement(ev.settlement, ev.preBalances, expectedRakePercent);
   checks.that(
     recount.residue === 0,
-    `${what}：新口径残留应恒 0（residue=${recount.residue}）—— 口径：` +
-      `P=${recount.pool} − Σ最终 g（最大余数法，零头已分给赢家）`,
+    `${what}：新口径残留应恒 0（residue=${recount.residue}，赢家 ${recount.winners}）—— 口径：` +
+      `P=${recount.pool} − Σ最终 g（最大余数法，零头已分给赢家）；` +
+      `本式是复算自证，实现侧判别力见逐座比对与 op 两列`,
   );
   const expectedSum = recount.expected.reduce((a, b) => a + b, 0);
   // 本式 = 复算**自检**（抓复算笔误），非产品判据；产品判别力由同函数逐座（game.balances 差）/

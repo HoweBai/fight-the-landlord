@@ -398,6 +398,26 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
     expect(out.residue).toBe(0);
   });
 
+  it('C4b 最大余数在较大座位：raw 11@seat0、5@seat1、P=15 ⇒ 10/5（座位序实现会得 11/4）', () => {
+    const out = computeSettlement({
+      roomCode: 'ROOM01',
+      version: 11,
+      round: 1,
+      result: pdkResult([11, 5, -16], 3),
+      seats: seatsOf(3),
+      balances: balances({ u0: 1000, u1: 1000, u2: 15 }),
+      rakePercent: 0,
+    });
+    // g: 10（frac 5）/4（frac 11）⇒ R=1 给 seat1
+    expect(out.deltas).toEqual([
+      { seat: 0, delta: 10 },
+      { seat: 1, delta: 5 },
+      { seat: 2, delta: -15 },
+    ]);
+    expect(out.residue).toBe(0);
+  });
+
+
   it('C5 R=2：raw 2/2/2、输家 −6 余额 5 ⇒ 2/2/1、输家 −5', () => {
     const out = computeSettlement({
       roomCode: 'ROOM01',
@@ -415,6 +435,26 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
       { seat: 3, delta: -5 },
     ]);
     expect(out.residue).toBe(0);
+  });
+
+  it('C6 多赢家 + 抽水：C1 场景 rake 10% ⇒ gain 13/12、rake 1/1、delta 12/11', () => {
+    const out = computeSettlement({
+      roomCode: 'ROOM01',
+      version: 12,
+      round: 1,
+      result: FARMERS_WIN(),
+      seats: SEATS,
+      balances: balances({ alice: 25, 'bot-aaaa1111': 1000, carol: 1000 }),
+      rakePercent: 10,
+    });
+    expect(out.deltas).toEqual([
+      { seat: 0, delta: -25 },
+      { seat: 1, delta: 12 },
+      { seat: 2, delta: 11 },
+    ]);
+    expect(out.rakeTotal).toBe(2);
+    expect(out.residue).toBe(0);
+    expect(out.entries.reduce((acc, e) => acc + e.delta, 0)).toBe(-2);
   });
 
   it('C6b 零头先分发后抽水：raw 10/10、P=19、rake 10% ⇒ 9/9', () => {
@@ -457,6 +497,20 @@ describe('computeSettlement：最大余数法（2026-10-26 spec C3–C11）', ()
   });
   // 覆盖限制：C8 只钉「旧 double 截断实现」；「LRM + double」在协议可达输入下不可观测
   //（P≤S、DDZ 双农民等 raw / PDK 单赢家），BigInt 属硬化项（spec §1.3），不另补非守恒向量。
+
+  it('M-1 输入断言：余额非整数 ⇒ 抛错（settle 顶层记 dropped、钱不动）', () => {
+    expect(() =>
+      computeSettlement({
+        roomCode: 'ROOM01',
+        version: 16,
+        round: 1,
+        result: FARMERS_WIN(),
+        seats: SEATS,
+        balances: balances({ alice: 10.5, 'bot-aaaa1111': 1000, carol: 1000 }),
+        rakePercent: 0,
+      }),
+    ).toThrow(/allocation input invalid/);
+  });
 
   it('C11 防御：无赢家（三方全负）⇒ residue=P、不抛错', () => {
     const out = computeSettlement({

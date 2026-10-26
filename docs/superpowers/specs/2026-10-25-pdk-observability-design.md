@@ -150,7 +150,7 @@ export function setGame(gauge: Gauge, gameType: unknown, value: number): void;
 | 02-business | 机器人决策速率与失败 | 决策 `sum by (game_type, result, skill)`；DouZero 失败 `sum by (game_type, reason)`；新增 PDK 规则错误 target `sum by (game_type) (rate(robot_rule_errors_total[5m]))` |
 | 05-currency | 结算补偿队列最老滞留 | `max by (game_type)` |
 | 05-currency | 结算结果速率 | `sum by (game_type, result)` |
-| 05-currency | 残差销毁增速 | `sum by (game_type)` |
+| 05-currency | 残差（应恒 0，非 0 即回归；2026-10-26 改名） | `sum by (game_type)` |
 | 05-currency | 机器人补给/回收速率 | `sum by (game_type, action)` |
 | 05-currency | 机器人 ensure 失败累计 | `sum by (game_type)` |
 | 05-currency | 台费收/漏 | `sum by (game_type, reason)` / `sum by (game_type)` |

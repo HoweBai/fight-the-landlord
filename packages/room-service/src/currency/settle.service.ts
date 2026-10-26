@@ -209,6 +209,9 @@ export function computeSettlement(input: {
   for (const s of losers) {
     // 输光截断（D3）：应付超过余额 ⇒ 只付余额，不欠账（也就不可能 14001）。
     const pay = Math.min(-rawOf(s), balances.get(s.ownerId) ?? 0);
+    if (!Number.isSafeInteger(pay) || pay < 0) {
+      throw new Error(`settlement allocation input invalid: pay(${s.seat})=${pay}`);
+    }
     // ⚠️ `-0` 归一：`-pay` 在 pay=0 时是 `-0`（Object.is 层面 ≠ 0，序列化/断言都会出怪相）。
     deltaBySeat.set(s.seat, pay === 0 ? 0 : -pay);
     pool += pay;
@@ -242,7 +245,11 @@ export function computeSettlement(input: {
     );
     for (let i = 0; i < remainder; i += 1) byFraction[i]!.gain += 1n;
     for (const r of rows) {
-      const finalGain = Number(r.gain); // 前置断言保证安全整数
+      const finalGain = Number(r.gain);
+      if (!Number.isSafeInteger(finalGain)) {
+        // D4 兜底：前置断言下结构上恒真；保留以防未来改动破坏前提。
+        throw new Error(`settlement allocation input invalid: gain(${r.seat})=${finalGain}`);
+      }
       const rake = Math.floor((finalGain * rakePercent) / 100); // D2：基数 = 最终所得
       deltaBySeat.set(r.seat, finalGain - rake);
       gainedSum += finalGain;

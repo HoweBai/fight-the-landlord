@@ -363,8 +363,8 @@ client POST /api/wallet/relief（X-User-Id）
 - **C5** 一局金币场（rake=0、无截断）：三人金额变动 = 分差；entries 和 = 0；人类/机器人账目 owner_type 正确。
 - **C6** 机器人首入局：ensure 已入金、余额 ∈ 目标区间且**非整百**。
 - **C7** `money_delta`：三人列 = 三人语义向量（含 0）；`record.moneyDelta` 重复投递幂等（回执=命中座位集合，同值重写不误判）。
-- **C8** rake>0：赢家实收 = `g − floor(g×p/100)`（逐字 D3 操作序）；entries 和 = −Σ抽水；无截断时残差=0；对账干净。
-- **C9** 截断（单测/假层）：输家 −余额；赢家按比例 floor；残差销毁并计指标；**不产生 14001、不欠账**。
+- **C8** rake>0：赢家实收 = `finalGain − floor(finalGain×p/100)`（**2026-10-26 起**基数含分得的零头）；entries 和 = −Σ抽水；无截断时残差=0；对账干净。
+- **C9** 截断（单测/假层）：输家 −余额；赢家按最大余数法分摊（**2026-10-26 起**零头分给赢家、residue 恒 0，见 `2026-10-26-settle-remainder-to-winners-design.md`）；**不产生 14001、不欠账**。
 - **C10** settle 重试分级：超时/10007 ⇒ 同 id 原样重发 ⇒ replayed 恰一次记账；14001 ⇒ `:r2` 重算轮正确；10001/14002 ⇒ 终态不重试 + 告警（构造用例）。
 - **C11** outbox：settle 失败入箱、sweeper 重发成功、`money_delta` 补写收敛；最老 >300s 告警规则存在。
 - **C12** refill/recall：越线动作正确；同观测重复触发 replayed 不双补；回收后池余额上升；**无定时 job**（不存在给死账户补钱的路径）。

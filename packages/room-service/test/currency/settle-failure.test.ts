@@ -242,7 +242,7 @@ describe('14001 ⇒ 重读余额、重算、`:r2` 重发至多一轮', () => {
       new CurrencyServiceError(ErrCode.E_INSUFFICIENT_FUNDS, 'insufficient'),
     );
     h.currency.apply.mockImplementationOnce(async (req: { actionId: string; entries: typeof ENTRY }) =>
-      applyOk(req.actionId, req.entries, { alice: 0, 'bot-int-1': 1012, carol: 1012 }),
+      applyOk(req.actionId, req.entries, { alice: 0, 'bot-int-1': 1013, carol: 1012 }),
     );
     const r2Before = await resultCount('r2');
     const residueBefore = await metricValue(currencySettleResidueTotal);
@@ -273,7 +273,7 @@ describe('14001 ⇒ 重读余额、重算、`:r2` 重发至多一轮', () => {
     await expect(metricValue(currencySettleResidueTotal)).resolves.toBe(residueBefore);
     expect(h.broadcasts[0]!.balances).toEqual([
       { seat: 0, balance: 0 },
-      { seat: 1, balance: 1012 },
+      { seat: 1, balance: 1013 },
       { seat: 2, balance: 1012 },
     ]);
   });

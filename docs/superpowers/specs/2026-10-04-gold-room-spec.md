@@ -268,7 +268,7 @@ const MAX_ABS_DELTA_BY_SOURCE: Partial<Record<CurrencySource, number>> = {
 - **D 取消排队（C21）**：gold 入队 → `room.unmatch` → 探针断言 `match:queue:gold:*` 无该成员、meta 已清、窗口内不被撮合；再入队 ⇒ 复用 12009 语义正确。
 - **E 完整金币局**：两真人（管理面预充 **5,000,000** ≥ 15×2^18，确保人类侧不截断；机器人位不预充）+ 机器人补位 → 打完整局 → 断言：`game.settlement` 广播；`game.balances` 恰 3 座（升序）；**按结算广播 + 结算前余额复算期望 delta（复算内含截断/分摊/残差公式）再逐座比对**——**不得直断「和=0」**（炸弹局会因机器人侧截断产生残差；**2026-10-26 起**零头分给赢家、residue 恒 0，见 `2026-10-26-settle-remainder-to-winners-design.md`）；botId 于**局中**读 `room:{code}:bots`（局终 DEL，slice-11:404-407 先例）→ 管理面查其账户：`owner_type='robot'`、余额 ≥ 12000（非整百断言由单测承载，见 ⚙️6 口径边界）；`GET /api/records/mine` 的 `moneyDelta` = 实际变动。
   **驱动（本片交付物）**：`ddz-driver` 现硬编码 `mode:'random'`+**注册并撮合 3 个真人**（`lib/ddz-driver.ts:123-149,136`）、遇机器人座直接抛（:476-478）⇒ 扩展 driver：启动参数化 `mode/baseScore` **与真人人数（E = 2 真人，经 30s 补位窗口由机器人补位）** + 机器人回合推进（自 slice-11 `mustAdvance` 区抽共享 helper）+ bots 键局中读 helper；列入计划任务。
-- **F 抽水**：`currency.rakePercent=10` → 再打一局（同 E 的预充与复算口径）→ 赢家实收 = `g − floor(g×10/100)`、entries 和 = −(抽水+残差)（管理面读余额核对）；复原 0。
+- **F 抽水**：`currency.rakePercent=10` → 再打一局（同 E 的预充与复算口径）→ 赢家实收 = `finalGain − floor(finalGain×10/100)`（**2026-10-26 起**基数含分得的零头，见 `2026-10-26-settle-remainder-to-winners-design.md`）、entries 和 = −(抽水+残差)（管理面读余额核对）；复原 0。
 - **G 救助**：开关开、金额 200 → 低余额领取 +200；同日再领 ⇒ `granted:false`；余额抬至 ≥150 ⇒ 14004；开关关 ⇒ 14004。
 - **H 观测**：room-service `/metrics` 含新指标名（settle/outbox/topup）；currency-service `/metrics` 含池 gauge/救助计数；Prometheus `/api/v1/rules` 恰 16 条且含三条新规则名。
 - **I 对账**：金币局后触发/等待对账一轮 ⇒ `currency_reconcile_drift_accounts == 0`。
