@@ -160,4 +160,4 @@ Files：`scripts/admin-agents-probe.mjs`、按失败修 `admin/*`
 - [x] `pnpm verify:admin-players` 全绿（回归）
 - [x] `node --check admin/app.js`
 - [x] 工作区仅剩无关的 `PdkSettlement.vue` 未提交改动
-- [ ] 推 dev（零 CI）
+- [x] 推 dev（零 CI，a6c2f418 → origin/dev）
