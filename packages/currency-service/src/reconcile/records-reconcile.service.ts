@@ -14,7 +14,7 @@ import {
   type GameType,
 } from '@fight-the-landlord/protocol';
 import { runWithTrace, setGame } from '@fight-the-landlord/shared';
-import { ConfigCacheService } from '../config/config-cache.service';
+import { ConfigCacheService, SNAPSHOT_BOOT_WAIT_MS } from '../config/config-cache.service';
 import { ReconcileInFlightError } from './reconcile.service';
 import {
   currencyRecordsReconcileAmountMismatch,
@@ -178,7 +178,15 @@ function toEpochMs(value: unknown): number | null {
   }
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') {
-    const ms = Date.parse(value);
+    const trimmed = value.trim();
+    // 🔴 PDK `ended_at` 是 BIGINT：TypeORM/mysql2 默认 `bigNumberStrings=true` ⇒ 回来是
+    // **数字字符串**（'1793…'）。`Date.parse('1793…')` 恒 NaN ⇒ 记录侧判定会永久失明；
+    // 先按 epoch ms 解析，再回退真正的日期字符串。
+    if (/^-?\d+$/.test(trimmed)) {
+      const ms = Number(trimmed);
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const ms = Date.parse(trimmed);
     return Number.isFinite(ms) ? ms : null;
   }
   return null;
@@ -238,6 +246,27 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
 
   onModuleInit(): void {
     currencyRecordsReconcileLastSuccessTimestampSeconds.set(0);
+    // 照 `ReconcileService` 的首排动作：快照就绪 ⇒ 同帧排；未就绪 ⇒ 有界等待首快照
+    // （`SNAPSHOT_BOOT_WAIT_MS`，超时按缺省先排）。否则 config-service 冷启动 >10s 时
+    // 首轮 `configUnavailable=1`、台费检查整轮跳过，之后要等 1h 才自愈。
+    if (this.configCache.hasSnapshot()) {
+      this.startLoop();
+      return;
+    }
+    let settled = false;
+    const settle = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      this.startLoop();
+    };
+    const timeout = setTimeout(settle, SNAPSHOT_BOOT_WAIT_MS);
+    void this.configCache.waitForFirstSnapshot().then(settle, settle);
+  }
+
+  /** 首排动作唯一落点（快照就绪 / 有界等待超时 两路共用；`onModuleInit` 同步返回）。 */
+  private startLoop(): void {
+    if (this.shuttingDown) return;
     this.logger.log(
       `records reconcile loop started (first run in ${RECORDS_RECONCILE_FIRST_RUN_DELAY_MS}ms, interval ${this.resolveIntervalMs()}ms)`,
     );
@@ -296,7 +325,7 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
     this.lastAttemptAt = Date.now();
     currencyRecordsReconcileRunsTotal.inc();
 
-    const snapshot = this.runSnapshot(attempt, pageSize, maxTotalRows).finally(() => {
+    const snapshot = this.runSnapshot(attempt, pageSize, maxTotalRows, timeoutMs).finally(() => {
       if (this.activeAttempt === attempt) {
         this.inFlight = false;
         this.activeAttempt = null;
@@ -320,6 +349,11 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
       } else if (err instanceof RecordsReconcileTruncatedError) {
         // 截断是「本轮查询失败」而非 abort：显式置 1（成功轮会归 0）。
         currencyRecordsReconcileTruncated.set(1);
+      } else if (isMissingTableError(err)) {
+        // D18：缺表 = 部署顺序事故（user-service 记录表迁移未跑）；把处置写进日志。
+        this.logger.error(
+          'records reconcile: 缺表（1146）—— 先部署 user-service 迁移（记录表），再部署 currency-service；本轮失败，下轮自愈',
+        );
       }
       throw err;
     }
@@ -329,6 +363,7 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
     attempt: number,
     pageSize: number,
     maxTotalRows: number,
+    timeoutMs: number,
   ): Promise<RecordsReconcileRoundResult> {
     const to = Date.now();
     const from = to - RECORDS_RECONCILE_TARGET_WINDOW_MS;
@@ -399,7 +434,7 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
     });
 
     if (this.abortedAttempt === attempt) {
-      throw new RecordsReconcileTimeoutError(RECORDS_RECONCILE_ROUND_TIMEOUT_MS);
+      throw new RecordsReconcileTimeoutError(timeoutMs);
     }
     return this.classify(data, { from, to });
   }
@@ -425,7 +460,6 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
 
     // ── 解析 ops（全 margin 窗；计数时再按目标窗裁剪）─────────────────────
     const ops: OpRow[] = [];
-    const settleByRoomVersion = new Map<string, OpRow[]>();
     const entryFeeOps: OpRow[] = [];
     const entryFeeByKey = new Map<string, OpRow>();
     for (const raw of data.ops) {
@@ -455,14 +489,7 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
         burnedRake: toNullableNumber(raw['burned_rake']),
       };
       ops.push(op);
-      if (op.source === 'game_settle') {
-        const key = roomVersionOf(op.refId);
-        if (key !== null) {
-          const list = settleByRoomVersion.get(key) ?? [];
-          list.push(op);
-          settleByRoomVersion.set(key, list);
-        }
-      } else {
+      if (op.source !== 'game_settle') {
         entryFeeOps.push(op);
         const parsed = parseEntryFeeAction(op.actionId);
         if (parsed === null) {
@@ -786,6 +813,9 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
       configUnavailable: configUnavailable.doudizhu || configUnavailable.paodekuai ? 1 : 0,
     };
 
+    // spec §5.1：异常类别聚合（样例 room/version，最多 3 条/桶，不逐条刷屏）。
+    this.logSamples(buckets);
+
     for (const gameType of ['doudizhu', 'paodekuai'] as const) {
       const counts = byGame[gameType];
       setGame(currencyRecordsReconcileOrphanOps, gameType, counts.orphanOps);
@@ -800,6 +830,20 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
       setGame(currencyRecordsReconcileConfigUnavailable, gameType, counts.configUnavailable);
     }
     return { ...totals, truncated: false, byGame };
+  }
+
+  /** 每桶最多 3 条样例（room/version/op id）—— 聚合一行/玩法，给告警 runbook 落点。 */
+  private logSamples(buckets: Record<GameType, Bucket>): void {
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      const parts: string[] = [];
+      for (const [bucketName, samples] of Object.entries(buckets[gameType])) {
+        if (samples.size === 0) continue;
+        parts.push(`${bucketName}=[${[...samples].slice(0, 3).join(', ')}]`);
+      }
+      if (parts.length > 0) {
+        this.logger.warn(`records reconcile samples ${gameType}: ${parts.join('; ')}`);
+      }
+    }
   }
 
   private logRound(result: RecordsReconcileRoundResult): void {
@@ -832,6 +876,15 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
       this.timer = null;
     }
   }
+}
+
+/** 缺表（MySQL 1146 / ER_NO_SUCH_TABLE）—— 部署顺序事故的判别面（D18）。 */
+function isMissingTableError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; errno?: unknown; message?: unknown };
+  if (e.errno === 1146 || e.code === 'ER_NO_SUCH_TABLE') return true;
+  const message = String(e.message ?? '');
+  return message.includes('1146') || message.includes('ER_NO_SUCH_TABLE');
 }
 
 /** `room:version`（ref_id）解析；最后冒号切分，version 正整数。 */

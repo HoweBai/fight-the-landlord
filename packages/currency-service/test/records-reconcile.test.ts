@@ -205,6 +205,8 @@ function makeCache(
   const cache = {
     entryFeePercents,
     reconcileIntervalMs: () => 3_600_000,
+    hasSnapshot: () => true,
+    waitForFirstSnapshot: () => Promise.resolve(),
   } as unknown as ConfigCacheService;
   return { cache, entryFeePercents };
 }
@@ -465,6 +467,25 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     await expectGameGauges('paodekuai', {});
   });
 
+  it('🔴 PDK BIGINT ended_at 以字符串返回（TypeORM bigNumberStrings）⇒ 记录侧判定仍工作', async () => {
+    // 真实驱动（mysql2 + TypeORM 默认 bigNumberStrings=true）把 BIGINT 读成数字字符串；
+    // `Date.parse('1793…')` 恒 NaN ⇒ 记录侧/台费侧会永久失明。本用例用 faithful 假形态钉住。
+    const db = new FakeCurrencyDb();
+    seedGoldGame(db, {
+      gameType: 'paodekuai',
+      seedSettleOp: false,
+      fee: 'none',
+      room: 'pdk-bigint-string',
+      endedAt: NOW - 3 * HOUR,
+    });
+    const svc = mkService(db, makeCache({ paodekuai: null }).cache);
+    const result = await svc.runOnce();
+    expect(result.missingOps).toBe(1);
+    expect(result.byGame.paodekuai.missingOps).toBe(1);
+    expect(result.byGame.paodekuai.configUnavailable).toBe(1);
+    expect(result.orphanOps).toBe(0);
+  });
+
   it('ddz 与 pdk 同 room:version ⇒ 按 gameType key 精确配对，不互串（旧标签兼容不误报）', async () => {
     const db = new FakeCurrencyDb();
     seedGoldGame(db, { gameType: 'doudizhu', room: 'same-key', version: 7, fee: 'skip' });
@@ -634,6 +655,26 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     const result = await svc.runOnce();
     expect(result.amountMismatch).toBe(6);
     await expectGameGauges('doudizhu', { amountMismatch: 6 });
+  });
+
+  it('日志聚合：每桶最多 3 条样例 room/version（一行/玩法，不逐条刷屏）', async () => {
+    const db = new FakeCurrencyDb();
+    for (let i = 0; i < 4; i += 1) {
+      seedGoldGame(db, {
+        seedSettleOp: false,
+        fee: 'skip',
+        room: `sample-${i}`,
+        endedAt: NOW - 3 * HOUR,
+      });
+    }
+    const svc = mkService(db);
+    await svc.runOnce();
+    const lines = warnSpy.mock.calls
+      .map((args) => String(args[0]))
+      .filter((message) => message.includes('records reconcile samples doudizhu'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('sample-0');
+    expect(lines[0]).not.toContain('sample-3'); // 第 4 条不进样例（每桶上限 3）
   });
 
   it('守恒：burn 任一 NULL ⇒ 跳过（不误报）；mode 非 gold 的 settle op ⇒ mismatch', async () => {
@@ -1003,6 +1044,24 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     expect(svc.getStatus().lastSuccessAt).toBe(NOW);
   });
 
+  it('缺表 1146 ⇒ 整轮失败 + 明确部署顺序日志 + last_success 不推进（D18）', async () => {
+    const db = new FakeCurrencyDb();
+    const svc = mkService(db);
+    db.failNextTxQueryMatching = /^SELECT p\.id/;
+    db.failNextTxQueryError = Object.assign(
+      new Error("Table 'fight_the_landlord.game_records' doesn't exist"),
+      { code: 'ER_NO_SUCH_TABLE', errno: 1146 },
+    );
+    await expect(svc.runOnce()).rejects.toThrow("doesn't exist");
+    expect(svc.getStatus().lastSuccessAt).toBeNull();
+    expect(svc.getStatus().lastError).toContain("doesn't exist");
+    expect(
+      errorSpy.mock.calls.some(
+        (args) => String(args[0]).includes('缺表（1146）') && String(args[0]).includes('部署'),
+      ),
+    ).toBe(true);
+  });
+
   it('SET 自身失败也必复位（SET 在 try 内）——防会话变量泄漏到连接上的下一轮', async () => {
     const db = new FakeCurrencyDb();
     const svc = mkService(db);
@@ -1192,6 +1251,32 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     expect(db.txLog).toHaveLength(2);
   });
 
+  it('首快照未就绪 ⇒ 首跑延后到快照就绪（有界等待内，不带着空配置跑首轮）', async () => {
+    const db = new FakeCurrencyDb();
+    let resolveSnapshot!: () => void;
+    const snapshotReady = new Promise<void>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+    const base = makeCache().cache as unknown as Record<string, unknown>;
+    const cache = {
+      ...base,
+      hasSnapshot: () => false,
+      waitForFirstSnapshot: () => snapshotReady,
+    } as unknown as ConfigCacheService;
+    const svc = new RecordsReconcileService(db.dataSource as unknown as DataSource, cache);
+    svc.onModuleInit();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(db.txLog, '快照未就绪：10s 首跑不得起跑').toHaveLength(0);
+
+    resolveSnapshot();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(RECORDS_RECONCILE_FIRST_RUN_DELAY_MS - 1);
+    expect(db.txLog).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(db.txLog).toHaveLength(1);
+    svc.onApplicationShutdown();
+  });
+
   it('循环：失败轮不推进 last_success，下一轮照排并自愈', async () => {
     const db = new FakeCurrencyDb();
     const svc = mkService(db);
@@ -1277,6 +1362,9 @@ describe('C2 基准：10k/20k 一轮耗时', () => {
     expect(result.orphanOps).toBe(0);
     expect(result.missingOps).toBe(0);
     expect(result.pending).toBe(0);
+    // 读数进测试输出（plan Task 6：>5s 触发优化登记）。
+    // eslint-disable-next-line no-console
+    console.log(`C2 benchmark: ${opsCount} ops / ${recordCount} records → ${elapsedMs.toFixed(1)}ms`);
     return elapsedMs;
   }
 

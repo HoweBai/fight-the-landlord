@@ -15,7 +15,9 @@
  *    reject（读路径 SQL 一漂移就红）。⚠️ 池 gauge 读与逐键回源**共用**同一单行余额 SQL
  *    （参数 'robot-pool'），不另立识别式。
  *    记录进 `directQueries`（「回源了吗 / 建行了吗 / 对账跑了吗」的判据面）。
- *  - 语句按**精确形状**识别（带 `?` 占位与反引号），实现侧 SQL 一漂移就当场红。
+ *  - 语句按**精确形状**识别（带 `?` 占位与反引号），实现侧 SQL 一漂移就当场红；
+ *    C2 的 5 条对账 SQL 以**导入常量 `===`** 匹配（文本本身由 `records-reconcile.test.ts`
+ *    的独立誊写钉住 —— 实现漂移一个字符即红）。
  *  - 事务路径的快照读**只认 ⚙️14① 锁定读形态**（`SELECT balance, owner_type … FOR UPDATE`）：
  *    实现若漂回普通 SELECT（RR 下读不到并发已提交行 = ⚙️12 的假闭合）⇒ 「未识别的 SQL」当场红。
  *  - `beforeStatement` 钩子 = 「并发会话已提交的写」注入面（用例在 INSERT IGNORE 前
@@ -292,6 +294,8 @@ export class FakeCurrencyDb {
    * 「查询抛 ⇒ 整轮失败，但 finally 仍复位会话变量」的判别面。
    */
   failNextTxQueryMatching: RegExp | null = null;
+  /** C2：与 `failNextTxQueryMatching` 配套的自定义错误（缺表 1146 等形态）。 */
+  failNextTxQueryError: Error | null = null;
 
   private nextOpId = 1;
   private nextFlowId = 1;
@@ -610,7 +614,9 @@ export class FakeCurrencyDb {
     record.statements.push({ sql, params: [...params] });
     if (this.failNextTxQueryMatching !== null && this.failNextTxQueryMatching.test(sql)) {
       this.failNextTxQueryMatching = null;
-      return Promise.reject(new Error('db down（事务查询仿真）'));
+      const err = this.failNextTxQueryError ?? new Error('db down（事务查询仿真）');
+      this.failNextTxQueryError = null;
+      return Promise.reject(err);
     }
     // 代理钩子的保存点（2026-10-26）：假库不仿真回滚，只把语句记入序列；
     // 保存点的真实回滚/毒化语义由 conformance slice-30 真 MySQL 判。
@@ -850,7 +856,8 @@ export class FakeCurrencyDb {
           .sort((a, b) => a.id - b.id)
           .slice(0, pageSize)
           .map((op) => ({
-            id: op.id,
+            // BIGINT 经 TypeORM/mysql2 默认回来是字符串（faithful；实现侧自己 Number）。
+            id: String(op.id),
             action_id: op.actionId,
             ref_id: op.refId,
             source: op.source,
@@ -881,8 +888,8 @@ export class FakeCurrencyDb {
           .sort((a, b) => a.id - b.id)
           .slice(0, pageSize)
           .map((flow) => ({
-            id: flow.id,
-            op_id: flow.opId,
+            id: String(flow.id),
+            op_id: String(flow.opId),
             owner_id: flow.ownerId,
             owner_type: flow.ownerType,
             delta: flow.delta,
@@ -894,21 +901,29 @@ export class FakeCurrencyDb {
       const [from, to, lastId, pageSize] = params as [Date | number, Date | number, number, number];
       const fromMs = from instanceof Date ? from.getTime() : Number(from);
       const toMs = to instanceof Date ? to.getTime() : Number(to);
+      // 按 recordId 建索引（真 DB 是 JOIN 索引；逐记录全表扫玩家会把基准测成 O(记录×玩家)）。
+      const playersByRecord = new Map<number, FakePlayerRow[]>();
+      for (const player of scratch.players) {
+        const list = playersByRecord.get(player.recordId) ?? [];
+        list.push(player);
+        playersByRecord.set(player.recordId, list);
+      }
       const rows: Array<Record<string, unknown>> = [];
       for (const record of scratch.records) {
         if (record.gameType !== (isPdk ? 'paodekuai' : 'doudizhu')) continue;
         if (record.endedAt < fromMs || record.endedAt >= toMs) continue;
-        for (const player of scratch.players) {
-          if (player.recordId !== record.recordId || player.id <= lastId) continue;
+        for (const player of playersByRecord.get(record.recordId) ?? []) {
+          if (player.id <= lastId) continue;
           rows.push({
-            player_id: player.id,
-            record_id: record.recordId,
+            // BIGINT（p.id / r.id）与 PDK ended_at 都按 faithful 形态返回字符串。
+            player_id: String(player.id),
+            record_id: String(record.recordId),
             room_code: record.roomCode,
             game_version: record.gameVersion,
             ...(isPdk ? { game_type: record.gameType } : {}),
             mode: record.mode,
             base_score: record.baseScore,
-            ended_at: isPdk ? record.endedAt : new Date(record.endedAt),
+            ended_at: isPdk ? String(record.endedAt) : new Date(record.endedAt),
             user_id: player.userId,
             is_robot: player.isRobot ? 1 : 0,
             robot_id: player.robotId,
@@ -930,7 +945,7 @@ export class FakeCurrencyDb {
           .sort((a, b) => a.id - b.id)
           .slice(0, pageSize)
           .map((s) => ({
-            id: s.id,
+            id: String(s.id),
             room_code: s.roomCode,
             owner_id: s.ownerId,
             game_type: s.gameType,

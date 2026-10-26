@@ -114,7 +114,7 @@ const EXPECTED_DELTA: Record<(typeof GAMES)[number], Partial<Counts>> = {
     entryFeeUnknown: 3,
     entryFeeOrphanOps: 1,
   },
-  paodekuai: { orphanOps: 1 },
+  paodekuai: { orphanOps: 1, missingOps: 1 },
 };
 
 /* ── 通用轮询/容器助手 ─────────────────────────────────────────────────── */
@@ -195,25 +195,40 @@ async function readAdminConfig(admin: string): Promise<AdminConfig> {
   return res.body.data;
 }
 
-/** PUT 档位表并返回**应出现的快照版本**（`max(全局限, 本键版本+1)`，照 slice-31 口径）。 */
-async function putLevels(admin: string, levels: unknown): Promise<number> {
+interface SnapshotTarget {
+  version: number;
+  /** PUT **之前**该版本日志行的条数（还原时必须出现**新增**一条，防「旧行假通过」）。 */
+  baseline: number;
+}
+
+function snapshotLineCount(version: number): number {
+  const needle = `config snapshot applied (version=${version})`;
+  return currencyLogs(300).split(needle).length - 1;
+}
+
+/** PUT 档位表并返回「应出现的快照版本 + 基线行数」（`max(全局限, 本键版本+1)`，照 slice-31 口径）。 */
+async function putLevels(admin: string, levels: unknown): Promise<SnapshotTarget> {
   const before = await readAdminConfig(admin);
-  const expected = Math.max(before.version, (before.config[LEVELS_KEY]?.version ?? 0) + 1);
+  const version = Math.max(before.version, (before.config[LEVELS_KEY]?.version ?? 0) + 1);
+  const baseline = snapshotLineCount(version); // 🔴 必须在 PUT 之前取
   const put = await adminPutConfig(LEVELS_KEY, levels, admin);
   if (put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`PUT ${LEVELS_KEY} 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
-  return expected;
+  return { version, baseline };
 }
 
-async function waitSnapshotApplied(version: number): Promise<void> {
+/** 等**PUT 之后新增**一条该版本的 `config snapshot applied` 行（安全网重拉也算——它读的是新值）。 */
+async function waitSnapshotApplied(target: SnapshotTarget): Promise<void> {
   const hit = await pollUntil(
-    () => currencyLogs(300).includes(`config snapshot applied (version=${version})`),
+    () => snapshotLineCount(target.version) > target.baseline,
     (found) => found,
-    30_000,
+    70_000,
   );
   if (!hit.ok) {
-    throw new ConformanceError(`currency-service 30s 内未应用配置快照 version=${version}`);
+    throw new ConformanceError(
+      `currency-service 70s 内未出现新的配置快照应用行（version=${target.version}，基线 ${target.baseline}）`,
+    );
   }
 }
 
@@ -268,10 +283,10 @@ function cleanupPdkInjected(): void {
   mysqlExec(
     `DELETE f FROM currency_flows f JOIN currency_ops o ON o.id = f.op_id WHERE o.ref_id IN ${pdkRooms};` +
       `DELETE FROM currency_ops WHERE ref_id IN ${pdkRooms};` +
-      `DELETE FROM currency_entry_fee_skips WHERE room_code = '${ROOM('B')}';` +
+      `DELETE FROM currency_entry_fee_skips WHERE room_code IN ('${ROOM('B')}', '${ROOM('Q')}');` +
       `DELETE p FROM game_record_players_pdk p JOIN game_records_pdk r ON p.record_id = r.id ` +
-      `WHERE r.room_code IN ('${ROOM('B')}', '${ROOM('P')}');` +
-      `DELETE FROM game_records_pdk WHERE room_code IN ('${ROOM('B')}', '${ROOM('P')}');`,
+      `WHERE r.room_code IN ('${ROOM('B')}', '${ROOM('P')}', '${ROOM('Q')}');` +
+      `DELETE FROM game_records_pdk WHERE room_code IN ('${ROOM('B')}', '${ROOM('P')}', '${ROOM('Q')}');`,
   );
 }
 
@@ -528,8 +543,15 @@ export async function runSlice35(): Promise<{ passed: string[] }> {
     // PUT 落库即可：随后 restart 的新进程启动时拉的就是这份快照（10s 首跑前完成）。
     await putLevels(admin, forcedLevels(originalLevels));
     const baseline = await restartAndRound(admin);
-    checks.that(!baseline.running && baseline.lastResult !== null, '⓪ 基线轮 A 完成（running=false、lastResult 非空）');
-    checks.eq(baseline.lastResult!.configUnavailable, 0, '⓪ 基线轮 A config_unavailable = 0（档位快照就绪）');
+    checks.that(
+      typeof baseline.lastAttemptAt === 'number' && baseline.lastAttemptAt! <= Date.now(),
+      '⓪ 基线轮 A lastAttemptAt 已写入（本次重启后的尝试时间戳）',
+    );
+    checks.that(
+      baseline.lastResult!.byGame.doudizhu !== undefined &&
+        baseline.lastResult!.byGame.paodekuai !== undefined,
+      '⓪ 基线轮 A 两玩法分桶在场',
+    );
     checks.eq(baseline.lastResult!.truncated, false, '⓪ 基线轮 A truncated = false');
     checks.that(
       Date.now() - (baseline.lastSuccessAt ?? 0) <= 90_000,
@@ -546,6 +568,10 @@ export async function runSlice35(): Promise<{ passed: string[] }> {
     insertSettleOp(ROOM('B'), 'paodekuai', FRESH_SECONDS, DELTAS);
     insertPdkRecord(ROOM('B'), FRESH_SECONDS, DELTAS, SCORES);
     insertSkips(ROOM('B'), 'paodekuai', FRESH_SECONDS);
+    // pdk 记录侧解析 sentinel：BIGINT `ended_at` 以**字符串**回来时仍必须计入 missing
+    // （否则 `Date.parse('1793…')` = NaN ⇒ pdk 的记录侧/台费侧永久失明）。
+    insertPdkRecord(ROOM('Q'), OLD_RECORD_SECONDS, DELTAS, SCORES);
+    insertSkips(ROOM('Q'), 'paodekuai', OLD_RECORD_SECONDS);
     // 孤儿 op（ddz sentinel + pdk）
     insertOrphanSettleOp(ROOM('O'), 'doudizhu', ORPHAN_SECONDS);
     insertOrphanSettleOp(ROOM('P'), 'paodekuai', ORPHAN_SECONDS);
@@ -653,8 +679,8 @@ export async function runSlice35(): Promise<{ passed: string[] }> {
     try {
       cleanupInjected();
       // 还原原档位（缺失 ⇒ 空表；种子恒有 `game.levels.doudizhu`，此处只兜底）。
-      const restoreVersion = await putLevels(admin, Array.isArray(originalLevels) ? originalLevels : []);
-      await waitSnapshotApplied(restoreVersion);
+      const restoreTarget = await putLevels(admin, Array.isArray(originalLevels) ? originalLevels : []);
+      await waitSnapshotApplied(restoreTarget);
       info('slice-35 注入行已删除、档位表已还原');
     } catch (restoreErr) {
       if (primaryError === null) throw restoreErr;

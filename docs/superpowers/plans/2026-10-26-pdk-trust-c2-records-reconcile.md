@@ -150,3 +150,50 @@
 | P13 | 高 | skip/PDK game_type | Task 1/2：SQL/集合带玩法 |
 | P14 | 高 | 全 NULL vs 任一 NULL | Task 2：任一 NULL 无非零 ⇒ nullNoOp；混合用例 |
 | 低 | | 命令/文件/基准/告警名/timeout | 已并入 Global/Task 4/5/6 |
+
+## 执行记录（2026-10-26）
+
+- 分支/worktree：`feature/pdk-trust-c` @ `D:/Code/ftl-trust-c`（C1 同分支）。
+- 提交（按序）：Task 1 `e2845aa5`（指标/档位/SQL）→ Task 2 `7d784fac`（服务/RR/分页/判定 + fake DB）→
+  Task 3 `2579d68c`（admin GET 加性）→ Task 4 `2c174265`（告警 38/35 + 静态闸）→
+  Task 5 `1e039b39`（slice-35 + baselines）→ 基准 `b333f835` → 代码审查修复（本批）。
+- 本机验证（最终树）：
+  - currency-service：52 文件 / **586 tests** 全绿；lint（tsc 双配置）通过。
+  - `node scripts/verify-monitoring.mjs`：**267 checks**；判别力自证「severity 移出 labels ⇒ 1 FAILED」已执行并恢复。
+  - `pnpm verify:admin`：**520 checks**。
+  - `tools/conformance`：`tsc --noEmit` 通过；`check-baselines.mjs --self-test` 4/4；slice-35 基线 full=89。
+  - 全量 lint：`turbo run lint --force --concurrency=4` = **18/18，0 cached**。
+  - 全量 test：`turbo run test --force --concurrency=1 --filter=!@fight-the-landlord/config-service
+    --filter=!@fight-the-landlord/mock-server` = **25/25，0 cached**；config-service 单独 **489/489**；
+    mock-server 单独 **10/10**。首跑各遇 1 例既有环境 flake（config 迁移/RSA 边长、mock 随机端口），
+    重跑均全绿（与 C1 登记同类）。
+  - 基准（假库按 recordId 建索引后）：10k ops/10k players **52.6ms**；20k/20k **128.6ms**
+    （修复前假库 O(记录×玩家)：507ms / 3248ms；>5s 项已消除，无优化登记）。
+- 真栈：本机 Docker 不可用；slice-35 只做 tsc，**待权威轮**。slice-35 未过权威轮不得称 C2 完成/不得合 dev。
+
+## 代码审查记录（2026-10-26，独立 reviewer 审 `a374409d..HEAD`）
+
+**1 Critical / 3 Important / 11 Minor / 2 PLAUSIBLE**。
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| C1 | 阻断 | PDK `ended_at` 是 BIGINT：TypeORM/mysql2 默认 `bigNumberStrings=true` ⇒ 读回数字字符串，`Date.parse('1793…')` = NaN；pdk 记录侧/台费侧判定永久失明，假库与 slice-35 均掩盖 | 已修：`toEpochMs` 先按 epoch 数字串解析再回退 `Date.parse`；fake 忠实返回 BIGINT 字符串；新增 pdk 字符串回归用例；slice-35 增 pdk 记录侧 missing sentinel（Q room）。判别力自证：临时回退 ⇒ pdk 回归 + byGame 两例当场红 |
+| I1 | 高 | 10k/20k 基准测的是假库 O(记录×玩家) 关联（20k 并行负载 6.2s），非服务开销 | 已修：fake 按 recordId 建玩家索引；读数 52.6ms/128.6ms（<5s，无优化登记） |
+| I2 | 高 | spec §5.1 要求异常类别聚合（样例 room/version）未实现，告警 runbook 无落点 | 已修：`logSamples()` 每桶最多 3 条样例/玩法一行；补日志聚合用例（第 4 条不入样例） |
+| I3 | 高 | slice-35 档位还原等待用全局 MAX 版本 + 旧日志可假通过 | 已修：`putLevels` 在 PUT 前取该版本日志行基线，`waitSnapshotApplied` 要求**新增**一行（安全网重拉也读新值）；超时 70s |
+| M1 | 低 | verify-monitoring 的 Mismatch 谓词只钉 6 桶中 2 个 metric 名 | 已修：六名全列（267 checks） |
+| M2 | 低 | 超时错误文案用默认 60s 而非注入值 | 已修：`runSnapshot(..., timeoutMs)` 透传 |
+| M3 | 低 | `settleByRoomVersion` 只写不读（死代码） | 已修：删除 |
+| M4 | 低 | `onModuleInit` 不等首快照 ⇒ 冷启动首轮 configUnavailable=1 且停 1h | 已修：照 `ReconcileService` 的有界等待首快照（`SNAPSHOT_BOOT_WAIT_MS`），补「快照晚到」用例 |
+| M5 | 低 | 缺表 1146 无部署顺序提示；fake 无 1146 用例 | 已修：`runOnce` catch 识别 1146/ER_NO_SUCH_TABLE 并打部署顺序 error；fake `failNextTxQueryError` + 用例 |
+| M6 | 低 | 同 room+owner 多条 fee op 时 `entryFeeByKey` last-wins | 登记：真实 `uk_action_id` 下不可达（action_id 唯一且编码 room+owner）；防御性歧义检测另立 |
+| M7 | 低 | slice-35 两条基线断言恒真 | 已修：改为 lastAttemptAt/两玩法分桶在场（仍 4 条基线断言，基线 full=89 不变） |
+| M8 | 低 | fake 注释「全文相等」与实际「导入常量 ===」不一致 | 已修：注释改为「常量 ===；文本由测试独立誊写钉住」 |
+| M9 | 低 | `main.ts` 未 `enableShutdownHooks()` ⇒ 关停闸生产不执行（既有 ReconcileService/ConfigCacheService 同病） | 登记：非 C2 新引入；若团队统一开启，C2 自动获得保护 |
+| M10 | 低 | 一轮 >1h 时跳过路径与迟到 finally 可能各排一条链（inFlight 不重叠） | 登记：极低概率，双链均受 inFlight 串行 |
+| M11 | 低 | `entryFeePercents` 对空表返回 `[]`，room-service `readLevels` 对空表返回 null | 登记：spec P5 明确要求 `[]`；仅直改库造空表时有差异 |
+| P1 | PLAUSIBLE | 365 天量级真库上 keyset 查询计划可能走 p 主键序扫描/超 30s | 登记：权威轮 slice-35 用真库 EXPLAIN 两条 records SQL；若命中另立优化 |
+| P2 | PLAUSIBLE | entry_fee 只按 room 配对；房号无库内唯一性，72h 内复用可能误配 | 登记：线上房号复用率待证据；长期由 room-service 房号唯一性解决 |
+
+复审结论：Critical/Important 全部修复并复跑；M6/M9/M10/M11 与 P1/P2 登记。**slice-35 真栈仍为硬闸**。
+

@@ -123,6 +123,10 @@ const ALERT_PREDICATES = {
   // C2：记录对账三条（Mismatch 汇总六个非孤儿桶；OrphanOps 独立 critical；Stalled 全局无玩法标签）。
   RecordsReconcileMismatch: [
     'currency_records_reconcile_amount_mismatch',
+    'currency_records_reconcile_missing_ops',
+    'currency_records_reconcile_null_no_op',
+    'currency_records_reconcile_null_money_delta',
+    'currency_records_reconcile_entry_fee_suspect',
     'currency_records_reconcile_entry_fee_orphan_ops',
     '> 0',
   ],
