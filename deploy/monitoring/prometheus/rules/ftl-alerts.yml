@@ -1,5 +1,5 @@
-# deploy/monitoring/prometheus/rules/ftl-alerts.yml —— 告警规则唯一真源（规格 §2.4bis + 金币场片 §11.2 + 风控片 §2.12 + 支付片 §2.6 + 通知通道片 §3.8 + 广告小片 §2.7 + 多玩法片 A1 + B 组风控 SQL 失败 + C1 记录 outbox：**35 条**）。
-# 35 条 = 32 类，3 类按 severity 拆名（Http5xxRatio / HostDiskSpace / WsConnections）。
+# deploy/monitoring/prometheus/rules/ftl-alerts.yml —— 告警规则唯一真源（规格 §2.4bis + 金币场片 §11.2 + 风控片 §2.12 + 支付片 §2.6 + 通知通道片 §3.8 + 广告小片 §2.7 + 多玩法片 A1 + B 组风控 SQL 失败 + C1 记录 outbox + C2 资金↔记录对账：**38 条**）。
+# 38 条 = 35 类，3 类按 severity 拆名（Http5xxRatio / HostDiskSpace / WsConnections）。
 # ⚠️ 改阈值 = 发版（规则进镜像 + promtool check rules 做语法闸，C3）。
 # ⚠️ 备份新鲜度**不设规则**（设计 §D6：独立闸 check-backup-fresh.sh 在先，只上板）——
 #    不要"顺手补一条"，那是被裁决过的范围。
@@ -311,6 +311,31 @@ groups:
         annotations:
           summary: '{{ $labels.game_type }} 记录永久丢失（record_lost）'
           runbook: '看 room-service `record lost` 日志：形状不符 / outbox conflict / 入箱不可用且直投失败；对应对局需人工核对。'
+      # ── C2 资金↔记录对账（2026-10-26；只报不改）──────────────────────────
+      - alert: RecordsReconcileMismatch
+        expr: 'sum by (game_type) (currency_records_reconcile_amount_mismatch + currency_records_reconcile_missing_ops + currency_records_reconcile_null_no_op + currency_records_reconcile_null_money_delta + currency_records_reconcile_entry_fee_suspect + currency_records_reconcile_entry_fee_orphan_ops) > 0'
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.game_type }} 资金↔记录对账不一致'
+          runbook: '看 currency-service records reconcile 日志与 /api/admin/wallet/reconcile；只报不改，按 room/version 人工核对。'
+      - alert: RecordsReconcileOrphanOps
+        expr: 'sum by (game_type) (currency_records_reconcile_orphan_ops) > 0'
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.game_type }} 结算 op 无记录（≥25h）'
+          runbook: '钱已动但记录不存在：查 C1 record:outbox / RecordLost；按 op ref_id 核 currency_flows 与记录表；不自动补记录。'
+      - alert: RecordsReconcileStalled
+        expr: 'time() - currency_records_reconcile_last_success_timestamp_seconds > 7200'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '记录对账 >2h 未成功（含从未成功）'
+          runbook: '查 currency-service 日志/MySQL 连通/缺表 1146/truncated=1；下一轮自愈。'
       - alert: RiskScanSqlFailures
         expr: 'sum by (scope) (increase(risk_scan_sql_failures_total[10m])) > 0'
         for: 5m

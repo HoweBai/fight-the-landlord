@@ -22,8 +22,8 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 35 条
- *     （含 C1 三条记录 outbox；分类计数以断言处为准）；
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 38 条
+ *     （含 C1 三条记录 outbox + C2 三条记录对账；分类计数以断言处为准）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
  *     **与两个 robot gauge 的新鲜值**（默认 1h 间隔下启动轮早于 E 的池注资 ⇒ H 只断言序列
@@ -150,6 +150,12 @@ const NEW_KEYS = [
 
 /** §11.2 的三条新告警规则名（H 组；总数 18（风控 T11 同步）+ 全名单由 slice-16 承接）。 */
 const NEW_ALERT_RULES = ['CurrencySettleOutboxStuck', 'CurrencyReconcileDrift', 'CurrencyRobotPoolLow'] as const;
+/** C2（2026-10-26）：资金↔记录对账三条规则（总数 35→38；全名单由 slice-16 承接）。 */
+const C2_ALERT_RULES = [
+  'RecordsReconcileMismatch',
+  'RecordsReconcileOrphanOps',
+  'RecordsReconcileStalled',
+] as const;
 
 /** E/F 的两真人预充（规格 §12.1：5,000,000 = 5 笔 ×1e6；admin 单笔上限 1e6）。 */
 const PRE_CHARGE_TOTAL = 5_000_000;
@@ -1591,9 +1597,11 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 35, 'H Prometheus /api/v1/rules 恰 35 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 同步）');
+    checks.eq(ruleNames.length, 38, 'H Prometheus /api/v1/rules 恰 38 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 / C2 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
+    const missingC2Rules = C2_ALERT_RULES.filter((n) => !ruleNames.includes(n));
+    checks.that(missingC2Rules.length === 0, `H 三条 C2 记录对账规则名逐个在场（缺 ${JSON.stringify(missingC2Rules)}）`);
 
     // ══════════════════════════════════════════════════════════════════════
     // I 对账

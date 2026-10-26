@@ -90,7 +90,7 @@ const EXPECTED_JOBS = [
   'douzero', 'node-exporter', 'cadvisor', 'prometheus', 'alertmanager', 'grafana', 'alert-relay',
 ] as const;
 
-/** C2：32 条规则的**名字集合**（数量之外再钉集合——只有数量的话，32 条错规则也绿）。 */
+/** C2：38 条规则的**名字集合**（数量之外再钉集合——只有数量的话，38 条错规则也绿）。 */
 const EXPECTED_RULES = [
   'Watchdog', 'ServiceDown', 'Http5xxRatioHigh', 'Http5xxRatioCritical',
   'HostDiskSpaceLow', 'HostDiskSpaceCritical', 'HostMemoryAvailableLow',
@@ -112,6 +112,8 @@ const EXPECTED_RULES = [
   'RiskScanSqlFailures',
   // C1（2026-10-26）：记录 outbox 三条规则（数量 32→35）。
   'RecordOutboxStuck', 'RecordOutboxAbandoned', 'RecordLost',
+  // C2（2026-10-26）：资金↔记录对账三条规则（数量 35→38）。
+  'RecordsReconcileMismatch', 'RecordsReconcileOrphanOps', 'RecordsReconcileStalled',
 ] as const;
 
 /** C1：九个目标的 exec 探测面（八 Nest + douzero；指标端口**不发布宿主口**——D2）。 */
@@ -712,7 +714,7 @@ export async function runSlice16(): Promise<Checks> {
     );
 
     // ═════════════════════════════════════════════════════════════════════════
-    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 32 + 正则自证 + 降级开关
+    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 38 + 正则自证 + 降级开关
     // ═════════════════════════════════════════════════════════════════════════
     step(`C2：/api/v1/targets 15 目标逐个 up · /api/v1/rules = ${EXPECTED_RULES.length} · 容器名正则自证 · MONITORING_EXPECT_CADVISOR=${EXPECT_CADVISOR ? '1' : '0'}`);
     // 谓词正/负对照（R115 同族）：判别力用合成样本自证，防「谓词写瞎 ⇒ 恒绿」。
@@ -763,7 +765,7 @@ export async function runSlice16(): Promise<Checks> {
         `违规：${tViolations.join(' | ') || '无'}${targetsErr ? `（末次读取错误：${targetsErr}）` : ''}` +
         ` 实测快照 ${JSON.stringify(targets.map((t) => `${t.job}:${t.health}`))}`,
     );
-    // rules：数量 + **名字集合**（只钉数量的话，32 条错规则也绿）。
+    // rules：数量 + **名字集合**（只钉数量的话，38 条错规则也绿）。
     const rulesResp = await httpText(`${PROM_URL}/api/v1/rules`);
     const rulesParsed = JSON.parse(rulesResp.text) as {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };

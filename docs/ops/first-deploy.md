@@ -1284,6 +1284,7 @@ https://<你的域名>/grafana/
 **多玩法（2026-10-25）**：新增 4 条按玩法（`game_type`）分维的告警 —— `GameStartFailuresHigh`（开局失败/取消）、`GameSettleFailures`（局终失败）、`SettleDroppedByGame`（金币结算 dropped）、`RecordWriteFailuresHigh`（记录写失败/丢失）。`currency_settle_outbox_size` / `_oldest_seconds` 现按玩法多条序列：查询/面板用 `sum by (game_type)` 或 `sum()`，不要再假设单序列。
 **B 组（2026-10-26）**：新增 `RiskScanSqlFailures`（`scope=doudizhu|paodekuai|device`，10m 任意失败即 warning）。单玩法 SQL 失败时该玩法本轮冻结、其他玩法继续；device SQL 失败会整轮失败。先查 scope 对应表/权限，再看 user-service 扫描 ERROR 日志与 `risk_scan_last_success_timestamp_seconds`。
 **C1（2026-10-26）**：新增 `RecordOutboxStuck`（warning，记录补偿队列最老 >10m）、`RecordOutboxAbandoned`（critical，24h 内 TTL 超龄/坏条目/确定性拒收 >0）、`RecordLost`（critical，15m 内 `record_write_failures_total{kind="record_lost"}` >0）。`RecordWriteFailuresHigh` 的 `kind=record` 表示「首次失败但已入箱待重投」，先看前两条；`record_lost` 才是永久丢失。
+**C2（2026-10-26）**：新增 3 条资金↔记录对账告警（每 1h 一轮、启动 10s 首跑；只报不改）—— `RecordsReconcileMismatch`（warning，金额不一致/记录缺失/全 NULL/疑似 NULL/台费疑似/台费孤儿合计 >0）、`RecordsReconcileOrphanOps`（critical，结算 op 无记录 ≥25h）、`RecordsReconcileStalled`（warning，>2h 未成功，含从未成功）。面板：管理页「财务 → 对账」的「记录对账」三行 + `GET /api/admin/wallet/reconcile` 的 `data.records`；按 room/version 人工核对，**不自动补记录/不改钱**。
 
 ⚠️ **心跳邮件（「监控活着」）**：邮箱配好之后，大约**每 24 小时**你会收到一封「监控活着」的邮件（内容里带 `Watchdog` 字样）—— 它证明**整条告警链**（收数据 → 判规则 → 发通知）活着。判读口径 = **「多久没收到」**：
 
