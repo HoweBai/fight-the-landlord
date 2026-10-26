@@ -1,6 +1,8 @@
 # B 组交接（跑得快风控 / 金币门槛 / 2–4 人）
 
 > 2026-10-26 续接会话 · 分支 `feature/pdk-risk-b` · worktree `D:\Code\ftl-pdk-risk-b`
+> 最新代码提交：`085a6ba5`（临时触发还原 + 全绿证据）；之后仅文档回填，最终 HEAD 以
+> `git log -1` 为准。
 > 基线：`origin/dev@ccc4efd6`（已含代理分润 39 提交、A1/A2/A3、2/4 人并行工作）
 > 合并：`930936a3`（origin/dev 并入 B 组）
 > 设计/计划：`docs/superpowers/specs/2026-10-26-pdk-risk-b-design.md`、
