@@ -26,7 +26,7 @@ C 组处理「钱与记录的可信度」三件事：记录不能丢（C1）、�
 
 | 片 | 目标 | 交付物 | 依赖 |
 |---|---|---|---|
-| **C1 记录链可靠性** | `record.write` 失败不再永久丢记录：durable outbox + 幂等重投 + sweeper + 指标/告警；旧记录/旧条目缺省 `doudizhu` | 独立 `record:outbox` Hash、sweeper 扩展、2 条新告警、单测、conformance 真栈片 | 无（C 组第一片） |
+| **C1 记录链可靠性** | `record.write` 失败不再永久丢记录：durable outbox + 幂等重投 + sweeper + 指标/告警；旧记录/旧条目缺省 `doudizhu` | 独立 `record:outbox` Hash、sweeper 扩展、3 条新告警（35/32）、单测、conformance 真栈片 | 无（C 组第一片） |
 | **C2 资金↔记录对账** | 周期性核对 `game_settle`/`entry_fee` op ↔ 对局记录 ↔ `money_delta`/`score_change`；输出孤儿/缺失/金额不一致指标与告警，管理端可查；**只告警/报告，不自动改钱** | 扩展 `ReconcileService` 新检查 + 新指标/告警 + 管理端对账面板字段 + 单测/真栈片 | C1（记录可靠后对账噪声才可控） |
 | **C3 资金异常检测** | 首版可解释信号：同设备同桌、对子胜率集中、24h 高频对子、高抽水/高流水；接入现有 `risk_reviews`/告警；不自动封禁 | 扫描扩展 + 新指标 + 审核队列 reason + 告警 + 单测/真栈片 | C2（金额口径与记录字段口径已钉） |
 
@@ -108,7 +108,7 @@ C 组处理「钱与记录的可信度」三件事：记录不能丢（C1）、�
 | 记录晚到（≤24h）/ settle→enqueue 崩溃与 C2 孤儿判定/C3 窗口冲突 | C1→C2/C3 | C2 四态（待定/孤儿/反向孤儿/疑似 NULL）；C3 按 `ended_at` 扫窗并留晚到余量（见 §5.2） |
 | 多实例 sweeper 重复投递/全局 gauge 被 sum 放大 | C1 | 重复投递由接收侧幂等吸收；`record_outbox_size` 用 `max by (game_type)`；当前单实例部署，加锁另立项 |
 | 对账查询量随记录量增长 | C2 | 48h 滚动窗 + 索引（`idx_ended_at`/`idx_pdk_ended_at`/`action_id` 唯一键）；轮末限时 |
-| 对账误报（截断/抽水/全零局） | C2 | 判定分「不一致 / 待定（在途）/ 已知终态（dropped）」三态；只报不改 |
+| 对账误报（截断/抽水/全零局） | C2 | 判定分「不一致 / 待定（在途）/ 孤儿 / 反向孤儿 / 疑似 NULL（原因未知）」五类；只报不改 |
 | AML 误报/噪声 | C3 | 阈值保守、可解释 reason、人工审核队列；允许现有自动限流但不封禁 |
 | 与并行工作同文件冲突 | 全组 | 独立 worktree/分支；每片从最新 `dev` 开；不改 slice-29 与用户未提交的 `PdkSettlement.vue` |
 
