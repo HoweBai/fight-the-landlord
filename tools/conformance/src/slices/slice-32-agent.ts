@@ -30,6 +30,8 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import {
+  CLIENT_CONFIG_KEYS,
+  CONFIG_KEYS,
   ErrCode,
   RPC_PATTERNS,
   type CurrencyApplyData,
@@ -284,7 +286,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // ══════════════════════════════════════════════════════════════════════
     // ⓪ 准入：快照 → 开启两开关 → 配置计数
     // ══════════════════════════════════════════════════════════════════════
-    step('⓪ 准入：快照 settings/agent.inviteEnabled → 开启 → 配置计数（94/22）');
+    step(`⓪ 准入：快照 settings/agent.inviteEnabled → 开启 → 配置计数（${CONFIG_KEYS.length}/${CLIENT_CONFIG_KEYS.length}）`);
     const settingsRes = await getJson<{ enabled: boolean; minSettlementYuan: number }>(
       '/api/admin/agents/settings',
       admin,
@@ -321,14 +323,14 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
 
     const adminCfg = await adminGetConfig<{ config: Record<string, unknown> }>(admin);
     const cfgKeys = Object.keys(adminCfg.body?.data?.config ?? {});
-    checks.eq(cfgKeys.length, 94, '管理端配置键数恰 94（protocol CONFIG_KEYS）');
+    checks.eq(cfgKeys.length, CONFIG_KEYS.length, `管理端配置键数恰 ${CONFIG_KEYS.length}（protocol CONFIG_KEYS）`);
     checks.that(cfgKeys.includes(INVITE_KEY), `管理端配置含 ${INVITE_KEY}`);
 
     const probeReg = await register({ nickname: `s30-probe-${RUN_TAG}` });
     const probe = asUser(probeReg.status, probeReg.body, '探针注册');
     const clientCfg = await getJson<Record<string, unknown>>('/api/config', probe.accessToken);
     const clientKeys = Object.keys(clientCfg.body?.data ?? {});
-    checks.eq(clientKeys.length, 22, '客户端配置子集恰 22 键（CLIENT_CONFIG_KEYS）');
+    checks.eq(clientKeys.length, CLIENT_CONFIG_KEYS.length, `客户端配置子集恰 ${CLIENT_CONFIG_KEYS.length} 键（CLIENT_CONFIG_KEYS）`);
     checks.eq(
       clientCfg.body?.data?.agentInviteEnabled,
       true,
