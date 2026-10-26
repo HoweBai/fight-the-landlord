@@ -254,7 +254,7 @@ export async function adminLogin(): Promise<string> {
   return token;
 }
 
-/** `GET /api/admin/config`：全量四十四键 + 每键 version + 全局 MAX（持管理令牌读）。 */
+/** `GET /api/admin/config`：全量一百零一键 + 每键 version + 全局 MAX（持管理令牌读）。 */
 export function adminGetConfig<T = any>(token: string): Promise<HttpResult<T>> {
   return getJson<T>('/api/admin/config', token);
 }

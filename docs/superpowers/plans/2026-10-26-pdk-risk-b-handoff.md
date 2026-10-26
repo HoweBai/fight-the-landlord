@@ -35,7 +35,9 @@
 - `packages/user-service/src/migrations/1797000000005-RiskReviewGameType.ts`
   （`game_type` + 默认 ddz + `idx_game_status_id`；down 先删索引再删列）。
 - 真 MySQL up/down：临时 workflow `risk-b-migrations-temp`（MySQL 8 service）run
-  `40260576734`；**结果待回填**。跑完删除该 workflow 与 `scripts/temp/verify-risk-b-migrations.mjs`。
+  `40260576734` **成功** —— config `1797000000006` 与 user `1797000000005` 均
+  up/down/up/down 通过（日志逐字见 plan「续接轮」）。临时 workflow 与
+  `scripts/temp/verify-risk-b-migrations.mjs` 已删除（`59dc9490`）。
 
 ## GitHub 真栈（用户裁决：不用本地 Docker Desktop）
 

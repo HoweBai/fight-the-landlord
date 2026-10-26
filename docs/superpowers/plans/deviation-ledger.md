@@ -709,8 +709,9 @@
   GitHub Actions 跑真栈：首轮 `40259979512` 在起栈阶段发现 slice-33 管理写桶
   （`ADMIN_WRITE` 30/5min 按令牌指纹）可预见红，主动取消并修复 `b23f7a95`
   （写段重登换令牌 + 起手 61s 清 IP 桶）；次轮 run `40260432256` 结果待回填。
-  真 MySQL 迁移 up/down 由临时 workflow（MySQL 8 service）验证
-  config `1797000000006` / user `1797000000005`，结果同待回填。
+  真 MySQL 迁移 up/down 由临时 workflow（MySQL 8 service）run `40260576734` **成功**：
+  config `1797000000006` 与 user `1797000000005` 均 up/down/up/down 通过；
+  临时 workflow/脚本已删除（`59dc9490`）。
   合并后计数并集：protocol 101 键、active/IA 85、CONFIG_NOTES 85、简单控件 80。
 - **机器人低档房资金水位**：**仍开放** —— 规划期已核对：bot 按全局最高档
   `max(baseScoreLevels) × entryMultiplier` 充值，低档房人类可从 bot 提取其全部余额；
