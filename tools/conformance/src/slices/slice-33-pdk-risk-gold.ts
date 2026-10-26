@@ -438,7 +438,7 @@ export async function runSlice33(): Promise<{ passed: string[] }> {
   };
 
   /**
-   * 管理写桶按**令牌指纹** 30 次/5 分钟（`ADMIN_WRITE`）。本片 ⓪ 有 21 次配置写、
+   * 管理写桶按**令牌指纹** 30 次/5 分钟（`ADMIN_WRITE`）。本片 ⓪ 有 20 次配置写、
    * ①–③ 有 14 次钱包调整写，合计 35 次 —— 同一令牌必然在第 31 次撞 429。
    * ⇒ 在写段之间重新登录换新令牌（新指纹 = 新桶）。只影响测试夹具，不改变被测行为。
    */
@@ -509,7 +509,7 @@ export async function runSlice33(): Promise<{ passed: string[] }> {
     await put(admin, RISK_SCAN, 5000, '⓪ risk scan');
     await put(admin, DDZ_WIN, 0.5, '⓪ ddz win');
     await put(admin, DDZ_MIN, 1, '⓪ ddz min');
-    await rotateAdmin('⓪ 21 次配置写后');
+    await rotateAdmin('⓪ 20 次配置写后');
 
     const probe = await registerUser(1);
     createdUsers.push(probe);

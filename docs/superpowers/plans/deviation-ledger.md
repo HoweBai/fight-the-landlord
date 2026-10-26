@@ -702,9 +702,16 @@
 
 ## 6. B 组（2026-10-26）
 
-- **slice-32 / 全量真栈**：**部分关闭** —— 本机 Docker 不可用，slice-32/16/18/20/24/29/31
-  只做了 tsc/lint 与静态闸；待权威轮按 `tools/conformance` 实跑并回填实测条数
-  （`slice-32-pdk-risk-gold` 基线初值 = 源内逐点枚举 60）。
+- **slice-33 / 全量真栈**：**部分关闭（GitHub 轮进行中）** —— 2026-10-26 合并
+  `origin/dev@ccc4efd6`（代理分润 39 提交）后，dev 已占 `slice-32` ⇒ B 片顺延
+  `slice-33-pdk-risk-gold`；config 种子迁移因 `1796900000000` 撞号改号
+  `1797000000006-PdkRiskPlayerCountSeed`。本机 Docker 不可用，按用户裁决改在
+  GitHub Actions 跑真栈：首轮 `40259979512` 在起栈阶段发现 slice-33 管理写桶
+  （`ADMIN_WRITE` 30/5min 按令牌指纹）可预见红，主动取消并修复 `b23f7a95`
+  （写段重登换令牌 + 起手 61s 清 IP 桶）；次轮 run `40260432256` 结果待回填。
+  真 MySQL 迁移 up/down 由临时 workflow（MySQL 8 service）验证
+  config `1797000000006` / user `1797000000005`，结果同待回填。
+  合并后计数并集：protocol 101 键、active/IA 85、CONFIG_NOTES 85、简单控件 80。
 - **机器人低档房资金水位**：**仍开放** —— 规划期已核对：bot 按全局最高档
   `max(baseScoreLevels) × entryMultiplier` 充值，低档房人类可从 bot 提取其全部余额；
   与 DDZ 同构，B 组按 D29 不改，经济面/反洗钱另立片。
