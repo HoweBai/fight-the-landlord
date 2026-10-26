@@ -249,6 +249,9 @@ describe('C26 · 腿②：每条 CLIENT_MESSAGE_TYPES 走 routeClientMessage 不
         gameStartFailuresTotal: counter,
         recordWriteFailuresTotal: counter,
         recordWriteSkipsTotal: counter,
+        recordOutboxSize: gauge,
+        recordOutboxOldestSeconds: gauge,
+        recordOutboxResendTotal: counter,
       };
     });
     try {

@@ -35,6 +35,7 @@ import { FinanceQueryService } from '../src/admin/finance-query.service';
 import { ReverseService } from '../src/admin/reverse.service';
 import { ApplyService } from '../src/apply/apply.service';
 import { ReconcileService } from '../src/reconcile/reconcile.service';
+import { RecordsReconcileService } from '../src/reconcile/records-reconcile.service';
 import { XAdminGuard } from '../src/http/x-admin.guard';
 
 const AUTH = { 'x-admin': '1' };
@@ -566,6 +567,8 @@ async function startProbe(db: FakeFinanceDb): Promise<Probe> {
       { provide: ApplyService, useValue: {} as ApplyService },
       // ③ T8：控制器构造再增 reconcile 两路由依赖（本文件不触对账面）——同款占位空对象。
       { provide: ReconcileService, useValue: {} as ReconcileService },
+      // C2：控制器构造再增 records 对账状态依赖（本文件不触该面）——同款占位空对象。
+      { provide: RecordsReconcileService, useValue: {} as RecordsReconcileService },
     ],
   };
   const app: INestApplication = await NestFactory.create(module, { logger: false });

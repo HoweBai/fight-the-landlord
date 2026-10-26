@@ -31,6 +31,7 @@ import {
   ReconcileService,
   type CurrencyReconcileRoundResult,
 } from '../reconcile/reconcile.service';
+import { RecordsReconcileService } from '../reconcile/records-reconcile.service';
 
 /**
  * 财务读口 + 冲正 + 对账（③ T6/T7/T8；规格 §2.7 / §2.8 / §2.11）：
@@ -359,6 +360,8 @@ export class AdminFinanceController {
     @Inject(ApplyService) private readonly applyService: ApplyService,
     // ③ T8：对账面板读口/手动触发直读该服务的内存态与 `inFlight` 旗（面板数据源 = 循环本体）。
     @Inject(ReconcileService) private readonly reconcileService: ReconcileService,
+    // C2：记录对账**只加 GET 状态**（无手动触发；独立 1h 循环/启动 10s 首跑产出）。
+    @Inject(RecordsReconcileService) private readonly recordsReconcileService: RecordsReconcileService,
   ) {}
 
   /** 流水列表（§2.7：`{code:0, data:{rows, nextCursor}}`）。 */
@@ -489,11 +492,20 @@ export class AdminFinanceController {
    * 对账面板读口（③ T8；§2.7）：`data` = 状态四字段 + `running`。**内存态**——新进程前四项
    * null = 「未知」，如实呈现（不伪造）；读端点不强求 `x-admin-actor`。非列表新端点 ⇒
    * 未知 query 键**静默丢弃**（⚙️9，不做白名单）。
+   *
+   * C2 加性：`data.records` = 记录对账的独立状态（同形五字段；由 1h 循环/启动 10s 首跑产出）。
+   * 旧字段/旧 POST 响应**零变化**；旧 admin 前端按可选链读它，不崩。
    */
   @Get('reconcile')
   @HttpCode(200)
   async reconcileStatus() {
-    return { code: ErrCode.OK, data: this.reconcileService.getStatus() };
+    return {
+      code: ErrCode.OK,
+      data: {
+        ...this.reconcileService.getStatus(),
+        records: this.recordsReconcileService.getStatus(),
+      },
+    };
   }
 
   /**

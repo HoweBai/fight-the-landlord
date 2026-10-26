@@ -151,3 +151,95 @@ export const reliefCallbackTotal: ReturnType<typeof createCounter> = createCount
   '广告回调处置计数（accepted/claim_invalid/bad_sign/malformed/error 五桶互斥，一回调恰入一桶；写点 T14）。',
   ['result'],
 );
+
+/* ================================================================== *
+ * C2 资金↔记录对账（2026-10-26；只报不改）
+ * ================================================================== */
+
+/** C2：结算 op 无记录（op 年龄 ≥25h；钱已动、记录不存在）。 */
+export const currencyRecordsReconcileOrphanOps: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_orphan_ops',
+  '结算 op 无对应记录（op 年龄 ≥25h；按玩法；只报不改）。',
+  ['game_type'],
+);
+
+/** C2：gold 记录无 settle op（记录年龄 >2h 且存在非零 money_delta）。 */
+export const currencyRecordsReconcileMissingOps: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_missing_ops',
+  'gold 记录无 settle op（记录年龄 >2h 且存在非零 money_delta；按玩法；只报不改）。',
+  ['game_type'],
+);
+
+/** C2：gold 记录无 settle op 且 money_delta 任一 NULL（无非零）——settle 未执行/金币列未回写。 */
+export const currencyRecordsReconcileNullNoOp: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_null_no_op',
+  'gold 记录无 settle op 且 money_delta 任一 NULL/无非零（按玩法；只报不改）。',
+  ['game_type'],
+);
+
+/** C2：金额不一致（flow≠money_delta / 符号幅度 / 守恒 / 台费 op 流水面）。 */
+export const currencyRecordsReconcileAmountMismatch: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_amount_mismatch',
+  '资金↔记录金额不一致（flow≠money_delta、符号/幅度、守恒、台费 op 流水面；按玩法）。',
+  ['game_type'],
+);
+
+/** C2：待定（op 无记录 <25h、记录无 op ≤2h、money_delta NULL ≤2h；诊断桶，不告警）。 */
+export const currencyRecordsReconcilePending: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_pending',
+  '待定（op 无记录 <25h / 记录无 op ≤2h / money_delta NULL ≤2h；按玩法；诊断用）。',
+  ['game_type'],
+);
+
+/** C2：settle op 年龄 >2h 且该局 money_delta 仍 NULL（原因未知，不判金额不一致）。 */
+export const currencyRecordsReconcileNullMoneyDelta: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_null_money_delta',
+  'settle op 年龄 >2h 且该局 money_delta 仍 NULL（原因未知；按玩法）。',
+  ['game_type'],
+);
+
+/** C2：台费疑似缺失（无 entry_fee op 且无免单行；当前档位费率 >0，配置依赖）。 */
+export const currencyRecordsReconcileEntryFeeSuspect: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_entry_fee_suspect',
+  '台费疑似缺失（无 op/免单行且当前档位费率 >0；按玩法；配置依赖）。',
+  ['game_type'],
+);
+
+/** C2：台费未知（无 op/免单行且当前费率为 0/档位缺失；历史费率无法反推的盲区）。 */
+export const currencyRecordsReconcileEntryFeeUnknown: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_entry_fee_unknown',
+  '台费未知（无 op/免单行且当前费率为 0/档位缺失；按玩法；盲区诊断）。',
+  ['game_type'],
+);
+
+/** C2：台费 op 无记录（op 年龄 >25h；开局扣费但未产出对局记录）。 */
+export const currencyRecordsReconcileEntryFeeOrphanOps: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_entry_fee_orphan_ops',
+  '台费 op 无对应记录（op 年龄 >25h；按玩法）。',
+  ['game_type'],
+);
+
+/** C2：档位配置不可用（缺失/非法；该玩法台费检查跳过）。 */
+export const currencyRecordsReconcileConfigUnavailable: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_config_unavailable',
+  '记录对账档位配置不可用（0/1；按玩法；为 1 时台费检查跳过）。',
+  ['game_type'],
+);
+
+/** C2：本轮因单查询超 20 万行失败（0/1；成功轮 0）。 */
+export const currencyRecordsReconcileTruncated: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_truncated',
+  '记录对账因单查询超 20 万行失败（0/1；成功轮 0）。',
+);
+
+/** C2：轮次计数（每轮开始 +1；失败轮也计）。 */
+export const currencyRecordsReconcileRunsTotal: ReturnType<typeof createCounter> = createCounter(
+  'currency_records_reconcile_runs_total',
+  '记录对账循环轮次计数（每轮开始 +1；失败轮也计）。',
+);
+
+/** C2：最近一次成功轮的 epoch 秒（启动置 0）。 */
+export const currencyRecordsReconcileLastSuccessTimestampSeconds: ReturnType<typeof createGauge> = createGauge(
+  'currency_records_reconcile_last_success_timestamp_seconds',
+  '记录对账最近一次成功轮的 epoch 秒；启动置 0（含「从未成功」）。',
+);

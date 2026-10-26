@@ -245,7 +245,7 @@ export const gameStartFailuresTotal: CounterOf = createCounter(
 /** 记录写失败/丢失（按玩法 + 有界 kind）。 */
 export const recordWriteFailuresTotal: CounterOf = createCounter(
   'record_write_failures_total',
-  '对局记录写失败/丢失计数（kind=record|money_delta|record_lost，按玩法）。',
+  '对局记录写失败/丢失计数（kind=record|money_delta|record_lost，按玩法；record=首次失败但已入箱待重投，record_lost=永久丢失）。',
   ['game_type', 'kind'],
 );
 
@@ -254,4 +254,25 @@ export const recordWriteSkipsTotal: CounterOf = createCounter(
   'record_write_skips_total',
   '对局记录写跳过计数（reason=room_ttl；预期窗口，仅诊断，不告警）。',
   ['game_type', 'reason'],
+);
+
+/** C1：记录补偿队列条目数（按玩法；sweeper 每轮从同一快照刷新）。 */
+export const recordOutboxSize: GaugeOf = createGauge(
+  'record_outbox_size',
+  '记录写入补偿队列条目数（record:outbox，按玩法；sweeper 每轮从同一快照刷新；多实例时用 max by）。',
+  ['game_type'],
+);
+
+/** C1：记录补偿队列最老条目滞留秒数（按玩法；空队列 0）。 */
+export const recordOutboxOldestSeconds: GaugeOf = createGauge(
+  'record_outbox_oldest_seconds',
+  '记录写入补偿队列最老条目滞留秒数（按玩法；空队列 0；RecordOutboxStuck 告警线 600s）。',
+  ['game_type'],
+);
+
+/** C1：记录补偿队列结局计数（按玩法 + 有界 result）。 */
+export const recordOutboxResendTotal: CounterOf = createCounter(
+  'record_outbox_resend_total',
+  '记录补偿队列结局计数（result=ok|replayed|failed|abandoned|corrupt|rejected，按玩法）。',
+  ['game_type', 'result'],
 );

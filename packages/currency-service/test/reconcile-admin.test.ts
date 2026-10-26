@@ -39,6 +39,10 @@ import {
   ReconcileService,
 } from '../src/reconcile/reconcile.service';
 import type { ConfigCacheService } from '../src/config/config-cache.service';
+import {
+  RecordsReconcileService,
+  type RecordsReconcileStatus,
+} from '../src/reconcile/records-reconcile.service';
 import { AdminFinanceController } from '../src/admin/admin-finance.controller';
 import { FinanceQueryService } from '../src/admin/finance-query.service';
 import { ReverseService } from '../src/admin/reverse.service';
@@ -52,6 +56,18 @@ const STATUS_PATH = '/api/admin/wallet/reconcile';
 const RUN_PATH = '/api/admin/wallet/reconcile/run';
 const READ_AUTH = { 'x-admin': '1' };
 const AUTH = { 'x-admin': '1', 'x-admin-actor': 'finance.one' };
+
+/**
+ * C2：记录对账状态委托壳的固定读数。**纯对象 ⇒ 无 `onModuleInit`**（不会启 10s 首跑定时器）；
+ * GET 的加性 `records` 字段据此精确断言，POST（老服务）响应里**不得**出现它。
+ */
+const RECORDS_STATUS: RecordsReconcileStatus = {
+  lastAttemptAt: null,
+  lastSuccessAt: null,
+  lastResult: null,
+  lastError: null,
+  running: false,
+};
 
 /**
  * 假 ConfigCache（本片 T8 起循环消费面三件：间隔 getter + 首排两把手——缺省 = 快路径
@@ -314,6 +330,11 @@ async function startProbe(): Promise<ReconcileProbe> {
           runReconcileOnce: () => ctx.svc.runReconcileOnce(),
         } as unknown as ReconcileService,
       },
+      // C2：记录对账只加 GET 状态（无手动触发）；委托壳同款——纯对象，无生命周期钩子。
+      {
+        provide: RecordsReconcileService,
+        useValue: { getStatus: () => RECORDS_STATUS } as unknown as RecordsReconcileService,
+      },
     ],
   };
   const app: INestApplication = await NestFactory.create(module, { logger: false });
@@ -361,13 +382,20 @@ beforeEach(() => {
 });
 
 describe('GET/POST /api/admin/wallet/reconcile（§2.7；真 Nest 管线）', () => {
-  it('GET 初始：四字段 null + running:false（读端点不强求 actor 头）', async () => {
+  it('GET 初始：四字段 null + running:false + 加性 records（读端点不强求 actor 头）', async () => {
     const res = await probe.get(STATUS_PATH, READ_AUTH);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       code: ErrCode.OK,
-      data: { lastAttemptAt: null, lastSuccessAt: null, lastResult: null, lastError: null, running: false },
+      data: {
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+        lastResult: null,
+        lastError: null,
+        running: false,
+        records: RECORDS_STATUS,
+      },
     });
   });
 
@@ -375,6 +403,7 @@ describe('GET/POST /api/admin/wallet/reconcile（§2.7；真 Nest 管线）', ()
     const run = await probe.postJson(RUN_PATH, {}, AUTH);
 
     expect(run.status).toBe(200);
+    // C2：POST **完全不变**——响应里没有 records 字段（不跑 records、不改响应）。
     expect(run.body).toEqual({
       code: ErrCode.OK,
       data: { driftAccounts: 0, cacheDriftDeleted: 0, orphanSignupGrants: 0, robotPoolBalance: 0, robotAccountsBalanceSum: 0 },
@@ -388,6 +417,7 @@ describe('GET/POST /api/admin/wallet/reconcile（§2.7；真 Nest 管线）', ()
     expect(data.lastResult).toEqual(run.body.data);
     expect(data.lastError).toBeNull();
     expect(data.running).toBe(false);
+    expect(data.records).toEqual(RECORDS_STATUS); // 记录对账状态独立于旧对账面
   });
 
   it('POST 在跑 ⇒ 409 借 10001「对账正在运行」（不叠跑、零新读数）；GET 如实报 running:true；首轮照常收尾', async () => {
@@ -399,6 +429,7 @@ describe('GET/POST /api/admin/wallet/reconcile（§2.7；真 Nest 管线）', ()
 
     const during = await probe.get(STATUS_PATH, READ_AUTH);
     expect(during.body.data.running).toBe(true);
+    expect(during.body.data.records).toEqual(RECORDS_STATUS);
 
     const second = await probe.postJson(RUN_PATH, {}, AUTH);
     expect(second.status).toBe(409);

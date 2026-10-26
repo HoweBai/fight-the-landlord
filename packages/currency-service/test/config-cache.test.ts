@@ -321,6 +321,56 @@ describe('ConfigCacheService（② 金币场 T8：currency-service 首条出站�
     }
   });
 
+  // ─── C2：台费档位费率（记录对账用；与既有 getter 无关）──────────────────────
+
+  it('entryFeePercents：ddz 新键优先；缺失回退旧 game.baseScoreLevels；pdk 无旧键', async () => {
+    const levels = [{ name: '休闲场', baseScore: 15, entryFeePercent: 10 }];
+    const fresh = await cachedWith({ 'game.levels.doudizhu': levels });
+    expect(fresh.entryFeePercents('doudizhu')).toEqual([{ baseScore: 15, percent: 10 }]);
+    fresh.onApplicationShutdown();
+
+    const legacyLevels = [{ name: '旧档', baseScore: 15 }];
+    const legacy = await cachedWith({ 'game.baseScoreLevels': legacyLevels });
+    expect(legacy.entryFeePercents('doudizhu')).toEqual([{ baseScore: 15, percent: 0 }]);
+    expect(legacy.entryFeePercents('paodekuai')).toBeNull();
+    legacy.onApplicationShutdown();
+  });
+
+  it('entryFeePercents：合法空 []；合法全 0 ⇒ 非空全 0；缺失/非法 ⇒ null；新键非法不回退', async () => {
+    const empty = await cachedWith({ 'game.levels.doudizhu': [] });
+    expect(empty.entryFeePercents('doudizhu')).toEqual([]);
+    empty.onApplicationShutdown();
+
+    const zero = await cachedWith({
+      'game.levels.doudizhu': [{ name: '零费', baseScore: 15, entryFeePercent: 0 }],
+    });
+    expect(zero.entryFeePercents('doudizhu')).toEqual([{ baseScore: 15, percent: 0 }]);
+    zero.onApplicationShutdown();
+
+    const missing = await cachedWith({});
+    expect(missing.entryFeePercents('paodekuai')).toBeNull();
+    missing.onApplicationShutdown();
+
+    for (const bad of [
+      null,
+      'x',
+      [{}],
+      [{ name: 'X', baseScore: 0 }],
+      [{ name: 'X', baseScore: 15, entryFeePercent: 101 }],
+    ]) {
+      const cache = await cachedWith({ 'game.levels.paodekuai': bad as never });
+      expect(cache.entryFeePercents('paodekuai'), JSON.stringify(bad)).toBeNull();
+      cache.onApplicationShutdown();
+    }
+
+    const invalidNew = await cachedWith({
+      'game.levels.doudizhu': [{ name: 'X', baseScore: 0 }],
+      'game.baseScoreLevels': [{ name: 'OK', baseScore: 15 }],
+    });
+    expect(invalidNew.entryFeePercents('doudizhu'), '新键非法不得回退旧键').toBeNull();
+    invalidNew.onApplicationShutdown();
+  });
+
   it('🔴 快照整体不可用（拉取失败 + 空缓存）⇒ reconcileIntervalMs() 同样回落默认（janitor fail-safe，不停扫）', async () => {
     const { client, snapshot } = makeClient();
     snapshot.mockImplementation(() => Promise.reject(transportDown()));

@@ -3114,19 +3114,40 @@ async function loadFinReconcile() {
   if (status === 0) return showMsg('无法连接服务端', 'err');
   if (status !== 200 || !body?.data) return showMsg(`加载对账状态失败（HTTP ${status}）`, 'err');
   const d = body.data;
+  // C2：`records` 是加性字段（旧服务没有 ⇒ 全部 '—'，不崩）。
+  const records = d.records;
   $('rec-last-attempt').textContent = fmtTime(d.lastAttemptAt);
   $('rec-last-success').textContent = fmtTime(d.lastSuccessAt);
-  $('rec-last-result').textContent = d.lastResult ? formatReconcileResult(d.lastResult) : '—';
+  $('rec-last-result').textContent = d.lastResult
+    ? formatReconcileResult(d.lastResult, records)
+    : records?.lastResult
+      ? `记录对账 ${formatRecordsReconcileResult(records.lastResult)}`
+      : '—';
   $('rec-last-error').textContent = d.lastError ?? '—';
+  $('rec-records-last-attempt').textContent = fmtTime(records?.lastAttemptAt);
+  $('rec-records-last-success').textContent = fmtTime(records?.lastSuccessAt);
+  $('rec-records-last-error').textContent = records?.lastError ?? '—';
   $('rec-running').hidden = !d.running;
   $('rec-run-btn').disabled = Boolean(d.running) || !canWalletWrite();
 }
 
 /** 一轮读数 → 单行文本（字段名 = `CurrencyReconcileRoundResult`）。 */
-function formatReconcileResult(r) {
-  return (
+function formatReconcileResult(r, records) {
+  const base =
     `账实不符 ${r.driftAccounts} · 缓存清理 ${r.cacheDriftDeleted} · 孤儿赠送 ${r.orphanSignupGrants}` +
-    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`
+    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`;
+  // C2：可选链 —— `records`（或其中的 lastResult）缺失 ⇒ 保持旧文本，旧服务不崩。
+  const recordsResult = records?.lastResult;
+  return recordsResult ? `${base} · 记录对账 ${formatRecordsReconcileResult(recordsResult)}` : base;
+}
+
+/** C2 记录对账一轮读数 → 单行文本；字段缺失按 0（`?? 0`，与后端全量 set 口径一致）。 */
+function formatRecordsReconcileResult(r) {
+  return (
+    `孤儿 ${r?.orphanOps ?? 0} · 缺失 ${r?.missingOps ?? 0} · 全NULL ${r?.nullNoOp ?? 0}` +
+    ` · 金额 ${r?.amountMismatch ?? 0} · 待定 ${r?.pending ?? 0} · 疑似NULL ${r?.nullMoneyDelta ?? 0}` +
+    ` · 台费疑似 ${r?.entryFeeSuspect ?? 0} · 台费未知 ${r?.entryFeeUnknown ?? 0}` +
+    ` · 台费孤儿 ${r?.entryFeeOrphanOps ?? 0} · truncated ${r?.truncated ? 1 : 0}`
   );
 }
 
@@ -3172,6 +3193,10 @@ function resetFinance() {
   $('rec-last-success').textContent = '—';
   $('rec-last-result').textContent = '—';
   $('rec-last-error').textContent = '—';
+  // C2：记录对账状态（加性字段）同款复位。
+  $('rec-records-last-attempt').textContent = '—';
+  $('rec-records-last-success').textContent = '—';
+  $('rec-records-last-error').textContent = '—';
   $('rec-running').hidden = true;
   $('rec-run-btn').disabled = false;
 }

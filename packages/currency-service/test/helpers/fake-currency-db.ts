@@ -15,7 +15,9 @@
  *    reject（读路径 SQL 一漂移就红）。⚠️ 池 gauge 读与逐键回源**共用**同一单行余额 SQL
  *    （参数 'robot-pool'），不另立识别式。
  *    记录进 `directQueries`（「回源了吗 / 建行了吗 / 对账跑了吗」的判据面）。
- *  - 语句按**精确形状**识别（带 `?` 占位与反引号），实现侧 SQL 一漂移就当场红。
+ *  - 语句按**精确形状**识别（带 `?` 占位与反引号），实现侧 SQL 一漂移就当场红；
+ *    C2 的 5 条对账 SQL 以**导入常量 `===`** 匹配（文本本身由 `records-reconcile.test.ts`
+ *    的独立誊写钉住 —— 实现漂移一个字符即红）。
  *  - 事务路径的快照读**只认 ⚙️14① 锁定读形态**（`SELECT balance, owner_type … FOR UPDATE`）：
  *    实现若漂回普通 SELECT（RR 下读不到并发已提交行 = ⚙️12 的假闭合）⇒ 「未识别的 SQL」当场红。
  *  - `beforeStatement` 钩子 = 「并发会话已提交的写」注入面（用例在 INSERT IGNORE 前
@@ -23,6 +25,14 @@
  *  - 撞 `uk_action_id` ⇒ 抛**形如 mysql2** 的 `ER_DUP_ENTRY` 错误（code + errno + 含
  *    `uk_action_id` 的 message），让 `isDuplicateEntryError` 的判读走真实形态。
  */
+
+import {
+  RECORDS_RECONCILE_DDZ_SQL,
+  RECORDS_RECONCILE_FLOWS_SQL,
+  RECORDS_RECONCILE_OPS_SQL,
+  RECORDS_RECONCILE_PDK_SQL,
+  RECORDS_RECONCILE_SKIPS_SQL,
+} from '../../src/reconcile/records-reconcile.sql';
 
 export interface FakeAccount {
   ownerType: string;
@@ -42,6 +52,8 @@ export interface FakeOpRow {
   traceId: string | null;
   burnedResidue: number | null;
   burnedRake: number | null;
+  /** C2：epoch ms（`currency_ops.created_at`；对账窗口过滤用）。 */
+  createdAt: number;
 }
 
 export interface FakeFlowRow {
@@ -65,6 +77,32 @@ export interface FakeSkipRow {
   feeAmount: number;
   reason: string;
   traceId: string | null;
+  /** C2：epoch ms（`created_at`；对账窗口过滤用）。 */
+  createdAt: number;
+}
+
+/** C2：对局记录行（ddz/pdk 共用形状；字段名与 SQL 列对齐）。 */
+export interface FakeRecordRow {
+  recordId: number;
+  gameType: 'doudizhu' | 'paodekuai';
+  roomCode: string;
+  gameVersion: number;
+  mode: string;
+  baseScore: number;
+  /** epoch ms（ddz datetime(3) / pdk bigint 在夹具里统一 number）。 */
+  endedAt: number;
+}
+
+/** C2：记录玩家行。 */
+export interface FakePlayerRow {
+  id: number;
+  recordId: number;
+  seat: number;
+  userId: string | null;
+  isRobot: boolean;
+  robotId: string | null;
+  moneyDelta: number | null;
+  scoreChange: number;
 }
 
 /** 记牌器收费片：`card_counter_purchases` 行（购买服务的断言面）。 */
@@ -117,6 +155,9 @@ interface Scratch {
   purchases: FakePurchaseRow[];
   entitlements: Map<string, FakeEntitlementRow>;
   consumptions: FakeConsumptionRow[];
+  records: FakeRecordRow[];
+  players: FakePlayerRow[];
+  skips: FakeSkipRow[];
   nextOpId: number;
   nextFlowId: number;
   nextPurchaseId: number;
@@ -222,12 +263,19 @@ export class FakeCurrencyDb {
   registeredUsers = new Set<string>();
   /** 本片 T3：`currency_entry_fee_skips` 的行表（skip 写边的落行断言面；直写非事务）。 */
   skips: FakeSkipRow[] = [];
+  /** C2：对局记录/玩家行（记录对账的读面；只读，不参与 apply 事务）。 */
+  records: FakeRecordRow[] = [];
+  players: FakePlayerRow[] = [];
+  nextRecordId = 1;
+  nextPlayerId = 1;
   /** 记牌器收费片：三张新表的行表（事务 scratch 写回；回滚 = 丢弃 scratch）。 */
   purchases: FakePurchaseRow[] = [];
   entitlements = new Map<string, FakeEntitlementRow>();
   consumptions: FakeConsumptionRow[] = [];
   /** 每次 `transaction()` 一条，按调用序；`committed=false` = 走了回滚路径。 */
   txLog: Array<{ statements: Statement[]; committed: boolean }> = [];
+  /** C2：显式隔离级别（`transaction('REPEATABLE READ', cb)` 的记录面）。 */
+  txIsolations: string[] = [];
   /** 每条语句处理**之前**的注入钩子（null = 无注入）。 */
   beforeStatement: ((sql: string, params: unknown[], session: FakeSession) => void) | null = null;
 
@@ -241,6 +289,13 @@ export class FakeCurrencyDb {
   directFailuresRemaining = 0;
   /** T8 注入面：非 null ⇒ 下一条直读 query 挂起（返回该 promise），由用例放行（在途一轮）。 */
   private heldDirect: Promise<unknown> | null = null;
+  /**
+   * C2 注入面：匹配该正则的**下一条事务语句**直接 reject（每次消一个）——
+   * 「查询抛 ⇒ 整轮失败，但 finally 仍复位会话变量」的判别面。
+   */
+  failNextTxQueryMatching: RegExp | null = null;
+  /** C2：与 `failNextTxQueryMatching` 配套的自定义错误（缺表 1146 等形态）。 */
+  failNextTxQueryError: Error | null = null;
 
   private nextOpId = 1;
   private nextFlowId = 1;
@@ -263,8 +318,17 @@ export class FakeCurrencyDb {
 
   /** 直接种入「胜者已提交」的 ops+flows（撞键用例构造并发胜者）。 */
   seedCommittedOp(
-    op: { actionId: string; requestHash: string; source?: string },
-    flows: Array<{ ownerId: string; ownerType?: string; delta: number; balanceAfter: number }>,
+    op: {
+      actionId: string;
+      requestHash: string;
+      source?: string;
+      gameType?: string | null;
+      refId?: string | null;
+      burnedResidue?: number | null;
+      burnedRake?: number | null;
+      createdAt?: number;
+    },
+    flows: Array<{ ownerId: string; ownerType?: string; delta: number; balanceAfter?: number }>,
   ): number {
     const opId = this.nextOpId++;
     this.ops.push({
@@ -272,13 +336,14 @@ export class FakeCurrencyDb {
       actionId: op.actionId,
       requestHash: op.requestHash,
       source: op.source ?? 'admin_adjust',
-      gameType: null,
+      gameType: op.gameType ?? null,
       actor: 'admin',
       reason: 'seed',
-      refId: null,
+      refId: op.refId ?? null,
       traceId: null,
-      burnedResidue: null,
-      burnedRake: null,
+      burnedResidue: op.burnedResidue ?? null,
+      burnedRake: op.burnedRake ?? null,
+      createdAt: op.createdAt ?? Date.now(),
     });
     for (const flow of flows) {
       this.flows.push({
@@ -287,10 +352,68 @@ export class FakeCurrencyDb {
         ownerId: flow.ownerId,
         ownerType: flow.ownerType ?? 'user',
         delta: flow.delta,
-        balanceAfter: flow.balanceAfter,
+        balanceAfter: flow.balanceAfter ?? 0,
       });
     }
     return opId;
+  }
+
+  /** C2：种一条记录 + 玩家行（统一夹具；返回 recordId）。 */
+  seedRecord(input: {
+    gameType: 'doudizhu' | 'paodekuai';
+    roomCode: string;
+    gameVersion: number;
+    mode?: string;
+    baseScore?: number;
+    endedAt: number;
+    players: Array<{
+      seat: number;
+      userId?: string | null;
+      isRobot?: boolean;
+      robotId?: string | null;
+      moneyDelta?: number | null;
+      scoreChange?: number;
+    }>;
+  }): number {
+    const recordId = this.nextRecordId++;
+    this.records.push({
+      recordId,
+      gameType: input.gameType,
+      roomCode: input.roomCode,
+      gameVersion: input.gameVersion,
+      mode: input.mode ?? 'gold',
+      baseScore: input.baseScore ?? 15,
+      endedAt: input.endedAt,
+    });
+    for (const player of input.players) {
+      this.players.push({
+        id: this.nextPlayerId++,
+        recordId,
+        seat: player.seat,
+        userId: player.userId ?? null,
+        isRobot: player.isRobot ?? false,
+        robotId: player.robotId ?? null,
+        moneyDelta: player.moneyDelta ?? null,
+        scoreChange: player.scoreChange ?? 0,
+      });
+    }
+    return recordId;
+  }
+
+  /** C2：种一条台费免单行。 */
+  seedSkip(input: { roomCode: string; ownerId: string; gameType?: string; createdAt: number }): void {
+    this.skips.push({
+      id: this.nextSkipId++,
+      roomCode: input.roomCode,
+      ownerId: input.ownerId,
+      seat: null,
+      gameType: input.gameType ?? 'doudizhu',
+      baseScore: 15,
+      feeAmount: 1,
+      reason: 'insufficient_funds',
+      traceId: null,
+      createdAt: input.createdAt,
+    });
   }
 
   /** 树到 `ApplyService` / `GetService` / `ReconcileService` 构造函数第一参的形状（测试里 `as unknown as DataSource`）。 */
@@ -323,6 +446,7 @@ export class FakeCurrencyDb {
         this.skips.push({
           id: this.nextSkipId++,
           roomCode, ownerId, seat, gameType, baseScore, feeAmount, reason, traceId,
+          createdAt: Date.now(),
         });
         return Promise.resolve({ affectedRows: 1 });
       }
@@ -423,10 +547,17 @@ export class FakeCurrencyDb {
       return Promise.reject(new Error(`FakeCurrencyDb 未识别的直读 SQL（读路径/对账不得用它）：${sql}`));
     },
     transaction: async <T>(
-      cb: (manager: {
+      isolationOrCb:
+        | string
+        | ((manager: {
+            query: (sql: string, params?: unknown[]) => Promise<unknown>;
+          }) => Promise<T>),
+      maybeCb?: (manager: {
         query: (sql: string, params?: unknown[]) => Promise<unknown>;
       }) => Promise<T>,
     ): Promise<T> => {
+      const cb = (typeof isolationOrCb === 'function' ? isolationOrCb : maybeCb)!;
+      if (typeof isolationOrCb === 'string') this.txIsolations.push(isolationOrCb);
       const scratch: Scratch = {
         accounts: new Map([...this.accounts].map(([ownerId, a]) => [ownerId, { ...a }])),
         ops: [...this.ops],
@@ -434,6 +565,9 @@ export class FakeCurrencyDb {
         purchases: [...this.purchases],
         entitlements: new Map([...this.entitlements].map(([ownerId, e]) => [ownerId, { ...e }])),
         consumptions: [...this.consumptions],
+        records: [...this.records],
+        players: [...this.players],
+        skips: [...this.skips],
         nextOpId: this.nextOpId,
         nextFlowId: this.nextFlowId,
         nextPurchaseId: this.nextPurchaseId,
@@ -458,6 +592,9 @@ export class FakeCurrencyDb {
       this.purchases = scratch.purchases;
       this.entitlements = scratch.entitlements;
       this.consumptions = scratch.consumptions;
+      this.records = scratch.records;
+      this.players = scratch.players;
+      this.skips = scratch.skips;
       this.nextOpId = scratch.nextOpId;
       this.nextFlowId = scratch.nextFlowId;
       this.nextPurchaseId = scratch.nextPurchaseId;
@@ -475,6 +612,12 @@ export class FakeCurrencyDb {
     record: { statements: Statement[]; committed: boolean },
   ): Promise<unknown> {
     record.statements.push({ sql, params: [...params] });
+    if (this.failNextTxQueryMatching !== null && this.failNextTxQueryMatching.test(sql)) {
+      this.failNextTxQueryMatching = null;
+      const err = this.failNextTxQueryError ?? new Error('db down（事务查询仿真）');
+      this.failNextTxQueryError = null;
+      return Promise.reject(err);
+    }
     // 代理钩子的保存点（2026-10-26）：假库不仿真回滚，只把语句记入序列；
     // 保存点的真实回滚/毒化语义由 conformance slice-30 真 MySQL 判。
     if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)\b/.test(sql)) {
@@ -505,6 +648,7 @@ export class FakeCurrencyDb {
         traceId: (params[7] ?? null) as string | null,
         burnedResidue: (params[8] ?? null) as number | null,
         burnedRake: (params[9] ?? null) as number | null,
+        createdAt: Date.now(),
       });
       return Promise.resolve({ insertId: id, affectedRows: 1 });
     }
@@ -691,6 +835,122 @@ export class FakeCurrencyDb {
       if (row === undefined || row.credits <= 0) return Promise.resolve({ affectedRows: 0 });
       row.credits -= 1;
       return Promise.resolve({ affectedRows: 1 });
+    }
+    // ── C2：记录对账（只读；keyset 分页；DATETIME 绑 Date / PDK BIGINT 绑 number）──
+    if (/^SET SESSION (max_execution_time|lock_wait_timeout|innodb_lock_wait_timeout) =/.test(sql)) {
+      return Promise.resolve({ affectedRows: 0 });
+    }
+    if (sql === RECORDS_RECONCILE_OPS_SQL) {
+      const [from, to, lastId, pageSize] = params as [Date, Date, number, number];
+      const fromMs = from.getTime();
+      const toMs = to.getTime();
+      return Promise.resolve(
+        scratch.ops
+          .filter(
+            (op) =>
+              (op.source === 'game_settle' || op.source === 'entry_fee') &&
+              op.createdAt >= fromMs &&
+              op.createdAt < toMs &&
+              op.id > lastId,
+          )
+          .sort((a, b) => a.id - b.id)
+          .slice(0, pageSize)
+          .map((op) => ({
+            // BIGINT 经 TypeORM/mysql2 默认回来是字符串（faithful；实现侧自己 Number）。
+            id: String(op.id),
+            action_id: op.actionId,
+            ref_id: op.refId,
+            source: op.source,
+            game_type: op.gameType,
+            created_at: new Date(op.createdAt),
+            burned_residue: op.burnedResidue,
+            burned_rake: op.burnedRake,
+          })),
+      );
+    }
+    if (sql === RECORDS_RECONCILE_FLOWS_SQL) {
+      const [from, to, lastId, pageSize] = params as [Date, Date, number, number];
+      const fromMs = from.getTime();
+      const toMs = to.getTime();
+      const opById = new Map(scratch.ops.map((op) => [op.id, op]));
+      return Promise.resolve(
+        scratch.flows
+          .filter((flow) => {
+            const op = opById.get(flow.opId);
+            return (
+              op !== undefined &&
+              (op.source === 'game_settle' || op.source === 'entry_fee') &&
+              op.createdAt >= fromMs &&
+              op.createdAt < toMs &&
+              flow.id > lastId
+            );
+          })
+          .sort((a, b) => a.id - b.id)
+          .slice(0, pageSize)
+          .map((flow) => ({
+            id: String(flow.id),
+            op_id: String(flow.opId),
+            owner_id: flow.ownerId,
+            owner_type: flow.ownerType,
+            delta: flow.delta,
+          })),
+      );
+    }
+    if (sql === RECORDS_RECONCILE_DDZ_SQL || sql === RECORDS_RECONCILE_PDK_SQL) {
+      const isPdk = sql === RECORDS_RECONCILE_PDK_SQL;
+      const [from, to, lastId, pageSize] = params as [Date | number, Date | number, number, number];
+      const fromMs = from instanceof Date ? from.getTime() : Number(from);
+      const toMs = to instanceof Date ? to.getTime() : Number(to);
+      // 按 recordId 建索引（真 DB 是 JOIN 索引；逐记录全表扫玩家会把基准测成 O(记录×玩家)）。
+      const playersByRecord = new Map<number, FakePlayerRow[]>();
+      for (const player of scratch.players) {
+        const list = playersByRecord.get(player.recordId) ?? [];
+        list.push(player);
+        playersByRecord.set(player.recordId, list);
+      }
+      const rows: Array<Record<string, unknown>> = [];
+      for (const record of scratch.records) {
+        if (record.gameType !== (isPdk ? 'paodekuai' : 'doudizhu')) continue;
+        if (record.endedAt < fromMs || record.endedAt >= toMs) continue;
+        for (const player of playersByRecord.get(record.recordId) ?? []) {
+          if (player.id <= lastId) continue;
+          rows.push({
+            // BIGINT（p.id / r.id）与 PDK ended_at 都按 faithful 形态返回字符串。
+            player_id: String(player.id),
+            record_id: String(record.recordId),
+            room_code: record.roomCode,
+            game_version: record.gameVersion,
+            ...(isPdk ? { game_type: record.gameType } : {}),
+            mode: record.mode,
+            base_score: record.baseScore,
+            ended_at: isPdk ? String(record.endedAt) : new Date(record.endedAt),
+            user_id: player.userId,
+            is_robot: player.isRobot ? 1 : 0,
+            robot_id: player.robotId,
+            money_delta: player.moneyDelta,
+            score_change: player.scoreChange,
+          });
+        }
+      }
+      rows.sort((a, b) => Number(a['player_id']) - Number(b['player_id']));
+      return Promise.resolve(rows.slice(0, pageSize));
+    }
+    if (sql === RECORDS_RECONCILE_SKIPS_SQL) {
+      const [from, to, lastId, pageSize] = params as [Date, Date, number, number];
+      const fromMs = from.getTime();
+      const toMs = to.getTime();
+      return Promise.resolve(
+        scratch.skips
+          .filter((s) => s.createdAt >= fromMs && s.createdAt < toMs && s.id > lastId)
+          .sort((a, b) => a.id - b.id)
+          .slice(0, pageSize)
+          .map((s) => ({
+            id: String(s.id),
+            room_code: s.roomCode,
+            owner_id: s.ownerId,
+            game_type: s.gameType,
+          })),
+      );
     }
     return Promise.reject(new Error(`FakeCurrencyDb 未识别的 SQL：${sql}`));
   }

@@ -41,6 +41,14 @@ import { routeClientMessage, type RouterDeps } from './message.router';
 import { RoomStartService } from '../rooms/rooms.start';
 // 昵称片：第 13 个构造依赖（值导入 —— DI 元数据要用运行期类引用）。
 import { RoomNicknamesService } from '../rooms/room-nicknames.service';
+// C1：第 14 个构造依赖（写前入箱 / CAS ack）；值导入（DI 元数据要用运行期类引用）。
+import {
+  RecordConflictError,
+  RecordOutboxService,
+  RecordWriteAttemptError,
+  recordOutboxField,
+  type RecordOutboxEnqueueResult,
+} from './record-outbox.service';
 // ② 金币场 T4（DI 陷阱纪律：以下两个都必须**值导入** —— 构造函数参数的类型元数据
 // 要用运行期类引用；`import type` 会让元数据变成 undefined ⇒ 真容器启动即崩，
 // 而单测直接 `new WsGateway(...)` 全绿看不见，由 `ws.module.wiring.test.ts` 钉住）：
@@ -222,6 +230,12 @@ export function currentTurnPayload(view: GameView): { seat: number; timeoutMs: n
   };
 }
 
+/** C1：prepare 阶段的产物（组装好的请求 + 入箱结果）。 */
+interface PreparedRecord {
+  request: RecordWriteRequest;
+  enqueue: RecordOutboxEnqueueResult;
+}
+
 /**
  * room-service 的 socket.io 网关 —— **唯一**允许 `emit` 到 `/ws/ddz` 的服务（§4.1）。
  *
@@ -302,6 +316,11 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
      * `toHaveLength(13)` 与下标身份由 `ws.module.wiring.test.ts` 钉住。
      */
     private readonly nicknames: RoomNicknamesService,
+    /**
+     * C1：第 14 个参数 —— 记录补偿队列（写前入箱 + CAS ack）。
+     * `toHaveLength(14)` 与下标身份由 `ws.module.wiring.test.ts` 钉住。
+     */
+    private readonly recordOutbox: RecordOutboxService,
   ) {
     this.game = game;
     this.robot = robot;
@@ -1121,7 +1140,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       botBySeat,
     });
 
-    // ③ 记录组装 + 投递。跳过判据一（设计 D1 写死）：`!record || !version` ⇒ 跳过 + WARN
+    // ③ 记录组装 + 写前入箱 + 投递。跳过判据一（设计 D1 写死）：`!record || !version` ⇒ 跳过 + WARN
     //    —— `notifyRoomEnded` 路径两者都缺，天然覆盖；旧会话窗口由 T3 的守卫保证「不附 record」。
     if (!event.record || !event.version) {
       this.logger.warn(
@@ -1129,15 +1148,40 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       );
       return;
     }
+    let prepared: PreparedRecord | null = null;
     try {
       const botNicknames = await botNicknamesPromise;
-      await this.writeGameRecord(event, event.record, result, botBySeat, botNicknames, endedAt);
+      prepared = await this.prepareRecord(
+        event,
+        event.record,
+        result,
+        botBySeat,
+        botNicknames,
+        endedAt,
+      );
     } catch (err) {
-      // 失败姿态（设计 D2）：单次尝试失败即丢该局记录（无重试）—— 响亮（error）不静默，
-      // 后果并入台账「已接受窗口」；**广播不受影响**（它早已同步发出）。
-      const gameType = this.resolveGameEventType(event);
-      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'record' });
-      this.logger.error(`Record write failed for room ${event.roomCode}: ${String(err)}`);
+      // 组装期异常 = 没有可入箱/可直投的请求 ⇒ 永久丢失；settle 已派发，互不影响。
+      incGame(recordWriteFailuresTotal, this.resolveGameEventType(event), 1, { kind: 'record_lost' });
+      this.logger.error(
+        `Record write failed for room ${event.roomCode} — record lost (prepare error): ${String(err)}`,
+      );
+      return;
+    }
+    if (!prepared) return;
+    try {
+      await this.deliverRecord(prepared);
+    } catch (err) {
+      // C1：owned = 条目已 durable 入箱（queued/existing）；否则 conflict/unavailable ⇒ 永久丢失。
+      const owned = err instanceof RecordWriteAttemptError ? err.owned : false;
+      incGame(recordWriteFailuresTotal, this.resolveGameEventType(event), 1, {
+        kind: owned ? 'record' : 'record_lost',
+      });
+      const suffix = owned
+        ? 'queued for retry (record:outbox)'
+        : 'record lost (outbox unavailable/conflict)';
+      this.logger.error(
+        `Record write failed for room ${event.roomCode} — ${suffix}: ${String(err)}`,
+      );
     }
   }
 
@@ -1173,14 +1217,14 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
    * 跳过判据二/三（⇒ WARN、**不调 client**）：房间数据缺失（房键 TTL 窗口）；
    * 形状不符（座位数与信封不符 —— 设计 D1 逐字）。
    */
-  private async writeGameRecord(
+  private async prepareRecord(
     event: GameEvent,
     record: RecordEnvelope,
     result: SettlementResult | undefined,
     botBySeat: ReadonlyMap<number, string>,
     botNicknames: Readonly<Record<string, string>>,
     endedAt: number,
-  ): Promise<void> {
+  ): Promise<PreparedRecord | null> {
     // ── 跳过判据二：房间数据缺失（房键已过期 —— 已接受窗口，台账登记）────────────
     const room = await this.roomsService.findOne(event.roomCode);
     if (!room) {
@@ -1188,7 +1232,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       this.logger.warn(
         `Record write skipped for room ${event.roomCode}: room data missing (room keys expired — TTL window)`,
       );
-      return;
+      return null;
     }
 
     // ── 跳过判据三：形状不符（座位数与信封不符；`result` 缺失同族 —— 无法组装即跳过）──
@@ -1217,7 +1261,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       this.logger.warn(
         `Record write skipped for room ${event.roomCode}: game.ended shape mismatch (seats/result vs room data)`,
       );
-      return;
+      return null;
     }
 
     const seatByNumber = new Map(roomSeats.map((seat) => [seat.seat, seat]));
@@ -1263,10 +1307,63 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       endedAt,
     };
 
-    const written = await this.record.write(request);
-    this.logger.log(
-      `Record written for room ${event.roomCode} (version ${event.version}, written=${String(written)})`,
-    );
+    let enqueue: RecordOutboxEnqueueResult;
+    try {
+      enqueue = await this.recordOutbox.enqueue(request);
+    } catch (err) {
+      // 纵深防御（enqueue 契约上不抛）：仍然直投；这条按 unavailable 记。
+      this.logger.error(
+        `Record outbox enqueue threw for room ${event.roomCode} (version ${event.version}): ${String(err)}`,
+      );
+      enqueue = { status: 'unavailable' };
+    }
+    return { request, enqueue };
+  }
+
+  /**
+   * C1：投递已入箱的请求。
+   *
+   * - conflict（N51 同 field 不同载荷）⇒ 不直投（否则会抢接收侧唯一键、静默丢旧局）；
+   * - write 的 `true`/`false` 都算成功；仅 queued/existing 且 CAS ack 成功才删除；
+   * - 失败抛 `RecordWriteAttemptError(original, owned)`，由 `finalizeRoomEnd` 记指标/日志。
+   */
+  private async deliverRecord(prepared: PreparedRecord): Promise<void> {
+    const { request, enqueue } = prepared;
+    if (enqueue.status === 'conflict') {
+      throw new RecordConflictError(
+        recordOutboxField(request),
+        enqueue.existingEndedAt ?? 0,
+        request.endedAt,
+      );
+    }
+    const owned = enqueue.status === 'queued' || enqueue.status === 'existing';
+    try {
+      const written = await this.record.write(request);
+      if (owned) {
+        // 纵深防御：ack 合同上不抛；若意外抛，已成功的写入不得被计成失败。
+        try {
+          const removed = await this.recordOutbox.ack(recordOutboxField(request), enqueue.raw!);
+          if (!removed) {
+            this.logger.warn(
+              `Record outbox ack skipped for room ${request.roomCode} (version ${request.gameVersion}; entry changed or already removed)`,
+            );
+          }
+        } catch (ackErr) {
+          this.logger.warn(
+            `Record outbox ack threw for room ${request.roomCode} (version ${request.gameVersion}): ${String(ackErr)}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `Record outbox unavailable for room ${request.roomCode} (version ${request.gameVersion}); record written without durable backup`,
+        );
+      }
+      this.logger.log(
+        `Record written for room ${request.roomCode} (version ${request.gameVersion}, written=${String(written)})`,
+      );
+    } catch (err) {
+      throw new RecordWriteAttemptError(err, owned);
+    }
   }
 
   /**

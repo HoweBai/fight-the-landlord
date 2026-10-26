@@ -30,7 +30,8 @@ describe('EntryFeeSkipService（本片：INSERT IGNORE / affectedRows 0/1 / {ins
 
     await expect(svc.record(REQ)).resolves.toEqual({ ok: true, data: { inserted: true } });
     expect(db.skips).toEqual([
-      { id: 1, roomCode: 'ABC123', ownerId: 'u-1', seat: 1, gameType: 'doudizhu', baseScore: 15, feeAmount: 1, reason: 'insufficient_funds', traceId: null },
+      // C2 起夹具行带 createdAt（对账窗口过滤面；写边仍由 DB 默认值填）。
+      { id: 1, roomCode: 'ABC123', ownerId: 'u-1', seat: 1, gameType: 'doudizhu', baseScore: 15, feeAmount: 1, reason: 'insufficient_funds', traceId: null, createdAt: expect.any(Number) },
     ]);
 
     await expect(svc.record(REQ)).resolves.toEqual({ ok: true, data: { inserted: false } });
