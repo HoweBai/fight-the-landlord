@@ -1097,7 +1097,8 @@ export async function runSlice17(): Promise<Checks> {
       '⑧b 垫资 OWNER_BURN_B +100',
     );
 
-    // ① 带 burn：用户示例局（−25/+12/+12，残差 1）⇒ ok + 两列落库
+    // ① 带 burn：用户示例局（−25/+12/+12，残差 1）的手工 burn 载荷 ⇒ ok + 两列落库
+    //    （2026-10-26 起结算算法不再产生该残差——本组只测 burn 协议，与分配算法无关）
     const b1Aid = AID('burn-1');
     const b1 = expectApplyOk(
       await rpcApply({

@@ -615,23 +615,24 @@ interface SettleRecount {
   expected: number[];
   /** 输光截断前的应付池 `P`。 */
   pool: number;
-  /** `P − Σg`（∈ [0, 赢家数)）。 */
+  /** `P − Σ最终 g`（新口径恒 0；非 0 即实现回归）。 */
   residue: number;
-  /** 赢家数（residue 的上界用）。 */
+  /** 赢家数（诊断用）。 */
   winners: number;
   rakeTotal: number;
 }
 
 /**
- * 期望 delta 复算（规格 §4 公式**逐字**）：
+ * 期望 delta 复算（规格 2026-10-26 最大余数法）：
  * ```
  * raw[i]   = seat i 是 landlord ? landlordScoreChange : farmerScoreChange
  * 输家:  pay = min(−raw, 结算前余额);  delta = −pay;  P += pay
- * 赢家:  g = floor(raw × P / Σraw[赢家]);  rake = floor(g × rakePercent / 100);  delta = g − rake
- * residue = P − Σg
+ * 赢家:  g = floor(raw × P / Σraw[赢家]);  frac = raw × P − g × Σraw
+ *        R = P − Σg ⇒ 按 frac 降序、座位升序前 R 名各 +1
+ *        rake = floor(最终 g × rakePercent / 100);  delta = 最终 g − rake
+ * residue = P − Σ最终 g（恒 0）
  * ```
- * **不直断「和 = 0」**（炸弹局会因机器人侧截断产生残差）：族内恒等式是
- * `Σdelta = −(residue + rakeTotal)`。
+ * **不直断「和 = 0」**（有抽水时恒等式是 `Σdelta = −(residue + rakeTotal)`）。
  */
 function recountSettlement(
   s: SettlementWire,
@@ -653,12 +654,26 @@ function recountSettlement(
   const rawWinSum = winnerIdx.reduce((acc, i) => acc + raw[i]!, 0);
   let gainedSum = 0;
   let rakeTotal = 0;
-  for (const i of winnerIdx) {
-    const gain = Math.floor((raw[i]! * pool) / rawWinSum);
-    const rake = Math.floor((gain * rakePercent) / 100);
-    expected[i] = gain - rake;
-    gainedSum += gain;
-    rakeTotal += rake;
+  if (winnerIdx.length > 0 && rawWinSum > 0) {
+    // 最大余数法（2026-10-26 spec D1/D2/D4）：零头分给赢家；抽水基数 = 最终所得。
+    const bigS = BigInt(rawWinSum);
+    const bigPool = BigInt(pool);
+    const rows = winnerIdx.map((i) => {
+      const num = BigInt(raw[i]!) * bigPool;
+      return { i, gain: num / bigS, frac: num % bigS };
+    });
+    const remainder = pool - rows.reduce((acc, r) => acc + Number(r.gain), 0);
+    const byFraction = [...rows].sort((a, b) =>
+      a.frac === b.frac ? a.i - b.i : a.frac > b.frac ? -1 : 1,
+    );
+    for (let k = 0; k < remainder; k += 1) byFraction[k]!.gain += 1n;
+    for (const r of rows) {
+      const gain = Number(r.gain);
+      const rake = Math.floor((gain * rakePercent) / 100);
+      expected[r.i] = gain - rake;
+      gainedSum += gain;
+      rakeTotal += rake;
+    }
   }
   return { expected, pool, residue: pool - gainedSum, winners: winnerIdx.length, rakeTotal };
 }
@@ -784,9 +799,9 @@ async function assertGoldGame(
 ): Promise<SettleRecount> {
   const recount = recountSettlement(ev.settlement, ev.preBalances, expectedRakePercent);
   checks.that(
-    recount.residue >= 0 && recount.residue < recount.winners,
-    `${what}：残差落在 [0, 赢家数)（residue=${recount.residue}，赢家 ${recount.winners}）—— 复算口径：` +
-      `P=${recount.pool} − Σg；炸弹局的机器人侧截断会在机器人赢时产生残差`,
+    recount.residue === 0,
+    `${what}：新口径残留应恒 0（residue=${recount.residue}）—— 口径：` +
+      `P=${recount.pool} − Σ最终 g（最大余数法，零头已分给赢家）`,
   );
   const expectedSum = recount.expected.reduce((a, b) => a + b, 0);
   // 本式 = 复算**自检**（抓复算笔误），非产品判据；产品判别力由同函数逐座（game.balances 差）/
@@ -1305,7 +1320,7 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // F 抽水
     // ══════════════════════════════════════════════════════════════════════
-    step('F：rakePercent=10 → 再打一局（同 E 口径）→ 赢家实收 = g − floor(g×10/100)、entries 和 = −(抽水+残差) → 复原 0');
+    step('F：rakePercent=10 → 再打一局（同 E 口径）→ 赢家实收 = finalGain − floor(finalGain×10/100)（finalGain 含分得的零头）、entries 和 = −(抽水+残差) → 复原 0');
     // ③ T5（写桶扩边：X-Admin 且非 GET ⇒ POST adjust 也计数）之后，本片的令牌写预算
     // 在快速机器上会贴边 30/5 分钟（机制复现：第 31 笔 ⇒ 429）⇒ F/G 两段换新令牌续跑。
     // ⚠️ 这不是放宽判据：换令牌后每段写量（≈12）仍受**同一条桶规则**约束。
