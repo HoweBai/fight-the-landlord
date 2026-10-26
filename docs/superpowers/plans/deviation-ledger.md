@@ -702,17 +702,17 @@
 
 ## 6. B 组（2026-10-26）
 
-- **slice-33 / 全量真栈**：**部分关闭（GitHub 轮进行中）** —— 2026-10-26 合并
-  `origin/dev@ccc4efd6`（代理分润 39 提交）后，dev 已占 `slice-32` ⇒ B 片顺延
-  `slice-33-pdk-risk-gold`；config 种子迁移因 `1796900000000` 撞号改号
-  `1797000000006-PdkRiskPlayerCountSeed`。本机 Docker 不可用，按用户裁决改在
-  GitHub Actions 跑真栈：首轮 `40259979512` 在起栈阶段发现 slice-33 管理写桶
-  （`ADMIN_WRITE` 30/5min 按令牌指纹）可预见红，主动取消并修复 `b23f7a95`
-  （写段重登换令牌 + 起手 61s 清 IP 桶）；次轮 run `40260432256`（47m58s）
-  **唯一红点 = dev 的 `slice-32-agent`** 硬编码 94 键（合并后 101）；B 相关
-  slice-16/18/20/24/29/31/33 全绿，slice-33 实测 **60/60**。修复 `69d9c74b`
-  （代理片改 `CONFIG_KEYS.length`；slice-16 基线 87→91）；重跑 run
-  `40264759914` 结果待回填。
+- **slice-33 / 全量真栈**：**已关闭**（2026-10-26 GitHub Actions run
+  `40264759914` 成功，51m5s，38/38 切片 exit 0，baseline 全部 ≥ 下限；
+  B 相关实测 slice-16 91 / 18 151 / 20 181 / 24 225 / 29 117 / 31 59 /
+  32-agent 137 / 33 60）。合并 `origin/dev@ccc4efd6`（代理分润 39 提交）后，
+  dev 已占 `slice-32` ⇒ B 片顺延 `slice-33-pdk-risk-gold`；config 种子迁移因
+  `1796900000000` 撞号改号 `1797000000006-PdkRiskPlayerCountSeed`。本机 Docker
+  不可用，按用户裁决改在 GitHub Actions 跑真栈：首轮 `40259979512` 在起栈阶段
+  发现 slice-33 管理写桶（`ADMIN_WRITE` 30/5min 按令牌指纹）可预见红，主动取消
+  并修复 `b23f7a95`（写段重登换令牌 + 起手 61s 清 IP 桶）；次轮 `40260432256`
+  唯一红点 = dev 的 `slice-32-agent` 硬编码 94 键（合并后 101），修复 `69d9c74b`
+  （代理片改 `CONFIG_KEYS.length`；slice-16 基线 87→91）后重跑全绿。
   真 MySQL 迁移 up/down 由临时 workflow（MySQL 8 service）run `40260576734` **成功**：
   config `1797000000006` 与 user `1797000000005` 均 up/down/up/down 通过；
   临时 workflow/脚本已删除（`59dc9490`）。

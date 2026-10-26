@@ -49,20 +49,21 @@
   94 键（合并后 101）；其余 37 片全绿。B 相关实测：slice-16 **91**、18 **151**、
   20 **181**、24 **225**、29 **117**、31 **59**、33 **60/60（129.5s）**。
   修复 `69d9c74b`（代理片改用 `CONFIG_KEYS.length` / `CLIENT_CONFIG_KEYS.length`；
-  slice-16 基线 87→91）。重跑 run `40264759914`：**结果待回填**。
-- `03dccc10` 已还原 conformance 触发（`push.branches=[master]`），并加入临时迁移 workflow。
-- **最终清理**：迁移 run 完成后删除 `.github/workflows/risk-b-migrations-temp.yml` 与
-  `scripts/temp/`，再跑 `node tools/conformance/dist/run.js slice-07.4-pipeline --render`
-  （必须 80 项）与静态闸。
+  slice-16 基线 87→91）。重跑 run `40264759914`：**成功**（51m5s，38/38 切片
+  exit 0，`baseline 全部 ≥ 下限`；B 相关实测 slice-16 91 / 18 151 / 20 181 /
+  24 225 / 29 117 / 31 59 / 32-agent 137 / 33 60）。临时触发已还原，最终
+  4 个工作流。
+- `03dccc10` 曾还原 conformance 触发并加入临时迁移 workflow；`59dc9490` 已删除
+  临时 workflow/脚本。
+- **最终清理已完成**：最终 4 个工作流；`node tools/conformance/dist/run.js
+  slice-07.4-pipeline --render` 80 项、静态闸全绿。
 
 ## 剩余动作
 
-1. 回填真栈/迁移结果；若 slice-33 实测条数 > 60，按证据上调 `baselines.full['slice-33-pdk-risk-gold']`
-   （只上调）；若红，按 dev-process 修复并重跑全量。
-2. 推送/合并前**先问用户**。建议顺序：B 合 `dev`（已含代理分润）→ 按需合 `master` 跑权威轮。
-3. **不要部署**、不要打 `v*` tag；`game.paodekuai.twoPlayerEnabled` /
+1. 推送/合并前**先问用户**。建议顺序：B 合 `dev`（已含代理分润）→ 按需合 `master` 跑权威轮。
+2. **不要部署**、不要打 `v*` tag；`game.paodekuai.twoPlayerEnabled` /
    `nonThreePlayerEnabled` 保持种子值（生产 2/4 开关不打开）。
-4. 更新 plan 执行记录、deviation-ledger、本交接文档；交付报告给用户。
+3. 交付报告给用户（分支/SHA、迁移与回滚、行为、验证证据、合并顺序）。
 
 ## 已知限制
 
