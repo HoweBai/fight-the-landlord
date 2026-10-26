@@ -20,6 +20,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(resolve(REPO_ROOT, p), 'utf8');
@@ -853,6 +854,88 @@ ok(setStatusBlock !== '' && setStatusBlock.includes('/status'), 'setAgentStatus 
 ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（代理页同纪律）');
 ok(/\.agents-secret\s*\{/.test(css), 'style.css 含 .agents-secret 规则');
 ok(/\.agents-actions\s*\{/.test(css), 'style.css 含 .agents-actions 规则');
+
+/* ── 13. 2026-10-26 代理工作台：单入口 + 页内页签 ───────────────────
+ * 「通用设置 → 代理」叶并入「运营 → 代理」；CONFIG_IA 的 agent 域保留（85 键锚点），
+ * 只删左树叶。防回潮：旧叶/计数三件套零引用 + CFG_NAV↔HTML 双向一致。 */
+for (const gone of ['nav-cfg-agent-btn', 'nav-count-agent']) {
+  ok(!html.includes(gone), `index.html 已移除 ${gone}`);
+  ok(!app.includes(gone), `app.js 已无 ${gone} 引用`);
+}
+const cfgNavBlock = balancedBlock(app, 'const CFG_NAV');
+ok(cfgNavBlock !== '', '找到 CFG_NAV 字面量');
+const cfgNavLeaves = [...cfgNavBlock.matchAll(/leaf:\s*'([^']+)'/g)].map((m) => m[1]);
+const cfgNavCounts = [...cfgNavBlock.matchAll(/count:\s*'([^']+)'/g)].map((m) => m[1]);
+for (const id of [...cfgNavLeaves, ...cfgNavCounts]) {
+  ok(html.includes(`id="${id}"`), `CFG_NAV 的 #${id} 在 index.html 存在`);
+}
+const htmlCfgLeaves = [...html.matchAll(/id="(nav-cfg-[a-z-]+-btn)"/g)].map((m) => m[1]);
+for (const id of htmlCfgLeaves) {
+  ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
+}
+
+const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];
+for (const id of AGENT_TAB_IDS) {
+  ok(html.includes(`id="agent-tab-${id}"`), `index.html 含页签按钮 #agent-tab-${id}`);
+}
+const agentPanelTag = (id) =>
+  new RegExp(`<div\\b[^>]*\\bid="${id}"[^>]*>`).exec(html)?.[0] ?? '';
+for (const id of AGENT_TAB_IDS) {
+  const tag = agentPanelTag(`agent-panel-${id}`);
+  ok(tag !== '', `index.html 含页签面板 #agent-panel-${id}`);
+  if (id === 'list') ok(tag !== '' && !/\bhidden\b/.test(tag), '列表面板初始可见');
+  else ok(tag !== '' && /\bhidden\b/.test(tag), `#agent-panel-${id} 初始 hidden`);
+}
+ok(html.includes('id="ag-invite-row"'), 'index.html 含邀请码行容器 #ag-invite-row');
+
+const agentTabsBlock = balancedBlock(app, 'const AGENT_TABS');
+ok(agentTabsBlock !== '', '找到 AGENT_TABS 字面量');
+let agentTabs = [];
+if (agentTabsBlock !== '') {
+  try {
+    agentTabs = vm.runInNewContext(`(${agentTabsBlock})`);
+  } catch {
+    agentTabs = [];
+  }
+}
+ok(Array.isArray(agentTabs) && agentTabs.length === 6, `AGENT_TABS 恰 6 项（实测 ${agentTabs.length}）`);
+ok(
+  Array.isArray(agentTabs) &&
+    [...agentTabs.map((t) => t.id)].sort().join(',') === [...AGENT_TAB_IDS].sort().join(','),
+  'AGENT_TABS id 集合精确',
+);
+for (const t of agentTabs) {
+  ok(html.includes(`id="${t.btn}"`), `AGENT_TABS 的 #${t.btn} 在 HTML 存在`);
+  ok(html.includes(`id="${t.panel}"`), `AGENT_TABS 的 #${t.panel} 在 HTML 存在`);
+}
+for (const needle of [
+  'function applyAgentTabUI',
+  'function switchAgentTab',
+  'function renderAgentInviteRow',
+  'function ensureConfigSnapshot',
+  'const canWriteConfigKey',
+]) {
+  ok(app.includes(needle), `app.js 含页签针脚 ${JSON.stringify(needle)}`);
+}
+const wireAgentsTabsBlock = functionBody(app, 'function wireAgents');
+ok(wireAgentsTabsBlock.includes('AGENT_TABS'), 'wireAgents 按 AGENT_TABS 绑定页签');
+const resetAgentsBlock = functionBody(app, 'function resetAgents');
+ok(/tab\s*=\s*'list'/.test(resetAgentsBlock), "resetAgents 复位 tab = 'list'");
+ok(/epoch\s*\+=\s*1|epoch\+\+/.test(resetAgentsBlock), 'resetAgents 递增 epoch');
+ok(/roleApplied\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 roleApplied');
+ok(/recon\.armed\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
+ok(/list\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 list.loaded');
+ok(
+  /settingsReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock),
+  'resetAgents 复位 settingsReq.loaded',
+);
+const loadAllBlock = functionBody(app, 'async function loadAll');
+ok(loadAllBlock.includes('renderAgentInviteRow()'), 'loadAll 保存后重建邀请码行');
+ok(loadAllBlock.includes('sessionStorage.getItem(TOKEN_KEY)'), 'loadAll 赋值前校验 token');
+const buildSimpleRowBlock = functionBody(app, 'function buildSimpleRow');
+ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色收权');
+ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
+ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {
