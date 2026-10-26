@@ -4,7 +4,8 @@
 > 最新代码提交：`085a6ba5`（临时触发还原 + 全绿证据）；之后仅文档回填，最终 HEAD 以
 > `git log -1` 为准。
 > 基线：`origin/dev@ccc4efd6`（已含代理分润 39 提交、A1/A2/A3、2/4 人并行工作）
-> 合并：`930936a3`（origin/dev 并入 B 组）
+> 合并：`930936a3`（origin/dev 并入 B 组）；2026-10-26 用户裁决“先合 dev”，
+> `origin/dev` 已 **ff 到 `f242b98b`**（43 提交）。
 > 设计/计划：`docs/superpowers/specs/2026-10-26-pdk-risk-b-design.md`、
 > `docs/superpowers/plans/2026-10-26-pdk-risk-b.md`
 
@@ -62,7 +63,8 @@
 
 ## 剩余动作
 
-1. 推送/合并前**先问用户**。建议顺序：B 合 `dev`（已含代理分润）→ 按需合 `master` 跑权威轮。
+1. **已合 dev**（2026-10-26 用户裁决；`origin/dev` ff 到 `f242b98b`）。master 未合、
+   未部署、未打 tag；后续按用户裁决决定是否合 master 跑权威轮。
 2. **不要部署**、不要打 `v*` tag；`game.paodekuai.twoPlayerEnabled` /
    `nonThreePlayerEnabled` 保持种子值（生产 2/4 开关不打开）。
 3. 交付报告给用户（分支/SHA、迁移与回滚、行为、验证证据、合并顺序）。

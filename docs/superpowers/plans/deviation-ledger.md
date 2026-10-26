@@ -717,6 +717,7 @@
   config `1797000000006` 与 user `1797000000005` 均 up/down/up/down 通过；
   临时 workflow/脚本已删除（`59dc9490`）。
   合并后计数并集：protocol 101 键、active/IA 85、CONFIG_NOTES 85、简单控件 80。
+  **2026-10-26 用户裁决先合 dev：`origin/dev` 已 ff 到 `f242b98b`；master 未合、未部署。**
 - **机器人低档房资金水位**：**仍开放** —— 规划期已核对：bot 按全局最高档
   `max(baseScoreLevels) × entryMultiplier` 充值，低档房人类可从 bot 提取其全部余额；
   与 DDZ 同构，B 组按 D29 不改，经济面/反洗钱另立片。
