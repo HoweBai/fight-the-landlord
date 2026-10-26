@@ -475,6 +475,11 @@ export class FakeCurrencyDb {
     record: { statements: Statement[]; committed: boolean },
   ): Promise<unknown> {
     record.statements.push({ sql, params: [...params] });
+    // 代理钩子的保存点（2026-10-26）：假库不仿真回滚，只把语句记入序列；
+    // 保存点的真实回滚/毒化语义由 conformance slice-30 真 MySQL 判。
+    if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)\b/.test(sql)) {
+      return Promise.resolve({ affectedRows: 0 });
+    }
     this.beforeStatement?.(sql, params, {
       accounts: scratch.accounts,
       purchases: scratch.purchases,

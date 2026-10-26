@@ -71,6 +71,14 @@ export const ADMIN_ACTOR_HEADER = 'x-admin-actor';
 export const ADMIN_ROLE_HEADER = 'x-admin-roles';
 
 /**
+ * 代理门户身份（2026-10-26）：`AgentAuthMiddleware` 验完代理令牌后注入；
+ * 与 `X-Admin` 同一条纪律 —— 客户端伪造值在验签**之前**剥掉。
+ * `x-agent-ver` = JWT 的 `ver`（currency-service 的 AgentGuard 与 DB token_version 比对）。
+ */
+export const AGENT_ID_HEADER = 'x-agent-id';
+export const AGENT_VER_HEADER = 'x-agent-ver';
+
+/**
  * ③ T5（规格 §2.10「登录路径 clientIp 注入」）：客户端 IP 头 —— **仅** `/api/admin/login`
  * 路径由 `headersOf()` 产出（值由网关从 socket/`req.ip` + 可信表**派生**，不读客户端值；
  * 登录事件落 `ip` 列用它）。R31 的 `X-Token-Jti` 纪律复刻：只服务一条路径，不得扩散成
@@ -134,6 +142,9 @@ export interface DownstreamHeaders {
    */
   adminActor?: string;
   adminRole?: string;
+  /** 代理门户（2026-10-26）：仅 `/api/agent/*`（非 login）由 `headersOf()` 产出。 */
+  agentId?: string;
+  agentVer?: string;
   /**
    * ③ T5：客户端 IP —— **仅** `/api/admin/login` 路径产出（`isAdminLoginPath` 判定，
    * 见 `CLIENT_IP_HEADER` 的纪律说明）；`forward()` 映射回 `X-Client-Ip`。

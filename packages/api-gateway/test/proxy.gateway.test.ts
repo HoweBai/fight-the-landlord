@@ -1196,6 +1196,29 @@ describe('ProxyGateway (WS proxy)', () => {
       }
     });
 
+    it('writes X-Agent-Id / X-Agent-Ver when present（代理门户）', async () => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({ code: 0 }),
+        }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      try {
+        const res = fakeRes();
+        await gateway.forwardToCurrencySvc('GET', '/api/agent/me', null, res, {
+          agentId: 'ag_1',
+          agentVer: '3',
+        });
+        const init = fetchMock.mock.calls[0]![1] ?? {};
+        expect((init.headers as Record<string, string>)['X-Agent-Id']).toBe('ag_1');
+        expect((init.headers as Record<string, string>)['X-Agent-Ver']).toBe('3');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('does not write X-Token-Jti when the caller did not set it', async () => {
       const fetchMock = vi.fn(
         async (_input: RequestInfo | URL, _init?: RequestInit) => ({

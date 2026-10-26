@@ -10,9 +10,9 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 84 个 active 键
- *     （79 简单 + 5 结构化）。
- *  3. 控件定稿表：79 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 85 个 active 键
+ *     （80 简单 + 5 结构化）。
+ *  3. 控件定稿表：80 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
  */
@@ -213,9 +213,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 100, `protocol CONFIG_KEYS 恰 100 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 84, `active = CONFIG_KEYS − LEGACY 恰 84 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 84, `CONFIG_IA 覆盖 84 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 101, `protocol CONFIG_KEYS 恰 101 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 85, `active = CONFIG_KEYS − LEGACY 恰 85 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 85, `CONFIG_IA 覆盖 85 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -296,7 +296,7 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 84, `CONFIG_NOTES 恰 84 条（实测 ${noteKeys.length}）`);
+ok(noteKeys.length === 85, `CONFIG_NOTES 恰 85 条（实测 ${noteKeys.length}；代理分润 +1、B 组 +7）`);
 /* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
 const PDK_NOTE_KEYS = [
   'game.levels.paodekuai',
@@ -360,7 +360,7 @@ ok(
 );
 ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnabledGameWarning：缺键按默认值判定');
 
-/* ── 5. CONFIG_CONTROLS：79 简单键 + 5 结构化键 = 84；定稿表 ─── */
+/* ── 5. CONFIG_CONTROLS：80 简单键 + 5 结构化键 = 85；定稿表 ─── */
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
@@ -384,6 +384,7 @@ const BOOL_KEYS = [
   'pay.withdrawEnabled',
   'client.appEnabled',
   'client.h5Enabled',
+  'agent.inviteEnabled',
   'risk.withdrawReAuthEnabled',
   'game.doudizhu.cardCounterEnabled',
   // 跑得快 5 个场次/好友房/补位开关
@@ -464,12 +465,12 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 79, `CONFIG_CONTROLS 恰 79 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 80, `CONFIG_CONTROLS 恰 80 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '84 键 = 79 简单 ∪ 5 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '35 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 35 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '35 布尔键 type=bool');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '85 键 = 80 简单 ∪ 5 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
+ok(BOOL_KEYS.length === 36 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '36 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
 ok(numberKeys.length === 42, `数字键定论表 42 个（实测 ${numberKeys.length}）`);
@@ -499,7 +500,7 @@ for (const [k, body] of entries) {
   const labelM = /label:\s*'([^']+)'/.exec(body);
   ok(!!labelM && labelM[1].trim() !== '', `${k} 有非空 label`);
 }
-// 简单/布尔/文本/数字分类合计 = 79（防清单漂移）。
+// 简单/布尔/文本/数字分类合计 = 80（防清单漂移）。
 ok(
   BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === entries.size,
   `控件分类合计 = entries.size（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length} / ${entries.size}）`,
@@ -723,6 +724,135 @@ for (const needle of [
 }
 ok(/\.players-summary\s*\{/.test(css) && /\.players-card\s*\{/.test(css), 'style.css 含玩家页样式');
 ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（玩家页同纪律）');
+
+/* ── 12. 2026-10-26 代理分润：管理后台「代理」页 ─────────────────────
+ * 读面 super_admin|finance（网关 P-ag1）；写面 super_admin（P-ag2..P-ag4）；
+ * 结算打款/驳回 finance 也可。UI 只做门面，真闸在网关 policy。 */
+for (const id of [
+  'nav-agents-btn',
+  'agents-view',
+  'ag-settings-form',
+  'ag-settings-enabled',
+  'ag-settings-default-rate',
+  'ag-settings-min-yuan',
+  'ag-settings-coin-per-yuan',
+  'ag-settings-hold-days',
+  'ag-settings-admin-limit',
+  'ag-settings-adjust-op',
+  'ag-settings-adjust-day',
+  'ag-settings-save-btn',
+  'ag-q',
+  'ag-status',
+  'ag-search-btn',
+  'ag-reset-btn',
+  'ag-create-btn',
+  'ag-create-form',
+  'ag-create-result',
+  'ag-body',
+  'ag-empty',
+  'ag-page-info',
+  'ag-prev-btn',
+  'ag-next-btn',
+  'ag-page-size',
+  'ag-detail',
+  'ag-detail-body',
+  'ag-detail-close-btn',
+  'ag-settle-status',
+  'ag-settle-refresh-btn',
+  'ag-settle-body',
+  'ag-settle-empty',
+  'ag-settle-prev-btn',
+  'ag-settle-next-btn',
+  'ag-settle-page-info',
+  'ag-settle-detail',
+  'ag-settle-detail-body',
+  'ag-adjust-form',
+  'ag-adjust-agent',
+  'ag-adjust-delta',
+  'ag-adjust-reason',
+  'ag-adjust-create-btn',
+  'ag-adjust-status',
+  'ag-adjust-refresh-btn',
+  'ag-adjust-prev-btn',
+  'ag-adjust-next-btn',
+  'ag-adjust-page-info',
+  'ag-adjust-body',
+  'ag-adjust-empty',
+  'ag-recon-from',
+  'ag-recon-to',
+  'ag-recon-run-btn',
+  'ag-recon-body',
+  'ag-audit-refresh-btn',
+  'ag-audit-body',
+  'ag-audit-empty',
+  'ag-audit-prev-btn',
+  'ag-audit-next-btn',
+  'ag-audit-page-info',
+]) {
+  ok(html.includes(`id="${id}"`), `index.html 含代理页 id #${id}`);
+}
+ok(
+  app.includes("agents: { el: 'agents-view', nav: 'nav-agents-btn', roles: ['super_admin', 'finance'] }"),
+  'VIEWS.agents 角色精确（super_admin|finance）',
+);
+const viewOrderAgents = /const VIEW_ORDER = \[([^\]]*)\]/.exec(app)?.[1] ?? '';
+ok(viewOrderAgents.includes("'agents'"), 'VIEW_ORDER 含 agents');
+ok(viewOrderAgents.trim().endsWith("'agents'"), 'VIEW_ORDER 末尾为 agents（后加视图）');
+for (const needle of [
+  '/api/admin/agents',
+  '/api/admin/agents/tree',
+  '/api/admin/agents/settings',
+  '/api/admin/agent-settlements',
+  '/api/admin/agent-adjustments',
+  '/api/admin/agent-audit',
+  '/api/admin/agent-reconciliation',
+  'function loadAgents',
+  'function renderAgents',
+  'function wireAgents',
+  'function resetAgents',
+  'function loadAgentSettlements',
+  'function loadAgentAdjustments',
+  'function loadAgentReconciliation',
+  'function loadAgentAudit',
+  'const canAgentWrite',
+  'const canAgentSettle',
+  'function applyAgentRole',
+]) {
+  ok(app.includes(needle), `app.js 含代理页针脚 ${JSON.stringify(needle)}`);
+}
+ok(
+  /const canAgentWrite = \(\) => roleOf\(\) === 'super_admin';/.test(app),
+  'canAgentWrite 仅 super_admin（写面门面）',
+);
+ok(
+  /const canAgentSettle = \(\) => roleOf\(\) === 'super_admin' \|\| roleOf\(\) === 'finance';/.test(app),
+  'canAgentSettle = super_admin|finance（打款/驳回）',
+);
+const switchViewAgents = balancedBlock(app, 'function switchView', '{', '}');
+ok(
+  switchViewAgents.includes("view === 'agents'") && switchViewAgents.includes('loadAgents()'),
+  'switchView 首次激活懒加载代理页',
+);
+const loginViewAgents = balancedBlock(app, 'function showLoginView', '{', '}');
+ok(loginViewAgents.includes('resetAgents()'), 'showLoginView 清零代理页状态');
+const wireAgentsBlock = balancedBlock(app, 'function wire()', '{', '}');
+ok(wireAgentsBlock.includes('wireAgents()'), 'wire() 调用 wireAgents()');
+ok(
+  /\$\('nav-agents-btn'\)\.addEventListener\('click'/.test(wireAgentsBlock),
+  'wire() 绑定 nav-agents-btn',
+);
+const saveAgentBlock = functionBody(app, 'async function saveAgentDetail');
+ok(saveAgentBlock !== '', '找到 saveAgentDetail 函数体');
+ok(
+  ['payoutName', 'payoutAccount', 'payoutBank'].every((k) => saveAgentBlock.includes(k)),
+  'saveAgentDetail 三收款字段同笔提交（updatePayout 省略即置 NULL）',
+);
+ok(saveAgentBlock.includes('/payout'), 'saveAgentDetail 调用 payout PATCH');
+const setStatusBlock = functionBody(app, 'async function setAgentStatus');
+ok(setStatusBlock !== '' && setStatusBlock.includes('/status'), 'setAgentStatus 调 status 端点');
+ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（代理页同纪律）');
+ok(/\.agents-secret\s*\{/.test(css), 'style.css 含 .agents-secret 规则');
+ok(/\.agents-actions\s*\{/.test(css), 'style.css 含 .agents-actions 规则');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {

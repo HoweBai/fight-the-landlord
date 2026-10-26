@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （一百键清单、校验函数、客户端子集）。
+ * （一百零一键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -175,6 +175,8 @@ export const CONFIG_KEYS = [
   'game.paodekuai.risk.autoThrottleScore',
   /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
   'currency.reliefThresholdCoins',
+  /** 代理分润（2026-10-26）：客户端注册邀请码输入框开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteEnabled`）。 */
+  'agent.inviteEnabled',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
@@ -237,6 +239,8 @@ export const CLIENT_CONFIG_KEYS = [
   /** 多玩法配置平行化：平台级救助绝对门槛（合法值或 null）。 */
   'reliefThresholdCoins',
   'version',
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  'agentInviteEnabled',
 ] as const;
 
 export interface BaseScoreLevel {
@@ -307,6 +311,8 @@ export interface ClientConfig {
   games?: Partial<Record<GameType, ClientGameConfig>>;
   /** 平行化：平台级救助绝对门槛；旧服务端缺失 / 新服务端坏值 ⇒ null（客户端回退旧算法）。 */
   reliefThresholdCoins?: number | null;
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  agentInviteEnabled: boolean;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -458,6 +464,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'ad.reliefAdpid') return parseReliefAdpid(value);
   if (key === 'client.appEnabled') return parseStrictBoolean(key, value);
   if (key === 'client.h5Enabled') return parseStrictBoolean(key, value);
+  if (key === 'agent.inviteEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.freeBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.goldBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.matchNoBotMaxWaitMs') return parseNoBotMaxWaitMs(value);

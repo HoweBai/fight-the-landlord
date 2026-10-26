@@ -1,0 +1,190 @@
+# 代理分润 —— 交接（2026-10-26）
+
+> 用途：跨会话状态。**任务 0–15 已全部完成**：dev 已推送（`f1545a9c`），
+> GitHub CI `40222597118` 绿、全序真库 conformance `40232890418` 绿（45 片，slice-32=137）。
+> 分支 `dev`，工作区除未跟踪的 `grep.exe.stackdump`（垃圾文件，**不要提交**）外干净。
+> **未做（等用户发话）**：合 master / 打 `v*` tag / 部署 / 真浏览器走查。
+
+## 0. 后续会话提示词（仅在上线阶段用）
+
+```text
+代理分润任务 0–15 已完成并推 dev（f1545a9c）；CI 与全序真库均绿。
+如用户发话上线：按 docs/dev-process.md 合 master（权威轮）、打 tag、部署；
+先读本文件 §5（真库轮证据）与 §6（已知边界）。
+不得在用户明确发话前合 master / 打 tag / 部署。
+```
+
+## 1. 已完成（任务 0–15，均已提交）
+
+| 任务 | 提交 | 内容 |
+|---|---|---|
+| 0 | `faf65bd3` | currency-service 依赖 `@nestjs/jwt`/`rxjs`；compose env（`AGENT_JWT_SECRET`/`AGENT_PHONE_HMAC_KEY`/`USER_SERVICE_RPC_HOST/PORT`）；lockfile |
+| 1/2 | `569154dc` | protocol 6 错误码 + `agent.inviteEnabled`/`agentInviteEnabled` + `ClientConfig` 字段；config-service 种子迁移 `1796900000000-AgentInviteKey`；管理端配置 IA/CFG_NAV/CONTROLS/NOTES + `verify:admin` 94/78/78/73/36/66 |
+| 3 | `531a7c83` | currency 迁移 `1798000000000-AgentDomain`（17 表）+ 纯函数 `commission.math.ts`（级差/冻结/自玩/负级差/额度/取整）+ 2000 轮随机性质测试 |
+| 4 | `21bbc213` | `AgentModule` 骨架；settings/quota/maturity 服务；`ApplyService` 可见面装配；`ConfigCacheService.agentInviteEnabled()` |
+| 5 | `25de5ba6` | `ApplyService` 内置代理钩子（caller effect 之后 SAVEPOINT；语句级回滚/事务级重抛）；revenue/commission 写入；gap 独立连接；11 条 ledger + 5 条 Apply 钩子测试 |
+| 6 | `d181e39f` | 账号/邀请码/绑定服务；`agent.bind` 接收侧；`user.agentProfile.get` 接收侧；currency→user 客户端；`main.ts` 生产密钥 fail-closed；password scrypt |
+| 7 | `ad0c8503` | 结算（ID 水位、client_request_id 幂等、SUM/hash 复核、打款/驳回/撤回）+ 人工调账（双人复核/日限） |
+| 8 | `ab70489b` | 代理登录/JWT（aud/typ/ver）、AgentGuard、门户 profile/overview/players/commissions/subtree/settlements；绑定表加 `phone_masked` |
+| 9 | `d09995da` | 管理端代理全量 REST（CRUD/树/设置/状态/密码/邀请码/收款/绑定/批量/结算/调账/审计/对账）；6 码 HTTP 映射（currency/user） |
+| 10 | `bc283108` | 网关 `AgentAuthMiddleware`、Jwt/ClientGate 跳过/豁免、`X-Agent-Id`/`X-Agent-Ver` 转发、全量路由、policy P-ag0..P-ag4（含 `%2E` 变体）、登录 IP 桶 |
+| 11 | `b617bf27` | `RegisterDto.inviteCode`；`AuthService` 先 `agent.bind` 再 signup grant/落库；`CurrencyClient.agentBind` |
+| 12 | `e6e70950` | 登录页注册态懒拉配置 + 邀请码字段（开关开才渲染）；`signUp`/`register` 透传；docs 错误码/22 键同步 |
+| 13 | `876be015` | 管理后台「代理」UI（列表/新建/详情/设置/结算/调账/对账/审计；`verify:admin` 465 + jsdom 冒烟） |
+| 14 | `dc5e6aaf` | 代理门户静态站 + `Dockerfile.edge`/`Caddyfile` `/agent` 路由；`verify:agent` 104 + jsdom 冒烟 |
+| 15 | `56f84133` … `f1545a9c` | slice-32 真库（CI 全序 45 片绿，137/137）+ design.md env 表；r3 独立审查 Critical/Important 收口（公开 boot 配置、管理页竞态、对账区间、手机号归一、分页等）；既有切片键集/迁移/edge 收尾同步 |
+
+### 设计增量（相对 spec v1.1，需在 spec 的偏差台账/审查记录补一句）
+
+1. `agent_bindings` 增列 `phone_masked varchar(20) NOT NULL`（门户玩家列表脱敏用，避免逐玩家拉 PII）。
+2. `ApplyService` 的 `AgentLedgerService` 构造参数为**可选**（仅服务单测 `new ApplyService(db, redis)`；真容器 `@Inject` 必注入；`AgentModule` exports + `RpcModule` imports 已由装配测试钉住）。
+3. `agent_settings` 放 currency DB（不走通用 config），`agent.inviteEnabled` 仍在 config-service（客户端子集）；网关 policy P-ag0 对 `agent.*` 与含 `%` 的键要求 super_admin。
+4. 代理登录允许 `frozen`（只读+结算）；`must_change_password=1` 时只放行 `GET /agent/me`、`POST /agent/password`。
+5. 门户玩家列表的「局数」= revenue event 数（台费局数）；v1 无搜索框。
+
+## 2. 测试基线（2026-10-26 本机全绿）
+
+```bash
+pnpm -C packages/protocol test                 # 300
+pnpm -C packages/currency-service test         # 538（含 r3/合并新增）
+pnpm -C packages/currency-service run lint
+pnpm -C packages/user-service test             # 377
+pnpm -C packages/user-service run lint
+pnpm -C packages/config-service test           # 484（含 /api/config/boot）
+pnpm -C packages/api-gateway test              # 500（含公开面六条）
+pnpm -C packages/api-gateway run lint
+pnpm -C apps/client test                       # 1524 passed / 2 skipped
+pnpm -C apps/client run lint
+pnpm verify:admin                              # 476 checks
+pnpm verify:agent                              # 104 checks
+pnpm -C packages/shared test                   # 399
+pnpm test                                      # turbo 29/29
+pnpm lint                                      # turbo 18/18
+```
+
+> 注意：跑 config-service / user-service 前如果 protocol 改了源码，先 `pnpm -C packages/protocol build`（它们读 `dist`）。
+
+## 3. 任务 13（已完成，`876be015`）：管理后台「代理」UI
+
+**API 已全部就绪**（网关 + currency-service）：
+
+- `GET/POST /api/admin/agents`；`GET /api/admin/agents/tree`；`GET/PATCH /api/admin/agents/settings`
+- `GET /api/admin/agents/:id`；`PATCH /api/admin/agents/:id`；`POST .../status|reset-password|invite-code/rotate`；`PATCH .../payout`
+- `GET /api/admin/agents/:id/bindings`；`POST /api/admin/agents/bind|unbind`；`POST .../bindings/bulk`
+- `POST /api/admin/agents/:id/adjustments`；`GET /api/admin/agent-adjustments`；`POST /api/admin/agent-adjustments/:id/approve|reject`
+- `GET /api/admin/agent-settlements`；`GET /api/admin/agent-settlements/:id`；`POST .../pay|reject`
+- `GET /api/admin/agent-audit`；`GET /api/admin/agent-reconciliation?from&to`
+
+**角色**：读面 super_admin|finance；写面 super_admin；结算打款/驳回 finance|super_admin；调账复核 super_admin。UI 只做门面（真闸在网关）。
+
+**落点**：
+- `admin/index.html`：nav 按钮（`nav-agents-btn`）+ `<main id="agents-view" class="page-view" hidden>`（含代理列表/新建/设置/结算/调账/对账/审计区域）。`switchView` 会对 `VIEWS[name].el` 直接取元素 ⇒ id 必须成套。
+- `admin/app.js`：`VIEWS.agents = { el:'agents-view', nav:'nav-agents-btn', roles:['super_admin','finance'] }`；`VIEW_ORDER` **追加在末尾**；`switchView` 加懒加载；用现成 `api()`/`el()`/`btn()`/`roleOf()`；**零 innerHTML**（`verify:admin` 第 81 行会红）。
+- 建议最小功能集：列表 + 新建（显示一次性初始密码/邀请码）+ 冻结/解冻 + 重置密码 + 轮换码 + 改比例/上级 + 设置（enabled/coin_per_yuan/min/限额）+ 结算队列（打款/驳回）+ 调账（发起/复核）+ 对账 + 审计。
+- `scripts/verify-admin-static.mjs` 追加新 view/nav/roles 断言（可选但建议）。
+- 验收：`pnpm verify:admin`（现有 378 条全绿 + 新断言）。
+
+## 4. 任务 14（已完成，`dc5e6aaf`）：代理门户静态站 + edge
+
+**API**：`POST /api/agent/login`（公开）；`GET /api/agent/me|overview|players|commissions|subtree|settlements|settlements/:id`；`POST /api/agent/settlements`（`{clientRequestId}`）、`POST .../:id/cancel`、`POST /api/agent/password`。除 login 外全部 `Authorization: Bearer <agent token>`；网关注入 `X-Agent-Id`/`X-Agent-Ver`；`agentId` **只从 token**（不要 query/body）。
+
+**落点**：
+- 新建 `agent/index.html`、`agent/app.js`、`agent/style.css`（手机优先；纯静态、无构建）。
+- 登录/改密/概览/玩家/佣金/结算/我的；401 清 token 回登录；403 + `must_change_password` 显示改密页；`11006/14011/14012/14013` 文案见 `apps/client/src/net/copy.ts`。
+- `Dockerfile.edge`：在 `COPY admin /srv/admin` 附近加 `COPY agent /srv/agent`（之后已有 `chown -R caddy:caddy /srv`）。
+- `deploy/Caddyfile`：在 catch-all `handle {` **之前**加
+  `handle /agent { redir * /agent/ 301 }` + `handle /agent/* { root * /srv; file_server }`（照 `/admin` 写法；`redir` 必须显式给 matcher）。
+- 新建 `scripts/verify-agent-static.mjs` + 根 `package.json` 的 `verify:agent`；至少断言登录表单/必需 id/无危险注入/API 路径。
+
+## 5. 任务 15（代码完成，CI 真库轮待跑）：conformance + 全量验证 + 代码审查
+
+### 5.1 r3 独立审查结论（2026-10-26，`71be4070` 已修）
+
+- **Critical C1**：注册页懒拉 `/api/config` 需玩家令牌 ⇒ 新用户永远看不到邀请码。已新增公开
+  `GET /api/config/boot`（只回 version+agentInviteEnabled；网关 PUBLIC_PATHS 第 6 条）。
+- **Critical C2**：管理页详情响应乱序会把 A 的资料/收款写进 B。已加 `detailId` 复核 + 按
+  当前渲染面板取 id。
+- **Important**：对账启用区间用全局 `effective_from` 回卷关闭窗口（改为每段 changed_at）；
+  `+86`/分隔符/全角手机号绕过自玩特判（normalizePhone 数字归一）；结算/调账列表无翻页
+  （补分页 + 结算默认 pending）。
+- **Minor**：设置逐键 bounds、rateBp 拒绝 null/空串/数组、昵称 50 分批、负 carry 显示 0、
+  批量改绑每批复核 active、门户改密 6–64、verify:agent 函数体断言并接入 ci.sh、详情上级
+  下拉过滤冻结、比例 step 0.01、树旧快照不误摘上级、slice-32 低 id 行同额。
+- **登记未修**：详情绑定玩家只取前 50（批量改绑兜底）；门户 token localStorage（本页零
+  HTML 注入，后续可改 sessionStorage）。
+- 详细表见 spec §17.2。
+
+### 5.2 本机验证（2026-10-26）
+
+- `pnpm test` 29/29；`pnpm lint` 18/18；room-service 895（含 `meta-on-every-rpc-send` 闸）。
+- currency 538 / config 484 / gateway 500 / client 1525（2 skipped）/ shared 399 /
+  protocol 300 / user 377 / room 917；`verify:admin` 476；`verify:agent` 104；conformance tsc 通过。
+- jsdom 冒烟：管理页 super_admin/finance 各 14+ 项；门户 26 项（首登改密/五页签/结算/401）。
+- **真库轮（GitHub CI）**：全序 **45 片全绿**（run `40232890418`），`slice-32-agent 通过：137 项断言`
+  （含额度首建并发/SAVEPOINT/水位低 id 晚提交/调账双人复核/关闭期对账/鉴权矩阵）；
+  `slice-17-currency=187`、`slice-07.3-edge=41` 等均 ≥ 基线。`baselines.json` 已按 CI 实测
+  回填 `slice-32-agent = 137`。
+
+### 5.3 GitHub CI 运行方式（已执行）
+
+- CI（六阶段 + render + security）：`gh workflow run ci.yml --ref dev` ⇒ run **`40222597118` 成功**。
+- conformance 真库：`conformance.yml` 没有 dispatch，临时把 `push.branches` 扩为 `[master, dev]`
+  并同步 `slice-07.4-pipeline` 期望集合（含排序后的 `['dev','master']`），跑完已 revert；
+  **master/tag 触发面保持原样**。
+- 真库轮次：
+  1. `40222686014` 红：既有切片未同步 22 键/8 迁移、slice-32 首建组缺余额、edge 收尾未复原
+     ⇒ 全部修复（见下）。
+  2. `40228822084` 红：仅剩 slice-17 迁移名单少 AgentDomain、slice-07.3 旧「门口无残留」断言
+     ⇒ 修复。
+  3. **`40232890418` 全绿**：45 片通过；slice-32=137。
+- 一次性 `conformance-slice32.yml` 单独取证 run `40228073011`（137/137）后已删除。
+
+### 5.4 合并 `origin/dev`（2026-10-26，A1/A2 PDK 并行片）
+
+- origin/dev 领先 52 个提交（PDK 指标/金币场账本/管理统计）。合并冲突 3 处（run.ts /
+  baselines.json / verify-admin-static.mjs），已按两侧语义合并。
+- **编号冲突**：`slice-30`/`slice-31` 已被 PDK 片占用 ⇒ 本片由 `slice-30-agent` 顺延为
+  **`slice-32-agent`**（文件/导出/run.ts/baselines 全改）。
+- **迁移时间戳冲突**：A2/A3 的 `1797000000000-GameTypeOnOpsDdl` 与本片
+  `1797000000000-AgentDomain` 同号 ⇒ 本片迁移改为 **`1798000000000-AgentDomain`**
+  （类名 `AgentDomain1798000000000`；尚未部署，改名安全）。
+- 合并后计数：CONFIG_NOTES 78（PDK +11 + 代理 1）；currency 538；其余见 §5.2。
+
+
+
+1. **`tools/conformance/src/slices/slice-32-agent.ts`**（真 MySQL；Docker）：
+   - 额度首建并发/死锁；SAVEPOINT 回滚后主事务；水位结算双会话；低 id 晚提交 409；驳回/打款/复核；关闭期对账；配置计数；鉴权交叉。
+   - 注册到 `tools/conformance/src/run.ts`；`baselines.json` **首次由 CI 回填，本机不要手填**。
+2. **文档**：`docs/design.md §2.3` env 表补 `AGENT_JWT_SECRET`、`AGENT_PHONE_HMAC_KEY`、`USER_SERVICE_RPC_HOST/PORT`；如需强闸，把四条加进 `packages/shared/test/design-md-ai-rollout.gate.test.ts` 的 `NEW_ENVS`。
+3. **全量验证**：§2 全部命令 + 能跑则 `pnpm test`；Docker 不可用要如实写「未跑真库」。
+4. **独立代码审查**（子代理；建议 `git diff 12f29c9d..HEAD`，即本功能全部提交），按 Critical/Important 修完补测。
+5. **交付报告**：变更/验证证据/SHA/是否推送部署/已知边界（尤其：真库并发未跑、UI 未做浏览器实测）。
+
+## 6. 已知风险 / 注意点
+
+- **r3 已修**：公开启动配置 `/api/config/boot`（第 6 条公开路径；只两键）；管理页详情竞态；
+  对账启用区间从 changed_at 起；手机号数字归一（自玩特判）；结算/调账分页。
+- **真库已证明**：slice-32 的并发/SAVEPOINT/水位/低 id 晚提交已在 GitHub 真栈全绿（run `40232890418`）。
+- **真库并发未证明**：假 DB 只钉控制流；SAVEPOINT/死锁/水位/额度首建必须 slice-32 真 MySQL。
+- **`ApplyService` 钩子失败的生产行为**：语句级错误 → 保存点回滚 + `agent_ledger_gaps` + 指标，主事务继续；1213/1205/连接错误 → 重抛让 apply 失败（room-service 幂等重试）。
+- **结算水位**：申请后低 id 晚提交会让打款 SUM/hash 不一致 → 409；恢复 = 撤回/驳回后重新申请。
+- **`updatePayout`**：管理端 PATCH 省略字段会置 NULL —— UI 必须三个字段一起提交。
+- **代理门户 `AgentGuard`** 依赖网关注入 `x-agent-ver`；直连 currency-service（绕过网关）会 401（预期）。
+- **`agent_settings.enabled` 打开时 `effective_from` 为空** ⇒ 钩子视为未启用并 error 日志（settings.update 首次 enable 会写 DB 时间）。
+- **手机号归一**：v1 用数字归一（`+86`/分隔符/全角）；轮换 HMAC key 需全量重算，仍不支持。
+- **未跟踪的 `grep.exe.stackdump`** 是垃圾文件，不要提交。
+- **dev 已推送/CI 由用户授权**；master/tag/部署未动。
+
+## 7. 关键文件索引
+
+- spec：`docs/superpowers/specs/2026-10-26-agent-commission-design.md`
+- plan：`docs/superpowers/plans/2026-10-26-agent-commission.md`
+- 迁移：`packages/currency-service/src/migrations/1798000000000-AgentDomain.ts`
+- 纯函数：`packages/currency-service/src/agent/commission.math.ts`
+- 写边：`packages/currency-service/src/apply/apply.service.ts`、`src/agent/agent-ledger.service.ts`
+- 结算：`packages/currency-service/src/agent/agent-settlement.service.ts`
+- 门户：`packages/currency-service/src/agent/agent-portal.controller.ts`、`agent-auth.service.ts`、`agent.guard.ts`
+- 管理 API：`packages/currency-service/src/agent/agent-admin.controller.ts`
+- 网关：`packages/api-gateway/src/auth/agent.middleware.ts`、`auth/admin-policy.ts`、`gateway/gateway.controller.ts`
+- 注册：`packages/user-service/src/auth/auth.service.ts`、`src/currency/currency.client.ts`
+- 客户端：`apps/client/src/pages/login/login.vue`、`src/net/rest.ts`、`src/stores/auth.ts`、`src/stores/game.ts`

@@ -18,7 +18,7 @@ import { TRANSPORT_FAILURE_MESSAGE } from './transport-failure';
  * ⚠️ 旧形态的来历（片规格 §2.1）：档位表原本在 user-service 的库里，room-service
  * **保持纯 Redis**（不加任何 DB 驱动 / TypeORM / `DB_HOST`）—— 它要读表就只能走 RPC。
  * 片⑦ 起配置（含档位表）由 config-service 统一提供：`config.snapshot` 一次返回
- * **全量一百键**（`ConfigSnapshotResponse{config, version}`），本 client 是它的传输层。
+ * **全量一百零一键**（`ConfigSnapshotResponse{config, version}`），本 client 是它的传输层。
  *
  * 形态逐字照 `game.client.ts`（`ClientProxy` + `lastValueFrom` + `timeout` +
  * `RpcResult` 解包 + 传输故障 ⇒ `10007`）。

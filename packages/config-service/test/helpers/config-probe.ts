@@ -280,7 +280,7 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   // 跑得快风控（2026-10-25；来自 `PdkRiskConfigSeed1796700000000`）
   ['game.paodekuai.risk.winRateThreshold', 0.8],
   ['game.paodekuai.risk.minGames', 100],
-  // 跑得快按人数风控 + 自动限流（2026-10-26；来自 `PdkRiskPlayerCountSeed1796900000000`）
+  // 跑得快按人数风控 + 自动限流（2026-10-26；来自 `PdkRiskPlayerCountSeed1797000000006`）
   ['game.paodekuai.risk.player2.winRateThreshold', 0.8],
   ['game.paodekuai.risk.player2.minGames', 100],
   ['game.paodekuai.risk.player3.winRateThreshold', 0.8],
@@ -289,6 +289,8 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.risk.player4.minGames', 100],
   ['game.paodekuai.risk.autoThrottleScore', 50],
   ['currency.reliefThresholdCoins', 150],
+  // 代理分润（2026-10-26；来自 `AgentInviteKey1796900000000`）
+  ['agent.inviteEnabled', false],
 ];
 
 export function seedDb(): FakePlatformDb {

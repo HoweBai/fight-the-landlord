@@ -37,6 +37,9 @@ COPY --from=web /app/apps/client/dist/build/h5 /srv
 # 的 `handle /admin/*`——那个 handle 自带 `root * /srv` ⇒ 与 /srv 的物理布局解耦的是路由，
 # 不是目录：admin/ 放在 /srv 下只是复用同一个 root）。
 COPY admin /srv/admin
+# 代理分润（2026-10-26）：代理门户（无构建静态页；手机优先）。Caddy 侧见 deploy/Caddyfile
+# 的 `handle /agent` + `handle /agent/*`（必须在 catch-all 之前）。
+COPY agent /srv/agent
 # /download/：安装包目录（uni-ad 开通链接的落点；`*.apk` 不入库、按需在**手动构建轮**放入，
 # 机制与 CI 构建的 404 语义见 deploy/download/README.md）
 COPY deploy/download /srv/download

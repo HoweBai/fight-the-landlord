@@ -1013,7 +1013,7 @@ $ docker compose --env-file .env -f docker-compose.yml exec config-service \
 **上线第一个动作（重要）**：**好友房默认是关闭的**（玩家端不显示「好友房」入口，服务端也拒绝创建/加入）。
 **要开放好友房 ⇒ 上线后第一件事就是来这里把它打开**：找到 `game.doudizhu.friendRoomEnabled`，把值改成 `true` 保存；想再关掉同理。
 
-**100 键配置（84 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
+**101 键配置（85 active + 16 只读旧键）一览**（键名 → 玩家会看到什么）：
 
 > 2026-10-24 配置平行化：斗地主与跑得快各有一套场次/好友房/补位/金币经济键。下表列斗地主与平台级键；跑得快对应键见 `docs/games/paodekuai.md` §7.1。旧平台键（`room.*` / `currency.entryMultiplier` / `currency.rakePercent` 等）只读保留，回滚前按 runbook 回填。
 

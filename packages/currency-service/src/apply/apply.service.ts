@@ -20,6 +20,9 @@ import {
   currencyApplyTotal,
   currencyReconcileCacheDriftTotal,
 } from '../metrics/currency.metrics';
+import { AgentLedgerService, type AgentApplyContext } from '../agent/agent-ledger.service';
+import { classifyAgentSource } from '../agent/agent.constants';
+import { agentHookFailuresTotal } from '../agent/agent.metrics';
 
 /**
  * 货币核心（T3；规格 §2.3 判定算法 **逐字**）：`currency.apply` —— **唯一写边**的内核。
@@ -240,6 +243,12 @@ export class ApplyService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
     @Inject(REDIS) private readonly redis: Redis,
+    /**
+     * 代理记账钩子（spec §4）。**可选参数只服务单测直连构造**（`new ApplyService(db, redis)`
+     * 跳过钩子）；真容器经 `@Inject(AgentLedgerService)` 必注入（AgentModule exports，
+     * RpcModule imports）—— 缺 provider 时 Nest 启动即崩，不会静默 no-op。
+     */
+    @Inject(AgentLedgerService) private readonly agentLedger?: AgentLedgerService,
   ) {}
 
   /**
@@ -334,6 +343,17 @@ export class ApplyService {
         }
         // ④ effect（记牌器收费片）：同一事务、flows 之后、commit 之前；抛错 ⇒ 整批回滚。
         await effect(manager);
+        // ⑤ 代理记账（spec §4）：**caller effect 之后**建保存点 —— 代理钩子失败只回滚
+        //    自己的写入，记牌器权益等 caller effect 写入保留。仅代理相关 source 进入。
+        if (this.agentLedger !== undefined && classifyAgentSource(source) !== 'none') {
+          await this.runAgentHook(manager, {
+            opId,
+            actionId: request.actionId,
+            source,
+            refId: request.refId ?? null,
+            entries,
+          });
+        }
         return { opId, balances };
       });
     } catch (err) {
@@ -372,6 +392,37 @@ export class ApplyService {
         replayed: false,
       },
     };
+  }
+
+  /**
+   * 代理钩子 + 保存点（spec §4.1）：
+   * - 语句级错误 ⇒ `ROLLBACK TO SAVEPOINT` + RELEASE + 指标；**主事务继续**；
+   * - 事务级错误（死锁/锁超时/连接/保存点不存在）⇒ **原样重抛**，让 apply 失败、
+   *   调用方按幂等锚重试（绝不能提交一个已被 MySQL 整批回滚的空事务）；
+   * - 保存点回滚/释放自身失败 ⇒ 同样重抛（事务已毒化）。
+   * caller effect 的写入在保存点之前 ⇒ 钩子失败不会回滚记牌器权益。
+   */
+  private async runAgentHook(manager: EntityManager, ctx: AgentApplyContext): Promise<void> {
+    const ledger = this.agentLedger;
+    if (ledger === undefined) return;
+    await manager.query('SAVEPOINT agent_ledger');
+    try {
+      await ledger.onApply(manager, ctx);
+      await manager.query('RELEASE SAVEPOINT agent_ledger');
+    } catch (err) {
+      if (isFatalTxError(err)) throw err;
+      try {
+        await manager.query('ROLLBACK TO SAVEPOINT agent_ledger');
+        await manager.query('RELEASE SAVEPOINT agent_ledger');
+      } catch {
+        throw err;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `agent ledger hook failed actionId=${ctx.actionId} source=${ctx.source} opId=${ctx.opId}: ${message}`,
+      );
+      agentHookFailuresTotal.inc({ source: ctx.source });
+    }
   }
 
   /**
@@ -561,4 +612,26 @@ export class ApplyService {
       }
     }
   }
+}
+
+/**
+ * 事务级错误判定（spec §4.1）：这些错误意味着 MySQL 可能已经回滚**整个事务**
+ * （1213 死锁 / 1205 锁超时 / 连接断开 / 保存点不存在），此时 `ROLLBACK TO SAVEPOINT`
+ * 不可用，继续 COMMIT 会提交一个空事务。**必须重抛**让 apply 失败、调用方幂等重试。
+ */
+export function isFatalTxError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; errno?: unknown };
+  const code = typeof e.code === 'string' ? e.code : '';
+  const errno = typeof e.errno === 'number' ? e.errno : 0;
+  if (errno === 1213 || errno === 1205 || errno === 1305) return true;
+  return (
+    code === 'ER_LOCK_DEADLOCK' ||
+    code === 'ER_LOCK_WAIT_TIMEOUT' ||
+    code === 'ER_SP_DOES_NOT_EXIST' ||
+    code === 'PROTOCOL_CONNECTION_LOST' ||
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ER_QUERY_INTERRUPTED'
+  );
 }

@@ -6,7 +6,7 @@ import type { SessionGuard } from '../src/auth/session.guard';
 
 /**
  * 契约来自 docs/design.md §5.2 / §5.1 / §7.1：
- *  - 公开路径白名单**只有**四条，且**不含 `'/'`**（含 `'/'` 会让 `isPublicPath()` 恒真 → 鉴权完全失效，见 S1）
+ *  - 公开路径白名单**只有**六条，且**不含 `'/'`**（含 `'/'` 会让 `isPublicPath()` 恒真 → 鉴权完全失效，见 S1）
  *  - 验签通过后网关注入 `X-User-Id` / `X-Trace-Id`
  *  - 网关拒绝任何外部携带 `X-Internal-Token` 的请求
  *  - **R24**：网关拒绝 `typ !== 'access'` 的令牌（`10005`）
@@ -104,21 +104,30 @@ describe('JwtMiddleware', () => {
       await expect(middleware.use(req as never, {} as never, vi.fn())).rejects.toThrow(
         UnauthorizedException,
       );
-      // 白名单**逐条**钉住（§7.1 四条 + R267 的 `/api/health/live`）——用**行为**钉住，
-      // 不碰私有字段：清单内全过、近邻全拒。
+      // 白名单**逐条**钉住（§7.1 四条 + R267 的 `/api/health/live` + 代理分润的 `/api/config/boot`）
+      // ——用**行为**钉住，不碰私有字段：清单内全过、近邻全拒。
       for (const path of [
         '/api/auth/login',
         '/api/auth/register',
         '/api/auth/refresh',
         '/api/health',
         '/api/health/live',
+        '/api/config/boot',
       ]) {
         await middleware.use(makeReq({ originalUrl: path, url: path }) as never, {} as never, vi.fn());
       }
       // ⚠️ `/api/health/livex` 是**新增**的负对照：R267 之后必须证明存活面是作为
       // **精确**条目加进去的，而不是把 `/api/health` 改成了前缀（后者会让
       // `/api/healthz`・`/api/health/livex` 静默变公开）。
-      for (const path of ['/', '/index.html', '/api/auth/login-as-admin', '/api/healthz', '/api/health/livex']) {
+      for (const path of [
+        '/',
+        '/index.html',
+        '/api/auth/login-as-admin',
+        '/api/healthz',
+        '/api/health/livex',
+        '/api/config',
+        '/api/config/bootx',
+      ]) {
         await expect(
           middleware.use(makeReq({ originalUrl: path, url: path }) as never, {} as never, vi.fn()),
         ).rejects.toThrow(UnauthorizedException);
@@ -216,6 +225,48 @@ describe('JwtMiddleware', () => {
 
     it('负对照：前缀的**边界之外**（/api/adminx、/api/administrator）不得被误伤 —— 仍走玩家验签', async () => {
       for (const path of ['/api/adminx', '/api/administrator']) {
+        await expect(
+          middleware.use(makeReq({ originalUrl: path, url: path }) as never, {} as never, vi.fn()),
+        ).rejects.toThrow(UnauthorizedException);
+      }
+    });
+  });
+
+  /**
+   * 代理分润（2026-10-26）：`/api/agent/*` 的玩家验签整段跳过（代理令牌由
+   * `AgentAuthMiddleware` 自证）。删掉 `|| isAgentPath(path)` ⇒ 这里当场红。
+   */
+  describe('agent portal skips player verification (2026-10-26)', () => {
+    it('agent 前缀路径（含前缀根/大小写变体）⇒ 直接放行；身份头照剥', async () => {
+      for (const path of ['/api/agent', '/api/agent/me', '/API/Agent/overview', '/Api/AGENT/settlements']) {
+        const req = makeReq({
+          originalUrl: path,
+          url: path,
+          headers: {
+            authorization: 'Bearer garbage',
+            'x-user-id': 'victim',
+            'x-token-jti': 'victim-jti',
+          },
+        });
+        const next = vi.fn();
+        await middleware.use(req as never, {} as never, next);
+        expect(next).toHaveBeenCalled();
+        expect(mockJwtService.verify).not.toHaveBeenCalled();
+        expect(session.isActive).not.toHaveBeenCalled();
+        expect(req.headers['x-user-id']).toBeUndefined();
+        expect(req.headers['x-token-jti']).toBeUndefined();
+      }
+    });
+
+    it('带查询串的 agent 路径同样跳过', async () => {
+      const req = makeReq({ originalUrl: '/api/agent/players?page=1', url: '/api/agent/players?page=1' });
+      const next = vi.fn();
+      await middleware.use(req as never, {} as never, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('负对照：/api/agentx、/api/agents 不得被误伤 —— 仍走玩家验签', async () => {
+      for (const path of ['/api/agentx', '/api/agents']) {
         await expect(
           middleware.use(makeReq({ originalUrl: path, url: path }) as never, {} as never, vi.fn()),
         ).rejects.toThrow(UnauthorizedException);

@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：一百键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：一百零一键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -132,7 +132,7 @@ const PAGE_LIMIT = 20;
 
 /**
  * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
- * **84 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
+ * **85 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
@@ -152,10 +152,16 @@ const PAGE_LIMIT = 20;
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
  *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
- *    **84 条备注 / 84 个 active 键（全覆盖）**
+ *    **85 条备注 / 85 个 active 键（全覆盖）**
  *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
+  'agent.inviteEnabled': [
+    ['作用', '注册页是否显示可选的代理邀请码输入框；开 ⇒ 玩家填码后永久归属该代理，关 ⇒ 不显示、注册不带码。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
+    ['生效', '保存后客户端下次拉取配置即生效（通常 ≤60s；H5 可硬刷新立即生效）。'],
+    ['注意', '真正的计佣开关在代理设置（`agent_settings.enabled`，仅超级管理员）；本键只管客户端是否显示输入框。两个开关都开才会绑定。'],
+  ],
   'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}，各 ≥ 0，合计须 > 0；可写权重（如 15 / 35 / 50），保存时按合计归一化成占比。默认 0.15 / 0.35 / 0.5。'],
@@ -362,7 +368,7 @@ const CONFIG_NOTES = {
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
   // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
-  // 2026-10-26 跑得快按人数/自动限流 7 键后 84 条备注 / 84 个 active 键。
+  // 2026-10-26 跑得快按人数/自动限流 7 键后 85 条备注 / 85 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -912,6 +918,17 @@ const CONFIG_IA = [
         ],
       },
       {
+        id: 'agent',
+        name: '代理',
+        tabs: [
+          {
+            id: 'switches',
+            name: '开关',
+            keys: ['agent.inviteEnabled'],
+          },
+        ],
+      },
+      {
         id: 'dataAds',
         name: '广告',
         tabs: [
@@ -1003,6 +1020,7 @@ const CFG_NAV = [
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
   { leaf: 'nav-cfg-dataad-btn', count: 'nav-count-dataad', domain: 'dataAds' },
+  { leaf: 'nav-cfg-agent-btn', count: 'nav-count-agent', domain: 'agent' },
   { leaf: 'nav-cfg-ungrouped-btn', count: 'nav-count-ungrouped', domain: UNGROUPED_DOMAIN_ID },
 ];
 
@@ -1069,6 +1087,7 @@ const CONFIG_CONTROLS = {
   'currency.reliefEnabled': { label: '每日救助开关', type: 'bool' },
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
   'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
+  'agent.inviteEnabled': { label: '注册邀请码入口', type: 'bool' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },
@@ -1185,8 +1204,10 @@ const VIEWS = {
     roles: ['super_admin', 'finance', 'operator', 'viewer'],
   },
   accounts: { el: 'accounts-view', nav: 'nav-accounts-btn', roles: ['super_admin'] },
+  /** 代理分润（2026-10-26）：读面 super_admin|finance（网关 P-ag1）；写控件另以 canAgentWrite 门面。 */
+  agents: { el: 'agents-view', nav: 'nav-agents-btn', roles: ['super_admin', 'finance'] },
 };
-const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet', 'finance', 'payOrders', 'payRefunds', 'payWithdrawals', 'risk', 'audit', 'accounts'];
+const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet', 'finance', 'payOrders', 'payRefunds', 'payWithdrawals', 'risk', 'audit', 'accounts', 'agents'];
 
 /** 财务视图状态（③ T10）。 */
 const fin = {
@@ -1224,6 +1245,44 @@ const playersState = {
   filter: { q: '', status: '', online: '', activity: '' },
   page: 1, pageSize: 20, rows: [], total: 0, summary: null,
   balances: new Map(), recharges: new Map(), loading: false, loaded: false,
+};
+
+/**
+ * 代理管理页状态（2026-10-26 代理分润）：列表/树/设置/结算/调账/对账/审计。
+ * - `page` 是 UI 1-based；调服务端时 -1（admin 代理 API 的 page 为 0-based 偏移）。
+ * - `byId` = 扁平化树（上级名称回显 + 上级下拉）。
+ * - 结算/调账/审计与列表同页不同区块，各自懒加载、互不阻塞。
+ */
+const agentsState = {
+  filter: { q: '', status: '' },
+  page: 1,
+  pageSize: 20,
+  rows: [],
+  total: 0,
+  tree: [],
+  byId: new Map(),
+  settings: null,
+  detailId: null,
+  detail: null,
+  bindings: [],
+  settlements: {
+    // 默认只看待处理（r3 I1：积压时「全部」会把 pending 挤出前 50 条）；
+    // 分页保证任何一条都可到达。
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  },
+  adjustments: { status: '', page: 0, pageSize: 20, rows: [], loading: false, loaded: false, done: true },
+  recon: { loading: false, summary: null },
+  audit: { page: 0, rows: [], loading: false, loaded: false },
+  loading: false,
+  loaded: false,
 };
 
 const riskState = {
@@ -1321,6 +1380,10 @@ const canView = (view) => VIEWS[view]?.roles.includes(roleOf()) ?? false;
 const canWalletWrite = () => roleOf() === 'super_admin' || roleOf() === 'finance';
 /** 支付写面门面：super_admin | finance（policy P-p5..P-p7；退款审 / 提现审 / 登记打款）。 */
 const canPayWrite = () => roleOf() === 'super_admin' || roleOf() === 'finance';
+/** 代理写面门面：super_admin（网关 P-ag2..P-ag4；建代理/改比例/改绑/设置/调账发起与复核）。 */
+const canAgentWrite = () => roleOf() === 'super_admin';
+/** 代理结算动作门面：super_admin | finance（P-ag3；打款/驳回）。 */
+const canAgentSettle = () => roleOf() === 'super_admin' || roleOf() === 'finance';
 
 /** 顶栏状态条（登录错误 / 保存反馈共用）。kind ∈ info|ok|warn|err。 */
 function showMsg(text, kind = 'info') {
@@ -1406,7 +1469,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量一百键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量一百零一键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
@@ -2312,6 +2375,7 @@ function showLoginView() {
   resetRisk();
   resetAudit();
   resetAccounts();
+  resetAgents();
   closeModal(null);
   activeView = 'config';
   $('login-username').value = '';
@@ -2376,6 +2440,10 @@ function switchView(view) {
   if (view === 'risk' && !riskState.loaded) loadRiskQueue(true);
   if (view === 'audit') loadAuditTab(audit.tab);
   if (view === 'accounts' && !accState.loaded) loadAccounts();
+  if (view === 'agents') {
+    applyAgentRole();
+    if (!agentsState.loaded) loadAgents();
+  }
 }
 
 // ─── 时间范围预设与过滤（③ T10；财务视图与审计「资金操作」页签共用）──────────────
@@ -5227,6 +5295,7 @@ function wire() {
   $('nav-risk-btn').addEventListener('click', () => switchView('risk'));
   $('nav-audit-btn').addEventListener('click', () => switchView('audit'));
   $('nav-accounts-btn').addEventListener('click', () => switchView('accounts'));
+  $('nav-agents-btn').addEventListener('click', () => switchView('agents'));
 
   // 钱包调整：查询（① + ②；空输入不发请求 —— 与登录表单的 `if (!pw) return` 同式）。
   $('wallet-lookup-form').addEventListener('submit', (e) => {
@@ -5456,6 +5525,9 @@ function wire() {
 
   // 玩家管理页
   wirePlayers();
+
+  // 代理管理页
+  wireAgents();
 
   // ── 通用弹窗 ──
   $('modal-form').addEventListener('submit', (e) => {
@@ -5802,6 +5874,1220 @@ function wirePlayers() {
   });
   $('pl-back-btn').addEventListener('click', () => {
     $('pl-detail').hidden = true;
+  });
+}
+
+// ─── 代理管理页（2026-10-26 代理分润）──────────────────────────────────────
+//
+// 读面 super_admin|finance（网关 P-ag1）；写面 super_admin（P-ag2..P-ag4）；
+// 结算打款/驳回 finance 也可（P-ag3）。UI 只做门面 —— 真闸在网关 policy。
+// 全部 createElement/textContent（禁 HTML 串赋值）；page 在 UI 是 1-based，调服务端 -1。
+
+/** 比例（bp）→ UI 百分比文本。 */
+function ratePercentText(rateBp) {
+  const n = Number(rateBp);
+  return Number.isFinite(n) ? String(n / 100) : '—';
+}
+
+/** UI 百分比 → bp；非法返回 NaN（调用方提示）。 */
+function percentToBp(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+}
+
+/** micro → 金币文本（4 位小数去尾零；仅展示，不参与计算）。 */
+function microToCoinsText(micro) {
+  const n = Number(micro);
+  if (!Number.isFinite(n)) return '—';
+  const coins = n / 10000;
+  return Number.isInteger(coins) ? String(coins) : coins.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/** datetime-local 值（本机时区 YYYY-MM-DDTHH:mm）。 */
+function localDateTimeValue(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 代理树扁平化（父在前；去掉 children，附加 depth）。 */
+function flattenAgentTree(nodes, depth = 0, out = []) {
+  for (const node of nodes) {
+    const children = Array.isArray(node.children) ? node.children : [];
+    const copy = { ...node, depth };
+    delete copy.children;
+    out.push(copy);
+    flattenAgentTree(children, depth + 1, out);
+  }
+  return out;
+}
+
+/** 代理接口的统一错误提示（401 统一回登录）。 */
+function agentApiError(res, prefix) {
+  if (handleAuth(res.status)) return;
+  if (res.status === 0) return showMsg('无法连接服务端', 'err');
+  if (res.status === 403) return showMsg(`${prefix}：当前角色无权操作`, 'err');
+  if (res.status === 400 || res.status === 409) {
+    return showMsg(`${prefix}：${res.body?.message ?? ''}`, 'err');
+  }
+  return showMsg(`${prefix}（HTTP ${res.status}）`, 'err');
+}
+
+/** 写面门面：设置/新建/调账输入对 finance 只读隐藏（真闸在服务端）。 */
+function applyAgentRole() {
+  const write = canAgentWrite();
+  for (const id of [
+    'ag-settings-enabled',
+    'ag-settings-default-rate',
+    'ag-settings-min-yuan',
+    'ag-settings-coin-per-yuan',
+    'ag-settings-hold-days',
+    'ag-settings-admin-limit',
+    'ag-settings-adjust-op',
+    'ag-settings-adjust-day',
+  ]) {
+    $(id).disabled = !write;
+  }
+  $('ag-settings-save-btn').hidden = !write;
+  $('ag-create-btn').hidden = !write;
+  $('ag-create-panel').hidden = true;
+  for (const id of ['ag-adjust-agent', 'ag-adjust-delta', 'ag-adjust-reason']) $(id).disabled = !write;
+  $('ag-adjust-create-btn').hidden = !write;
+}
+
+/** 首次进入代理页：七个数据面并行拉取（任一失败只降级对应区块）。 */
+async function loadAgents() {
+  if (agentsState.loading) return;
+  agentsState.loading = true;
+  await Promise.all([
+    loadAgentList(),
+    loadAgentTree(),
+    loadAgentSettings(),
+    loadAgentSettlements(),
+    loadAgentAdjustments(),
+    loadAgentAudit(),
+  ]);
+  agentsState.loading = false;
+  // 会话在加载途中过期 ⇒ showLoginView 已清零；不要把 loaded 再翻回 true。
+  if (!sessionStorage.getItem(TOKEN_KEY)) return;
+  agentsState.loaded = true;
+  if (agentsState.recon.summary === null) {
+    const now = Date.now();
+    $('ag-recon-from').value = localDateTimeValue(now - 7 * DAY_MS);
+    $('ag-recon-to').value = localDateTimeValue(now);
+    loadAgentReconciliation();
+  }
+}
+
+async function loadAgentList() {
+  const p = new URLSearchParams();
+  if (agentsState.filter.q) p.set('q', agentsState.filter.q);
+  if (agentsState.filter.status) p.set('status', agentsState.filter.status);
+  p.set('page', String(agentsState.page - 1));
+  p.set('pageSize', String(agentsState.pageSize));
+  const { status, body } = await api(`/api/admin/agents?${p.toString()}`);
+  if (handleAuth(status)) return;
+  if (status === 0) return showMsg('无法连接服务端', 'err');
+  if (status === 403) return showMsg('当前角色无权查看代理', 'err');
+  if (status !== 200 || !Array.isArray(body?.data?.rows)) {
+    return showMsg(`加载代理失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.rows = body.data.rows;
+  agentsState.total = Number(body.data.total ?? 0);
+  const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+  if (agentsState.page > pages) {
+    agentsState.page = pages;
+    return loadAgentList();
+  }
+  renderAgents();
+}
+
+async function loadAgentTree() {
+  const { status, body } = await api('/api/admin/agents/tree');
+  if (handleAuth(status)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) return;
+  agentsState.tree = flattenAgentTree(body.data);
+  agentsState.byId = new Map(agentsState.tree.map((a) => [a.id, a]));
+  fillAgentCreateParent();
+  renderAgents();
+}
+
+function fillAgentCreateParent() {
+  const select = $('ag-create-parent');
+  const prev = select.value;
+  select.textContent = '';
+  const none = el('option', '', '（无上级）');
+  none.value = '';
+  select.append(none);
+  for (const agent of agentsState.tree) {
+    if (agent.status !== 'active') continue;
+    const opt = el('option', '', `${agent.depth ? '　'.repeat(agent.depth) : ''}${agent.name}（${agent.phone}）`);
+    opt.value = agent.id;
+    select.append(opt);
+  }
+  select.value = prev;
+}
+
+function renderAgents() {
+  const body = $('ag-body');
+  body.textContent = '';
+  for (const row of agentsState.rows) body.append(buildAgentRow(row));
+  $('ag-empty').textContent = agentsState.rows.length === 0 ? '（没有匹配的代理）' : '';
+  const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+  $('ag-page-info').textContent = `第 ${agentsState.page} / ${pages} 页 · 共 ${agentsState.total} 个代理`;
+  $('ag-prev-btn').disabled = agentsState.page <= 1;
+  $('ag-next-btn').disabled = agentsState.page >= pages;
+}
+
+function buildAgentRow(row) {
+  const tr = document.createElement('tr');
+  const parent = row.parentId ? agentsState.byId.get(row.parentId) : null;
+  const ops = document.createElement('td');
+  const detailBtn = btn('详情', 'btn mini');
+  detailBtn.addEventListener('click', () => openAgentDetail(row.id));
+  ops.append(detailBtn);
+  if (canAgentWrite()) {
+    const toggle = btn(row.status === 'active' ? '冻结' : '解冻', 'btn mini');
+    toggle.addEventListener('click', () =>
+      setAgentStatus(row, row.status === 'active' ? 'frozen' : 'active'),
+    );
+    ops.append(toggle);
+  }
+  tr.append(
+    textCell(row.name),
+    textCell(row.phone),
+    textCell(parent ? parent.name : '—'),
+    textCell(`${ratePercentText(row.rateBp)}%`, { num: true }),
+    textCell(row.region ?? '—'),
+    textCell(row.status === 'active' ? 'active' : `frozen${row.mustChangePassword ? '（首登未改密）' : ''}`),
+    timeCell(row.createdAt),
+    ops,
+  );
+  return tr;
+}
+
+/* ── 设置 ─────────────────────────────────────────────────────── */
+
+async function loadAgentSettings() {
+  const { status, body } = await api('/api/admin/agents/settings');
+  if (handleAuth(status)) return;
+  if (status !== 200 || !body?.data) {
+    return showMsg(`加载代理设置失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.settings = body.data;
+  renderAgentSettings();
+}
+
+function renderAgentSettings() {
+  const s = agentsState.settings;
+  if (!s) return;
+  $('ag-settings-enabled').checked = s.enabled === true;
+  $('ag-settings-default-rate').value = String(Number(s.defaultRateBp ?? 0) / 100);
+  $('ag-settings-min-yuan').value = String(s.minSettlementYuan ?? '');
+  $('ag-settings-coin-per-yuan').value = String(s.coinPerYuan ?? '');
+  $('ag-settings-hold-days').value = String(s.quotaHoldDays ?? 0);
+  $('ag-settings-admin-limit').value = String(s.quotaAdminAdjustDailyLimitCoins ?? 0);
+  $('ag-settings-adjust-op').value = String(s.adjustMaxYuanPerOp ?? 0);
+  $('ag-settings-adjust-day').value = String(s.adjustMaxYuanPerDay ?? 0);
+  $('ag-settings-state').textContent = s.enabled
+    ? `已启用 · 生效时刻：${fmtTime(s.effectiveFrom)}（关闭再开不重置，永不回溯）`
+    : '未启用（暗上线）：不绑定、不计额度、不计佣。开启时写入生效时刻。';
+}
+
+async function saveAgentSettings(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理设置', 'err');
+  const enabled = $('ag-settings-enabled').checked;
+  if (enabled && agentsState.settings?.enabled !== true) {
+    if (
+      !confirm(
+        '开启代理分润总开关？\n首次开启会写入生效时刻（effective_from），之后不再回溯；关闭再开不重置。',
+      )
+    ) {
+      renderAgentSettings();
+      return;
+    }
+  }
+  if (!enabled && agentsState.settings?.enabled === true) {
+    if (!confirm('关闭代理分润总开关？\n关闭后不再新增额度/佣金；存量佣金仍可结算。')) {
+      renderAgentSettings();
+      return;
+    }
+  }
+  const payload = {
+    enabled,
+    defaultRateBp: percentToBp($('ag-settings-default-rate').value),
+    minSettlementYuan: Number($('ag-settings-min-yuan').value),
+    coinPerYuan: Number($('ag-settings-coin-per-yuan').value),
+    quotaHoldDays: Number($('ag-settings-hold-days').value),
+    quotaAdminAdjustDailyLimitCoins: Number($('ag-settings-admin-limit').value),
+    adjustMaxYuanPerOp: Number($('ag-settings-adjust-op').value),
+    adjustMaxYuanPerDay: Number($('ag-settings-adjust-day').value),
+  };
+  if (
+    !Number.isSafeInteger(payload.defaultRateBp) ||
+    payload.defaultRateBp < 0 ||
+    payload.defaultRateBp > 10000
+  ) {
+    return showMsg('默认比例必须是 0–100 的百分比', 'err');
+  }
+  for (const key of [
+    'minSettlementYuan',
+    'coinPerYuan',
+    'quotaHoldDays',
+    'quotaAdminAdjustDailyLimitCoins',
+    'adjustMaxYuanPerOp',
+    'adjustMaxYuanPerDay',
+  ]) {
+    if (!Number.isSafeInteger(payload[key]) || payload[key] < 0) {
+      return showMsg('数值参数必须是非负整数', 'err');
+    }
+  }
+  if (payload.coinPerYuan < 1) return showMsg('结算汇率必须 ≥ 1 金币/元', 'err');
+  const saveBtn = $('ag-settings-save-btn');
+  saveBtn.disabled = true;
+  const res = await api('/api/admin/agents/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  saveBtn.disabled = false;
+  if (res.status !== 200) return agentApiError(res, '保存代理设置失败');
+  agentsState.settings = res.body?.data ?? agentsState.settings;
+  renderAgentSettings();
+  showMsg('代理设置已保存', 'ok');
+}
+
+/* ── 新建 ─────────────────────────────────────────────────────── */
+
+async function createAgent(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权创建代理', 'err');
+  const name = $('ag-create-name').value.trim();
+  const phone = $('ag-create-phone').value.trim();
+  if (!name || !phone) return showMsg('请填写名称与手机号', 'err');
+  const payload = {
+    name,
+    phone,
+    parentId: $('ag-create-parent').value || null,
+    region: $('ag-create-region').value.trim() || null,
+    contactName: $('ag-create-contact').value.trim() || null,
+    payoutName: $('ag-create-payout-name').value.trim() || null,
+    payoutAccount: $('ag-create-payout-account').value.trim() || null,
+    payoutBank: $('ag-create-payout-bank').value.trim() || null,
+  };
+  const rateRaw = $('ag-create-rate').value.trim();
+  if (rateRaw !== '') {
+    const rateBp = percentToBp(rateRaw);
+    if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) {
+      return showMsg('比例必须是 0–100 的百分比', 'err');
+    }
+    payload.rateBp = rateBp;
+  }
+  const submitBtn = $('ag-create-submit');
+  submitBtn.disabled = true;
+  const res = await api('/api/admin/agents', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  submitBtn.disabled = false;
+  if (res.status !== 200 || !res.body?.data?.account) {
+    return agentApiError(res, '创建代理失败');
+  }
+  const data = res.body.data;
+  const result = $('ag-create-result');
+  result.textContent = '';
+  result.append(
+    el(
+      'p',
+      'agents-secret',
+      `初始密码（仅显示一次）：${data.initialPassword ?? '（未返回；请用重置密码获取）'}`,
+    ),
+    el('p', 'agents-secret', `邀请码（可随时轮换）：${data.inviteCode ?? '—'}`),
+    el('p', 'hint', '请立即转交代理；关闭/刷新后不再显示初始密码。代理首次登录须修改密码。'),
+  );
+  $('ag-create-form').reset();
+  showMsg(`已创建代理「${data.account.name}」`, 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+}
+
+/* ── 详情 ─────────────────────────────────────────────────────── */
+
+async function openAgentDetail(id) {
+  agentsState.detailId = id;
+  agentsState.detail = null;
+  agentsState.bindings = [];
+  $('ag-detail').hidden = false;
+  $('ag-detail-body').textContent = '加载中…';
+  const encoded = encodeURIComponent(id);
+  const [detail, bindings] = await Promise.all([
+    api(`/api/admin/agents/${encoded}`),
+    api(`/api/admin/agents/${encoded}/bindings?page=0&pageSize=50`),
+  ]);
+  if (handleAuth(detail.status)) return;
+  // r3 Critical #2：两次 await 期间用户可能已点了另一个代理；旧响应不得覆盖新面板
+  //（否则「保存资料」会把 A 的资料/收款写进 B）。
+  if (agentsState.detailId !== id) return;
+  if (detail.status !== 200 || !detail.body?.data?.account) {
+    $('ag-detail-body').textContent =
+      detail.status === 0 ? '无法连接服务端' : `加载代理详情失败（HTTP ${detail.status}）`;
+    return;
+  }
+  agentsState.detail = detail.body.data;
+  agentsState.bindings = Array.isArray(bindings.body?.data) ? bindings.body.data : [];
+  renderAgentDetail();
+}
+
+function renderAgentDetail() {
+  const box = $('ag-detail-body');
+  box.textContent = '';
+  const d = agentsState.detail;
+  if (!d?.account) return;
+  const a = d.account;
+  const parent = a.parentId ? agentsState.byId.get(a.parentId) : null;
+
+  box.append(el('h3', 'panel-title sub', `代理：${a.name}`));
+  box.append(el('p', 'hint', `ID：${a.id}　手机号：${a.phone}　状态：${a.status}`));
+  box.append(
+    el(
+      'p',
+      'hint',
+      `上级：${parent ? parent.name : '—'}　比例：${ratePercentText(a.rateBp)}%　片区：${a.region ?? '—'}　联系人：${a.contactName ?? '—'}`,
+    ),
+  );
+  box.append(el('p', 'hint', `下级：${d.children}　直接玩家：${d.bindings}　创建：${fmtTime(a.createdAt)}`));
+
+  const secret = el('div', 'agents-secret');
+  secret.id = 'ag-secret';
+  box.append(secret);
+
+  // 资料编辑（含三收款字段；updatePayout 省略字段即置 NULL ⇒ 同笔提交三字段）。
+  const form = document.createElement('form');
+  form.className = 'filter-bar';
+  const field = (id, label, type, value) => {
+    const wrap = el('label', 'field');
+    wrap.htmlFor = id;
+    wrap.append(el('span', 'field-label', label));
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = type;
+    input.value = value ?? '';
+    input.autocomplete = 'off';
+    if (type === 'number') {
+      input.min = '0';
+      // 比例按 bp 存储：12.5% = 1250bp —— step=1 会让预填值 "12.5" 触发原生校验、
+      // 整张「保存资料」表单连提交事件都到不了（r3 M7）。
+      input.step = id === 'ag-e-rate' ? '0.01' : '1';
+    }
+    wrap.append(input);
+    return wrap;
+  };
+  const parentWrap = el('label', 'field');
+  parentWrap.htmlFor = 'ag-e-parent';
+  parentWrap.append(el('span', 'field-label', '上级'));
+  const parentSel = document.createElement('select');
+  parentSel.id = 'ag-e-parent';
+  const none = el('option', '', '（无上级）');
+  none.value = '';
+  parentSel.append(none);
+  for (const candidate of agentsState.tree) {
+    if (candidate.id === a.id) continue;
+    // 只列 active；当前上级即使已冻结也保留（否则下拉无法回显现状）。
+    if (candidate.status !== 'active' && candidate.id !== a.parentId) continue;
+    const opt = el(
+      'option',
+      '',
+      `${candidate.depth ? '　'.repeat(candidate.depth) : ''}${candidate.name}（${candidate.phone}）${candidate.status === 'active' ? '' : '（已冻结）'}`,
+    );
+    opt.value = candidate.id;
+    parentSel.append(opt);
+  }
+  parentSel.value = a.parentId ?? '';
+  parentWrap.append(parentSel);
+  const saveBtn = btn('保存资料', 'btn primary');
+  saveBtn.id = 'ag-e-save';
+  saveBtn.type = 'submit';
+  const actions = el('div', 'filter-actions');
+  actions.append(saveBtn);
+  form.append(
+    field('ag-e-name', '名称', 'text', a.name),
+    parentWrap,
+    field('ag-e-rate', '比例（%）', 'number', ratePercentText(a.rateBp)),
+    field('ag-e-region', '片区', 'text', a.region),
+    field('ag-e-contact', '联系人', 'text', a.contactName),
+    field('ag-e-payout-name', '收款户名', 'text', a.payoutName),
+    field('ag-e-payout-account', '收款账号', 'text', a.payoutAccount),
+    field('ag-e-payout-bank', '开户行', 'text', a.payoutBank),
+    actions,
+  );
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    saveAgentDetail();
+  });
+  if (!canAgentWrite()) {
+    for (const input of form.querySelectorAll('input, select, button')) input.disabled = true;
+    saveBtn.hidden = true;
+  }
+  box.append(form);
+
+  const bar = el('div', 'agents-actions');
+  if (canAgentWrite()) {
+    const resetBtn = btn('重置密码', 'btn');
+    resetBtn.addEventListener('click', () => resetAgentPassword(a));
+    const rotateBtn = btn('轮换邀请码', 'btn');
+    rotateBtn.addEventListener('click', () => rotateAgentInvite(a));
+    const toggleBtn = btn(a.status === 'active' ? '冻结代理' : '解冻代理', 'btn');
+    toggleBtn.addEventListener('click', () =>
+      setAgentStatus(a, a.status === 'active' ? 'frozen' : 'active'),
+    );
+    bar.append(resetBtn, rotateBtn, toggleBtn);
+  } else if (canAgentSettle()) {
+    bar.append(el('span', 'hint', '只读视角：写操作仅超级管理员可用。'));
+  }
+  if (bar.childNodes.length > 0) box.append(bar);
+
+  box.append(buildAgentBindSection(a));
+}
+
+async function saveAgentDetail() {
+  // 以**当前渲染的面板**为准（不是点击顺序的 detailId）：两者不同时绝不能写。
+  const id = agentsState.detail?.account?.id;
+  if (!id) return;
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理', 'err');
+  const rateBp = percentToBp($('ag-e-rate').value);
+  if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) {
+    return showMsg('比例必须是 0–100 的百分比', 'err');
+  }
+  const name = $('ag-e-name').value.trim();
+  if (!name) return showMsg('名称不能为空', 'err');
+  const payload = {
+    name,
+    rateBp,
+    region: $('ag-e-region').value.trim() || null,
+    contactName: $('ag-e-contact').value.trim() || null,
+  };
+  // 树未加载成功时（下拉只剩「无上级」）**不得提交 parentId**：否则会把上级静默清空。
+  // 树已加载但当前上级不在下拉里（旧快照/刚被别人改挂）同样不提交，避免误摘上级（r3 M8）。
+  if (agentsState.tree.length > 0) {
+    const parentSel = $('ag-e-parent');
+    const currentParent = agentsState.detail?.account?.parentId ?? '';
+    const currentPresent = [...parentSel.options].some((o) => o.value === currentParent);
+    if (currentParent === '' || currentPresent) {
+      payload.parentId = parentSel.value || null;
+    }
+  }
+  // updatePayout 的 PATCH 省略字段会置 NULL ⇒ 三收款字段必须同笔提交（空串 ⇒ null）。
+  const payout = {
+    payoutName: $('ag-e-payout-name').value.trim() || null,
+    payoutAccount: $('ag-e-payout-account').value.trim() || null,
+    payoutBank: $('ag-e-payout-bank').value.trim() || null,
+  };
+  const saveBtn = $('ag-e-save');
+  saveBtn.disabled = true;
+  const profileRes = await api(`/api/admin/agents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  if (profileRes.status !== 200) {
+    saveBtn.disabled = false;
+    return agentApiError(profileRes, '保存代理资料失败');
+  }
+  const payoutRes = await api(`/api/admin/agents/${encodeURIComponent(id)}/payout`, {
+    method: 'PATCH',
+    body: JSON.stringify(payout),
+  });
+  saveBtn.disabled = false;
+  if (payoutRes.status !== 200) return agentApiError(payoutRes, '保存收款信息失败');
+  showMsg('代理资料已保存', 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+  await openAgentDetail(id);
+}
+
+async function resetAgentPassword(agent) {
+  if (!canAgentWrite()) return showMsg('当前角色无权重置密码', 'err');
+  if (
+    !confirm(
+      `重置「${agent.name}」的密码？\n旧登录状态会立即失效；代理需用新初始密码登录并改密。`,
+    )
+  ) {
+    return;
+  }
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/reset-password`, {
+    method: 'POST',
+  });
+  if (res.status !== 200) return agentApiError(res, '重置密码失败');
+  const secret = $('ag-secret');
+  if (secret) {
+    secret.textContent = '';
+    secret.append(
+      el('p', '', `初始密码（仅显示一次）：${res.body?.data?.password ?? '—'}`),
+      el('p', 'hint', '请立即转交代理；代理首次登录须修改密码。'),
+    );
+  }
+  showMsg('已重置密码（旧登录状态已失效）', 'ok');
+}
+
+async function rotateAgentInvite(agent) {
+  if (!canAgentWrite()) return showMsg('当前角色无权轮换邀请码', 'err');
+  if (!confirm(`轮换「${agent.name}」的邀请码？\n旧码立即失效；既有绑定不受影响。`)) return;
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/invite-code/rotate`, {
+    method: 'POST',
+  });
+  if (res.status !== 200) return agentApiError(res, '轮换邀请码失败');
+  const secret = $('ag-secret');
+  if (secret) {
+    secret.textContent = '';
+    secret.append(el('p', '', `新邀请码：${res.body?.data?.code ?? '—'}`), el('p', 'hint', '可随时再次轮换；既有绑定不受影响。'));
+  }
+  showMsg('已轮换邀请码', 'ok');
+}
+
+async function setAgentStatus(agent, next) {
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理状态', 'err');
+  const text = await modalPrompt({
+    title: next === 'frozen' ? '冻结代理' : '解冻代理',
+    desc:
+      next === 'frozen'
+        ? '冻结后：不再新增该代理佣金、不可成为新绑定目标；仍可登录/只读/发起存量结算。'
+        : '解冻后：恢复新增佣金与新绑定。',
+    placeholder: '原因（1–200 字）',
+    confirmLabel: next === 'frozen' ? '确认冻结' : '确认解冻',
+    maxlength: 200,
+  });
+  if (text === null) return;
+  const reason = text.trim();
+  if (!reason) return showMsg('请填写原因', 'err');
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: next, reason }),
+  });
+  if (res.status !== 200) {
+    return agentApiError(res, next === 'frozen' ? '冻结失败' : '解冻失败');
+  }
+  showMsg(next === 'frozen' ? '已冻结代理' : '已解冻代理', 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+  if (agentsState.detailId === agent.id) await openAgentDetail(agent.id);
+}
+
+/* ── 绑定管理 ──────────────────────────────────────────────────── */
+
+function buildAgentBindSection(agent) {
+  const wrap = el('div', 'agents-bind');
+  wrap.append(el('h3', 'panel-title sub', '玩家绑定（前 50）'));
+  wrap.append(
+    simpleTable(
+      ['玩家ID', '脱敏手机号', '绑定时间', '来源'],
+      agentsState.bindings.map((b) => [b.ownerId, b.phoneMasked, fmtTime(b.boundAt), b.source]),
+      '（暂无绑定玩家）',
+    ),
+  );
+  if (!canAgentWrite()) return wrap;
+
+  const form = document.createElement('form');
+  form.className = 'filter-bar';
+  const owner = document.createElement('input');
+  owner.id = 'ag-bind-owner';
+  owner.type = 'text';
+  owner.placeholder = '玩家用户ID';
+  owner.autocomplete = 'off';
+  const ownerField = el('label', 'field');
+  ownerField.htmlFor = 'ag-bind-owner';
+  ownerField.append(el('span', 'field-label', '玩家ID'), owner);
+  const reason = document.createElement('input');
+  reason.id = 'ag-bind-reason';
+  reason.type = 'text';
+  reason.maxLength = 200;
+  reason.placeholder = '原因（写审计）';
+  reason.autocomplete = 'off';
+  const reasonField = el('label', 'field');
+  reasonField.htmlFor = 'ag-bind-reason';
+  reasonField.append(el('span', 'field-label', '原因'), reason);
+  const bindBtn = btn('改绑到本代理', 'btn primary');
+  bindBtn.type = 'submit';
+  const unbindBtn = btn('解绑', 'btn');
+  unbindBtn.addEventListener('click', () =>
+    unbindAgentPlayer(agent.id, owner.value.trim(), reason.value.trim()),
+  );
+  const actions = el('div', 'filter-actions');
+  actions.append(bindBtn, unbindBtn);
+  form.append(ownerField, reasonField, actions);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    bindAgentPlayer(agent.id, owner.value.trim(), reason.value.trim());
+  });
+  wrap.append(form);
+
+  const bulk = el('div', 'filter-bar');
+  const targetWrap = el('label', 'field');
+  targetWrap.htmlFor = 'ag-bulk-target';
+  targetWrap.append(el('span', 'field-label', '批量改绑到'));
+  const target = document.createElement('select');
+  target.id = 'ag-bulk-target';
+  for (const candidate of agentsState.tree) {
+    if (candidate.id === agent.id || candidate.status !== 'active') continue;
+    const opt = el('option', '', `${candidate.name}（${candidate.phone}）`);
+    opt.value = candidate.id;
+    target.append(opt);
+  }
+  targetWrap.append(target);
+  const dry = document.createElement('input');
+  dry.id = 'ag-bulk-dry';
+  dry.type = 'checkbox';
+  dry.checked = true;
+  const dryWrap = el('label', 'field');
+  dryWrap.append(el('span', 'field-label', '仅预览（dry-run）'), dry);
+  const bulkBtn = btn('批量改绑（≤5000）', 'btn');
+  bulkBtn.addEventListener('click', () => bulkRebindAgent(agent.id, target.value, dry.checked));
+  const bulkActions = el('div', 'filter-actions');
+  bulkActions.append(bulkBtn);
+  bulk.append(targetWrap, dryWrap, bulkActions);
+  wrap.append(bulk);
+  return wrap;
+}
+
+async function bindAgentPlayer(agentId, ownerId, reason) {
+  if (!canAgentWrite()) return showMsg('当前角色无权改绑', 'err');
+  if (!ownerId) return showMsg('请填写玩家ID', 'err');
+  const res = await api('/api/admin/agents/bind', {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, agentId, reason: reason || 'admin' }),
+  });
+  if (res.status !== 200) return agentApiError(res, '改绑失败');
+  showMsg('已改绑（只影响之后产生的佣金）', 'ok');
+  await openAgentDetail(agentId);
+}
+
+async function unbindAgentPlayer(agentId, ownerId, reason) {
+  if (!canAgentWrite()) return showMsg('当前角色无权解绑', 'err');
+  if (!ownerId) return showMsg('请填写玩家ID', 'err');
+  const res = await api('/api/admin/agents/unbind', {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, reason: reason || 'admin' }),
+  });
+  if (res.status !== 200) return agentApiError(res, '解绑失败');
+  showMsg('已解绑（只影响之后产生的佣金）', 'ok');
+  await openAgentDetail(agentId);
+}
+
+async function bulkRebindAgent(fromAgentId, toAgentId, dryRun) {
+  if (!canAgentWrite()) return showMsg('当前角色无权批量改绑', 'err');
+  if (!toAgentId) return showMsg('请选择目标代理', 'err');
+  if (!dryRun && !confirm('确认批量改绑？\n每批 500、单次上限 5000；只影响之后产生的佣金。')) return;
+  const res = await api(
+    `/api/admin/agents/${encodeURIComponent(fromAgentId)}/bindings/bulk`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ toAgentId, dryRun }),
+    },
+  );
+  if (res.status !== 200) return agentApiError(res, '批量改绑失败');
+  showMsg(
+    dryRun
+      ? `预览：将改绑 ${res.body?.data?.moved ?? 0} 人`
+      : `已改绑 ${res.body?.data?.moved ?? 0} 人`,
+    'ok',
+  );
+  if (!dryRun) await openAgentDetail(fromAgentId);
+}
+
+/* ── 结算队列 ──────────────────────────────────────────────────── */
+
+async function loadAgentSettlements(page = agentsState.settlements.page) {
+  if (agentsState.settlements.loading) return;
+  agentsState.settlements.loading = true;
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.settlements.pageSize),
+  });
+  if (agentsState.settlements.status) p.set('status', agentsState.settlements.status);
+  const { status, body } = await api(`/api/admin/agent-settlements?${p.toString()}`);
+  agentsState.settlements.loading = false;
+  if (handleAuth(status)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载结算队列失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.settlements.page = page;
+  agentsState.settlements.rows = body.data;
+  agentsState.settlements.done = body.data.length < agentsState.settlements.pageSize;
+  agentsState.settlements.loaded = true;
+  renderAgentSettlements();
+}
+
+function renderAgentSettlements() {
+  const body = $('ag-settle-body');
+  body.textContent = '';
+  for (const row of agentsState.settlements.rows) {
+    const tr = document.createElement('tr');
+    const ops = document.createElement('td');
+    const detailBtn = btn('详情', 'btn mini');
+    detailBtn.addEventListener('click', () => openAgentSettlement(row.id));
+    ops.append(detailBtn);
+    tr.append(
+      textCell(row.settlementNo),
+      textCell(row.agentId),
+      textCell(row.totalCoins, { num: true }),
+      textCell(row.totalMicro, { num: true }),
+      textCell(row.status),
+      timeCell(row.requestedAt),
+      ops,
+    );
+    body.append(tr);
+  }
+  $('ag-settle-empty').textContent =
+    agentsState.settlements.rows.length === 0 ? '（没有结算单）' : '';
+  const sp = agentsState.settlements.page;
+  $('ag-settle-page-info').textContent = `第 ${sp + 1} 页`;
+  $('ag-settle-prev-btn').disabled = sp <= 0;
+  $('ag-settle-next-btn').disabled = agentsState.settlements.done;
+}
+
+async function openAgentSettlement(id) {
+  $('ag-settle-detail').hidden = false;
+  $('ag-settle-detail-body').textContent = '加载中…';
+  const { status, body } = await api(`/api/admin/agent-settlements/${encodeURIComponent(id)}`);
+  if (handleAuth(status)) return;
+  if (status !== 200 || !body?.data?.settlement) {
+    $('ag-settle-detail-body').textContent = `加载失败（HTTP ${status}）`;
+    return;
+  }
+  const { settlement, lines } = body.data;
+  const box = $('ag-settle-detail-body');
+  box.textContent = '';
+  const line = (text) => box.append(el('p', 'hint', text));
+  line(`单号：${settlement.settlementNo}　状态：${settlement.status}　代理：${settlement.agentId}`);
+  line(
+    `金额：${settlement.totalCoins} 金币（${settlement.totalMicro} micro）　条目：${settlement.itemsCount}　carry：${settlement.carryBefore} → ${settlement.carryAfter}`,
+  );
+  line(
+    `汇率：${settlement.coinPerYuan} 金币/元　最低：${settlement.minYuan} 元　items_hash：${settlement.itemsHash}`,
+  );
+  line(`收款快照：${JSON.stringify(settlement.payout ?? null)}`);
+  line(
+    `申请：${fmtTime(settlement.requestedAt)}　决定：${fmtTime(settlement.decidedAt)}　打款：${fmtTime(settlement.paidAt)}（${settlement.paidBy ?? '—'}）　凭证：${settlement.voucherNo ?? '—'}　驳回原因：${settlement.rejectReason ?? '—'}`,
+  );
+  box.append(
+    simpleTable(
+      ['层级', '玩家ID', '条数', 'micro'],
+      (lines ?? []).map((l) => [l.level, l.ownerId ?? '—', l.count, l.micro]),
+      '（无条目）',
+    ),
+  );
+  if (settlement.status === 'pending' && canAgentSettle()) {
+    const actions = el('div', 'agents-actions');
+    const payBtn = btn('确认打款', 'btn primary');
+    payBtn.addEventListener('click', () => payAgentSettlement(settlement));
+    const rejectBtn = btn('驳回', 'btn');
+    rejectBtn.addEventListener('click', () => rejectAgentSettlement(settlement));
+    actions.append(payBtn, rejectBtn);
+    box.append(actions);
+  }
+}
+
+async function payAgentSettlement(settlement) {
+  if (!canAgentSettle()) return showMsg('当前角色无权打款', 'err');
+  const voucherNo = await modalPrompt({
+    title: `打款确认 · ${settlement.settlementNo}`,
+    desc: `金额 ${settlement.totalCoins} 金币；线下打款后回填凭证号。打款后水位推进，不可改单。`,
+    placeholder: '凭证号（必填）',
+    confirmLabel: '确认打款',
+    maxlength: 100,
+  });
+  if (voucherNo === null) return;
+  if (!voucherNo.trim()) return showMsg('凭证号不能为空', 'err');
+  const res = await api(`/api/admin/agent-settlements/${settlement.id}/pay`, {
+    method: 'POST',
+    body: JSON.stringify({ voucherNo: voucherNo.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '打款失败');
+  showMsg('已登记打款', 'ok');
+  await loadAgentSettlements();
+  await openAgentSettlement(settlement.id);
+}
+
+async function rejectAgentSettlement(settlement) {
+  if (!canAgentSettle()) return showMsg('当前角色无权驳回', 'err');
+  const reason = await modalPrompt({
+    title: `驳回结算单 · ${settlement.settlementNo}`,
+    desc: '驳回只清 pending，不推进水位；代理可重新申请。',
+    placeholder: '驳回原因（必填）',
+    confirmLabel: '确认驳回',
+    maxlength: 200,
+  });
+  if (reason === null) return;
+  if (!reason.trim()) return showMsg('驳回原因不能为空', 'err');
+  const res = await api(`/api/admin/agent-settlements/${settlement.id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '驳回失败');
+  showMsg('已驳回结算单', 'ok');
+  await loadAgentSettlements();
+  await openAgentSettlement(settlement.id);
+}
+
+/* ── 人工调账 ──────────────────────────────────────────────────── */
+
+async function loadAgentAdjustments(page = agentsState.adjustments.page) {
+  if (agentsState.adjustments.loading) return;
+  agentsState.adjustments.loading = true;
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.adjustments.pageSize),
+  });
+  if (agentsState.adjustments.status) p.set('status', agentsState.adjustments.status);
+  const { status, body } = await api(`/api/admin/agent-adjustments?${p.toString()}`);
+  agentsState.adjustments.loading = false;
+  if (handleAuth(status)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载调账失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.adjustments.page = page;
+  agentsState.adjustments.rows = body.data;
+  agentsState.adjustments.done = body.data.length < agentsState.adjustments.pageSize;
+  agentsState.adjustments.loaded = true;
+  renderAgentAdjustments();
+}
+
+function renderAgentAdjustments() {
+  const body = $('ag-adjust-body');
+  body.textContent = '';
+  for (const row of agentsState.adjustments.rows) {
+    const tr = document.createElement('tr');
+    const ops = document.createElement('td');
+    if (row.status === 'pending' && canAgentWrite()) {
+      const approveBtn = btn('复核通过', 'btn mini');
+      approveBtn.addEventListener('click', () => approveAgentAdjustment(row));
+      const rejectBtn = btn('驳回', 'btn mini');
+      rejectBtn.addEventListener('click', () => rejectAgentAdjustment(row));
+      ops.append(approveBtn, rejectBtn);
+    }
+    tr.append(
+      timeCell(row.createdAt),
+      textCell(row.agentId),
+      textCell(microToCoinsText(row.deltaMicro), { num: true }),
+      textCell(row.reason),
+      textCell(row.status),
+      textCell(row.requestedBy),
+      textCell(row.approvedBy ?? '—'),
+      ops,
+    );
+    body.append(tr);
+  }
+  $('ag-adjust-empty').textContent =
+    agentsState.adjustments.rows.length === 0 ? '（没有调账记录）' : '';
+  const ap = agentsState.adjustments.page;
+  $('ag-adjust-page-info').textContent = `第 ${ap + 1} 页`;
+  $('ag-adjust-prev-btn').disabled = ap <= 0;
+  $('ag-adjust-next-btn').disabled = agentsState.adjustments.done;
+}
+
+async function createAgentAdjustment(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权发起调账', 'err');
+  const agentId = $('ag-adjust-agent').value.trim();
+  const deltaCoins = Number($('ag-adjust-delta').value);
+  const reason = $('ag-adjust-reason').value.trim();
+  if (!agentId) return showMsg('请填写代理ID', 'err');
+  if (!Number.isSafeInteger(deltaCoins) || deltaCoins === 0) {
+    return showMsg('金额必须是非零整数（金币）', 'err');
+  }
+  if (!reason) return showMsg('请填写调账原因', 'err');
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agentId)}/adjustments`, {
+    method: 'POST',
+    body: JSON.stringify({ deltaCoins, reason }),
+  });
+  if (res.status !== 200) return agentApiError(res, '发起调账失败');
+  showMsg('调账已发起，待另一名超级管理员复核', 'ok');
+  $('ag-adjust-delta').value = '';
+  $('ag-adjust-reason').value = '';
+  await loadAgentAdjustments();
+}
+
+async function approveAgentAdjustment(row) {
+  if (!canAgentWrite()) return showMsg('当前角色无权复核调账', 'err');
+  if (
+    !confirm(
+      `复核通过代理 ${row.agentId} 的调账 ${microToCoinsText(row.deltaMicro)} 金币？\n通过后写入未结佣金（进入下一单结算）。`,
+    )
+  ) {
+    return;
+  }
+  const res = await api(`/api/admin/agent-adjustments/${row.id}/approve`, {
+    method: 'POST',
+    body: '{}',
+  });
+  if (res.status !== 200) return agentApiError(res, '复核失败');
+  showMsg('调账已复核通过', 'ok');
+  await loadAgentAdjustments();
+}
+
+async function rejectAgentAdjustment(row) {
+  if (!canAgentWrite()) return showMsg('当前角色无权驳回调账', 'err');
+  const reason = await modalPrompt({
+    title: '驳回调账',
+    desc: `代理 ${row.agentId} · ${microToCoinsText(row.deltaMicro)} 金币`,
+    placeholder: '驳回原因（必填）',
+    confirmLabel: '确认驳回',
+    maxlength: 200,
+  });
+  if (reason === null) return;
+  if (!reason.trim()) return showMsg('驳回原因不能为空', 'err');
+  const res = await api(`/api/admin/agent-adjustments/${row.id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '驳回失败');
+  showMsg('已驳回调账', 'ok');
+  await loadAgentAdjustments();
+}
+
+/* ── 对账 / 审计 ───────────────────────────────────────────────── */
+
+async function loadAgentReconciliation() {
+  if (agentsState.recon.loading) return;
+  const fromRaw = $('ag-recon-from').value;
+  const toRaw = $('ag-recon-to').value;
+  const from = fromRaw ? new Date(fromRaw) : new Date(Date.now() - 7 * DAY_MS);
+  const to = toRaw ? new Date(toRaw) : new Date();
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return showMsg('时间格式非法', 'err');
+  }
+  if (from >= to) return showMsg('开始时间必须早于结束时间', 'err');
+  agentsState.recon.loading = true;
+  const p = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+  const { status, body } = await api(`/api/admin/agent-reconciliation?${p.toString()}`);
+  agentsState.recon.loading = false;
+  if (handleAuth(status)) return;
+  if (status !== 200 || !body?.data) return showMsg(`对账失败（HTTP ${status}）`, 'err');
+  agentsState.recon.summary = body.data;
+  renderAgentReconciliation();
+}
+
+function renderAgentReconciliation() {
+  const box = $('ag-recon-body');
+  box.textContent = '';
+  const s = agentsState.recon.summary;
+  if (!s) return;
+  box.append(el('p', 'hint', `区间：${fmtTime(s.from)} → ${fmtTime(s.to)}`));
+  box.append(
+    simpleTable(
+      ['指标', '值'],
+      [
+        ['台费毛利（coins）', s.entryFeeTotal],
+        ['已绑定玩家台费', s.boundFeeTotal],
+        ['未归属台费', s.unboundFeeTotal],
+        ['计佣基数', s.baseTotal],
+        ['佣金 entry micro', s.commissionMicroTotal],
+        ['理论上限 micro', s.expectedMaxMicroTotal],
+        ['已付金币', s.paidCoins],
+        ['钩子缺口（gap）', s.gapCount],
+        ['缺 revenue event', s.missingEventCount],
+      ],
+      '（无数据）',
+    ),
+  );
+}
+
+async function loadAgentAudit() {
+  if (agentsState.audit.loading) return;
+  agentsState.audit.loading = true;
+  const p = new URLSearchParams({
+    page: String(agentsState.audit.page),
+    pageSize: '50',
+  });
+  const { status, body } = await api(`/api/admin/agent-audit?${p.toString()}`);
+  agentsState.audit.loading = false;
+  if (handleAuth(status)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载审计失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.audit.rows = body.data;
+  agentsState.audit.loaded = true;
+  renderAgentAudit();
+}
+
+function renderAgentAudit() {
+  const body = $('ag-audit-body');
+  body.textContent = '';
+  for (const row of agentsState.audit.rows) {
+    const tr = document.createElement('tr');
+    tr.append(
+      timeCell(row.createdAt),
+      textCell(row.actor),
+      textCell(row.action),
+      textCell(`${row.targetType}:${row.targetId}`),
+      textCell(row.reason ?? '—'),
+    );
+    body.append(tr);
+  }
+  $('ag-audit-empty').textContent = agentsState.audit.rows.length === 0 ? '（暂无审计记录）' : '';
+  $('ag-audit-page-info').textContent = `第 ${agentsState.audit.page + 1} 页`;
+  $('ag-audit-prev-btn').disabled = agentsState.audit.page <= 0;
+  $('ag-audit-next-btn').disabled = agentsState.audit.rows.length < 50;
+}
+
+/** 登出/退出时清代理页的数据面与控件（showLoginView 单一处置点）。 */
+function resetAgents() {
+  agentsState.filter = { q: '', status: '' };
+  agentsState.page = 1;
+  agentsState.pageSize = 20;
+  agentsState.rows = [];
+  agentsState.total = 0;
+  agentsState.tree = [];
+  agentsState.byId = new Map();
+  agentsState.settings = null;
+  agentsState.detailId = null;
+  agentsState.detail = null;
+  agentsState.bindings = [];
+  agentsState.settlements = {
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  };
+  agentsState.adjustments = {
+    status: '',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+  };
+  agentsState.recon = { loading: false, summary: null };
+  agentsState.audit = { page: 0, rows: [], loading: false, loaded: false };
+  agentsState.loading = false;
+  agentsState.loaded = false;
+  $('ag-q').value = '';
+  $('ag-status').value = '';
+  $('ag-body').textContent = '';
+  $('ag-empty').textContent = '';
+  $('ag-page-info').textContent = '';
+  $('ag-page-size').value = '20';
+  $('ag-detail').hidden = true;
+  $('ag-detail-body').textContent = '';
+  $('ag-create-panel').hidden = true;
+  $('ag-create-form').reset();
+  $('ag-create-result').textContent = '';
+  $('ag-settings-form').reset();
+  $('ag-settings-state').textContent = '';
+  $('ag-settle-status').value = 'pending';
+  $('ag-settle-body').textContent = '';
+  $('ag-settle-empty').textContent = '';
+  $('ag-settle-page-info').textContent = '';
+  $('ag-settle-detail').hidden = true;
+  $('ag-settle-detail-body').textContent = '';
+  $('ag-adjust-form').reset();
+  $('ag-adjust-body').textContent = '';
+  $('ag-adjust-empty').textContent = '';
+  $('ag-adjust-page-info').textContent = '';
+  $('ag-recon-from').value = '';
+  $('ag-recon-to').value = '';
+  $('ag-recon-body').textContent = '';
+  $('ag-audit-body').textContent = '';
+  $('ag-audit-empty').textContent = '';
+  $('ag-audit-page-info').textContent = '';
+}
+
+/** 代理页控件接线（wire() 调用）。 */
+function wireAgents() {
+  $('ag-settings-form').addEventListener('submit', saveAgentSettings);
+  $('ag-search-btn').addEventListener('click', () => {
+    agentsState.filter = { q: $('ag-q').value.trim(), status: $('ag-status').value };
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('ag-search-btn').click();
+    }
+  });
+  $('ag-reset-btn').addEventListener('click', () => {
+    $('ag-q').value = '';
+    $('ag-status').value = '';
+    agentsState.filter = { q: '', status: '' };
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-prev-btn').addEventListener('click', () => {
+    if (agentsState.page > 1) {
+      agentsState.page -= 1;
+      loadAgentList();
+    }
+  });
+  $('ag-next-btn').addEventListener('click', () => {
+    const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+    if (agentsState.page < pages) {
+      agentsState.page += 1;
+      loadAgentList();
+    }
+  });
+  $('ag-page-size').addEventListener('change', () => {
+    agentsState.pageSize = Number($('ag-page-size').value);
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-create-btn').addEventListener('click', () => {
+    const panel = $('ag-create-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      fillAgentCreateParent();
+      $('ag-create-name').focus();
+    }
+  });
+  $('ag-create-form').addEventListener('submit', createAgent);
+  $('ag-create-cancel').addEventListener('click', () => {
+    $('ag-create-panel').hidden = true;
+  });
+  $('ag-detail-close-btn').addEventListener('click', () => {
+    $('ag-detail').hidden = true;
+    agentsState.detailId = null;
+  });
+  $('ag-settle-status').addEventListener('change', () => {
+    agentsState.settlements.status = $('ag-settle-status').value;
+    loadAgentSettlements(0);
+  });
+  $('ag-settle-refresh-btn').addEventListener('click', () =>
+    loadAgentSettlements(agentsState.settlements.page),
+  );
+  $('ag-settle-prev-btn').addEventListener('click', () => {
+    if (agentsState.settlements.page > 0) loadAgentSettlements(agentsState.settlements.page - 1);
+  });
+  $('ag-settle-next-btn').addEventListener('click', () => {
+    if (!agentsState.settlements.done) loadAgentSettlements(agentsState.settlements.page + 1);
+  });
+  $('ag-adjust-form').addEventListener('submit', createAgentAdjustment);
+  $('ag-adjust-status').addEventListener('change', () => {
+    agentsState.adjustments.status = $('ag-adjust-status').value;
+    loadAgentAdjustments(0);
+  });
+  $('ag-adjust-refresh-btn').addEventListener('click', () =>
+    loadAgentAdjustments(agentsState.adjustments.page),
+  );
+  $('ag-adjust-prev-btn').addEventListener('click', () => {
+    if (agentsState.adjustments.page > 0) loadAgentAdjustments(agentsState.adjustments.page - 1);
+  });
+  $('ag-adjust-next-btn').addEventListener('click', () => {
+    if (!agentsState.adjustments.done) loadAgentAdjustments(agentsState.adjustments.page + 1);
+  });
+  $('ag-recon-run-btn').addEventListener('click', () => loadAgentReconciliation());
+  $('ag-audit-refresh-btn').addEventListener('click', () => loadAgentAudit());
+  $('ag-audit-prev-btn').addEventListener('click', () => {
+    if (agentsState.audit.page > 0) {
+      agentsState.audit.page -= 1;
+      loadAgentAudit();
+    }
+  });
+  $('ag-audit-next-btn').addEventListener('click', () => {
+    if (agentsState.audit.rows.length >= 50) {
+      agentsState.audit.page += 1;
+      loadAgentAudit();
+    }
   });
 }
 

@@ -66,7 +66,7 @@ import { computeReliefThreshold } from '../src/migration-support/relief-threshol
 import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-DdzEnabledSeed';
 import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
 import { PdkTwoPlayerSeed1796800000000 } from '../src/migrations/1796800000000-PdkTwoPlayerSeed';
-import { PdkRiskPlayerCountSeed1796900000000 } from '../src/migrations/1796900000000-PdkRiskPlayerCountSeed';
+import { PdkRiskPlayerCountSeed1797000000006 } from '../src/migrations/1797000000006-PdkRiskPlayerCountSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -2020,7 +2020,7 @@ describe('PdkTwoPlayerSeed1796800000000：跑得快 2 人闸种子', () => {
  * 跑得快按人数风控 + 自动限流种子（2026-10-26 / spec D1/D4）：
  * 7 键、version = 全表 MAX、INSERT IGNORE 幂等、down 只删 7 键。
  */
-describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动限流种子', () => {
+describe('PdkRiskPlayerCountSeed1797000000006：跑得快按人数风控/自动限流种子', () => {
   const KEYS: ReadonlyArray<readonly [string, unknown]> = [
     ['game.paodekuai.risk.player2.winRateThreshold', 0.8],
     ['game.paodekuai.risk.player2.minGames', 100],
@@ -2064,7 +2064,7 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
     const db = new PlayerCountSeedRunner();
     db.rows.set('some.other.key', { value: true, version: 7 });
 
-    await new PdkRiskPlayerCountSeed1796900000000().up(asRunner(db));
+    await new PdkRiskPlayerCountSeed1797000000006().up(asRunner(db));
 
     for (const [key, value] of KEYS) {
       expect(db.rows.get(key)).toEqual({ value, version: 7 });
@@ -2086,7 +2086,7 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
 
   it('空表 ⇒ MAX 为 null ⇒ version 1（不写 0）', async () => {
     const db = new PlayerCountSeedRunner();
-    await new PdkRiskPlayerCountSeed1796900000000().up(asRunner(db));
+    await new PdkRiskPlayerCountSeed1797000000006().up(asRunner(db));
     for (const [key, value] of KEYS) {
       expect(db.rows.get(key)).toEqual({ value, version: 1 });
     }
@@ -2095,7 +2095,7 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
   it('重放幂等：第二次 up 不改值/版本（INSERT IGNORE 不覆盖）', async () => {
     const db = new PlayerCountSeedRunner();
     db.rows.set('some.other.key', { value: true, version: 3 });
-    const migration = new PdkRiskPlayerCountSeed1796900000000();
+    const migration = new PdkRiskPlayerCountSeed1797000000006();
     await migration.up(asRunner(db));
     const before = new Map([...db.rows.entries()].map(([k, v]) => [k, { ...v }]));
     await migration.up(asRunner(db));
@@ -2105,7 +2105,7 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
   it('down()：只删 7 键，其它键保留', async () => {
     const db = new PlayerCountSeedRunner();
     db.rows.set('some.other.key', { value: true, version: 3 });
-    const migration = new PdkRiskPlayerCountSeed1796900000000();
+    const migration = new PdkRiskPlayerCountSeed1797000000006();
     await migration.up(asRunner(db));
     await migration.down(asRunner(db));
 
@@ -2117,9 +2117,9 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
     expect(db.params[db.params.length - 1]).toEqual(KEYS.map(([key]) => key));
   });
 
-  it('形状（name/up/down）；迁移号 1796900000000 晚于 1796800000000 且全仓唯一', () => {
-    const migration = new PdkRiskPlayerCountSeed1796900000000();
-    expect(migration.name).toBe('PdkRiskPlayerCountSeed1796900000000');
+  it('形状（name/up/down）；迁移号 1797000000006 晚于 1796800000000 且全仓唯一', () => {
+    const migration = new PdkRiskPlayerCountSeed1797000000006();
+    expect(migration.name).toBe('PdkRiskPlayerCountSeed1797000000006');
     expect(typeof migration.up).toBe('function');
     expect(typeof migration.down).toBe('function');
 
@@ -2133,10 +2133,10 @@ describe('PdkRiskPlayerCountSeed1796900000000：跑得快按人数风控/自动�
       if (!existsSync(dir)) continue;
       for (const file of readdirSync(dir)) {
         for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
-          if (m[1]!.includes('1796900000000')) hits.push(`${pkg}/${m[1]}`);
+          if (m[1]!.includes('1797000000006')) hits.push(`${pkg}/${m[1]}`);
         }
       }
     }
-    expect(hits).toEqual(['config-service/PdkRiskPlayerCountSeed1796900000000']);
+    expect(hits).toEqual(['config-service/PdkRiskPlayerCountSeed1797000000006']);
   });
 });

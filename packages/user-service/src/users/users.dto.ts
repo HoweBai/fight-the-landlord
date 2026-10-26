@@ -34,6 +34,17 @@ export class RegisterDto {
   @Length(8, 64, { message: DEVICE_ID_LENGTH_MESSAGE })
   @Matches(DEVICE_ID_REGEX, { message: DEVICE_ID_DOMAIN_MESSAGE })
   deviceId?: string;
+
+  /**
+   * 代理分润（2026-10-26）：可选邀请码；trim + 大写后交给 currency-service 重校验。
+   * 格式不在 DTO 强校验（长度 1–16 即可）—— 无效码统一由下游返回 `11006`
+   * 「邀请码无效」，客户端文案才能精确（DTO 的 10001 会是泛化的「请检查填写的内容」）。
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @IsOptional()
+  @IsString()
+  @Length(1, 16, { message: '邀请码长度须为 1–16' })
+  inviteCode?: string;
 }
 
 export class LoginDto {

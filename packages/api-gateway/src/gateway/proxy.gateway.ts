@@ -802,6 +802,10 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 做留痕：缺失/非法 ⇒ 401 fail-closed（绝不回退 `'admin'`）。
     if (headers?.adminActor) outbound['X-Admin-Actor'] = headers.adminActor;
     if (headers?.adminRole) outbound['X-Admin-Roles'] = headers.adminRole;
+    // 代理门户（2026-10-26）：`headersOf()` 只在 `/api/agent/*`（非 login）产出；
+    // 值来自 `AgentAuthMiddleware` 验签后的注入（客户端伪造头已先剥）。
+    if (headers?.agentId) outbound['X-Agent-Id'] = headers.agentId;
+    if (headers?.agentVer) outbound['X-Agent-Ver'] = headers.agentVer;
     // ③ T5：`clientIp` **仅登录路径**产出（`headersOf()` 的 `isAdminLoginPath` 判定）——
     // 下游登录事件落 `ip` 列用它；值由网关派生，客户端无法伪造（先剥后派生）。
     if (headers?.clientIp) outbound['X-Client-Ip'] = headers.clientIp;

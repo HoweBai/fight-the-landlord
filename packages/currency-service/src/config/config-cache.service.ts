@@ -207,6 +207,12 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return typeof value === 'boolean' ? value : false;
   }
 
+  /** 代理邀请码开关（2026-10-26 第 101 键）。缺失/坏值 ⇒ **false**（说不清 = 不收集邀请码）。 */
+  agentInviteEnabled(): boolean {
+    const value = this.snapshot?.['agent.inviteEnabled']?.value;
+    return typeof value === 'boolean' ? value : false;
+  }
+
   /**
    * 记牌器两价格（斗地主新键，旧键回退）。缺失/坏值/越界 ⇒ **10/100**（= 种子；
    * 消费方拿到的必须是可用数字）。消费方 = 购买端点（effect 内与服务端当前价比对；

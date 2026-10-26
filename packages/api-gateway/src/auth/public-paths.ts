@@ -39,14 +39,29 @@ export const AUTH_PATHS = [
 export const HEALTH_PATHS = ['/api/health', '/api/health/live'] as const;
 
 /**
- * §7.1 的白名单本身 = 上面两组**按语义组合**，**恰好五条**（R267 补第 5 条 `…/live`）。
+ * 代理分润（2026-10-26，r3 审查 Critical #1）：**登录前**唯一需要的启动配置。
+ *
+ * 注册页要在「无令牌」时决定是否渲染邀请码输入框；`GET /api/config` 需要玩家令牌，
+ * 新用户永远拉不到 ⇒ 邀请码字段永不出现（任务 12 对该人群失效）。
+ * 本端点**只**返回 `{version, agentInviteEnabled}`（不含任何其余配置键/PII），
+ * 属于公开面；精确匹配（`/api/config/bootx`、`/api/config` 仍 401）。
+ */
+export const BOOT_CONFIG_PATHS = ['/api/config/boot'] as const;
+
+/**
+ * §7.1 的白名单本身 = 上面三组**按语义组合**（auth 三条 + 健康两条 + 启动配置一条 = 六条）。
  *
  *  - **精确匹配**，不得用前缀：前缀会让 `/api/auth/login-as-admin`、`/api/healthz`
  *    这类路径静默变公开（负对照见 `jwt.middleware.test.ts`）；
  *  - **绝不含有 `'/'`**：任何路径都以 `/` 开头 ⇒ `'/'` 会让整条鉴权恒真（A.2 的 S1）；
- *  - `design.md` §7.1 的表格原文写「仅四条」，第 5 条是 R267 的存活面（协调者收口）。
+ *  - `design.md` §7.1 的表格原文写「仅四条」，第 5 条是 R267 的存活面（协调者收口），
+ *    第 6 条是代理分润的 `/api/config/boot`（2026-10-26）。
  */
-export const PUBLIC_PATHS: readonly string[] = [...AUTH_PATHS, ...HEALTH_PATHS];
+export const PUBLIC_PATHS: readonly string[] = [
+  ...AUTH_PATHS,
+  ...HEALTH_PATHS,
+  ...BOOT_CONFIG_PATHS,
+];
 
 /**
  * 请求路径的**唯一**派生口径：`JwtMiddleware`（免鉴权）与 `HttpRateLimitMiddleware`
@@ -124,6 +139,27 @@ export function isAdminPath(path: string): boolean {
 }
 
 /**
+ * 代理门户前缀（2026-10-26）：`/api/agent` —— `JwtMiddleware` 对 `isAgentPath()` 为真的路径
+ * **整段跳过玩家验签**（代理令牌由紧随 `AdminAuthMiddleware` 之后的 `AgentAuthMiddleware` 自证）。
+ *
+ * ⚠️ 与 `PUBLIC_PATHS` **分列**（语义不同：这里是「不适用玩家凭据」，不是「无需凭据」）。
+ * ⚠️ 边界必须是 `${AGENT_PREFIX}/`（`/api/agentx` 不得被吞进代理面）。
+ * ⚠️ 大小写不敏感（与 `isAdminPath` 同族：Express 路由大小写不敏感，否则 `/API/agent/*`
+ * 会落回玩家验签 ⇒ 401，或绕过代理中间件）。
+ */
+export const AGENT_PREFIX = '/api/agent';
+
+export function isAgentPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower === AGENT_PREFIX || lower.startsWith(`${AGENT_PREFIX}/`);
+}
+
+/** 代理登录入口（**精确、原值**；`AgentAuthMiddleware` 的唯一豁免）。 */
+export function isAgentLoginPath(path: string): boolean {
+  return path === `${AGENT_PREFIX}/login`;
+}
+
+/**
  * ③ T5（规格 §2.10 第 3 步 + 「登录路径 clientIp 注入」）：管理登录**入口**路径 ——
  * 豁免的**唯一**一条。
  *
@@ -153,7 +189,7 @@ export function isAdminLoginPath(path: string): boolean {
  *  - ⛔ 消费方（`ClientGateMiddleware`）不得再抄字面量 —— 就地另抄一份正是 R462 的漂移面
  *    （「一条路径在一处豁免、在另一处不豁免」只在真实流量下可见）。
  */
-export const CLIENT_CONFIG_PATHS = ['/api/config'] as const;
+export const CLIENT_CONFIG_PATHS = ['/api/config', '/api/config/boot'] as const;
 
 /** 是否客户端配置拉取面（⇒ 端闸豁免）。与 `isHealthPath` **逐字同形**（`some(===)`，见其注记）。 */
 export function isClientConfigPath(path: string): boolean {

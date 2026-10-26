@@ -7,19 +7,22 @@ import { ADMIN_HEADER, USER_ID_HEADER } from '../auth/identity-headers';
 // ⚠️ R462：路径清单与路径派生都来自**单一真源**（与 `JwtMiddleware` 同一份），
 // 本文件**不得**再抄一份字面量清单。片⑦ D6①：`isAdminPath` 同源同文件；③ T5：登录路径
 // 判定（登录桶）也走共用 `isAdminLoginPath`（与豁免/clientIp 产出同一份判定）。
-import { isAdminLoginPath, isAdminPath, isHealthPath, requestPath } from '../auth/public-paths';
+import { isAdminLoginPath, isAdminPath, isAgentLoginPath, isHealthPath, requestPath } from '../auth/public-paths';
 import {
   HTTP_RATE_LIMIT,
   THROTTLED_RATE_LIMIT,
   clearAdminLoginFailures,
+  clearAgentLoginFailures,
   hitAdminWrite,
   hitHttpLimit,
   hitPayLimit,
   isAdminLoginBlocked,
+  isAgentLoginBlocked,
   isIpRateLimited,
   isThrottled,
   payLimitBucketOf,
   recordAdminLoginFailure,
+  recordAgentLoginFailure,
 } from './rate-limit';
 // ③ T5：`clientIp` 的私有实现**平移**到 `trusted-client-ip.ts`（导出 `requestClientIp`）——
 // 限流与登录事件（`headersOf()` 的 clientIp）两处共用，防两口径漂移。
@@ -94,14 +97,27 @@ export class HttpRateLimitMiddleware implements NestMiddleware {
       return;
     }
 
-    /** admin 分支已给出结论（登录 / 持令牌写）⇒ **不再**走下面的既有维度。 */
-    let handledAdmin = false;
+    /** admin/agent 分支已给出结论（登录 / 持令牌写）⇒ **不再**走下面的既有维度。 */
+    let handledSpecial = false;
     let limited = false;
     try {
-      // ② admin 分支（片⑦ T10 / D6 / spec F5）。放在既有维度**之前**：对这两类请求，
-      //    「跳过既有 IP 维」就是本例的语义本身（登录有更严的失败桶；写的归因主体是令牌）。
-      //    ⚠️ 本段里的 `next()` **不能**就地调用 —— 见方法尾部的纪律说明。
-      if (isAdminPath(path)) {
+      // ② 代理登录分支（2026-10-26）：与 admin 同阈值、键独立；放在既有维度之前
+      //    （登录有更严的失败桶，跳过既有 IP 维）。检查在口令比较之前。
+      if (isAgentLoginPath(path)) {
+        if (await isAgentLoginBlocked(this.redis, requestClientIp(req))) {
+          rejectRateLimited(res);
+          return;
+        }
+        res.on('finish', () => {
+          const ip = requestClientIp(req);
+          void (res.statusCode === 401 || res.statusCode === 403
+            ? recordAgentLoginFailure(this.redis, ip)
+            : res.statusCode === 200
+              ? clearAgentLoginFailures(this.redis, ip)
+              : Promise.resolve()).catch(() => {});
+        });
+        handledSpecial = true;
+      } else if (isAdminPath(path)) {
         // 登录桶判定用**原值**精确路径（与豁免、clientIp 产出同一份判定 —— N1/⚙️20 射程：
         // 尾斜杠与大小写变体都在 AdminAuth 处 401/403、压根到不了本中间件；正常登录路径
         // 的计数语义因此不受 ⚙️20 识别归一影响）。
@@ -124,7 +140,7 @@ export class HttpRateLimitMiddleware implements NestMiddleware {
                 ? clearAdminLoginFailures(this.redis, ip)
                 : Promise.resolve()).catch(() => {});
           });
-          handledAdmin = true;
+          handledSpecial = true;
         } else if (req.headers[ADMIN_HEADER] === '1' && !READ_METHODS.has(req.method)) {
           // ③ T5：写桶条件从「仅 PUT」扩为「持令牌且 method ∉ {GET, HEAD, OPTIONS}」
           // （账号 CRUD 的 POST/PATCH、反冲、对账运行都是写面；阈值/桶/键不变）。
@@ -136,12 +152,12 @@ export class HttpRateLimitMiddleware implements NestMiddleware {
             rejectRateLimited(res);
             return;
           }
-          handledAdmin = true;
+          handledSpecial = true;
         }
         // 其余（持令牌 GET/HEAD/OPTIONS / 理论上不可达的无令牌类）⇒ 落回下面既有维度（IP 维覆盖）。
       }
 
-      if (!handledAdmin) {
+      if (!handledSpecial) {
         // ③ 维度 5（N13/R453）：单 IP 120/min。**先于**用户维度的早退，理由见类注释 1。
         if (await isIpRateLimited(this.redis, requestClientIp(req))) {
           rejectRateLimited(res);
@@ -190,7 +206,7 @@ export class HttpRateLimitMiddleware implements NestMiddleware {
       return;
     }
     // ⚠️ `next()` **必须留在 `try` 之外**（**所有**路径共用这一个出口 —— 含 T10 的
-    //    admin 分支：`handledAdmin` 只是一个标志，放行动作仍然落到这里）：
+    //    admin 分支：`handledSpecial` 只是一个标志，放行动作仍然落到这里）：
     //    它在 Express 里会**同步**进入后续中间件，放进 `try` 会把下游的同步异常吞成
     //    503 `rate limit store unavailable`（假信息）。
     next();

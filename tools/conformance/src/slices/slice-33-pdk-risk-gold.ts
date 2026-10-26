@@ -1,5 +1,5 @@
 /**
- * slice-32：B 组 PDK 金币场 + 风控 2/3/4 人真栈。
+ * slice-33：B 组 PDK 金币场 + 风控 2/3/4 人真栈。
  *
  * 覆盖：
  *  ⓪ 配置开启/还原（PDK enabled/2/4/gold、台费 10%、rake 10%、entryMultiplier 10、
@@ -402,7 +402,7 @@ async function cleanupReview(admin: string, item: ReviewItem | null): Promise<vo
         userId: current.userId,
         action: 'unthrottle',
         reviewId: current.id,
-        reason: 'slice-32 cleanup',
+        reason: 'slice-33 cleanup',
       },
       admin,
     );
@@ -414,14 +414,14 @@ async function cleanupReview(admin: string, item: ReviewItem | null): Promise<vo
         userId: current.userId,
         action: 'dismiss',
         reviewId: current.id,
-        reason: 'slice-32 cleanup',
+        reason: 'slice-33 cleanup',
       },
       admin,
     );
   }
 }
 
-export async function runSlice32(): Promise<{ passed: string[] }> {
+export async function runSlice33(): Promise<{ passed: string[] }> {
   const checks = new Checks();
   const original = {
     values: new Map<string, unknown>(),
@@ -540,7 +540,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       });
       rooms.push(room);
       for (const client of room.clients) await adjustTo(admin, client.user.id, 1, 'drain2');
-      const outcome = await playPdkToEnd(room, 'slice-32-2p');
+      const outcome = await playPdkToEnd(room, 'slice-33-2p');
       const balanceMsgs = await Promise.all(
         room.clients.map((client) => client.waitFor('game.balances', 15_000)),
       );
@@ -587,7 +587,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       });
       rooms.push(room);
       for (const client of room.clients) await adjustTo(admin, client.user.id, 1, 'drain4');
-      const outcome = await playPdkToEnd(room, 'slice-32-4p');
+      const outcome = await playPdkToEnd(room, 'slice-33-4p');
       const balanceMsgs = await Promise.all(
         room.clients.map((client) => client.waitFor('game.balances', 15_000)),
       );
@@ -802,10 +802,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       for (const room of rooms) {
         for (const client of room.clients) client.close();
       }
-      info('slice-32 配置已还原、队列/审核清理完成');
+      info('slice-33 配置已还原、队列/审核清理完成');
     } catch (restoreErr) {
       if (primaryError === null) throw restoreErr;
-      info(`slice-32 还原失败（保留原始错误）：${String(restoreErr)}`);
+      info(`slice-33 还原失败（保留原始错误）：${String(restoreErr)}`);
     }
   }
   return { passed: checks.passed };

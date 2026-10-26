@@ -88,14 +88,14 @@ function main(argv) {
     return;
   }
   const baselines = JSON.parse(readFileSync(BASELINES, 'utf8'));
-  // B 组：slice-32 是真栈片，只允许在 full 列；缺基线 = 空测。
-  if (!Object.hasOwn(baselines.full ?? {}, 'slice-32-pdk-risk-gold')) {
-    console.error('❌ baselines.full 缺 slice-32-pdk-risk-gold（真栈片必须有 full 基线）');
+  // B 组：slice-33 是真栈片，只允许在 full 列；缺基线 = 空测。
+  if (!Object.hasOwn(baselines.full ?? {}, 'slice-33-pdk-risk-gold')) {
+    console.error('❌ baselines.full 缺 slice-33-pdk-risk-gold（真栈片必须有 full 基线）');
     process.exitCode = 1;
     return;
   }
-  if (Object.hasOwn(baselines.render ?? {}, 'slice-32-pdk-risk-gold')) {
-    console.error('❌ baselines.render 不应有 slice-32-pdk-risk-gold（真栈片无 render 步骤）');
+  if (Object.hasOwn(baselines.render ?? {}, 'slice-33-pdk-risk-gold')) {
+    console.error('❌ baselines.render 不应有 slice-33-pdk-risk-gold（真栈片无 render 步骤）');
     process.exitCode = 1;
     return;
   }

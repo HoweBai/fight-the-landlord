@@ -72,6 +72,30 @@ export class AuthService {
     if (existing) throw new DomainError(ErrCode.PHONE_TAKEN, '手机号已注册');
 
     const userId = randomUUID();
+    // 代理分润（2026-10-26）：邀请码绑定 **先于** signup grant / 落库（fail-closed）。
+    // - 无效码 ⇒ 11006，不建用户、不发赠币；
+    // - 传输/其它业务错 ⇒ 10007（与 grant 同一姿态）；
+    // - `ignored`（功能关闭）/`already_bound` 都算成功（注册照常）。
+    // ⚠️ 绑定写在用户行之前：若后续 grant/落库失败，可能留下孤儿绑定（uuid 永不复用；
+    //   日志/指标留痕，管理员可清理）—— 换取「注册成功必有归属」的确定性。
+    const inviteCode = typeof dto.inviteCode === 'string' ? dto.inviteCode.trim().toUpperCase() : '';
+    if (inviteCode.length > 0) {
+      try {
+        await this.currencyClient.agentBind({
+          ownerId: userId,
+          code: inviteCode,
+          phone: dto.phone,
+          source: 'signup',
+        });
+      } catch (err) {
+        if (err instanceof CurrencyServiceError && err.code === ErrCode.AGENT_INVITE_INVALID) {
+          throw new DomainError(ErrCode.AGENT_INVITE_INVALID, err.message);
+        }
+        const reason = err instanceof CurrencyServiceError ? `code=${err.code}` : String(err);
+        this.logger.warn(`agent bind failed (userId=${userId}): ${reason}`);
+        throw new DomainError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
+      }
+    }
     const grant = this.configCache.signupGrant();
     if (grant > 0) {
       try {

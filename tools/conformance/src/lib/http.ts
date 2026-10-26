@@ -117,7 +117,7 @@ function isDeadSocketFailure(err: unknown): string | null {
  * ⚠️ 直连（`directJson`/`waitRoomHealthy` 等）不走这里：直连探针各自已有有界的
  *    重试/轮询循环（如 `waitRoomHealthy` 的 1s 循环），本修复不扩面。
  */
-async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, init: RequestInit): Promise<Response> {
+async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(`${GATEWAY_URL}${path}`, init);
   } catch (err) {
@@ -134,7 +134,7 @@ async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'DELETE', p
 }
 
 async function request(
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   token?: string,
@@ -191,6 +191,15 @@ export function getJson<T = any>(
  */
 export function putJson<T = any>(path: string, body: unknown, token?: string): Promise<HttpResult<T>> {
   return request('PUT', path, body, token);
+}
+
+/**
+ * 经网关的 PATCH（代理分润片 2026-10-26：管理端代理资料/设置/payout 用 PATCH）。
+ *
+ * ⚠️ 与 `putJson` 同族同形：**不开放** `extraHeaders`，**不**做死套接字重试。
+ */
+export function patchJson<T = any>(path: string, body: unknown, token?: string): Promise<HttpResult<T>> {
+  return request('PATCH', path, body, token);
 }
 
 /**

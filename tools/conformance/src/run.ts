@@ -46,7 +46,8 @@ import { runSlice28 } from './slices/slice-28-card-counter';
 import { runSlice29 } from './slices/slice-29-paodekuai';
 import { runSlice30 } from './slices/slice-30-pdk-metrics';
 import { runSlice31 } from './slices/slice-31-pdk-gold';
-import { runSlice32 } from './slices/slice-32-pdk-risk-gold';
+import { runSlice32 } from './slices/slice-32-agent';
+import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
 
 interface Case {
   title: string;
@@ -126,8 +127,14 @@ const CASES: Record<string, Case> = {
   'slice-30-pdk-metrics': { title: '跑得快指标（真栈：按玩法 started/ended）', run: runSlice30 },
   // 多玩法 A2/A3：PDK 金币场账本玩法维度 + 管理玩家统计（本机无 Docker，待权威轮）。
   'slice-31-pdk-gold': { title: '跑得快金币场（真栈：台费/结算/记录/管理统计玩法维度）', run: runSlice31 },
-  // B 组：PDK gold 2/4 + 风控 2/3/4 + 机器人局剔除 + 自动限流（本机无 Docker，待权威轮）。
-  'slice-32-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice32 },
+  // 代理分润片（2026-10-26，任务 15）：追加在末尾（原计划 slice-30 与 PDK 指标片撞号，
+  // 合并后顺延为 32）。真库证明 SAVEPOINT/额度首建并发/水位结算 SUM+hash 复核/关闭期对账；
+  // 收尾恢复两开关/表名/冻结态。
+  'slice-32-agent': { title: '代理分润（真栈：绑定/计佣链/自玩冻结/并发/SAVEPOINT/结算/调账/对账/鉴权）', run: runSlice32 },
+  // B 组：PDK gold 2/4 + 风控 2/3/4 + 机器人局剔除 + 自动限流。
+  // ⚠️ 2026-10-26 与代理分润片合并时撞号（dev 已占 slice-32）⇒ 本片顺延为 slice-33；
+  //    spec/plan 的历史文本仍写 slice-32，代码与基线以本键为准。
+  'slice-33-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice33 },
 };
 
 function printUsage(): void {

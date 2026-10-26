@@ -128,17 +128,18 @@ export const useAuthStore = defineStore('auth', {
       phone: string,
       password: string,
       nickname: string,
+      inviteCode?: string,
       replayed = false,
     ): Promise<boolean> {
       this.error = '';
       try {
-        const res = await rest.register(phone, password, nickname);
+        const res = await rest.register(phone, password, nickname, inviteCode);
         if (res.code === 0 && res.data) {
           this.applySession(res.data);
           return true;
         }
         await this.handleAuthFailure(res, '注册', () =>
-          replayed ? Promise.resolve() : this.signUp(phone, password, nickname, true),
+          replayed ? Promise.resolve() : this.signUp(phone, password, nickname, inviteCode, true),
         );
         return false;
       } catch (error) {

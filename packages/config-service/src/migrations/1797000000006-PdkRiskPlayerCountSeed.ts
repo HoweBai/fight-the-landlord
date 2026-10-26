@@ -22,8 +22,8 @@ const KEYS: ReadonlyArray<readonly [key: string, value: unknown]> = [
   ['game.paodekuai.risk.autoThrottleScore', 50],
 ];
 
-export class PdkRiskPlayerCountSeed1796900000000 implements MigrationInterface {
-  name = 'PdkRiskPlayerCountSeed1796900000000';
+export class PdkRiskPlayerCountSeed1797000000006 implements MigrationInterface {
+  name = 'PdkRiskPlayerCountSeed1797000000006';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const maxRows = (await queryRunner.query(

@@ -1,7 +1,7 @@
 import type { ClientConfig } from '@fight-the-landlord/protocol';
 import type { ClientConfigState, RoomMode } from '../stores/game';
 import { useGameStore } from '../stores/game';
-import { fetchClientConfig } from '../net/rest';
+import { fetchBootClientConfig, fetchClientConfig } from '../net/rest';
 import { GAME_MODES } from '../gameModes';
 
 /**
@@ -38,6 +38,7 @@ export const FAILSAFE_CLIENT_CONFIG: ClientConfigState = {
   withdrawMaxCoinsPerOrder: null,
   withdrawDailyMaxCoins: null,
   withdrawReAuthEnabled: false,
+  agentInviteEnabled: false,
   version: 0,
 };
 
@@ -91,6 +92,7 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
         ? raw.withdrawDailyMaxCoins
         : null,
     withdrawReAuthEnabled: raw?.withdrawReAuthEnabled === true,
+    agentInviteEnabled: raw?.agentInviteEnabled === true,
     // 多玩法（S5.4）：新服务端下发 `games`；缺省 = 旧服务端（只有斗地主可见）。
     games: raw?.games,
     version: raw?.version ?? 0,
@@ -133,6 +135,22 @@ export function repairActiveMode(): void {
     ) {
       store.setSelectedBaseScore(levels[0]?.baseScore ?? null);
     }
+  }
+}
+
+/**
+ * 代理分润（r3 Critical #1）：登录页在**无令牌**时拉公开启动配置。
+ * 只落 `agentInviteEnabled`；**不**写 `clientConfigVersion`（避免冒充「全量配置已加载」）。
+ * 失败 ⇒ false（调用方保持字段隐藏，注册照常）。
+ */
+export async function refreshInviteBootConfig(): Promise<boolean> {
+  try {
+    const res = await fetchBootClientConfig();
+    if (res.code !== 0 || res.data === null || res.data === undefined) return false;
+    useGameStore().setAgentInviteEnabled(res.data.agentInviteEnabled === true);
+    return true;
+  } catch {
+    return false;
   }
 }
 

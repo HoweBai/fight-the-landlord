@@ -15,8 +15,25 @@ import { makeService, seedDb, startHttpProbe } from './helpers/config-probe';
  */
 
 describe('GET /api/config（C7 半边）', () => {
-  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十一键）；200 + code 0', async () => {
+  /**
+   * 代理分润（r3 Critical #1）：登录前公开启动配置。只允许两个键——不得把其余配置
+   * 顺手暴露进无令牌面（网关 PUBLIC_PATHS 精确放行）。
+   */
+  it('GET /api/config/boot：只回 version + agentInviteEnabled（公开启动面）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
+    try {
+      const res = await probe.get('/api/config/boot');
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(ErrCode.OK);
+      expect(Object.keys(res.body.data).sort()).toEqual(['agentInviteEnabled', 'version']);
+      expect(typeof res.body.data.version).toBe('number');
+      expect(typeof res.body.data.agentInviteEnabled).toBe('boolean');
+    } finally {
+      await probe.close();
+    }
+  }, 20000);
+
+  it('子集键集**恰好** CLIENT_CONFIG_KEYS（二十二键）；200 + code 0', async () => {    const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const res = await probe.get('/api/config');
 
@@ -24,6 +41,7 @@ describe('GET /api/config（C7 半边）', () => {
       expect(res.body.code).toBe(ErrCode.OK);
       expect(Object.keys(res.body.data).sort()).toEqual([...CLIENT_CONFIG_KEYS].sort());
       expect([...CLIENT_CONFIG_KEYS].sort()).toEqual([
+        'agentInviteEnabled',
         'baseScoreLevels',
         'cardCounterEnabled',
         'cardCounterPricePerGameCoins',
@@ -213,7 +231,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('🔴 残留旧键行不泄漏：库里仍有旧键 ⇒ /api/config 仍二十一键、无 entryFeePercents', async () => {
+  it('🔴 残留旧键行不泄漏：库里仍有旧键 ⇒ /api/config 仍二十二键、无 entryFeePercents', async () => {
     const { svc, db } = makeService(seedDb());
     db.rows.set('currency.entryFeePercents', {
       value: [{ baseScore: 15, percent: 10 }],
@@ -224,7 +242,7 @@ describe('GET /api/config（C7 半边）', () => {
     const probe = await startHttpProbe(svc);
     try {
       const { body } = await probe.get('/api/config');
-      expect(Object.keys(body.data)).toHaveLength(21);
+      expect(Object.keys(body.data)).toHaveLength(22);
       expect('entryFeePercents' in body.data).toBe(false);
       // 档位表照常下发（残留旧键不影响玩家面）。
       expect(body.data.baseScoreLevels).toHaveLength(4);
@@ -267,7 +285,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何 100 键键名（外层恰好二十一键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何 101 键键名（外层恰好二十二键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);
@@ -315,7 +333,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('缺行兜底 = 形状恒二十一键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
+  it('缺行兜底 = 形状恒二十二键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
     const { svc, db } = makeService(seedDb());
     db.rows.delete('game.levels.doudizhu');
     db.rows.delete('game.baseScoreLevels');
