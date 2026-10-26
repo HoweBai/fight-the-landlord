@@ -437,7 +437,28 @@ export async function runSlice33(): Promise<{ passed: string[] }> {
     original.values.set(key, cfg.config[key]?.value);
   };
 
+  /**
+   * 管理写桶按**令牌指纹** 30 次/5 分钟（`ADMIN_WRITE`）。本片 ⓪ 有 21 次配置写、
+   * ①–③ 有 14 次钱包调整写，合计 35 次 —— 同一令牌必然在第 31 次撞 429。
+   * ⇒ 在写段之间重新登录换新令牌（新指纹 = 新桶）。只影响测试夹具，不改变被测行为。
+   */
+  const rotateAdmin = async (why: string): Promise<void> => {
+    try {
+      // JWT 的 iat 是秒级：同一秒内重登可能拿到**同一令牌**（同指纹 = 同桶）。
+      // 等过一秒再登录，确保换到新指纹。
+      await sleep(1100);
+      admin = await adminLogin();
+      info(`slice-33 admin 令牌轮换（${why}；管理写桶 30/5min 按令牌指纹）`);
+    } catch (err) {
+      info(`slice-33 admin 令牌轮换失败（${why}）：${String(err)}（继续用旧令牌）`);
+    }
+  };
+
   try {
+    // 前序切片（尤其 slice-32-agent 的鉴权矩阵）可能刚打满网关 IP 桶（120/min 滑动窗）；
+    // 61s 静置让窗口自然过期，避免本片首批 GET 429。只影响测试节奏，不改变断言。
+    info('slice-33 起手静置 61s（清网关 IP 桶窗口）');
+    await sleep(61_000);
     admin = await adminLogin();
     const roomKeys = [
       PDK_ENABLED,
@@ -488,6 +509,7 @@ export async function runSlice33(): Promise<{ passed: string[] }> {
     await put(admin, RISK_SCAN, 5000, '⓪ risk scan');
     await put(admin, DDZ_WIN, 0.5, '⓪ ddz win');
     await put(admin, DDZ_MIN, 1, '⓪ ddz min');
+    await rotateAdmin('⓪ 21 次配置写后');
 
     const probe = await registerUser(1);
     createdUsers.push(probe);
@@ -790,12 +812,13 @@ export async function runSlice33(): Promise<{ passed: string[] }> {
     throw err;
   } finally {
     try {
-      for (const item of targetReviews) await cleanupReview(admin, item);
-      const restore = async (key: string): Promise<void> => {
-        const value = original.values.get(key);
-        if (value !== undefined) await put(admin, key, value, '⑤ restore');
-      };
       if (admin !== '') {
+        await rotateAdmin('⑤ 清理/还原前');
+        for (const item of targetReviews) await cleanupReview(admin, item);
+        const restore = async (key: string): Promise<void> => {
+          const value = original.values.get(key);
+          if (value !== undefined) await put(admin, key, value, '⑤ restore');
+        };
         for (const key of original.values.keys()) await restore(key);
       }
       purgeGoldQueues();
