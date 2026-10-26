@@ -23,7 +23,7 @@ DRY=0
 BASE_REF=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -h | --help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
     --dry-run) DRY=1; shift ;;
     --base) BASE_REF="${2:?--base 需要 ref}"; shift 2 ;;
     auto | admin | agent | client) MODE="$1"; shift ;;
