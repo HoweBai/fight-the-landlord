@@ -66,12 +66,14 @@ export interface CurrencyEntryIn {
 }
 
 /**
- * 结算销毁（本片；仅 `game_settle`）：截断残差 / 抽水，**二者恒同在**。
+ * 结算销毁（仅 `game_settle`）：截断残差 / 抽水，**二者恒同在**。
  * 写者 = room-service 结算（`computeSettlement` 的 residue/rakeTotal 原样）；
+ * **2026-10-26 起**：零头改分给赢家 ⇒ `residue` 正常路径恒 0（防御路径可能非 0）；
+ * 字段保留，历史载荷/旧 outbox 条目照旧合法。
  * 两值上限 2^31−1 = int 列容量哨兵（越界会落 MySQL 1264 ⇒ 伪 10007 重试链）。
  */
 export interface CurrencyBurn {
-  /** 截断残差（floor 分摊零头），`0 ≤ n ≤ 2^31−1`。 */
+  /** 截断残差：正常路径恒 0（零头已分给赢家）；防御路径可能非 0；`0 ≤ n ≤ 2^31−1`。 */
   residue: number;
   /** 抽水，`0 ≤ n ≤ 2^31−1`。 */
   rake: number;

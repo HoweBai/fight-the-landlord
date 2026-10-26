@@ -295,11 +295,12 @@
             "uid": "ftl-prometheus"
           },
           "expr": "sum by (game_type) (rate(currency_settle_residue_total[5m]))",
-          "legendFormat": "{{game_type}} 残差销毁",
+          "legendFormat": "{{game_type}} 残差",
           "refId": "A"
         }
       ],
-      "title": "残差销毁增速",
+      "description": "2026-10-26 起零头分给赢家：正常路径应恒 0；非 0 即分配算法回归",
+      "title": "残差（应恒 0，非 0 即回归）",
       "type": "timeseries"
     },
     {

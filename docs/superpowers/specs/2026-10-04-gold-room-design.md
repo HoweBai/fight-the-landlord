@@ -98,6 +98,7 @@
   - 输家实际支付 `p_l = min(应付, 余额)`（余额 = 结算前 `currency.get`）；
   - 赢家应得 `g_w = floor(赢家原应得 × Σp / Σ应付)`；
   - 残差 `Σp − Σg_w ∈ [0, 赢家数)` **销毁**（日志 + `currency_settle_residue_total`；无截断时恒 0）。
+    **2026-10-26 起**：零头改分给赢家、residue 恒 0，见 `2026-10-26-settle-remainder-to-winners-design.md`。
 - **单条上限（r1 🟡-3；v1.2 依复核订正依据链）**：`currency.ts` 现 `MAX_ABS_DELTA=1e6` 是全 source 硬限——三处必撞：① 池种子 5,000,000（runbook 须**拆 5 笔 ×1,000,000**）；② 高倍局赢家入账可超 1e6（`BID_MULTIPLIER_CAP=8`（`shared/src/ddz/bid.ts:12,74`）× 2^炸弹(≤13) × 春天2 ⇒ 单条上界 = `maxBaseScore × 2^18`，现档位 1200 ⇒ ≈3.15e8）⇒ 照 1e6 会**永久 10001 拒结**，与「输光截断兜底」矛盾；③ 机器人水位随 `max(baseScoreLevels)`（管理面可放大）同样可破。**修法**：`MAX_ABS_DELTA` **source 化**——`game_settle`/`robot_pool` 上限定 **1e12**（对现档位富余 ~3200×；**哨兵语义 = 抓算法 bug，不是经济参数**；只有当档位表被放大到 `maxBaseScore > 3.8e6` 才会触发——那属配置异常，落告警/runbook），其余 source 保持 1e6（保留管理面防手滑语义）。规格落校验函数改动 + 测试。
 - **抽水**（`rakePercent = p`，0..50）：每个赢家 `rake_w = floor(g_w × p / 100)`，实收 `g_w − rake_w`；抽水**销毁**（J7）。`p=0` 时与零和完全等价。
 - **entries 组装**：只收非零 delta（`delta ≠ 0` 是 ① 校验硬约束）；全零 ⇒ **不调 apply**（无资金移动，但仍广播，D7）。人类 ownerId=userId；机器人 ownerId=botId、`ownerType:'robot'`（与 record 的 robotId 同源：`room:{code}:bots` 座位映射）。
@@ -175,7 +176,7 @@
 
 ### D11｜观测
 
-- **room-service 侧**（既有 `/metrics` + prom-client）：`currency_settle_total{result: ok|replayed|insufficient|timeout|failed|conflict|invalid}`、`currency_settle_residue_total`（**截断**残差销毁额；上限拒结走终态告警、不计入）、`currency_settle_outbox_size`、`currency_settle_outbox_oldest_seconds`、`currency_robot_topup_total{action: refill|recall}`、`currency_robot_ensure_failed_total`。
+- **room-service 侧**（既有 `/metrics` + prom-client）：`currency_settle_total{result: ok|replayed|insufficient|timeout|failed|conflict|invalid}`、`currency_settle_residue_total`（**截断**残差销毁额；上限拒结走终态告警、不计入；**2026-10-26 起**改为回归哨兵：正常路径恒 0，见 `2026-10-26-settle-remainder-to-winners-design.md`）、`currency_settle_outbox_size`、`currency_settle_outbox_oldest_seconds`、`currency_robot_topup_total{action: refill|recall}`、`currency_robot_ensure_failed_total`。
 - **currency-service 侧**（既有 `currency.metrics.ts` 同族）：`currency_robot_pool_balance`（对账循环刷新）、`currency_robot_accounts_balance_sum`（僵尸余额通缩观测）、`currency_relief_total{result}`、既有 `currency_apply_total{source}` 自动覆盖三个新 source。
 - **新告警规则 3 条**（`deploy/monitoring/prometheus/rules/ftl-alerts.yml`，13→16）：`CurrencySettleOutboxStuck`（oldest > 300s for 2m）· `CurrencyReconcileDrift`（`currency_reconcile_drift_accounts > 0` for 10m，① 已有指标无规则）· `CurrencyRobotPoolLow`（pool < 1,000,000 for 10m）。
 - **Grafana**：+1 资金面板（余额总量、池余额、settle 结果、救助/补给速率）——面板计数断言 4→5 同核（slice-16）。

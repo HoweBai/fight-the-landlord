@@ -146,7 +146,7 @@ const dashboardTargets = [
   ['02-business.json', '机器人决策速率与失败（失败看 errors，别看 rule——叫牌期恒 rule）', 'C', 'robot_rule_errors_total', true],
   ['05-currency.json', '结算补偿队列最老滞留（告警线 300s）', 'A', 'currency_settle_outbox_oldest_seconds', true],
   ['05-currency.json', '结算结果速率（按 result / 5m：ok|replayed|retried|r2|outboxed|dropped）', 'A', 'currency_settle_result_total', true],
-  ['05-currency.json', '残差销毁增速', 'A', 'currency_settle_residue_total', true],
+  ['05-currency.json', '残差（应恒 0，非 0 即回归）', 'A', 'currency_settle_residue_total', true],
   ['05-currency.json', '机器人补给/回收速率（按 action / 5m：refill|recall）', 'A', 'currency_robot_topup_total', true],
   ['05-currency.json', '机器人 ensure 失败累计', 'A', 'currency_robot_ensure_failed_total', true],
   ['05-currency.json', '台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）', 'A', 'entry_fee_skipped_total', true],

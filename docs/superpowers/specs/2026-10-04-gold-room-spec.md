@@ -104,6 +104,8 @@ export interface RecordMoneyDeltaData { matched: number[] }   // 命中的座位
 
 ## §4 结算算法（⚙️4）
 
+> **2026-10-26 起**：零头改按最大余数法分给赢家（residue 恒 0），见 `docs/superpowers/specs/2026-10-26-settle-remainder-to-winners-design.md`；本节公式为历史口径。
+
 **入口**：`finalizeRoomEnd`（`ws.gateway.ts:790-825`）在 :809 处 `void this.settleMoney(...)`（releaseRobots 之后、`!record||!version` 早返 :812-817 之前）。
 
 **守卫（缺任 ⇒ WARN + 指标 + 不结算）**：`mode==='gold'` ∧ `result` 存在 ∧ **`event.version` 非空**（缺 ⇒ 跳过——actionId 与 moneyDelta 的 gameVersion 全依赖它，`settle:<room>:undefined` 会一路撞到 10001）∧ 三座位齐 ∧ **机器人座映射齐**（C25）。⚠️ **映射与座位的来源 = `finalizeRoomEnd` 顶部那次读取**（`botBySeat`，:797-802）+ 房间元数据（`roomsService.findOne`，同 :865 口径）；**settle 内不得重读 `room:{code}:bots`**——:805-808 的 `releaseRobots` 已 DEL 该键（releaseRobots 内注释自警「晚读会静默取到空」），重读恒空 ⇒ 带机器人的主场景会恒不结算。settle 例程以 `botBySeat` 为**入参透传**。room 数据缺失（TTL 窗）⇒ WARN 跳过。
@@ -264,7 +266,7 @@ const MAX_ABS_DELTA_BY_SOURCE: Partial<Record<CurrencySource, number>> = {
 - **B 开关**：gold 关 ⇒ `room.match gold` → 12010；开 ⇒ 不再 12010。free 关 ⇒ random → 12010；恢复。
 - **C 门槛**：0 余额用户 gold 匹配 15 → 14003（含所需金额消息）；管理面补足 ⇒ 入队成功（随后 unmatch 清理）。
 - **D 取消排队（C21）**：gold 入队 → `room.unmatch` → 探针断言 `match:queue:gold:*` 无该成员、meta 已清、窗口内不被撮合；再入队 ⇒ 复用 12009 语义正确。
-- **E 完整金币局**：两真人（管理面预充 **5,000,000** ≥ 15×2^18，确保人类侧不截断；机器人位不预充）+ 机器人补位 → 打完整局 → 断言：`game.settlement` 广播；`game.balances` 恰 3 座（升序）；**按结算广播 + 结算前余额复算期望 delta（复算内含截断/分摊/残差公式）再逐座比对**——**不得直断「和=0」**（炸弹局会因机器人侧截断产生残差）；botId 于**局中**读 `room:{code}:bots`（局终 DEL，slice-11:404-407 先例）→ 管理面查其账户：`owner_type='robot'`、余额 ≥ 12000（非整百断言由单测承载，见 ⚙️6 口径边界）；`GET /api/records/mine` 的 `moneyDelta` = 实际变动。
+- **E 完整金币局**：两真人（管理面预充 **5,000,000** ≥ 15×2^18，确保人类侧不截断；机器人位不预充）+ 机器人补位 → 打完整局 → 断言：`game.settlement` 广播；`game.balances` 恰 3 座（升序）；**按结算广播 + 结算前余额复算期望 delta（复算内含截断/分摊/残差公式）再逐座比对**——**不得直断「和=0」**（炸弹局会因机器人侧截断产生残差；**2026-10-26 起**零头分给赢家、residue 恒 0，见 `2026-10-26-settle-remainder-to-winners-design.md`）；botId 于**局中**读 `room:{code}:bots`（局终 DEL，slice-11:404-407 先例）→ 管理面查其账户：`owner_type='robot'`、余额 ≥ 12000（非整百断言由单测承载，见 ⚙️6 口径边界）；`GET /api/records/mine` 的 `moneyDelta` = 实际变动。
   **驱动（本片交付物）**：`ddz-driver` 现硬编码 `mode:'random'`+**注册并撮合 3 个真人**（`lib/ddz-driver.ts:123-149,136`）、遇机器人座直接抛（:476-478）⇒ 扩展 driver：启动参数化 `mode/baseScore` **与真人人数（E = 2 真人，经 30s 补位窗口由机器人补位）** + 机器人回合推进（自 slice-11 `mustAdvance` 区抽共享 helper）+ bots 键局中读 helper；列入计划任务。
 - **F 抽水**：`currency.rakePercent=10` → 再打一局（同 E 的预充与复算口径）→ 赢家实收 = `g − floor(g×10/100)`、entries 和 = −(抽水+残差)（管理面读余额核对）；复原 0。
 - **G 救助**：开关开、金额 200 → 低余额领取 +200；同日再领 ⇒ `granted:false`；余额抬至 ≥150 ⇒ 14004；开关关 ⇒ 14004。

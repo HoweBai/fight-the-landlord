@@ -142,12 +142,12 @@ export const currencySettleResultTotal: CounterOf = createCounter(
 );
 
 /**
- * 截断残差销毁额（规格 §4：`residue = P − Σg[i] ∈ [0, 赢家数)`，销毁不挪用）。
+ * 残差（回归哨兵）：新口径正常路径恒 0；非 0 = 分配算法回归（历史值仍属销毁）。
  * **零和局也 inc 0**（保证任何一局金币局之后该序列必然出现——H 组判据据此核对）。
  */
 export const currencySettleResidueTotal: CounterOf = createCounter(
   'currency_settle_residue_total',
-  '金币场结算的截断残差销毁总额（按玩法；floor 分摊余数；无截断时为 0）。',
+  '残差（应恒 0，非 0 即回归；按玩法；历史值属销毁）。',
   ['game_type'],
 );
 

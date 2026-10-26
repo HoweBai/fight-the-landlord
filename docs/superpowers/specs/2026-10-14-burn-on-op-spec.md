@@ -81,6 +81,9 @@ export interface CurrencyBurn {
 // CurrencyApplyRequest += burn?: CurrencyBurn;
 ```
 
+> **2026-10-26 起**：`residue` 正常路径恒 0（零头改分给赢家），字段与 V3 不变量不变；
+> 见 `docs/superpowers/specs/2026-10-26-settle-remainder-to-winners-design.md`。
+
 `validateCurrencyApply` 新增三规则，**校验次序 = 形状 → 范围 → 来源 → 不变量**（前者先报）：
 
 | # | 规则 | 文案（逐字，中文） |
