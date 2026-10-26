@@ -1,5 +1,8 @@
 # 结算销毁上账（op 级残差/抽水）—— 设计 v1.0
 
+> **2026-10-26 起**：零头改按最大余数法分给赢家、`residue` 正常路径恒 0；本文字段 / V3 / 落库语义不变，
+> 见 `docs/superpowers/specs/2026-10-26-settle-remainder-to-winners-design.md`。
+
 | 项 | 内容 |
 |---|---|
 | 日期 | 2026-10-14 |

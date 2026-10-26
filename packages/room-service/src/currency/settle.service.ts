@@ -695,9 +695,15 @@ export class SettleService {
 
     // 残差（回归哨兵，§4）：新口径正常路径恒 0；**零和局也 inc 0** —— 任何金币局之后该序列必然出现。
     incGame(currencySettleResidueTotal, gameType, computed.residue);
-    if (computed.residue > 0 || computed.rakeTotal > 0) {
+    if (computed.residue > 0) {
+      // 回归哨兵：新口径正常路径恒 0；非 0 = 防御路径（赢家空/Σraw≤0）或算法回归。
+      this.logger.error(
+        `Currency settle residue nonzero for room ${roomCode} (version ${version}): residue=${computed.residue} (expected 0 — defensive path or algorithm regression; cross-check via currency_ops)`,
+      );
+    }
+    if (computed.rakeTotal > 0) {
       this.logger.log(
-        `Currency settle residue for room ${roomCode} (version ${version}): residue=${computed.residue} rake=${computed.rakeTotal} (destroyed — cross-check via currency_flows)`,
+        `Currency settle rake for room ${roomCode} (version ${version}): rake=${computed.rakeTotal} (destroyed — cross-check via currency_flows)`,
       );
     }
 

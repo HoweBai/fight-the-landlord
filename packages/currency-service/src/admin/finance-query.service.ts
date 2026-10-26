@@ -143,7 +143,7 @@ export interface AdminOpsRow {
   reason: string | null;
   refId: string | null;
   traceId: string | null;
-  /** 结算销毁（本片）：截断残差；`null` = 未记录（非结算 op / 历史行 / 旧载荷）。 */
+  /** 结算销毁（本片）：残差（**2026-10-26 起正常路径恒 0**，零头已分给赢家）；`null` = 未记录（非结算 op / 历史行 / 旧载荷）。 */
   burnedResidue: number | null;
   /** 结算销毁（本片）：抽水；null 语义同上。 */
   burnedRake: number | null;

@@ -727,3 +727,13 @@
   （`applyScanResult` 被调用）时续 `risk:limit`；长期无对局的 throttled(auto) 用户
   若对侧玩法 SQL 持续失败 >7d，旗会自然过期（DB 行仍 throttled）。按 D21“无近期对局=
   非活跃风险”接受；若要求“DB throttled 永不失效”，需全量扫 DB throttled 行，另立片。
+
+## 结算零头分给赢家片（2026-10-26，`dev` `a4ff7dbf`）
+
+- **真栈 conformance 未跑**：slice-18 的 E/F 复算已同步，但需 Docker 真栈；留到合 `master` 权威轮。
+- **覆盖率登记**：真栈 E/F 不保证命中 `R>0`（机器人截断是随机局面）；判别力由单测合成矩阵
+  （C1/C3/C4/C4b/C5/C6/C6b）承担。
+- **C8 只钉旧 double 实现**：「LRM + double」在协议可达输入下不可观测（P≤S、DDZ 双农民等 raw /
+  PDK 单赢家）；BigInt 属硬化项（spec §1.3/§7）。
+- **监控告警未加**：残差非 0 目前是面板 + ERROR 日志哨兵，无 Prometheus 规则（spec D3 口径）；
+  若要求可报警，另立片加规则并同步 slice-16/18 规则计数。
