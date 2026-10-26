@@ -1211,3 +1211,82 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     svc.onApplicationShutdown();
   });
 });
+
+/**
+ * C2 基准（plan Task 6）：10k/20k 行的一轮（分页 5,000）耗时。
+ * 行都在 60h 前（窗外、查询余量内）⇒ 只测「读取+分页+分类」，不产生判据；软时限 5s
+ * （spec：>5s 触发优化登记）。用 `process.hrtime`（不被 fake timers 影响）。
+ */
+describe('C2 基准：10k/20k 一轮耗时', () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    logSpy = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  function seedBulk(db: FakeCurrencyDb, opsCount: number, recordCount: number): void {
+    for (let i = 0; i < opsCount; i += 1) {
+      db.seedCommittedOp(
+        {
+          actionId: `bench-op-${i}`,
+          requestHash: `bench-op-${i}`,
+          source: 'game_settle',
+          gameType: 'doudizhu',
+          refId: `bench-room-${i}:1`,
+          createdAt: NOW - 60 * HOUR,
+        },
+        [],
+      );
+    }
+    for (let i = 0; i < recordCount; i += 1) {
+      db.seedRecord({
+        gameType: 'doudizhu',
+        roomCode: `bench-rec-${i}`,
+        gameVersion: 1,
+        mode: 'gold',
+        endedAt: NOW - 60 * HOUR,
+        players: [0, 1, 2].map((seat) => ({
+          seat,
+          userId: `bench-user-${i}-${seat}`,
+          moneyDelta: 1,
+          scoreChange: 0,
+        })),
+      });
+    }
+  }
+
+  async function benchmark(opsCount: number, recordCount: number): Promise<number> {
+    const db = new FakeCurrencyDb();
+    seedBulk(db, opsCount, recordCount);
+    const svc = mkService(db);
+    const startedAt = process.hrtime.bigint();
+    const result = await svc.runOnce();
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    // 窗外 filler 不得产生判据（跑完一圈的完整性自证）。
+    expect(result.orphanOps).toBe(0);
+    expect(result.missingOps).toBe(0);
+    expect(result.pending).toBe(0);
+    return elapsedMs;
+  }
+
+  it('10k ops + 10k players（3,334 局）一轮 < 15s（软上限；读数入报告，>5s 触发优化登记）', async () => {
+    const elapsed = await benchmark(10_000, 3_334);
+    expect(elapsed, `10k 基准耗时 ${elapsed.toFixed(1)}ms`).toBeLessThan(15_000);
+  });
+
+  it('20k ops + 20k players（6,667 局）一轮 < 15s（软上限；读数入报告，>5s 触发优化登记）', async () => {
+    const elapsed = await benchmark(20_000, 6_667);
+    expect(elapsed, `20k 基准耗时 ${elapsed.toFixed(1)}ms`).toBeLessThan(15_000);
+  });
+});
