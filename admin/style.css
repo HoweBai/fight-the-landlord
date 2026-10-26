@@ -439,6 +439,21 @@ textarea {
   gap: 10px;
 }
 
+/* 代理工作台页签面板（2026-10-26）：包裹 section 后保持 .page-view 的 14px 间距。 */
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 代理设置页签的分组标题（filter-bar 内独占一行）。 */
+.settings-group-title {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
 .panel-title {
   margin: 0;
   font-size: 15px;

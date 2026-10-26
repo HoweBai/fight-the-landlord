@@ -1020,7 +1020,6 @@ const CFG_NAV = [
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
   { leaf: 'nav-cfg-dataad-btn', count: 'nav-count-dataad', domain: 'dataAds' },
-  { leaf: 'nav-cfg-agent-btn', count: 'nav-count-agent', domain: 'agent' },
   { leaf: 'nav-cfg-ungrouped-btn', count: 'nav-count-ungrouped', domain: UNGROUPED_DOMAIN_ID },
 ];
 
