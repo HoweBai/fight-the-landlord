@@ -45,9 +45,9 @@
 | D6 | 邀请码行用 `buildSimpleRow`（自带保存/还原/版本号）；agent_settings 保留「保存设置」 | 用户裁决；两条链路各自幂等 |
 | D7 | 邀请码行角色：代理页可见者都可见；非 super_admin 只读 | 用户裁决；P8 放行 finance 读快照，P-ag0 限写 |
 | D8 | 按页签懒加载；对账首次激活种默认区间并跑一次 | 用户裁决 |
-| D9 | 状态：`agentsState.tab`（默认 `list`）+ `epoch` + `roleApplied` + `list/settings.{loaded,loading}` + `recon.armed`；`resetAgents()` 复位 tab/roleApplied、各 loaded、`recon.armed`，`epoch++`，清空 `#ag-invite-row` 与页签高亮（仅 UI 复位，不触发渲染） | 审查 #2/#5：登出必须清零；epoch 防迟到响应 |
+| D9 | 状态：`agentsState.tab`（默认 `list`）+ `epoch` + `roleApplied` + `list/tree/settingsReq.{loaded,loading}`（`settingsReq` 避开与 `settings` 数据字段重名）+ `recon.armed`；`resetAgents()` 复位 tab/roleApplied、各 loaded、`recon.armed`，`epoch++`，清空 `#ag-invite-row` 与页签高亮（仅 UI 复位，不触发渲染） | 审查 #2/#5/#14：登出必须清零；epoch 防迟到响应；list 与 tree 各自独立重试 |
 | D10 | **单调用方、分区自锁**：`switchView('agents')` = `applyAgentRole()` + `switchAgentTab(tab)` + `loadAgents()`；页签点击 = `switchAgentTab(id)` + `loadAgents()`。`switchAgentTab` 只做 UI；`loadAgents` **删全局早退**，按区块 `loading/loaded` 自锁，成功才置 `loaded` | 审查 #1：原全局 `loading` 早退会漏请求；双调用方需幂等 |
-| D11 | 设置页签**每次激活无条件重建**邀请码行（`textContent=''` 后 `buildSimpleRow`）与表单回填（`renderAgentSettings`，有 state 时）；`loadAll` 补「agents+settings ⇒ 重建邀请码行」 | 审查 #7：草稿/版本号跨页签与配置中心搜索保存后不陈旧 |
+| D11 | 设置页签**每次激活只无条件重建邀请码行**（`textContent=''` 后 `buildSimpleRow`）；agent_settings 表单**不随页签切换回填**（只在 loader/save 后 `renderAgentSettings`），避免覆盖未保存编辑；`loadAll` 补「agents+settings ⇒ 重建邀请码行」 | 审查 #7：草稿/版本号跨页签与配置中心搜索保存后不陈旧；表单编辑态不丢 |
 | D12 | 静态闸：删叶负断言 + CFG_NAV↔HTML 双向交叉断言 + 6 组 tab/panel + `ag-invite-row` + `AGENT_TABS` 字面量抽取执行 + 初始仅 list 可见 + 页签按钮在 `wireAgents` 绑定 | 审查 #6/#11：防半删白屏与死按钮 |
 | D13 | 所有代理 loader 在 `await` 后、提交状态前校验 `agentsState.epoch` 与 token；不符直接丢弃响应 | 审查 #5：登出后迟到 200 不得置 loaded/渲染 |
 | D14 | 配置行按角色收权：`canWriteConfigKey(key)` = super_admin，或 operator 且非 `agent.` 前缀；`buildSimpleRow` 据此隐藏保存/还原（`hidden` 属性）并禁用输入 | 审查 #12：operator 搜到 `agent.inviteEnabled` 可编辑卡片但保存必 403（P-ag0）；与代理页邀请码行复用同一判定 |
@@ -79,20 +79,21 @@ const AGENT_TABS = [
 ];
 function applyAgentTabUI(tab) { /* active + hidden 切换，仅 UI */ }
 function switchAgentTab(tab) { agentsState.tab = tab; applyAgentTabUI(tab);
-  if (tab === 'settings') { renderAgentSettings(); renderAgentInviteRow(); } }
+  if (tab === 'settings') renderAgentInviteRow(); }   // 表单不回填，防丢未保存编辑
 ```
 
-- `loadAgents()`：按 tab 分派；各区块先判 `loading || loaded`；`const epoch = agentsState.epoch`，每个 await 后 `if (agentsState.epoch !== epoch || !sessionStorage.getItem(TOKEN_KEY)) return;` 再提交。
-- `ensureConfigSnapshot()`：await `loadAll()` 后以 `Object.keys(currentConfig).length === 0` 判定失败；失败则不置 `settings.loaded`，邀请码行渲染占位并禁用。
+- `loadAgents()`：按 tab 分派；各区块先判 `loading || loaded`；`const epoch = agentsState.epoch`；每个 loader **先清 loading，再**校验 `agentsState.epoch === epoch && sessionStorage.getItem(TOKEN_KEY)`，不符直接丢弃（不置 loaded / 不渲染）；loading 清理放 `finally`，防死锁。
+- `ensureConfigSnapshot()`：捕获 epoch；快照已载 ⇒ true；否则 `await loadAll()` 后再验 epoch/token，按 `Object.keys(currentConfig).length > 0` 判定；失败返回 false。`loadAll()` 赋值 `currentConfig` 前也补 token 校验（迟到 200 不得回填）。
 - `applyAgentRole()` 增加 `if (agentsState.roleApplied) return;` 守卫，末尾置真（resetAgents 复位），避免重复切视图把新建面板收起。
 - `switchView('agents')`：`applyAgentRole(); switchAgentTab(agentsState.tab); loadAgents();`（保留闸钉的 `loadAgents()` 字面量）。
 - 页签点击在 `wireAgents`：`for (const t of AGENT_TABS) $(t.btn).addEventListener('click', () => { switchAgentTab(t.id); loadAgents(); });`
+- 结算/调账/审计分派层判 `loaded` 早退（刷新/翻页按钮仍直连裸 loader）。
 - `loadAgentTree` 失败补 `showMsg('加载代理树失败…')`（审查 #13）。
 
 ### 4.3 设置页签渲染
 
 - `renderAgentInviteRow()`：先 `textContent=''`；无快照 ⇒ 占位 `<p class="hint">`；有快照 ⇒ `buildSimpleRow('agent.inviteEnabled')`。只读收权由 D14 的 `canWriteConfigKey` 在行内完成。
-- `renderAgentSettings()` 每次激活调用（`agentsState.settings` 为 null 时只清状态文案，等 loader 回来再渲染）。
+- `renderAgentSettings()` 只在 `loadAgentSettings` 成功后与保存成功后调用；页签切换不回填表单。
 - 保存：表单 submit → `saveAgentSettings`；邀请码行 → `saveRow`（`loadAll` 后按 D11 重建）。
 
 ### 4.4 角色与门面
