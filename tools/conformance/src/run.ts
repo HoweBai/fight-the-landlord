@@ -48,6 +48,7 @@ import { runSlice30 } from './slices/slice-30-pdk-metrics';
 import { runSlice31 } from './slices/slice-31-pdk-gold';
 import { runSlice32 } from './slices/slice-32-agent';
 import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
+import { runSlice34 } from './slices/slice-34-record-outbox';
 
 interface Case {
   title: string;
@@ -135,6 +136,8 @@ const CASES: Record<string, Case> = {
   // ⚠️ 2026-10-26 与代理分润片合并时撞号（dev 已占 slice-32）⇒ 本片顺延为 slice-33；
   //    spec/plan 的历史文本仍写 slice-32，代码与基线以本键为准。
   'slice-33-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice33 },
+  // C1：记录 outbox 五态（sweeper 真栈；不依赖停服）。
+  'slice-34-record-outbox': { title: '记录 outbox（真栈：ok/replayed/corrupt/abandoned/rejected）', run: runSlice34 },
 };
 
 function printUsage(): void {
