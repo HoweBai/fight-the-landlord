@@ -925,10 +925,20 @@ ok(/epoch\s*\+=\s*1|epoch\+\+/.test(resetAgentsBlock), 'resetAgents 递增 epoch
 ok(/roleApplied\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 roleApplied');
 ok(/armed:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
 ok(/list\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 list.loaded');
+ok(/treeReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 treeReq.loaded');
 ok(
   /settingsReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock),
   'resetAgents 复位 settingsReq.loaded',
 );
+const listTabTag = /<button\b[^>]*\bid="agent-tab-list"[^>]*>/.exec(html)?.[0] ?? "";
+ok(/\bactive\b/.test(listTabTag), "agent-tab-list 初始 active");
+const settingsFormEnd = html.indexOf('</form>', html.indexOf('id="ag-settings-form"'));
+ok(
+  settingsFormEnd >= 0 && html.indexOf('id="ag-invite-row"') > settingsFormEnd,
+  '#ag-invite-row 位于设置表单之外（避免 Enter 误提交）',
+);
+const applyAgentRoleBlock = functionBody(app, 'function applyAgentRole');
+ok(applyAgentRoleBlock.includes('roleApplied'), 'applyAgentRole 有 roleApplied 守卫');
 const loadAllBlock = functionBody(app, 'async function loadAll');
 ok(loadAllBlock.includes('renderAgentInviteRow()'), 'loadAll 保存后重建邀请码行');
 ok(loadAllBlock.includes('sessionStorage.getItem(TOKEN_KEY)'), 'loadAll 赋值前校验 token');

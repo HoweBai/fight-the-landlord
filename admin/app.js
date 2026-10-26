@@ -1302,8 +1302,10 @@ const AGENT_TABS = [
 /** 页签 UI（active + 面板显隐）；数据加载归 loadAgents。 */
 function applyAgentTabUI(tab) {
   for (const t of AGENT_TABS) {
-    $(t.btn).classList.toggle('active', t.id === tab);
-    $(t.panel).hidden = t.id !== tab;
+    const btn = $(t.btn);
+    const panel = $(t.panel);
+    if (btn) btn.classList.toggle('active', t.id === tab);
+    if (panel) panel.hidden = t.id !== tab;
   }
 }
 
@@ -6030,42 +6032,56 @@ function agentsResponseFresh(epoch) {
 }
 
 async function ensureAgentList() {
-  if (agentsState.list.loading || agentsState.list.loaded) return;
-  agentsState.list.loading = true;
+  const flags = agentsState.list;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
   try {
-    if (await loadAgentList()) agentsState.list.loaded = true;
+    if (await loadAgentList()) flags.loaded = true;
   } finally {
-    agentsState.list.loading = false;
+    flags.loading = false;
   }
 }
 
 async function ensureAgentTree() {
-  if (agentsState.treeReq.loading || agentsState.treeReq.loaded) return;
-  agentsState.treeReq.loading = true;
+  const flags = agentsState.treeReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
   try {
-    if (await loadAgentTree()) agentsState.treeReq.loaded = true;
+    if (await loadAgentTree()) flags.loaded = true;
   } finally {
-    agentsState.treeReq.loading = false;
+    flags.loading = false;
   }
 }
 
 async function ensureAgentSettings() {
-  if (agentsState.settingsReq.loading || agentsState.settingsReq.loaded) return;
-  agentsState.settingsReq.loading = true;
+  const flags = agentsState.settingsReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
   try {
-    if (await loadAgentSettings()) agentsState.settingsReq.loaded = true;
+    if (await loadAgentSettings()) flags.loaded = true;
   } finally {
-    agentsState.settingsReq.loading = false;
+    flags.loading = false;
   }
 }
+
+/** 配置快照请求去重（同 epoch 并发激活只发一次；跨会话不串）。 */
+let configSnapshotReq = null;
 
 /** 配置快照（邀请码行需要）：已载即用；否则 loadAll 后按是否真到手判定。 */
 async function ensureConfigSnapshot() {
   if (Object.keys(currentConfig).length > 0) return true;
   const epoch = agentsState.epoch;
-  await loadAll();
-  if (!agentsResponseFresh(epoch)) return false;
-  return Object.keys(currentConfig).length > 0;
+  if (configSnapshotReq && configSnapshotReq.epoch === epoch) return configSnapshotReq.promise;
+  const promise = (async () => {
+    await loadAll();
+    return agentsResponseFresh(epoch) && Object.keys(currentConfig).length > 0;
+  })();
+  configSnapshotReq = { epoch, promise };
+  try {
+    return await promise;
+  } finally {
+    if (configSnapshotReq?.promise === promise) configSnapshotReq = null;
+  }
 }
 
 /** 对账首次激活：种默认区间并跑一次（armed 只置一次）。 */
@@ -6217,7 +6233,6 @@ async function loadAgentSettings() {
   }
   agentsState.settings = body.data;
   renderAgentSettings();
-  renderAgentInviteRow();
   return true;
 }
 
@@ -6227,7 +6242,8 @@ function renderAgentInviteRow() {
   if (!host) return;
   host.textContent = '';
   if (Object.keys(currentConfig).length === 0) {
-    host.append(el('p', 'hint', '（配置快照未加载，重进本页签重试）'));
+    const loading = agentsState.settingsReq.loading || Boolean(configSnapshotReq);
+    host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
     return;
   }
   host.append(buildSimpleRow('agent.inviteEnabled'));
@@ -7129,7 +7145,8 @@ function resetAgents() {
   agentsState.list = { loaded: false, loading: false };
   agentsState.treeReq = { loaded: false, loading: false };
   agentsState.settingsReq = { loaded: false, loading: false };
-  $('ag-invite-row').textContent = '';
+  const inviteRow = $('ag-invite-row');
+  if (inviteRow) inviteRow.textContent = '';
   applyAgentTabUI('list');
   $('ag-q').value = '';
   $('ag-status').value = '';

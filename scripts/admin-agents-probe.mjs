@@ -80,8 +80,18 @@ function makeDom(role) {
   const { window } = dom;
   window.addEventListener('error', (e) => errors.push(String(e.message)));
   window.confirm = () => true;
-  window.fetch = async (url) => {
+  let inviteValue = false;
+  let inviteVersion = 1;
+  window.fetch = async (url, opts = {}) => {
     const u = String(url);
+    if (opts.method === 'PUT' && u.startsWith('/api/admin/config/')) {
+      bump('configWrite');
+      if (u.includes('agent.inviteEnabled')) {
+        inviteValue = Boolean(JSON.parse(opts.body).value);
+        inviteVersion += 1;
+      }
+      return json(200, { code: 0, data: { version: inviteVersion, announced: true } });
+    }
     // 精确/特例路由必须先于前缀匹配（tree/settings/settlements/:id）。
     if (u.startsWith('/api/admin/agents/tree')) { bump('tree'); return json(200, { code: 0, data: [] }); }
     if (u.startsWith('/api/admin/agents/settings')) { bump('settings'); return json(200, { code: 0, data: SETTINGS }); }
@@ -94,7 +104,10 @@ function makeDom(role) {
     if (u.startsWith('/api/admin/login')) { bump('login'); return json(200, { code: 0, data: { token: 't', username: 'admin', role: 'super_admin' } }); }
     if (u.startsWith('/api/admin/config')) {
       bump('config');
-      return json(200, { code: 0, data: { config: { 'agent.inviteEnabled': { value: false, version: 1 } }, version: 1 } });
+      return json(200, {
+        code: 0,
+        data: { config: { 'agent.inviteEnabled': { value: inviteValue, version: inviteVersion } }, version: inviteVersion },
+      });
     }
     return json(200, { code: 0, data: {} });
   };
@@ -121,7 +134,20 @@ await sleep(60);
 ok($(window, 'agent-panel-settings')?.hidden === false, '设置面板显示');
 ok(countOf('settings') >= 1, '激活设置页签才拉 settings');
 ok(countOf('config') === 0, 'config 快照已缓存不重复拉');
-ok($(window, 'ag-invite-row')?.querySelector('input') != null, '邀请码行渲染');
+const inviteRow = $(window, 'ag-invite-row');
+const inviteInput = inviteRow?.querySelector('input');
+const inviteSave = inviteRow
+  ? [...inviteRow.querySelectorAll('button')].find((b) => b.textContent === '保存')
+  : undefined;
+ok(inviteInput != null && inviteSave !== undefined, '邀请码行有开关与保存按钮');
+if (inviteInput) {
+  inviteInput.checked = true;
+  inviteInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+}
+if (inviteSave) inviteSave.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+await sleep(80);
+const inviteVer = $(window, 'ag-invite-row')?.querySelector('.row-ver')?.textContent;
+ok(inviteVer === 'v2', `邀请码保存后版本号刷新（实测 ${inviteVer ?? '缺失'}）`);
 ok(clickIf(window, 'agent-tab-settlements'), '结算页签可点');
 await sleep(60);
 ok($(window, 'agent-panel-settlements')?.hidden === false, '结算面板显示');
@@ -136,16 +162,25 @@ ok(
   $(window, 'ag-settle-detail-body')?.textContent.includes('确认打款'),
   '结算详情出现确认打款（super_admin）',
 );
-for (const [btn, panel] of [
-  ['agent-tab-adjustments', 'agent-panel-adjustments'],
-  ['agent-tab-recon', 'agent-panel-recon'],
-  ['agent-tab-audit', 'agent-panel-audit'],
-  ['agent-tab-list', 'agent-panel-list'],
+for (const [btn, panel, key] of [
+  ['agent-tab-adjustments', 'agent-panel-adjustments', 'adjustments'],
+  ['agent-tab-recon', 'agent-panel-recon', 'recon'],
+  ['agent-tab-audit', 'agent-panel-audit', 'audit'],
 ]) {
+  const before = countOf(key);
   ok(clickIf(window, btn), `${btn} 可点`);
   await sleep(60);
   ok($(window, panel)?.hidden === false, `${panel} 显示`);
+  ok(countOf(key) > before, `激活 ${key} 页签拉取数据`);
 }
+const reconBefore = countOf('recon');
+clickIf(window, 'agent-tab-list');
+await sleep(40);
+clickIf(window, 'agent-tab-recon');
+await sleep(60);
+ok(countOf('recon') === reconBefore, '对账只首次激活自动跑（armed）');
+clickIf(window, 'agent-tab-list');
+await sleep(40);
 const visiblePanels = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'].filter(
   (id) => $(window, `agent-panel-${id}`)?.hidden === false,
 );
@@ -184,11 +219,17 @@ ok(fin.errors.length === 0, `finance 零运行时异常（实测 ${fin.errors.le
 const op = makeDom('operator');
 await sleep(60);
 ok($(op.window, 'nav-agents-btn').hidden === true, 'operator 看不到代理叶');
-try {
-  op.window.eval("switchView('agents')");
-} catch {
-  // 调用失败也算不可达
-}
+const opSearch = $(op.window, 'settings-search');
+opSearch.value = 'agent.inviteEnabled';
+opSearch.dispatchEvent(new op.window.Event('input', { bubbles: true }));
+await sleep(40);
+const opCard = op.window.document.querySelector('#settings-rows [data-key="agent.inviteEnabled"]');
+ok(opCard !== null, 'operator 搜索命中邀请码键');
+ok(opCard?.querySelector('input')?.disabled === true, 'operator 配置卡片输入禁用');
+ok(opCard?.querySelector('.row-actions')?.hidden === true, 'operator 配置卡片隐藏保存动作');
+// operator 点隐藏叶 = 走真实 switchView 入口（canView 兜底回配置视图，不抛异常）。
+const opLeaf = $(op.window, 'nav-agents-btn');
+opLeaf.dispatchEvent(new op.window.MouseEvent('click', { bubbles: true }));
 await sleep(40);
 ok($(op.window, 'agents-view').hidden === true, 'operator 直调 switchView 也不进代理视图');
 ok(op.errors.length === 0, `operator 零运行时异常（实测 ${op.errors.length}）`);
