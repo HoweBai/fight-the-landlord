@@ -267,3 +267,22 @@
 | 9 | 低 | baseline self-test / slice-34 细节 | Task 9/10：`check-baselines --self-test`；createdAt=now-1000；指标 >= before；C9 精确 1/3 |
 | 10 | 低 | withTimeout 未清 timer；测试命令写法 | Task 6：finally clearTimeout + fake timers；Task 1 用 `exec vitest run` |
 | 11 | 低 | grep 过宽；design/runbook 漏文案 | Task 7 精确锚点；Task 8 补组装异常/unavailable 成功/5s 在途闸 |
+
+## 执行记录（2026-10-26）
+
+- 分支/worktree：`feature/pdk-trust-c` @ `D:/Code/ftl-trust-c`，基线 `origin/dev@7460a3ce`。
+- 提交（按序）：`5e9a6a0f` 总 spec+C1 spec → `dffbae90` v2 → `8d1699ab` v3 → `aecf55e4` v4 →
+  `5513c4eb` plan → `aa71c875` 指标 → `cd520e5b` 服务 → `d2695005` 网关/sweeper 接线 →
+  `7dbe7c96` 告警/计数 → `c62ac8cb` conformance → `b453738e` 错误类补提交 →
+  `937f7985` 运维/设计/台账。
+- 本机验证：
+  - room-service：56 文件 / **959 tests** 全绿；lint 通过。
+  - `node scripts/verify-monitoring.mjs`：**241 checks**；自证「改头注释 35→34 ⇒ 1 FAILED」已执行并恢复。
+  - `pnpm verify:admin`：**520 checks**。
+  - `tools/conformance`：`tsc --noEmit` 通过；`check-baselines.mjs --self-test` 4/4。
+  - 10k 分类/排序基准：**83.6ms**（<500ms，不触发升级 B）。
+  - 全量 turbo：首跑/二跑/三跑各有一例**环境性**失败（config 迁移 5s 超时、currency internal-token 端口冲突、
+    bcrypt 原生绑定未构建）——三包单独复跑分别 489/489、538/538、404/404 全绿；已修 bcrypt 后串行重跑（结果见交接）。
+- 真栈：本机 Docker 不可用；`slice-15-records` C9 扩展与 `slice-34-record-outbox` 只做 tsc，
+  **待权威轮**。
+- 代码审查：独立 reviewer 审 `origin/dev..HEAD`（结果见交接/最终修复提交）。
