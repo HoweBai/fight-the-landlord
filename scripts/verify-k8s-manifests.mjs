@@ -153,8 +153,12 @@ for (const name of ['mysql', 'redis']) {
 }
 
 const edge = named('Deployment', 'edge');
-if (edge && edge.spec?.template?.spec?.hostNetwork !== true) {
-  errors.push('edge: 必须 hostNetwork=true（保真实客户端 IP）');
+const edgeSvc = named('Service', 'edge');
+if (edgeSvc?.spec?.type !== 'LoadBalancer' || edgeSvc?.spec?.externalTrafficPolicy !== 'Local') {
+  errors.push('edge: 必须 LoadBalancer + externalTrafficPolicy=Local（保真实客户端 IP）');
+}
+if (edge?.spec?.template?.spec?.hostNetwork === true) {
+  errors.push('edge: 不得 hostNetwork（KSV-0009；用 Service 暴露 80/443）');
 }
 
 for (const name of ['room-service', 'api-gateway']) {

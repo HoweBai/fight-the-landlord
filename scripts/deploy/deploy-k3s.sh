@@ -124,7 +124,7 @@ done
 for d in prometheus grafana alertmanager alert-relay am-renderer kube-state-metrics pushgateway; do
   "${kc[@]}" -n ftl-monitoring rollout status "deployment/$d" --timeout=300s
 done
-for d in node-exporter cadvisor; do
+for d in node-exporter; do
   "${kc[@]}" -n ftl-monitoring rollout status "daemonset/$d" --timeout=300s
 done
 
