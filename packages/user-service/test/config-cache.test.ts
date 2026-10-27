@@ -430,6 +430,25 @@ describe('ConfigCacheService（记录片 T7：user-service 首条配置消费链
     cache.onApplicationShutdown();
   });
 
+  it('ready（重连）⇒ 幂等重订 config:changed（ioredis 握手竞态/断线的自愈门）', async () => {
+    const { client, snapshot } = makeClient();
+    snapshot.mockResolvedValue(snapshotWith({}));
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+    await cache.waitForFirstSnapshot();
+
+    const subscriber = redisState.instances[0]!;
+    expect(subscriber.subscribe).toHaveBeenCalledTimes(1);
+    const ready = subscriber.on.mock.calls.find(([event]) => event === 'ready')?.[1] as
+      | (() => void)
+      | undefined;
+    expect(ready, '必须注册 ready 重订监听（否则竞态/断线后订阅永久丢失）').toBeDefined();
+    ready!();
+    await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalledTimes(2));
+    expect(subscriber.subscribe).toHaveBeenLastCalledWith('config:changed');
+    cache.onApplicationShutdown();
+  });
+
   it('安全网：CONFIG_SYNC_SAFETY_NET_MS=100 ⇒ 每 100ms 无条件重拉（与推送无关）；关停后停止', async () => {
     process.env.CONFIG_SYNC_SAFETY_NET_MS = '100';
     const { client, snapshot } = makeClient();

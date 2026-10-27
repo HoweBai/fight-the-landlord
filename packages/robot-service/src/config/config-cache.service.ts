@@ -301,6 +301,23 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
         // 同上：回调内再包一次 —— 否则重载日志会落回 `bootstrap`（假话）。
         runWithTrace({ traceId: null, source: 'internal' }, () => this.handleConfigChanged(channel)),
       );
+      /**
+       * 🛡️ 2026-10-27 真栈事故的同族加固（room-service 的 `room.matched` 全线超时）：
+       * ioredis ≥5.8.2 的**握手窗口内**下发 SUBSCRIBE 会被 ready-check 竞态吞掉
+       *（`Connection in subscriber mode, only subscriber commands may be used`），
+       * 且该形态下 `autoResubscribe` **不生效** ⇒ 订阅永久丢失、之后不再报错。
+       * 本文件「建连 + 订阅同一 tick」今天天然安全（命令进 offline queue），但这条
+       * `ready` 重订把安全性钉住：**每次（重）连成功都幂等重订**，断线/竞态后自愈，
+       * 不依赖 ioredis 的内部状态。
+       */
+      subscriber.on('ready', () => {
+        void subscriber.subscribe(CONFIG_CHANGED_CHANNEL).catch((err: unknown) => {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `resubscribe ${CONFIG_CHANGED_CHANNEL} failed (safety net still applies): ${reason}`,
+          );
+        });
+      });
       void subscriber
         .subscribe(CONFIG_CHANGED_CHANNEL)
         .then(() => this.logger.log(`Subscribed to ${CONFIG_CHANGED_CHANNEL}`))
