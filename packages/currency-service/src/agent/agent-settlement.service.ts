@@ -350,6 +350,11 @@ export class AgentSettlementService {
       if (current.status !== 'pending') {
         throw new DomainError(ErrCode.AGENT_SETTLEMENT_STATE, `结算单状态为 ${current.status}`);
       }
+      // 与 pay() 对齐：锁 agent 行断言 pending_settlement_id 一致，闭合并发窗口。
+      const agent = await this.lockAgent(manager, input.agentId);
+      if (agent.pendingSettlementId !== current.id) {
+        throw new DomainError(ErrCode.AGENT_SETTLEMENT_STATE, '结算单与代理状态不一致，请刷新后重试');
+      }
       await manager.query(SETTLEMENT_CANCEL_SQL, [input.actor, input.id]);
       await manager.query(AGENT_SET_PENDING_SQL, [null, current.agentId]);
       await this.audit(manager, input.actor, 'agent.settlement.cancel', input.id, {

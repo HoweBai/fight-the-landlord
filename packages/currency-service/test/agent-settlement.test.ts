@@ -318,4 +318,15 @@ describe('AgentSettlementService：申请/打款/驳回/撤回', () => {
     expect(cancelled.status).toBe('cancelled');
     expect(db.agent.pending_settlement_id).toBeNull();
   });
+
+  it('代理撤回时 pending_settlement_id 不一致 ⇒ AGENT_SETTLEMENT_STATE', async () => {
+    const db = makeDb({ entries: [{ id: 1, micro: 1_000_000 }] });
+    const svc = makeService(db);
+    const s = await svc.create({ agentId: 'a', clientRequestId: 'r', actor: 'ag_a' });
+    // 模拟并发：agent 行 pending_settlement_id 已被清（另一个 cancel/pay 抢先）
+    db.agent.pending_settlement_id = null;
+    await expect(
+      svc.cancel({ id: s.id, agentId: 'a', actor: 'ag_a' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_SETTLEMENT_STATE });
+  });
 });
