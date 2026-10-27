@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- CSP：纯静态、无 inline、无 CDN，只允许 'self' -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <!-- C20 的判据串：响应必须含「FTL 管理面」（title 与 h1 两处）。 -->
     <title>FTL 管理面</title>
     <link rel="stylesheet" href="/admin/style.css" />
