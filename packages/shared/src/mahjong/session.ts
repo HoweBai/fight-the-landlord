@@ -15,6 +15,7 @@ import type {
   Tile,
 } from '@fight-the-landlord/protocol';
 import type { ActionLogEntryBase, GamePlayerBase, GameSessionBase } from '../core/session';
+import { dealMahjong } from './deck';
 
 export interface MahjongPlayer extends GamePlayerBase<Tile> {
   melds: MahjongMeldView[];
@@ -31,16 +32,18 @@ export interface MahjongPlayer extends GamePlayerBase<Tile> {
 export type MahjongActionLogEntry = { version: number; seat: number; action: MahjongActionRecord; auto?: boolean };
 
 export interface MahjongPendingClaims {
+  kind: 'claim' | 'rob';
   discard: Tile;
   fromSeat: number;
   candidates: number[];
   responses: Array<{ seat: number; claim: 'hu' | 'gang' | 'peng' | 'pass' }>;
   /** 胡候选的当前番（过水加番判定/展示）。 */
   fanBySeat?: Record<number, number>;
+  /** 抢杠窗口：待应用的补杠。 */
+  gangMeldIndex?: number;
 }
 
-export interface MahjongSession extends GameSessionBase<Tile, MahjongActionLogEntry> {
-  gameType: 'mahjong';
+export interface MahjongSession extends GameSessionBase<Tile, MahjongActionLogEntry> {  gameType: 'mahjong';
   state: MahjongPhase;
   dealerSeat: number;
   /** 牌墙（服务端内部，永不出站）。 */
@@ -60,7 +63,92 @@ export interface MahjongSession extends GameSessionBase<Tile, MahjongActionLogEn
   rngSeed?: string;
   /** 当前窗口 id（与 runtime.windowId 同源）。 */
   windowId: string;
+  /** 窗口序号（windowId 的稳定后缀）。 */
+  windowSeq: number;
+  /** 荒庄标记 / 结束原因。 */
+  liuju?: boolean;
+  endReason?: 'threeWinners' | 'wallEmpty';
 }
 
 /** T2 用：动作日志的基础形状（不含旧 ddz 的 play/pass 语义）。 */
 export type MahjongBaseLogEntry = ActionLogEntryBase<Tile>;
+
+export interface CreateMahjongSessionInput {
+  roomCode: string;
+  baseScore: number;
+  players: Array<{ id: string; seat: number; isBot: boolean }>;
+  rules: MahjongRulesConfig;
+  random: () => number;
+  testWall?: readonly Tile[];
+  rngSeed?: string;
+  createdAt?: number;
+}
+
+/** 建局：发牌 4×13 + 56；换三张开则 state=exchange，否则直接 lack。 */
+export function createMahjongSession(input: CreateMahjongSessionInput): MahjongSession {
+  const deal = dealMahjong(input.random, input.testWall);
+  const players: MahjongPlayer[] = input.players
+    .slice()
+    .sort((a, b) => a.seat - b.seat)
+    .map((p) => ({
+      id: p.id,
+      seat: p.seat,
+      hand: deal.hands[p.seat] ?? [],
+      isBot: p.isBot,
+      isOffline: false,
+      timeoutCount: 0,
+      trustee: false,
+      melds: [],
+      discards: [],
+      lackSuit: null,
+      isOut: false,
+      hu: null,
+      exchangePick: [],
+      passedHu: [],
+    }));
+  const exchange = input.rules.exchangeThreeEnabled;
+  return {
+    roomCode: input.roomCode,
+    gameType: 'mahjong',
+    playerCount: 4,
+    baseScore: input.baseScore,
+    state: exchange ? 'exchange' : 'lack',
+    players,
+    currentPlayer: 0,
+    turnDeadlineAt: 0,
+    version: 1,
+    actionLog: [],
+    createdAt: input.createdAt ?? Date.now(),
+    finishedAt: null,
+    rules: input.rules,
+    dealerSeat: Math.floor(input.random() * 4),
+    wall: deal.wall,
+    wallCount: deal.wall.length,
+    pendingClaims: null,
+    lastDiscard: null,
+    lastDraw: null,
+    scoreEvents: [],
+    windowId: exchange ? 'exchange' : 'lack',
+    windowSeq: 0,
+    rngSeed: input.rngSeed,
+  };
+}
+
+export function isMahjongFinished(session: MahjongSession): boolean {
+  return session.state === 'ended';
+}
+
+export function finishMahjong(session: MahjongSession, now: number): MahjongSession {
+  const winnerSeats = session.players.filter((p) => p.isOut).map((p) => p.seat);
+  const endReason = session.endReason ?? (winnerSeats.length >= 3 ? 'threeWinners' : 'wallEmpty');
+  return {
+    ...session,
+    state: 'ended',
+    finishedAt: now,
+    winnerSeats,
+    liuju: session.liuju ?? endReason === 'wallEmpty',
+    endReason,
+    windowId: 'ended',
+    pendingClaims: null,
+  };
+}
