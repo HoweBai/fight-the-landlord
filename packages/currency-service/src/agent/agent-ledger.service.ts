@@ -33,8 +33,17 @@ const EXISTING_REVENUE_SQL =
   'SELECT `id` FROM `agent_revenue_events` WHERE `source_op_id` = ? AND `owner_id` = ?';
 const BINDING_SELECT_SQL =
   'SELECT `agent_id`, `phone_hash` FROM `agent_bindings` WHERE `owner_id` = ?';
-const AGENT_SELECT_SQL =
-  'SELECT `id`, `phone`, `rate_bp`, `status`, `parent_id` FROM `agent_accounts` WHERE `id` = ?';
+// 单条递归 CTE 拉全代理链（最多 AGENT_MAX_DEPTH 级），消除逐级 N+1 查询。
+const AGENT_CHAIN_CTE =
+  'WITH RECURSIVE _chain AS (' +
+  'SELECT `id`, `phone`, `rate_bp`, `status`, `parent_id`, 0 AS `lvl` ' +
+  'FROM `agent_accounts` WHERE `id` = ? ' +
+  'UNION ALL ' +
+  'SELECT a.`id`, a.`phone`, a.`rate_bp`, a.`status`, a.`parent_id`, _chain.`lvl` + 1 ' +
+  'FROM `agent_accounts` a JOIN _chain ON a.`parent_id` = _chain.`id` ' +
+  'WHERE _chain.`lvl` < ? ' +
+  'LIMIT 64' +
+  ') SELECT * FROM _chain ORDER BY `lvl`';
 const REVENUE_INSERT_SQL =
   'INSERT INTO `agent_revenue_events` (`owner_id`, `agent_id`, `source_op_id`, `fee_amount`, ' +
   '`base_amount`, `quota_consumed`, `top_rate_bp`, `expected_max_micro`, `chain_json`, ' +
@@ -247,29 +256,27 @@ export class AgentLedgerService {
   }
 
   private async loadChain(manager: EntityManager, directAgentId: string): Promise<ChainAgent[]> {
-    const chain: ChainAgent[] = [];
-    const seen = new Set<string>();
-    let id = directAgentId;
-    for (let depth = 0; depth < AGENT_MAX_DEPTH; depth += 1) {
-      if (seen.has(id)) throw new Error(`代理链成环：agentId=${id}`);
-      seen.add(id);
-      const rows = (await manager.query(AGENT_SELECT_SQL, [id])) as Array<Record<string, unknown>>;
-      if (rows.length === 0) throw new Error(`代理不存在：agentId=${id}`);
-      const r = rows[0]!;
-      chain.push({
-        agentId: id,
-        rateBp: toSafeInt(r.rate_bp, `agent_accounts.rate_bp(${id})`),
-        status: String(r.status) === 'frozen' ? 'frozen' : 'active',
-        phoneHash: hmacPhone(String(r.phone)),
-      });
-      const parent =
-        r.parent_id === null || r.parent_id === undefined ? null : String(r.parent_id);
-      if (parent === null) return chain;
-      if (depth === AGENT_MAX_DEPTH - 1) {
-        throw new Error(`代理链深度超过 ${AGENT_MAX_DEPTH}（agentId=${id} 仍有上级）`);
+    // 单条递归 CTE 拉全链（最多 AGENT_MAX_DEPTH 级）
+    const rows = (await manager.query(AGENT_CHAIN_CTE, [
+      directAgentId,
+      AGENT_MAX_DEPTH - 1,
+    ])) as Array<Record<string, unknown>>;
+    if (rows.length === 0) throw new Error(`代理不存在：agentId=${directAgentId}`);
+    // ORDER BY lvl 保证从 direct 到顶层的顺序
+    const chain: ChainAgent[] = rows.map((r) => ({
+      agentId: String(r.id),
+      rateBp: toSafeInt(r.rate_bp, `agent_accounts.rate_bp(${r.id})`),
+      status: String(r.status) === 'frozen' ? 'frozen' : 'active',
+      phoneHash: hmacPhone(String(r.phone)),
+    }));
+    // 最终安全网：LIMIT 截断时说明链超深或数据损坏
+    if (chain.length >= AGENT_MAX_DEPTH) {
+      // 最后一条仍有 parent_id 说明被截断了
+      const top = rows[rows.length - 1]!;
+      if (top.parent_id !== null && top.parent_id !== undefined) {
+        throw new Error(`代理链深度超过 ${AGENT_MAX_DEPTH}（agentId=${directAgentId} 仍有上级）`);
       }
-      id = parent;
     }
-    throw new Error(`代理链读取异常：agentId=${directAgentId}`);
+    return chain;
   }
 }
