@@ -161,7 +161,7 @@ jsdom + 登录态注入（`ftl-admin-token/username/role`）+ 桩 `/api/admin/co
 
 ## 7. 涉及文件
 
-- `admin/app.js`：`DEFAULT_CFG_UI`、`cfgUI`、`openCfgDomain`、`normalizeCfgDomain`、`renderConfigRows`、新增 `buildConfigTabStrip` / `applyCfgTabUI`。
+- `admin/app.js`：`DEFAULT_CFG_UI`、`cfgUI`、`openCfgDomain`、`normalizeCfgDomain`、`renderConfigRows`、新增 `renderCfgDomain` / `resolveCfgTab` / `buildConfigTabStrip` / `applyCfgTabUI`。
 - `admin/style.css`：`.cfg-tabs` / `.cfg-tab-panel`。
 - `scripts/verify-admin-static.mjs`：结构/条件/IA 交叉断言。
 - `scripts/admin-config-tabs-probe.mjs`（新增）、`package.json`、`scripts/ci.sh`。

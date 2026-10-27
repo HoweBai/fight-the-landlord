@@ -128,3 +128,32 @@ Files：`admin/app.js`、`admin/style.css`
 | 7 | Important | 搜索分支静态截取脆弱 | 抽 `renderCfgDomain`，闸只钉该 helper；搜索行为由探针覆盖 |
 | 8 | Important | `DEFAULT_CFG_UI`/IA 块提取方式 | 明确 `{`/`}` 与先判空 |
 | 9-14 | Minor | spec/plan 漂移、空态优先级、作用域、no-op 用例等 | 已并入 §4.5 与 T1/T2 |
+
+## 代码审查记录
+
+独立 reviewer 审 `885f7b32..HEAD`：**Critical 0**；Important 2（既有开关键卡断言被弱化、
+「仅一个面板可见」无判别性断言）；Minor 7。处置：
+
+- Important 1：静态闸恢复 `renderCfgDomain` 内的 `buildGameHeader(` 精确断言；探针补斗地主/跑得快
+  开关键卡存在与切页签后仍可见。
+- Important 2：每次切页签断言 `.cfg-tab-panel` 非 hidden 恰好 1 个且 data-tab 正确；重复点
+  active 页签同时断言条带/按钮/面板节点不变。
+- Minor 3/5/6/7/8：补中间态与 aria/零命中/单页签标题断言；面板内卡片 margin 归零；删除未用参数
+  与死计数；闸新增「同域页签键无重复」。
+- Minor 9：偏差记录见下。
+
+## 实现偏差
+
+- 渲染拆出 `renderCfgDomain` / `resolveCfgTab`；`renderConfigRows` 只在非搜索分支调用。
+- 多页签域**只按面板判空**（`cfg-tab-empty`）；`settings-empty` 仅用于单页签域与搜索态。
+- 探针搜索词用 `freeRoomEnabled`（ddz + pdk 同名键，能真正验证跨域扁平结果）。
+- 空面板提示 class = `settings-empty cfg-tab-empty`（两者并用，样式复用）。
+
+## 验收清单
+
+- [x] `pnpm verify:admin` 全绿（620 项）
+- [x] `node scripts/admin-config-tabs-probe.mjs` 全绿
+- [x] `node scripts/admin-agents-probe.mjs` 全绿（回归）
+- [x] `pnpm verify:admin-players` 全绿（回归）
+- [x] `node --check admin/app.js`
+- [x] 推 dev
