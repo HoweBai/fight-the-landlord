@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   GAME_META,
   GAME_TYPES,
@@ -10,6 +12,13 @@ import {
 import { ProtocolError } from './validate';
 
 describe('GameType / GameMeta', () => {
+  it('审查 P2-5：validate.ts 不得自建 GAME_TYPES 元组（单一真源）', () => {
+    const source = readFileSync(join(__dirname, 'validate.ts'), 'utf8');
+    // 判别力：旧实现有 `const KNOWN_GAME_TYPES = ['doudizhu', ...]` 本地元组
+    expect(source).not.toMatch(/KNOWN_GAME_TYPES\s*=\s*\[/);
+    expect(source).toContain("from './game-types'");
+  });
+
   it('规范 id 恰为 doudizhu/paodekuai，缺省斗地主', () => {
     expect(GAME_TYPES).toEqual(['doudizhu', 'paodekuai']);
     expect(DEFAULT_GAME_TYPE).toBe('doudizhu');

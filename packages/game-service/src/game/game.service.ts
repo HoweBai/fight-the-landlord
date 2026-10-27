@@ -267,6 +267,20 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       }
       if (parsed.playerCount === undefined) parsed.playerCount = 3;
 
+      /**
+       * P0-1 / 审查 P0-2：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。
+       * `JSON.stringify` 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」
+       * ⇒ 不归一化的话，重载后**人类座位会被误判成机器人**（托管 toggle 被拒、
+       * `trustees` 恒 false、超时不计数）。
+       *
+       * ⚠️ **必须放在 pdk 早退之前**：本片之前只有 ddz 分支做了归一化，pdk 会话
+       * 重载后 `trustees` 恒 false（金币局无法取消托管）。`botIds` 是两玩法公共
+       * 基类字段，纯 map；坏形状仍由外层 catch fail-closed 成 null。
+       */
+      parsed.botIds = parsed.botIds?.map((id) =>
+        typeof id === 'string' && id.length > 0 ? id : undefined,
+      );
+
       // ── 跑得快会话：只做形状守卫；玩法字段交给 PdkRuntime（S4）──────────
       if (parsed.gameType === 'paodekuai') {
         const pdk = parsed as unknown as PdkSession;
@@ -324,16 +338,6 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
         timeoutCount: p.timeoutCount ?? 0,
         trustee: p.trustee ?? false,
       }));
-      /**
-       * P0-1：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。`JSON.stringify`
-       * 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」⇒ 不归一化的话，
-       * 重载后**人类座位会被误判成机器人**（托管 toggle 被拒、`trustees` 恒 false、
-       * 超时不计数）。这里把非字符串/空串一律折回 `undefined`，与 `startGame`
-       * 写入的稀疏形态一致。缺 `botIds`（老会话/全人类）保持原样。
-       */
-      session.botIds = session.botIds?.map((id) =>
-        typeof id === 'string' && id.length > 0 ? id : undefined,
-      );
       return session as unknown as S;
     } catch {
       this.logger.error(`Corrupt session in Redis for room ${roomCode}`);
@@ -388,13 +392,22 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
 
     const existing = await this.getSession(dto.roomCode);
     if (existing) {
-      // 幂等只对**同玩法/同人数/同规则快照**成立；不同玩法不得静默复用旧会话。
-      if (
-        existing.gameType !== gameType ||
-        existing.playerCount !== playerCount ||
-        JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)
-      ) {
-        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数/规则不一致');
+      /**
+       * 幂等只对**同玩法/同人数**成立；不同玩法不得静默复用旧会话。
+       *
+       * ⚠️ 审查 P1-3：**不得**把 rules 加入拒绝条件。room-service 每次重试都从
+       * 配置缓存重新组装 `pdkRules`；60s 热更新窗口内改任一键，重试载荷就会与
+       * 首次快照不同 ⇒ 误报 12012，strict 路径耗尽预算后房间被取消，而
+       * game-service 可能已有活会话（分叉）。局中改配置不影响在途局（设计 D19），
+       * **首次快照即真源**；差异只 WARN。
+       */
+      if (existing.gameType !== gameType || existing.playerCount !== playerCount) {
+        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数不一致');
+      }
+      if (JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)) {
+        this.logger.warn(
+          `Rules snapshot drift for room ${dto.roomCode}: keeping the first snapshot (config changed during start retry)`,
+        );
       }
       this.logger.log(`Reusing existing session for room ${dto.roomCode}`);
       return { roomCode: existing.roomCode, state: existing.state, version: existing.version };

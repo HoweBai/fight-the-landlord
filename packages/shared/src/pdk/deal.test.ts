@@ -124,6 +124,24 @@ describe('dealPdk：2/3/4 人发牌', () => {
     const withRemoved = [...deck];
     withRemoved[0] = { r: 17, s: 0 }; // 黑桃2（已被去掉）
     expect(() => dealPdk(input({ testDeck: withRemoved }))).toThrow(ProtocolError);
+
+    // 审查 P2-2：范围比较放行 NaN / 小数 ⇒ 必须显式整数校验
+    const withNaN = [...deck];
+    withNaN[0] = { r: Number.NaN, s: 0 };
+    expect(() => dealPdk(input({ testDeck: withNaN }))).toThrow(ProtocolError);
+
+    const withDecimalRank = [...deck];
+    withDecimalRank[0] = { r: 3.5, s: 0 };
+    expect(() => dealPdk(input({ testDeck: withDecimalRank }))).toThrow(ProtocolError);
+
+    const withDecimalSuit = [...deck];
+    withDecimalSuit[0] = { r: 3, s: 0.5 };
+    expect(() => dealPdk(input({ testDeck: withDecimalSuit }))).toThrow(ProtocolError);
+
+    // Infinity 原本就被范围检查拒（回归）
+    const withInfinity = [...deck];
+    withInfinity[0] = { r: Number.POSITIVE_INFINITY, s: 0 };
+    expect(() => dealPdk(input({ testDeck: withInfinity }))).toThrow(ProtocolError);
   });
 
   it('players 与 playerCount/座位不匹配 ⇒ ProtocolError', () => {

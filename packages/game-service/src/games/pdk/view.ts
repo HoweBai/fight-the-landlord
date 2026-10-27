@@ -35,7 +35,10 @@ export function buildPdkPlayerView(session: PdkSession, seat: number): PdkPlayer
   const trustees = Array.from({ length: session.playerCount }, (_, s) => {
     const atSeat = session.players.find((p) => p.seat === s);
     if (!atSeat) throw new Error(`pdk session is missing a player at seat ${s}`);
-    return session.botIds?.[s] !== undefined ? false : atSeat.trustee === true;
+    // 与 `game.service.isBotSeat` 同口径：只有**非空字符串**才是机器人。
+    // （`loadSession` 已把 JSON 往返的 `null` 归一化，这里再兜一层。）
+    const botId = session.botIds?.[s];
+    return typeof botId === 'string' && botId.length > 0 ? false : atSeat.trustee === true;
   });
 
   const view: PdkPlayerView = {

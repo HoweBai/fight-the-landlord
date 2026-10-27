@@ -14,6 +14,7 @@ import { decodeHand, encodeCards, encodeHand } from './records';
 import { PdkHandType, type PdkPlayerView } from './pdk/types';
 import { pdkRecentActionsWindow } from './pdk/window';
 import type { Card, PlayerView } from './views';
+import { GAME_TYPES } from './game-types';
 
 const c = (r: number, s = 0): Card => ({ r, s });
 
@@ -118,6 +119,34 @@ describe('可选 gameType/playerCount', () => {
     expect(() =>
       validateOutbound({ ...two, payload: { ...two.payload, playerCount: 4 } }),
     ).toThrow(ProtocolError);
+  });
+
+  it('审查 P2-5：GAME_TYPES 的每个玩法都通过 match/join/balances 校验', () => {
+    for (const gameType of GAME_TYPES) {
+      expect(() =>
+        validateClientMessage('room.match', {
+          ...meta,
+          payload: { mode: 'random', baseScore: 15, gameType, playerCount: 3 },
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateClientMessage('room.join', {
+          ...meta,
+          payload: { roomCode: 'R1', gameType },
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateOutbound({
+          type: 'game.balances',
+          version: 1,
+          payload: {
+            gameType,
+            playerCount: 3,
+            balances: [0, 1, 2].map((seat) => ({ seat, balance: 10 })),
+          },
+        }),
+      ).not.toThrow();
+    }
   });
 });
 

@@ -9,10 +9,20 @@
  *    分别闸住，不在这里硬编码。
  */
 import { ProtocolError } from './validate';
+import {
+  DEFAULT_GAME_TYPE,
+  GAME_TYPES,
+  isGameType,
+  type GameType,
+} from './game-types';
 
-export const GAME_TYPES = ['doudizhu', 'paodekuai'] as const;
-export type GameType = (typeof GAME_TYPES)[number];
-export const DEFAULT_GAME_TYPE: GameType = 'doudizhu';
+/**
+ * 审查 P2-5：玩法 id 的定义在**叶子** `game-types.ts`（零 import），
+ * `validate.ts` 也直接引用同一元组 —— 不再维护第二份 `KNOWN_GAME_TYPES`。
+ * 这里 re-export 保持既有 API/导入路径不变。
+ */
+export { DEFAULT_GAME_TYPE, GAME_TYPES, isGameType };
+export type { GameType };
 
 export interface GameCapabilities {
   /** 是否支持记牌器（斗地主专属付费能力）。 */
@@ -60,10 +70,6 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
     },
   },
 };
-
-export function isGameType(value: unknown): value is GameType {
-  return typeof value === 'string' && (GAME_TYPES as readonly string[]).includes(value);
-}
 
 /**
  * 解析玩法 id。

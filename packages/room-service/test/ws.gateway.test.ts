@@ -1960,6 +1960,51 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     expect(JSON.stringify(request)).not.toContain('p_bot');
   });
 
+  it('审查 P2-4：finalizeRoomEnd 正常路径只读一次房间（结算与记录复用）', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const findOne = vi.spyOn(rooms, 'findOne');
+    const event = {
+      event: 'game.ended' as const,
+      roomCode: 'ROOM1',
+      version: 47,
+      result: RESULT,
+      record: envelope(),
+    };
+
+    await (
+      ctx.gateway as unknown as {
+        finalizeRoomEnd(e: typeof event, r: typeof RESULT): Promise<void>;
+      }
+    ).finalizeRoomEnd(event, RESULT);
+
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(findOne, '结算读一次、记录复用同一次').toHaveBeenCalledTimes(1);
+  });
+
+  it('审查 P2-4：首读为 null 时记录链兜底重读（settle 跳过、记录照写）', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const realRoom = await rooms.findOne('ROOM1');
+    const findOne = vi.spyOn(rooms, 'findOne');
+    findOne.mockReset();
+    findOne.mockResolvedValueOnce(null).mockResolvedValue(realRoom);
+    const event = {
+      event: 'game.ended' as const,
+      roomCode: 'ROOM1',
+      version: 48,
+      result: RESULT,
+      record: envelope(),
+    };
+
+    await (
+      ctx.gateway as unknown as {
+        finalizeRoomEnd(e: typeof event, r: typeof RESULT): Promise<void>;
+      }
+    ).finalizeRoomEnd(event, RESULT);
+
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(findOne, '首读 null + 兜底重读 = 2').toHaveBeenCalledTimes(2);
+  });
+
   it('机器人昵称读取失败 ⇒ 快照 null，记录仍写入（fail-open）', async () => {
     const { redis, recordClient, ctx } = await makeRecordFixtures();
     const original = redis.hgetall.getMockImplementation()!;
@@ -2167,9 +2212,9 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
       game_type: 'doudizhu', reason: 'room_ttl',
     })) ?? 0;
-    // 第一次 findOne 被结算读消耗 ⇒ 先给真房；此后（记录链及其后续读）一律 null
+    // 审查 P2-4：结算与记录共用同一次房间读取；房键过期时两边都跳过。
     findOne.mockReset();
-    findOne.mockResolvedValueOnce(realRoom).mockResolvedValue(null);
+    findOne.mockResolvedValue(null);
     ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 31, result: RESULT, record: envelope() });
     await vi.waitFor(async () => {
       expect(await exactSeriesValue(recordWriteSkipsTotal, {
@@ -2181,7 +2226,7 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
       game_type: 'paodekuai', kind: 'record_lost',
     })) ?? 0;
     findOne.mockReset();
-    findOne.mockResolvedValueOnce(realRoom).mockResolvedValue({ ...realRoom, gameType: 'doudizhu' } as never);
+    findOne.mockResolvedValue({ ...realRoom, gameType: 'doudizhu' } as never);
     ctx.gateway.onGameEvent({
       event: 'game.ended', roomCode: 'ROOM1', version: 32,
       result: { ...(RESULT as object), gameType: 'paodekuai' } as never,
@@ -2365,13 +2410,12 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
 
   it('C1：room TTL/形状不符跳过 ⇒ enqueue 零调用', async () => {
     const { rooms, recordOutbox, ctx } = await makeRecordFixtures();
-    const realRoom = await rooms.findOne('ROOM1');
     const findOne = vi.spyOn(rooms, 'findOne');
     const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
       game_type: 'doudizhu', reason: 'room_ttl',
     })) ?? 0;
     findOne.mockReset();
-    findOne.mockResolvedValueOnce(realRoom).mockResolvedValue(null);
+    findOne.mockResolvedValue(null);
     ctx.gateway.onGameEvent({
       event: 'game.ended', roomCode: 'ROOM1', version: 46, result: RESULT, record: envelope(),
     });

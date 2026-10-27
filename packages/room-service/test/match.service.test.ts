@@ -171,6 +171,12 @@ const makeMockRedis = (): MockRedis => {
     }),
     get: vi.fn(async (key: string) => (existsNow(key) ? (strings.get(key) ?? null) : null)),
     /**
+     * 审查 P0-1 配套：`RoomsService.create()` 的显式房号纵深校验会读 `EXISTS`。
+     * 本文件的替身此前只实现了 `pipeline().exists`，缺顶层方法会让所有匹配用例在
+     * 夹具建房（固定码 `ABC123`）处崩 —— 与 `zcard`/`pipeline` 同族的替身缺口。
+     */
+    exists: vi.fn(async (...keys: string[]) => keys.filter((key) => existsNow(key)).length),
+    /**
      * 风控 T2（Step 0 · F11）：`risk:hit:{userId}:{predicate}` 计数（INCR + EXPIRE 7d）。
      * 真实语义：字符串数字 +1 并**返回新值**；键不存在按 0 起算。
      */

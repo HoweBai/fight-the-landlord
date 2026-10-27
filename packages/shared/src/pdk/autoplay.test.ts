@@ -15,7 +15,10 @@ import {
   type PdkRulesConfig,
 } from '@fight-the-landlord/protocol';
 import { DEFAULT_PDK_RULES } from './rules';
-import { chooseLeadPdk, findSmallestBeatingPdk } from './autoplay';
+import { chooseLeadPdk, decidePdkAutoAction, findSmallestBeatingPdk } from './autoplay';
+import { createPdkDeck } from './deck';
+import { createPdkSession, handlePdkTimeout } from './play';
+import type { PdkSession } from './types';
 
 const rules = (over: Partial<PdkRulesConfig> = {}): PdkRulesConfig => ({
   ...DEFAULT_PDK_RULES,
@@ -233,6 +236,70 @@ describe('findSmallestBeatingPdk：炸弹兜底与炸弹对炸弹', () => {
       const idx = pool.indexOf(`${c.r},${c.s}`);
       expect(idx).toBeGreaterThanOrEqual(0);
       pool.splice(idx, 1);
+    }
+  });
+});
+
+describe('decidePdkAutoAction：托管/超时/机器人单一决策（审查 P2-3）', () => {
+  const sessionWith = (hands: number[][], over: Partial<PdkSession> = {}): PdkSession => {
+    const base = createPdkSession({
+      roomCode: 'R',
+      playerCount: 3,
+      baseScore: 15,
+      rules: rules(),
+      players: [0, 1, 2].map((seat) => ({ id: `p${seat}`, seat, isBot: false })),
+      random: () => 0,
+      testDeck: createPdkDeck(),
+    });
+    return {
+      ...base,
+      ...over,
+      players: base.players.map((p) => ({ ...p, hand: hand(hands[p.seat] ?? []) })),
+    };
+  };
+
+  it('首出（lastPlayedHand=null）⇒ 最小单张', () => {
+    const s = sessionWith([[7, 3], [4], [6]]);
+    expect(decidePdkAutoAction(s, 0)).toEqual({ kind: 'play', cards: [{ r: 3, s: 1 }] });
+  });
+
+  it('自己就是最后出牌者（lastPlayerIdx===seat）⇒ 必须首出，不跟自己的牌', () => {
+    const s = sessionWith([[7, 3], [4], [6]], {
+      lastPlayedHand: target([5]),
+      lastPlayerIdx: 0,
+    });
+    expect(decidePdkAutoAction(s, 0)).toEqual({ kind: 'play', cards: [{ r: 3, s: 1 }] });
+  });
+
+  it('跟牌 ⇒ 最小可压；压不过 ⇒ pass', () => {
+    const beat = sessionWith([[7, 3], [4], [6]], {
+      lastPlayedHand: target([5]),
+      lastPlayerIdx: 1,
+    });
+    expect(decidePdkAutoAction(beat, 0)).toEqual({ kind: 'play', cards: [{ r: 7, s: 0 }] });
+
+    const pass = sessionWith([[3, 4], [4], [6]], {
+      lastPlayedHand: target([5]),
+      lastPlayerIdx: 1,
+    });
+    expect(decidePdkAutoAction(pass, 0)).toEqual({ kind: 'pass' });
+  });
+
+  it('语义边界：座位不存在/空手牌首出 ⇒ 抛错（与两个入口既有语义一致）', () => {
+    const s = sessionWith([[3], [4], [6]]);
+    expect(() => decidePdkAutoAction(s, 9)).toThrow(/seat 9/);
+    const empty = sessionWith([[], [4], [6]]);
+    expect(() => decidePdkAutoAction(empty, 0)).toThrow(/no card to play/);
+  });
+
+  it('timeout 入口与决策函数同结果（回归）', () => {
+    const s = sessionWith([[7, 3], [4], [6]], { currentPlayer: 0 });
+    const decided = decidePdkAutoAction(s, 0);
+    const timed = handlePdkTimeout(s);
+    const logged = timed.actionLog.at(-1)!;
+    expect(logged.kind).toBe(decided.kind);
+    if (decided.kind === 'play') {
+      expect(logged.cards.map((c) => c.r)).toEqual(decided.cards.map((c) => c.r));
     }
   });
 });

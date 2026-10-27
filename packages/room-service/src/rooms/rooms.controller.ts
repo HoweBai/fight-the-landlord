@@ -86,7 +86,17 @@ export class RoomsController {
       // `{ whitelist: true, transform: true }` —— **没有** `forbidNonWhitelisted`
       // ⇒ 未声明的属性会被**静默剥掉**（不是 400）——`timeoutMs` 只能是 `create()` 的
       // **第二个入参**，写进请求体也不会到服务层（`CreateRoomDto.baseScore` 依赖的同一机制）。
-      const room = await this.roomsService.create(dto, { timeoutMs: MANUAL_ROOM_TIMEOUT_MS });
+      //
+      // 🔴 审查 P0-1：**不得把 `dto` 原样透传**。HTTP 无合法自定义房号调用点；
+      // 显式白名单构造入参，确保即使测试/旧客户端绕过 ValidationPipe，`roomCode`
+      // 也到不了 service（否则可覆盖存活房 meta，局终结算静默跳过）。
+      const input = {
+        mode: dto.mode,
+        ...(dto.baseScore !== undefined ? { baseScore: dto.baseScore } : {}),
+        ...(dto.gameType !== undefined ? { gameType: dto.gameType } : {}),
+        ...(dto.playerCount !== undefined ? { playerCount: dto.playerCount } : {}),
+      };
+      const room = await this.roomsService.create(input, { timeoutMs: MANUAL_ROOM_TIMEOUT_MS });
       await this.roomsService.setFillDeadline(room.code, manualFillDeadlineAt(Date.now(), Math.random));
       return { code: ErrCode.OK, data: toRoomInfo(room) };
     } catch (err) {

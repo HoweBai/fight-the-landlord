@@ -512,7 +512,7 @@ export class RoomStartService {
        * 只有 `seat → botId`，不足以还原 `game.start` 载荷。失败按补位失败处理
        *（catch ⇒ `null` ⇒ 不开局），绝不能带着缺身份的机器人开局。
        */
-      botBindings.push(...(await this.recoverBotBindings(code, current.players, botBindings)));
+      botBindings.push(...(await this.recoverBotBindings(code, current.players, botBindings, gameType)));
       // R207：`seat → botId` 落 `room:{code}:bots`（局终 `robot.release` 的唯一来源）
       await writeBotBindings(this.redis, code, botBindings);
       /**
@@ -557,6 +557,7 @@ export class RoomStartService {
     code: string,
     seats: Seat[],
     known: ReadonlyArray<BotBinding>,
+    gameType: GameType,
   ): Promise<BotBinding[]> {
     const coveredSeats = new Set(known.map((b) => b.seat));
     // 绑定与座位表以 `displayId` 关联（`Seat.userId` 是出站 id）：座位号以 bindings 为准，
@@ -569,7 +570,10 @@ export class RoomStartService {
       .map((s) => s.seat);
     if (missingSeats.length === 0) return [];
 
-    const { bots } = await this.robot.acquire(code, missingSeats);
+    // 审查 P0-3：必须与 `acquireBot` 一样透传玩法 —— robot-service 缺省按 doudizhu
+    // 处理，`findBound` 会拒绝已绑定的 pdk 机器人并改绑新建/空闲的 ddz 机器人：
+    // 错池机器人上 pdk 桌 + 两个机器人池同时泄漏。
+    const { bots } = await this.robot.acquire(code, missingSeats, gameType);
     const bySeat = new Map((bots ?? []).map((b) => [b.seat, b]));
     return missingSeats.map((seatNo) => {
       const bot = bySeat.get(seatNo);
