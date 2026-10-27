@@ -182,21 +182,85 @@ export interface SettleComputation {
  * ```
  * 分差为 0 的座位（理论不发生）⇒ 不产生 entry，但 `deltas` 向量仍含 0（规格 §4 末行）。
  */
+/**
+ * 审查 P1-4：结算结果必须与**房间玩法**一致，且 pdk 向量必须覆盖每个座位。
+ *
+ * 返回 `null` 表示形状合法；否则返回可读原因（调用方 `dropWarn` / 纯函数抛错）。
+ * 绝不按“结果里有没有 gameType 键”猜玩法（旧的 `isPdkSettlementResult(result)` 分流
+ * 会让缺键的 pdk 向量落进 ddz 分支，静默零结算）。
+ */
+export function settlementShapeProblem(
+  result: SettlementResult,
+  gameType: GameType,
+  seatNumbers: readonly number[],
+): string | null {
+  if (gameType === 'paodekuai') {
+    if (!isPdkSettlementResult(result)) return 'expected paodekuai settlement vector';
+    if (result.playerCount !== seatNumbers.length) {
+      return `playerCount ${result.playerCount} != seats ${seatNumbers.length}`;
+    }
+    if (!Array.isArray(result.scoreChanges) || result.scoreChanges.length !== seatNumbers.length) {
+      return 'scoreChanges length does not match seats';
+    }
+    const seen = new Set<number>();
+    for (const change of result.scoreChanges) {
+      if (!seatNumbers.includes(change.seat) || seen.has(change.seat)) {
+        return `unknown or duplicate seat ${change.seat}`;
+      }
+      if (!Number.isSafeInteger(change.delta)) return `delta at seat ${change.seat} is not an integer`;
+      seen.add(change.seat);
+    }
+    return null;
+  }
+  if (isPdkSettlementResult(result)) return 'expected doudizhu settlement result';
+  if (!Number.isInteger(result.landlordSeat) || !seatNumbers.includes(result.landlordSeat)) {
+    return `landlordSeat ${String(result.landlordSeat)} invalid`;
+  }
+  if (
+    !Number.isSafeInteger(result.landlordScoreChange) ||
+    !Number.isSafeInteger(result.farmerScoreChange)
+  ) {
+    return 'landlord/farmer score change is not an integer';
+  }
+  return null;
+}
+
 export function computeSettlement(input: {
   roomCode: string;
   version: number;
   round: 1 | 2;
+  gameType: GameType;
   result: SettlementResult;
   seats: readonly SettleSeatRef[];
   /** ownerId → 结算前余额；**缺失按 0**（`exists=false` 口径 —— 读路径不建行）。 */
   balances: ReadonlyMap<string, number>;
   rakePercent: number;
 }): SettleComputation {
-  const { roomCode, version, round, result, balances, rakePercent } = input;
+  const { roomCode, version, round, gameType, result, balances, rakePercent } = input;
   const ordered = [...input.seats].sort((a, b) => a.seat - b.seat);
+  const shapeProblem = settlementShapeProblem(
+    result,
+    gameType,
+    ordered.map((s) => s.seat),
+  );
+  if (shapeProblem) {
+    throw new Error(`settlement result shape mismatch (room=${gameType}): ${shapeProblem}`);
+  }
+  const pdkBySeat =
+    gameType === 'paodekuai' && isPdkSettlementResult(result)
+      ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
+      : null;
   const rawOf = (seat: SettleSeatRef): number => {
+    if (gameType === 'paodekuai') {
+      const raw = pdkBySeat?.get(seat.seat);
+      if (raw === undefined) {
+        // 形状守卫已保证覆盖；这里再 fail-closed，绝不静默按 0 免付。
+        throw new Error(`settlement scoreChanges missing seat ${seat.seat}`);
+      }
+      return raw;
+    }
     if (isPdkSettlementResult(result)) {
-      return result.scoreChanges.find((c) => c.seat === seat.seat)?.delta ?? 0;
+      throw new Error('settlement result shape mismatch: pdk vector in doudizhu game');
     }
     return seat.seat === result.landlordSeat ? result.landlordScoreChange : result.farmerScoreChange;
   };
@@ -407,6 +471,19 @@ export class SettleService {
       );
       return;
     }
+    /**
+     * 审查 P1-4：形状与座位覆盖按**房间玩法**校验（不是按结果形状猜）。
+     * pdk 向量缺座 ⇒ 该座被 `?? 0` 静默免付；这里先降级为 dropped（不写钱、不进 outbox）。
+     */
+    const shapeProblem = settlementShapeProblem(
+      result,
+      gameType,
+      Array.from({ length: playerCount }, (_, seat) => seat),
+    );
+    if (shapeProblem) {
+      this.dropWarn(roomCode, version, gameType, `settlement result invalid: ${shapeProblem}`);
+      return;
+    }
 
     // ── 守卫⑤：座位齐（0..playerCount-1） + 机器人座映射齐（映射来自入参透传 —— 不得重读 bots 键）────
     const seats = this.resolveSeats(room, input.botBySeat, version, playerCount, gameType);
@@ -430,6 +507,7 @@ export class SettleService {
       roomCode,
       version,
       round,
+      gameType,
       result: input.result,
       seats,
       balances,
@@ -467,6 +545,7 @@ export class SettleService {
         roomCode,
         version,
         round,
+        gameType,
         result: input.result,
         seats,
         balances: balances2,

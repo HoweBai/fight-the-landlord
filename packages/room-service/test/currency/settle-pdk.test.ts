@@ -192,6 +192,7 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
       roomCode: 'ROOM01',
       version: 7,
       round: 1,
+      gameType: 'paodekuai',
       result,
       seats,
       balances,
@@ -203,6 +204,70 @@ describe('pdk 结算：2/3/4 人向量（Task 2.5）', () => {
       result.scoreChanges.map((c) => ({ ownerId: `u${c.seat}`, ownerType: 'user', delta: c.delta })),
     );
     expect(computed.residue).toBe(0);
+  });
+
+  it('computeSettlement 按房间玩法分流：pdk 向量 + doudizhu ⇒ 抛错（不静默零结算）', () => {
+    const result = pdkResult(3, [30, -15, -15]);
+    const seats = result.scoreChanges.map((_, seat) => ({
+      seat,
+      ownerId: `u${seat}`,
+      ownerType: 'user' as const,
+    }));
+    expect(() =>
+      computeSettlement({
+        roomCode: 'ROOM01',
+        version: 7,
+        round: 1,
+        gameType: 'doudizhu',
+        result,
+        seats,
+        balances: new Map(seats.map((s) => [s.ownerId, 1000])),
+        rakePercent: 0,
+      }),
+    ).toThrow(/shape mismatch/);
+  });
+
+  it('computeSettlement：pdk 向量缺座 ⇒ 抛错（旧实现 `?? 0` 静默免付）', () => {
+    const result = pdkResult(3, [30, -15, -15], {
+      scoreChanges: [
+        { seat: 0, delta: 30 },
+        { seat: 1, delta: -15 },
+      ],
+    });
+    const seats = [0, 1, 2].map((seat) => ({ seat, ownerId: `u${seat}`, ownerType: 'user' as const }));
+    expect(() =>
+      computeSettlement({
+        roomCode: 'ROOM01',
+        version: 7,
+        round: 1,
+        gameType: 'paodekuai',
+        result,
+        seats,
+        balances: new Map(seats.map((s) => [s.ownerId, 1000])),
+        rakePercent: 0,
+      }),
+    ).toThrow(/scoreChanges/);
+  });
+
+  it('settle()：pdk 向量缺座 ⇒ dropped，不调 apply / 不广播', async () => {
+    const h = makeHarness();
+    const result = pdkResult(3, [30, -15, -15], {
+      scoreChanges: [
+        { seat: 0, delta: 30 },
+        { seat: 1, delta: -15 },
+      ],
+    });
+
+    await h.svc.settle({
+      roomCode: 'ROOM01',
+      version: 7,
+      result,
+      room: pdkRoom(3),
+      botBySeat: new Map(),
+    });
+
+    expect(h.currency.apply).not.toHaveBeenCalled();
+    expect(h.broadcasts).toHaveLength(0);
   });
 
   it('斗地主旧路径：广播/moneyDelta 不带 gameType/playerCount（9 键零变化）', async () => {
