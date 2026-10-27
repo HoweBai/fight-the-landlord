@@ -694,31 +694,27 @@ describe('⑥ ② 战绩金币列（moneyDelta /「金币场」标签）', () =>
 });
 
 /**
- * ⑦ 筛选胶囊的垂直居中（2026-10-22 玩家截图的走查修复）。
+ * ⑦ 下拉选择器的 flex 居中骨架（2026-10-27 UI 优化：下拉替代胶囊）。
  *
  * 宿主是 `<button>` ⇒ H5/App-vue 编译成 `uni-button`，基样式 `display: block`；
- * 本页又把 `line-height` 压成 1.4、给了 `min-height: $ftl-control-h-sm`（56px）——
- * 块级盒里的行盒**顶对齐**，多出的高度全落在文字**下面** ⇒ 胶囊文字明显偏高
- * （实测偏 ~10px；文字越少越显眼）。
- * 修法与 `ftl-btn` mixin 同一条骨架：胶囊自身 flex 居中，不靠 line-height 撞高度。
+ * `.history__select`（触发按钮）和 `.history__dropdown-item`（选项）都需要 flex 居中。
  *
  * ⚠️ 射程诚实：jsdom 没有布局引擎，这里只能钉「居中骨架在场」；真实像素由截图验收。
  */
-describe('⑦ 筛选胶囊：文字垂直居中（uni-button 是 display:block，min-height 撑高后行盒顶对齐）', () => {
-  it('.history__chip 用 flex 居中（display:flex + align-items/justify-content:center）', () => {
+describe('⑦ 下拉选择器：flex 居中骨架（uni-button 基样式 display:block）', () => {
+  it('.history__select 和 .history__dropdown-item 都用 flex 居中', () => {
     const historySrc = stripComments(readFileSync(join(SRC_ROOT, 'pages/history/history.vue'), 'utf8'));
-    const start = historySrc.search(/\.history__chip\s*\{/);
-    const end = historySrc.indexOf('.history__chip--active');
-    expect(start, '`.history__chip` 基础块必须存在').toBeGreaterThanOrEqual(0);
-    expect(end, '`.history__chip--active` 必须排在基础块之后').toBeGreaterThan(start);
-    const block = historySrc.slice(start, end);
-    expect(block, 'uni-button 基样式是 display:block：不改成 flex，行盒会顶对齐').toMatch(
-      /display\s*:\s*flex\s*;/,
-    );
-    expect(block, 'align-items:center 是垂直居中的那条腿').toMatch(/align-items\s*:\s*center\s*;/);
-    expect(block, 'justify-content:center 是水平居中的那条腿').toMatch(
-      /justify-content\s*:\s*center\s*;/,
-    );
+    // trigger button
+    const selectStart = historySrc.search(/\.history__select\s*\{/);
+    const selectEnd = historySrc.indexOf('.history__select--open');
+    expect(selectStart, '`.history__select` 基础块必须存在').toBeGreaterThanOrEqual(0);
+    const selectBlock = historySrc.slice(selectStart, selectEnd);
+    expect(selectBlock, 'trigger 按钮必须是 flex 居中').toMatch(/display\s*:\s*flex\s*;/);
+    // dropdown item
+    const itemStart = historySrc.search(/\.history__dropdown-item\s*\{/);
+    expect(itemStart, '`.history__dropdown-item` 基础块必须存在').toBeGreaterThanOrEqual(0);
+    const itemBlock = historySrc.slice(itemStart, itemStart + 1200);
+    expect(itemBlock, '下拉选项必须是 flex 居中').toMatch(/display\s*:\s*flex\s*;/);
   });
 });
 
@@ -768,11 +764,16 @@ describe('P1-7：加载更多与筛选切换的竞态', () => {
     await flushPromises();
 
     // ……此时切筛选（新第一页立刻返回）。
-    const goldChip = wrapper
-      .findAll('.history__chip')
-      .find((chip) => chip.text().trim() === '金币场');
-    expect(goldChip, '筛选胶囊必须存在').toBeDefined();
-    await goldChip!.trigger('click');
+    // 下拉模式：先点「场次」trigger 打开下拉，再点「金币场」选项。
+    const modeGroups = wrapper.findAll('.history__filter-group');
+    expect(modeGroups.length, '三组筛选组').toBe(3);
+    await modeGroups[1]!.find('.history__select').trigger('click'); // 场次
+    await flushPromises();
+    const goldItem = wrapper
+      .findAll('.history__dropdown-item')
+      .find((item) => item.text().trim() === '金币场');
+    expect(goldItem, '下拉选项必须存在').toBeDefined();
+    await goldItem!.trigger('click');
     await flushPromises();
 
     expect(calls[2]!.url).toContain('mode=gold');

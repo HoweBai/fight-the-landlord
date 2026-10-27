@@ -101,6 +101,41 @@ const filterMode = ref<MyRecord['mode'] | undefined>(undefined);
 type DatePreset = 'all' | 'today' | 'week' | 'month';
 const filterDate = ref<DatePreset>('all');
 
+/** 下拉菜单打开标记：null = 全关；否则是当前打开的筛选组。 */
+type FilterKey = 'game' | 'mode' | 'date';
+const activeFilter = ref<FilterKey | null>(null);
+
+/**
+ * 点击切换下拉：点同一个 trigger 第二次关闭；
+ * 点另一个 trigger 切换打开项。
+ */
+function toggleFilter(key: FilterKey) {
+  activeFilter.value = activeFilter.value === key ? null : key;
+}
+
+/** 标签 → 显示值（下拉触发按钮用）。 */
+const GAME_LABEL: Readonly<Record<typeof GAME_MODES[number]['id'], string>> = {
+  doudizhu: '斗地主',
+  paodekuai: '跑得快',
+};
+const MODE_LABEL_SHORT: Readonly<Record<string, string>> = {
+  all: '全部',
+  random: '匹配',
+  practice: '好友房',
+  gold: '金币场',
+};
+const DATE_LABEL: Readonly<Record<DatePreset, string>> = {
+  all: '全部',
+  today: '今日',
+  week: '本周',
+  month: '本月',
+};
+
+/** 关闭下拉（遮罩或 ESC 用）。 */
+function closeFilterMenu() {
+  activeFilter.value = null;
+}
+
 /** 日期预设 → `[from, to)` epoch ms 区间；`null` = 不筛。 */
 function dateRangeOf(preset: DatePreset): { from?: number; to?: number } | null {
   if (preset === 'all') return null;
@@ -135,19 +170,25 @@ function onFilterChange() {
 /** 选模式；不传参 = 清空筛选。 */
 function selectMode(mode?: MyRecord['mode']) {
   filterMode.value = mode;
+  activeFilter.value = null;
   onFilterChange();
 }
 
 /** 选玩法（S6.3）：切表 + 重置列表。 */
 function selectGame(game: 'doudizhu' | 'paodekuai') {
-  if (filterGame.value === game) return;
+  if (filterGame.value === game) {
+    activeFilter.value = null;
+    return;
+  }
   filterGame.value = game;
+  activeFilter.value = null;
   onFilterChange();
 }
 
 /** 选日期预设。 */
 function selectDate(preset: DatePreset) {
   filterDate.value = preset;
+  activeFilter.value = null;
   onFilterChange();
 }
 
@@ -374,76 +415,99 @@ onMounted(() => {
         <text class="history__title">历史战绩</text>
       </view>
 
-      <!-- 筛选条：模式胶囊（全部 + 三种场次）+ 日期胶囊（全部/今日/本周/本月） -->
-      <view class="history__filters">
-        <view class="history__filter-group">
+      <!--
+        筛选条（2026-10-27 UI 优化：下拉选择器替代胶囊按钮）。
+        三组筛选 —— 玩法 / 场次 / 日期 —— 各占一个紧凑的下拉按钮，
+        比原来平铺一排胶囊更节省横向空间、层次更清晰。
+        同一时间只开一个下拉（activeFilter 互斥）。
+      -->
+      <view class="history__filters" @click="closeFilterMenu">
+        <!-- 遮罩层：下拉打开时拦截外部点击（click.stop 让 trigger 能正常 toggle）。 -->
+        <view v-if="activeFilter !== null" class="history__filter-shade" @click.stop="closeFilterMenu" />
+
+        <!-- 玩法 -->
+        <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">玩法</text>
-          <view class="history__filter-chips">
+          <button
+            type="button"
+            class="history__select"
+            :class="{ 'history__select--open': activeFilter === 'game' }"
+            @click="toggleFilter('game')"
+          >
+            <text class="history__select-value">{{ GAME_LABEL[filterGame] }}</text>
+            <text class="history__select-arrow">▾</text>
+          </button>
+          <view v-if="activeFilter === 'game'" class="history__dropdown">
             <button
               v-for="m in GAME_MODES"
               :key="m.id"
               type="button"
-              class="history__chip history__game"
-              :class="{ 'history__chip--active': filterGame === m.id }"
+              class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterGame === m.id }"
               @click="selectGame(m.id)"
             >{{ m.name }}</button>
           </view>
         </view>
-        <view class="history__filter-group">
+
+        <!-- 场次 -->
+        <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">场次</text>
-          <view class="history__filter-chips">
-            <!-- 全部：点击任何场次 chip 后可「再次点击」取消 → 回到全部；这里保留一个显式 chip 方便一键清空。 -->
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterMode === undefined }"
+          <button
+            type="button"
+            class="history__select"
+            :class="{ 'history__select--open': activeFilter === 'mode' }"
+            @click="toggleFilter('mode')"
+          >
+            <text class="history__select-value">{{ MODE_LABEL_SHORT[filterMode ?? 'all'] }}</text>
+            <text class="history__select-arrow">▾</text>
+          </button>
+          <view v-if="activeFilter === 'mode'" class="history__dropdown">
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterMode === undefined }"
               @click="selectMode()"
             >全部</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterMode === 'random' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterMode === 'random' }"
               @click="selectMode('random')"
             >匹配</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterMode === 'practice' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterMode === 'practice' }"
               @click="selectMode('practice')"
             >好友房</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterMode === 'gold' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterMode === 'gold' }"
               @click="selectMode('gold')"
             >金币场</button>
           </view>
         </view>
-        <view class="history__filter-group">
+
+        <!-- 日期 -->
+        <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">日期</text>
-          <view class="history__filter-chips">
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterDate === 'all' }"
+          <button
+            type="button"
+            class="history__select"
+            :class="{ 'history__select--open': activeFilter === 'date' }"
+            @click="toggleFilter('date')"
+          >
+            <text class="history__select-value">{{ DATE_LABEL[filterDate] }}</text>
+            <text class="history__select-arrow">▾</text>
+          </button>
+          <view v-if="activeFilter === 'date'" class="history__dropdown">
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterDate === 'all' }"
               @click="selectDate('all')"
             >全部</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterDate === 'today' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterDate === 'today' }"
               @click="selectDate('today')"
             >今日</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterDate === 'week' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterDate === 'week' }"
               @click="selectDate('week')"
             >本周</button>
-            <button
-              type="button"
-              class="history__chip"
-              :class="{ 'history__chip--active': filterDate === 'month' }"
+            <button type="button" class="history__dropdown-item"
+              :class="{ 'history__dropdown-item--active': filterDate === 'month' }"
               @click="selectDate('month')"
             >本月</button>
           </view>
@@ -598,70 +662,135 @@ onMounted(() => {
   min-height: $ftl-bar-h;
 }
 /**
- * 筛选条（2026-10 新增）：两场（模式 + 日期）并排、胶囊按钮组。
- * 与大厅底分卡栏的胶囊语言同族，但更紧凑（本页是筛选，不是 CTA）。
+ * 筛选条（2026-10-27 UI 优化：下拉选择器替代胶囊按钮）。
+ * 三组筛选紧凑排列在一行 —— 比原来 12 个胶囊按钮省横向空间、层次更清晰。
+ * 用 position: relative 包住 filter-shade（全屏遮罩，下拉打开时关外面的点击）。
  */
 .history__filters {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
-  flex-wrap: wrap;
   align-items: center;
-  gap: $ftl-space-5 $ftl-space-6;
+  gap: $ftl-space-5;
   padding: $ftl-space-3 $ftl-space-4;
   border: $ftl-hairline solid rgba($ftl-color-night-deep, 0.6);
   border-radius: $ftl-radius-md;
   background: rgba($ftl-color-night-deep, 0.3);
 }
+/**
+ * 遮罩层：下拉打开时拦截 filter 区域外的点击。
+ * absolute 覆盖整屏 —— 因为 .history__filters 是相对定位，遮罩相对于它定位。
+ * 高度 100vh 足够覆盖整个舞台（横屏场景）。
+ */
+.history__filter-shade {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  z-index: 5;
+}
+/**
+ * 单个筛选组：label + select 按钮（compact inline）。
+ * position: relative —— 下拉浮层 .history__dropdown 定位在它下面。
+ */
 .history__filter-group {
+  position: relative;
   display: flex;
   align-items: center;
   gap: $ftl-space-3;
 }
 .history__filter-label {
+  flex: 0 0 auto;
   color: rgba($ftl-color-on-primary, 0.6);
   font-size: $ftl-font-xs;
   white-space: nowrap;
 }
-.history__filter-chips {
-  display: flex;
-  gap: $ftl-space-2;
-}
 /**
- * 筛选胶囊（次按钮轻量档）：冷灰弱底 + 淡描边 + 白字；选中态提亮。
- * 全局 `.btn` mixin 有贴图背景，这里**不用 mixin**，手写一份更简洁的样式。
+ * 下拉触发按钮：冷灰弱底 + 淡描边 + 右对齐箭头。
+ * 宿主是 `<button>` ⇒ flex 居中 + margin:0 是 uni-button 的标准骨架。
  */
-.history__chip {
+.history__select {
   box-sizing: border-box;
-  flex: 0 0 auto;
-  /**
-   * ⚠️ 宿主是 `<button>` ⇒ H5/App-vue 编译成 `uni-button`，基样式是 **`display: block`**。
-   * 下面的 `min-height`（56px）撑高后，块级盒里的行盒**顶对齐**——文字偏高约 10px
-   * （2026-10-22 玩家截图：胶囊字「上下不居中」）。改用 `ftl-btn` mixin 同款骨架：
-   * 胶囊自身 flex 居中，不靠 `line-height` 撞高度。
-   */
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: $ftl-space-2;
   margin: 0;
   padding: 0 $ftl-space-4;
   min-height: $ftl-control-h-sm;
   border: $ftl-hairline solid rgba($ftl-color-night-soft, 0.5);
-  border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night-deep, 0.25);
-  color: rgba($ftl-color-on-primary, 0.7);
-  font-size: $ftl-font-xs;
+  border-radius: $ftl-radius-md;
+  background: rgba($ftl-color-night-deep, 0.35);
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
   line-height: 1.4;
   background-image: none;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
   cursor: pointer;
-  &:hover {
-    color: rgba($ftl-color-on-primary, 0.9);
-  }
+  transition: border-color 0.15s, background 0.15s;
 }
-/** 选中态：更深的底 + 金色描边 + 亮色文字 —— 与本页 mode 标签同档金色强调。 */
-.history__chip--active {
-  background: rgba($ftl-color-gold-deep, 0.28);
+/** 打开态：金色描边 + 更深底（选中态高亮）。 */
+.history__select--open {
   border-color: $ftl-color-gold-light;
+  background: rgba($ftl-color-gold-deep, 0.28);
+}
+.history__select-value {
+  white-space: nowrap;
+}
+.history__select-arrow {
+  flex: 0 0 auto;
+  color: rgba($ftl-color-on-primary, 0.5);
+  font-size: $ftl-font-xs;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.history__select--open .history__select-arrow {
+  color: $ftl-color-gold-light;
+  transform: rotate(180deg);
+}
+/**
+ * 下拉浮层：absolute 定位在 trigger 下方。
+ * z-index 高于 filter-shade（shade 是 5，这里给 10）。
+ * 宽度用 min-width 贴合 trigger 宽度，避免选项被压缩。
+ */
+.history__dropdown {
+  position: absolute;
+  top: calc(100% + $ftl-space-2);
+  left: 0;
+  min-width: 120px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: $ftl-space-2;
+  border: $ftl-hairline solid rgba($ftl-color-night-deep, 0.8);
+  border-radius: $ftl-radius-md;
+  background: rgba($ftl-color-night, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.history__dropdown-item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+  padding: $ftl-space-2 $ftl-space-4;
+  min-height: $ftl-control-h-sm;
+  border: none;
+  border-radius: $ftl-radius-sm;
+  background: transparent;
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
+  line-height: 1.4;
+  background-image: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.history__dropdown-item:hover {
+  background: rgba($ftl-color-night-deep, 0.5);
+}
+/** 选中项：金色文字 + 浅金底。 */
+.history__dropdown-item--active {
+  background: rgba($ftl-color-gold-deep, 0.22);
   color: $ftl-color-gold-light;
   font-weight: 600;
 }
