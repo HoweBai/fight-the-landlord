@@ -94,12 +94,20 @@ const tabByText = (text) => tabs().find((b) => b.textContent === text);
 const activeTabText = () => tabs().find((b) => b.classList.contains('active'))?.textContent;
 const panel = (id) => q(window, `#settings-rows .cfg-tab-panel[data-tab="${id}"]`);
 const keyCard = (key) => q(window, `#settings-rows [data-key="${key}"]`);
+const visiblePanels = () => qa(window, '#settings-rows .cfg-tab-panel').filter((p) => !p.hidden);
+const onlyVisible = (id) => {
+  const v = visiblePanels();
+  return v.length === 1 && v[0].dataset.tab === id;
+};
+const activeBtn = () => tabs().find((b) => b.classList.contains('active'));
 
 ok(await waitFor(() => tabs().length > 0), '首屏渲染出页签条');
 ok(tabs().length === 6, `斗地主 6 个页签（实测 ${tabs().length}）`);
 ok(activeTabText() === '对局辅助', `默认页签=第一个有键页签（实测 ${activeTabText()}）`);
 ok(panel('assist')?.hidden === false, 'assist 面板可见');
 ok(panel('rooms')?.hidden === true, 'rooms 面板初始 hidden');
+ok(onlyVisible('assist'), '同一时刻仅 assist 面板可见');
+ok(keyCard('game.doudizhu.enabled') !== null, '斗地主开关键卡存在');
 
 // DOM 保留：节点引用必须不变（排除 drafts 还原的假绿）
 const storedInput = panel('assist')?.querySelector('[data-key="game.doudizhu.cardCounterEnabled"] input');
@@ -108,10 +116,13 @@ if (storedInput) {
   storedInput.checked = true;
   storedInput.dispatchEvent(new window.Event('change', { bubbles: true }));
 }
-clickEl(window, tabByText('场次开关'));
+ok(clickEl(window, tabByText('场次开关')), '点击场次开关页签');
 await sleep(30);
-clickEl(window, tabByText('对局辅助'));
+ok(onlyVisible('rooms') && panel('assist')?.hidden === true, '切换后仅 rooms 面板可见');
+ok(clickEl(window, tabByText('对局辅助')), '点击对局辅助页签');
 await sleep(30);
+ok(onlyVisible('assist'), '切回后仅 assist 面板可见');
+ok(keyCard('game.doudizhu.enabled') !== null, '切页签后开关键卡仍在');
 const currentInput = panel('assist')?.querySelector('[data-key="game.doudizhu.cardCounterEnabled"] input');
 ok(currentInput != null && currentInput === storedInput && currentInput.checked === true, '切页签保留同一 DOM 节点与未保存值');
 
@@ -119,6 +130,8 @@ ok(currentInput != null && currentInput === storedInput && currentInput.checked 
 clickEl(window, tabByText('玩法规则'));
 await sleep(30);
 ok(panel('rules')?.hidden === false, 'rules 面板可见');
+ok(onlyVisible('rules'), '同一时刻仅 rules 面板可见');
+ok(tabByText('玩法规则')?.getAttribute('aria-selected') === 'true', 'active 页签 aria-selected=true');
 ok(
   panel('rules')?.querySelector('.cfg-tab-empty')?.textContent.includes('本页签暂无可展示的键'),
   '空页签显示提示文案',
@@ -140,6 +153,14 @@ await sleep(40);
 ok(tabs().length === 0, '搜索态无页签条');
 ok(keyCard('game.doudizhu.freeRoomEnabled') !== null, '搜索结果含斗地主的 freeRoomEnabled');
 ok(keyCard('game.paodekuai.freeRoomEnabled') !== null, '搜索结果含跑得快的 freeRoomEnabled（跨域）');
+search.value = 'zzz-no-such-key';
+search.dispatchEvent(new window.Event('input', { bubbles: true }));
+await sleep(40);
+ok(tabs().length === 0, '零命中搜索无页签条');
+ok(
+  q(window, '#settings-rows .settings-empty')?.textContent.includes('没有匹配的配置键'),
+  '零命中显示搜索空态',
+);
 search.value = '';
 search.dispatchEvent(new window.Event('input', { bubbles: true }));
 await sleep(40);
@@ -152,19 +173,34 @@ await sleep(40);
 ok(tabs().length === 6, '跑得快 6 个页签');
 ok(activeTabText() === '开关', `跑得快默认=开关（实测 ${activeTabText()}）`);
 ok(panel('switches')?.hidden === false, 'switches 面板可见');
+ok(onlyVisible('switches'), '同一时刻仅 switches 面板可见');
 ok(panel('rooms')?.hidden === true, 'pdk rooms 面板 hidden（未被 ddz 的 rooms 串选）');
+ok(keyCard('game.paodekuai.enabled') !== null, '跑得快开关键卡存在');
+ok(activeBtn()?.getAttribute('aria-selected') === 'true', '跑得快 active 页签 aria-selected=true');
 
-// 重复点 active 页签：不重建 DOM
+// 重复点 active 页签：不重建 DOM（面板/条带/按钮节点均不变）
 const activePanelBefore = panel('switches');
+const stripBefore = q(window, '#settings-rows .cfg-tabs');
+const btnBefore = activeBtn();
 clickEl(window, tabByText('开关'));
 await sleep(20);
-ok(activePanelBefore != null && panel('switches') === activePanelBefore, '重复点 active 页签不重建 DOM');
+ok(
+  activePanelBefore != null &&
+    panel('switches') === activePanelBefore &&
+    q(window, '#settings-rows .cfg-tabs') === stripBefore &&
+    activeBtn() === btnBefore,
+  '重复点 active 页签不重建 DOM',
+);
 
 // 单页签域：无页签条
 clickIf(window, 'nav-cfg-dataad-btn');
 await sleep(60);
 ok(tabs().length === 0, '广告域（单页签）无页签条');
 ok(keyCard('ad.reliefAdpid') !== null, '广告键行渲染');
+ok(
+  q(window, '#settings-rows h3.settings-section')?.textContent === '广告位',
+  '单页签域保留分区标题（广告位）',
+);
 
 ok(errors.length === 0, `零运行时异常（实测 ${errors.length}）`);
 ok(unhandled.length === 0, `零未处理 rejection（实测 ${unhandled.length}）`);

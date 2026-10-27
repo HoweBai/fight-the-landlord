@@ -254,6 +254,11 @@ textarea:focus,
   flex-direction: column;
   gap: 10px;
 }
+/* 面板 gap 与卡片 margin-bottom 叠加会翻倍 ⇒ 面板内去掉卡片下边距。 */
+.cfg-tab-panel > .row-card,
+.cfg-tab-panel > .struct-card {
+  margin-bottom: 0;
+}
 /* 广告回调并入「广告」配置页：同一滚动流内的第二个面板，不再整页滚动。 */
 .settings-inline-view {
   max-width: 1100px;

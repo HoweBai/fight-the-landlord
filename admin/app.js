@@ -1625,7 +1625,7 @@ function renderSettings(view = activeView) {
   else $('ad-channel-view').hidden = true;
 }
 
-/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则按当前域 tabs 顺序出分区标题。 */
+/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则当前域（多页签域出页签条 + 常驻面板）。 */
 function renderConfigRows({ preserve = false } = {}) {
   const host = $('settings-rows');
   const scrollEl = $('settings-host');
@@ -1689,7 +1689,7 @@ function renderCfgDomain(host, domain) {
   const tabs = domain.tabs ?? [];
   if (tabs.length > 1) {
     const active = resolveCfgTab(domain, tabs);
-    host.append(buildConfigTabStrip(domain, tabs));
+    host.append(buildConfigTabStrip(tabs));
     for (const t of tabs) {
       const keys = t.keys.filter((k) => k in currentConfig);
       const panel = el('div', 'cfg-tab-panel');
@@ -1699,10 +1699,10 @@ function renderCfgDomain(host, domain) {
         panel.append(el('p', 'settings-empty cfg-tab-empty', '本页签暂无可展示的键'));
       } else {
         for (const key of keys) panel.append(buildKeyCard(key));
-        rendered += keys.length;
       }
       host.append(panel);
     }
+    // 多页签域不做全局空态（每个面板自判）；rendered 只含 header 键，调用方在 multiTab 下忽略。
     return rendered;
   }
   for (const t of tabs) {
@@ -1732,7 +1732,7 @@ function resolveCfgTab(domain, tabs) {
 }
 
 /** 页签条：点击只切 UI（DOM 保留），不重建设置行。 */
-function buildConfigTabStrip(domain, tabs) {
+function buildConfigTabStrip(tabs) {
   const strip = el('div', 'tabs cfg-tabs');
   for (const t of tabs) {
     const on = t.id === cfgUI.tabId;

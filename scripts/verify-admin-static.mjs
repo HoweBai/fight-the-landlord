@@ -333,7 +333,7 @@ const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', 
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
 const renderRowsBlock = /function renderConfigRows\([\s\S]*?\n\}/.exec(app)?.[0] ?? '';
-ok(app.includes('buildGameHeader(') && renderRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 经 renderCfgDomain 渲染开关键卡');
+ok(renderRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
 const fnBody = balancedBlock(app, 'function lastEnabledGameWarning', '{', '}');
 ok(fnBody !== '', '找到 lastEnabledGameWarning');
 const lastWarn = new Function(
@@ -723,6 +723,7 @@ for (const needle of [
 ]) {
   ok(renderCfgDomainBlock.includes(needle), `renderCfgDomain 含 ${JSON.stringify(needle)}`);
 }
+ok(renderCfgDomainBlock.includes('buildGameHeader('), 'renderCfgDomain 渲染玩法开关键卡');
 const resolveCfgTabBlock = functionBody(app, 'function resolveCfgTab');
 ok(
   resolveCfgTabBlock !== '' && resolveCfgTabBlock.includes('tabDomainId === domain.id'),
@@ -744,14 +745,23 @@ if (iaBlock !== '') {
   }
 }
 let headerTabOverlap = 0;
+let dupTabKeys = 0;
 for (const g of iaDomainsForTabs) {
   for (const d of g.domains ?? []) {
     const tabKeys = new Set((d.tabs ?? []).flatMap((t) => t.keys));
     for (const hk of d.headerKeys ?? []) if (tabKeys.has(hk)) headerTabOverlap += 1;
+    const seen = new Set();
+    for (const t of d.tabs ?? []) {
+      for (const k of t.keys ?? []) {
+        if (seen.has(k)) dupTabKeys += 1;
+        else seen.add(k);
+      }
+    }
   }
 }
 ok(iaDomainsForTabs.length > 0, 'CONFIG_IA 可被 vm 解析（页签交叉断言）');
 ok(headerTabOverlap === 0, `CONFIG_IA 的 headerKeys 与页签键无交集（实测 ${headerTabOverlap}）`);
+ok(dupTabKeys === 0, `CONFIG_IA 同域页签键无重复（实测 ${dupTabKeys}）`);
 ok(
   /\.cfg-tabs\s*\{/.test(css) && /\.cfg-tab-panel\s*\{/.test(css),
   'style.css 含 .cfg-tabs / .cfg-tab-panel 规则',
