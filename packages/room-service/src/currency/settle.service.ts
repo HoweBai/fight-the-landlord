@@ -134,6 +134,8 @@ export interface SettleOutboxEntry {
   residue: number;
   /** 本局销毁（本片）：抽水。 */
   rakeTotal: number;
+  /** 花猪罚分销毁（麻将）；旧条目缺失 = 0。 */
+  burnPenalty?: number;
   /** 收尾链（广播各座/机器人钩子）用的座位身份快照。 */
   seats: SettleSeatRef[];
   createdAt: number;
@@ -164,6 +166,8 @@ export interface SettleComputation {
   residue: number;
   /** `Σrake[i]`（销毁；随 residue 一并可核对）。 */
   rakeTotal: number;
+  /** 花猪罚分销毁（麻将）。 */
+  burnPenalty: number;
 }
 
 /**
@@ -365,10 +369,24 @@ export function computeSettlement(input: {
       delta: deltaBySeat.get(s.seat) ?? 0,
     }))
     .filter((entry) => entry.delta !== 0);
+  let burnPenalty = 0;
+  if (isMahjongSettlementResult(result)) {
+    for (const b of result.burn) {
+      const ref = ordered.find((x) => x.seat === b.seat);
+      if (!ref) throw new Error(`mahjong burn seat ${b.seat} missing`);
+      const transfer = deltaBySeat.get(b.seat) ?? 0;
+      const available = Math.max(0, (balances.get(ref.ownerId) ?? 0) + Math.min(0, transfer));
+      const actual = Math.min(b.amount, available);
+      if (actual > 0) {
+        burnPenalty += actual;
+        entries.push({ ownerId: ref.ownerId, ownerType: ref.ownerType, delta: -actual });
+      }
+    }
+  }
 
   const actionId =
     round === 2 ? `settle:${roomCode}:${version}:r2` : `settle:${roomCode}:${version}`;
-  return { actionId, entries, deltas, residue, rakeTotal };
+  return { actionId, entries, deltas, residue, rakeTotal, burnPenalty };
 }
 
 /** `matched` 齐 playerCount 座（规格 §3；多玩法 Task 2.5：0..playerCount-1）。 */
@@ -565,6 +583,7 @@ export class SettleService {
     let outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
       residue: computed.residue,
       rake: computed.rakeTotal,
+      ...(computed.burnPenalty > 0 ? { penalty: computed.burnPenalty } : {}),
     }, gameType);
 
     if (outcome.kind === 'r2') {
@@ -598,6 +617,7 @@ export class SettleService {
       outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
         residue: computed.residue,
         rake: computed.rakeTotal,
+        ...(computed.burnPenalty > 0 ? { penalty: computed.burnPenalty } : {}),
       }, gameType);
       if (outcome.kind === 'r2') {
         // 仍 14001（规格 §5：至多一轮 ⇒ 入 outbox；不再重算）。
@@ -621,6 +641,7 @@ export class SettleService {
             seats,
             residue: computed.residue,
             rakeTotal: computed.rakeTotal,
+            ...(computed.burnPenalty > 0 ? { burnPenalty: computed.burnPenalty } : {}),
             createdAt: Date.now(),
             // 多玩法（Task 2.5 / N2）：重发时广播/moneyDelta 都从条目取，不得缺省 3 座。
             gameType,
@@ -965,7 +986,7 @@ export class SettleService {
       // burn（旧指纹、可正常重放；该 op 两列为 NULL）。条件展开——不得传显式 undefined 占键。
       const burnPayload =
         typeof entry.residue === 'number' && typeof entry.rakeTotal === 'number'
-          ? { burn: { residue: entry.residue, rake: entry.rakeTotal } }
+          ? { burn: { residue: entry.residue, rake: entry.rakeTotal, ...(entry.burnPenalty === undefined ? {} : { penalty: entry.burnPenalty }) } }
           : {};
       const data = await this.currency.apply({
         actionId: entry.actionId,
@@ -996,6 +1017,7 @@ export class SettleService {
           // 「账」以 entries 为准；指标语义是「in-process 收尾口径」，改动需单独理由）。
           residue: 0,
           rakeTotal: 0,
+          burnPenalty: entry.burnPenalty ?? 0,
         },
         data,
         preBalances: new Map(),
