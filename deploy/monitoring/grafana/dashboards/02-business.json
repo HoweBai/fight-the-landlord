@@ -41,7 +41,7 @@
             "type": "prometheus",
             "uid": "ftl-prometheus"
           },
-          "expr": "sum by (game_type, mode, player_count, base_score) (match_queue_length)",
+          "expr": "max by (game_type, mode, player_count, base_score) (match_queue_length)",
           "legendFormat": "{{game_type}} / {{mode}} / {{player_count}}人 / 底分 {{base_score}}",
           "refId": "A"
         }
@@ -82,7 +82,7 @@
             "type": "prometheus",
             "uid": "ftl-prometheus"
           },
-          "expr": "sum by (game_type) (rooms_active)",
+          "expr": "max by (game_type) (rooms_active)",
           "legendFormat": "{{game_type}}",
           "refId": "A"
         },
@@ -100,7 +100,7 @@
             "type": "prometheus",
             "uid": "ftl-prometheus"
           },
-          "expr": "sum(rooms_active)",
+          "expr": "max(rooms_active)",
           "legendFormat": "合计房间",
           "refId": "C"
         },

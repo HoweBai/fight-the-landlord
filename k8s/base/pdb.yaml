@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: room-service-pdb
+  namespace: ftl
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: room-service } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: ftl
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: api-gateway } }

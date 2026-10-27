@@ -7,7 +7,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, Optional } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import {
   ErrCode,
@@ -58,6 +58,9 @@ import {
 } from '../metrics/room.metrics';
 // 记牌器收费片：房间状态（room:{code}:ccstate）的读/发共用件（重连补发三条路径之一）。
 import { emitCardCounterStatus, readCardCounterStatus } from './card-counter-status';
+import { ConnectionRegistry } from '../coordination/connection-registry.service';
+import { FinalizationGuard } from '../coordination/finalization-guard.service';
+import { LeaderLease } from '../coordination/leader-lease.service';
 
 /** 网关代理的 ack 关联字段（与 api-gateway 的 `CORRELATION_KEY` 必须同名）。 */
 export const CORRELATION_KEY = '__ackId';
@@ -141,6 +144,8 @@ export interface GameEvent {
    * 与 `notifyRoomEnded` 路径**两者都缺** ⇒ room 侧跳过写入 + WARN（设计 D1）。
    */
   record?: RecordEnvelope;
+  /** k3s 多副本：游戏会话创建时刻（幂等键用；旧生产者缺省）。 */
+  startedAt?: number;
 }
 
 /** 匹配事件载荷（§8.2 + R46）。 */
@@ -252,6 +257,25 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
   readonly activeConnections = new Map<string, Socket>();
   /** Maps `${roomCode}:${seat}` → userId，投递 `seatViews` 时用。 */
   readonly seatOwners = new Map<string, string>();
+
+  /**
+   * 跨 Pod 连接登记（spec 2026-10-27 D12）。
+   * ⚠️ 属性注入而非构造参数：保持 13 个构造依赖的 wiring 门禁不变；直连 `new WsGateway(...)`
+   * 的单测里为 null ⇒ 退化为本 Pod 旧行为。
+   */
+  @Optional()
+  @Inject(ConnectionRegistry)
+  connections: ConnectionRegistry | null = null;
+
+  /** 局终副作用单实例门（属性注入，保持构造签名不变）。 */
+  @Optional()
+  @Inject(LeaderLease)
+  private readonly leader: LeaderLease | null = null;
+
+  /** `(roomCode, version)` 幂等闸：lease 切换窗口内也最多一个执行者。 */
+  @Optional()
+  @Inject(FinalizationGuard)
+  private readonly finalizer: FinalizationGuard | null = null;
 
   /** 独立的订阅连接：subscriber 模式下连接不能执行普通命令。 */
   private readonly gameEventsRedis: Redis;
@@ -442,6 +466,15 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
        * `ws.gateway.test.ts` 的「硬换手不双计 / 陈旧断线不误减」。
        */
       if (!previous) wsConnections.inc();
+      // 跨 Pod 顶替：先登记新连接（会断开其他 Pod 上同 user 的旧 socket）。
+      // 失败方向：登记失败只记 error，不回滚本地连接（Redis 已是登录/对局硬依赖）。
+      if (this.connections) {
+        try {
+          await this.connections.register(this.server, socket, userId);
+        } catch (err) {
+          this.logger.error(`Connection registry register failed for ${userId}: ${String(err)}`);
+        }
+      }
       this.logger.log(`Client connected: ${socket.id} (user: ${userId})`);
 
       /**
@@ -572,6 +605,8 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
      * （它的顶替连接还在册）；握手被拒的连接也从未 inc 过（更走不到这里）。
      */
     wsConnections.dec();
+    // 属主键清理是 best-effort；本地 gauge 已在上一行无条件递减（不得用代次跳过）。
+    if (this.connections) void this.connections.unregister(socket, () => {});
     for (const [key, owner] of this.seatOwners) {
       if (owner === userId) this.seatOwners.delete(key);
     }
@@ -943,16 +978,13 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
    */
   onGameEvent(event: GameEvent): void {
     if (event.event === 'game.ended') {
-      // 监控片（规格 §2.2）：结算计数 —— 本分支每条事件恰一次（与 ws_connections 不同，
-      // 这里没有特殊路：game.ended 只会经 `game:events` 订阅进来一次）。
-      incGame(gamesEndedTotal, this.resolveGameEventType(event));
       const result = event.result;
       const finishedPayload =
         result && isPdkSettlementResult(result)
           ? { gameType: 'paodekuai' as const, winnerSeats: result.winnerSeats }
           : { winner: result?.winner ?? ('landlord' as const) };
-      this.broadcast(event.roomCode, 'game.finished', event.version, finishedPayload);
-      if (result) this.broadcast(event.roomCode, 'game.settlement', event.version, result);
+      this.broadcastLocal(event.roomCode, 'game.finished', event.version, finishedPayload);
+      if (result) this.broadcastLocal(event.roomCode, 'game.settlement', event.version, result);
       // §9.6 归池（R207）+ 记录片 T5（设计 D2）：**局终内务链** —— 顶部读一次
       // `room:{code}:bots`（座位对齐）供归池与记录组装**共用** ⇒ 归池、组装、投递。
       // 整链 fire-and-forget，**不阻塞**广播（局终推送是客户端的可见路径；内务失败只记日志）。
@@ -961,18 +993,9 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       // `finalizeRoomEnd` 的同步前缀会先发出昵称 Hash 的 `hgetall`；reaper 对 finished
       // 房间会立即 `deleteRoom`（删除集含 `nicknamesKey`）—— 谁先写 finished，谁就可能
       // 让昵称快照读成空（历史页间歇性「玩家N」）。
-      void this.finalizeRoomEnd(event, result);
-      // §3.1 / N31（R452）：终局 ⇒ 房间进终态。**这是 `finished` 的唯一写入点**。
-      // `roomsService` 已在构造函数注入（见本文件 constructor）。
-      // ⚠️ 必须挂 `.catch`：这是一条 fire-and-forget 的 Promise，而 `updateStatus` 在房间键
-      //    已过期/不存在时**会 reject**（`12001`）。Node 对未处理的 rejection 默认直接终止
-      //    进程（`--unhandled-rejections=throw`）⇒ 一条迟到的 `game.ended` 就能把
-      //    room-service 打成 crash-loop。与下面 `releaseRobots` 的 try/catch 同一族处置。
-      void this.roomsService
-        .updateStatus(event.roomCode, 'finished')
-        .catch((err: unknown) =>
-          this.logger.error(`Failed to mark room ${event.roomCode} finished: ${String(err)}`),
-        );
+      void this.finalizeGameEndedOnce(event, result).catch((err) =>
+        this.logger.error(`finalizeGameEndedOnce failed for ${event.roomCode}: ${String(err)}`),
+      );
       // N35/R521：终局 ⇒ 派生键不再有意义（§6.4 规则 3 是「**仅对局中**下发」）⇒ 立即删掉，
       // 不留一份终局后的陈旧张数。读侧 `buildRoomPlayers()` 也已按 `status === 'playing'` 设闸，
       // 这里是**纵深防御**（也让 N31 的房间回收少一个要猜的键）。
@@ -1036,6 +1059,29 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     const key = cardCountKey(event.roomCode);
     await this.redis.hset(key, fields);
     await this.redis.expire(key, ROOM_TTL_SECONDS);
+  }
+
+  /**
+   * 局终副作用唯一执行（spec 2026-10-27 D13）：广播已在 `onGameEvent` 里每副本同步发出，
+   * 这里只允许 leader 且抢到 `(roomCode, version)` 幂等键的副本执行结算/记录/归池/指标/终态。
+   */
+  private async finalizeGameEndedOnce(
+    event: GameEvent,
+    result: SettlementResult | undefined,
+  ): Promise<void> {
+    if (this.leader && !(await this.leader.isLeader())) return;
+    if (this.finalizer && !(await this.finalizer.claim(event.roomCode, event.version, event.startedAt))) return;
+    incGame(gamesEndedTotal, this.resolveGameEventType(event));
+    try {
+      await this.finalizeRoomEnd(event, result);
+    } catch (err) {
+      this.logger.error(`finalizeRoomEnd failed for ${event.roomCode}: ${String(err)}`);
+    }
+    try {
+      await this.roomsService.updateStatus(event.roomCode, 'finished');
+    } catch (err) {
+      this.logger.error(`Failed to mark room ${event.roomCode} finished: ${String(err)}`);
+    }
   }
 
   /**
@@ -1300,6 +1346,18 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
 
   private broadcast(roomCode: string, type: string, version: number, payload: unknown): void {
     this.server?.to(roomCode).emit(type, envelope(version, payload));
+  }
+
+  /**
+   * 只投本 Pod 的 socket（事件驱动推送用）。
+   * `game.ended` 等事件被每个副本各处理一次；若走适配器广播会 N 倍重复。
+   */
+  private broadcastLocal(roomCode: string, type: string, version: number, payload: unknown): void {
+    // 单测的 server 替身可能没有 `local` 标志 ⇒ 回落 `to`（不改变生产语义）。
+    const target = (this.server as unknown as { local?: unknown })?.local ?? this.server;
+    (target as { to?: (room: string) => { emit: (t: string, m: unknown) => void } } | undefined)
+      ?.to?.(roomCode)
+      .emit(type, envelope(version, payload));
   }
 
   /**

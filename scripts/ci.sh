@@ -126,11 +126,22 @@ finish_stage
 
 printf '\n=== [ci] 六阶段全部通过 ===\n'
 
-stage "7/7 admin/agent/monitoring static verify"
+stage "7/8 admin/agent/monitoring static verify"
 npm run verify:admin
 npm run verify:admin-players
 npm run verify:agent
 npm run verify:monitoring
 finish_stage
 
-printf '\n=== [ci] 七阶段全部通过 ===\n'
+stage "8/8 k8s static verify"
+npm run verify:k8s
+npm run verify:shutdown
+if command -v kubectl >/dev/null 2>&1; then
+  kubectl kustomize k8s/overlays/prod > /tmp/ftl-k8s-rendered.yaml
+  node scripts/verify-k8s-manifests.mjs --file /tmp/ftl-k8s-rendered.yaml
+else
+  printf '⚠️ 无 kubectl，跳过渲染校验（清单原始闸已跑）\n'
+fi
+finish_stage
+
+printf '\n=== [ci] 八阶段全部通过 ===\n'

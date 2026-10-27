@@ -1,7 +1,8 @@
 // packages/room-service/src/rooms/rooms.reaper.ts
-import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit, Optional, Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { runWithTrace } from '@fight-the-landlord/shared';
+import { LeaderLease } from '../coordination/leader-lease.service';
 import { RoomsService } from './rooms.service';
 import { isWaitingExpired } from './rooms.timeout';
 import { ConfigCacheService } from '../config/config-cache.service';
@@ -25,6 +26,12 @@ import { ConfigCacheService } from '../config/config-cache.service';
 @Injectable()
 export class RoomsReaperTask implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(RoomsReaperTask.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /**
    * 回收循环的定时器。片⑦ T7 起是 **`setTimeout` 自重排链**（不再是 `setInterval`；
    * 周期来自 `configCache.cycleMs('room.reapIntervalMs')` —— env 常量 `REAP_INTERVAL_MS`
@@ -73,7 +80,8 @@ export class RoomsReaperTask implements OnModuleInit, OnApplicationShutdown {
    */
   private runOnce(): void {
     runWithTrace({ traceId: null, source: 'timer' }, () => {
-      void this.reapOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.reapOnce() : undefined))
         .catch((err) => this.logger.error(`Room reap failed: ${String(err)}`))
         .finally(() => {
           // 🔴 关停闸：在途一轮的迟到回执不得在关停后再排定时器（T6 修复轮的同一纪律）。

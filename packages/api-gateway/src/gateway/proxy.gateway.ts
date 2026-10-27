@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
@@ -27,6 +27,7 @@ import {
   wsConnSlotOf,
 } from '../http/rate-limit';
 import { clientIpFrom, TRUST_TABLE } from '../http/trusted-client-ip';
+import { gatewayWsConnections } from '../metrics/ws.metrics';
 
 /** engine.io 的 `allowRequest` 回调签名：`success === false` ⇒ 在传输层拒绝握手。 */
 type AllowRequestCallback = (err: string | null | undefined, success: boolean) => void;
@@ -110,8 +111,10 @@ export const GATEWAY_UPSTREAM_TIMEOUT_MS = 5000;
   // 超限的客户端拿到 `connect_error`（而不是「连上 → system.error → 被踢」，R152）。
   allowRequest: delegateAllowRequest,
 })
-export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect, OnApplicationShutdown {
   private readonly logger = new Logger(ProxyGateway.name);
+  /** 活跃客户端连接（SIGTERM 时逐个释放 §5.4 名额并关闭）。 */
+  private readonly clients = new Set<Socket>();
   private readonly roomSvcUrl = process.env.ROOM_SERVICE_WS_URL ?? 'http://localhost:3002';
   private readonly namespace = '/ws/ddz';
 
@@ -273,6 +276,8 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * `client.connected`，验签失败或客户端已走都**不建**下游连接。
    */
   private async handleConnectionInner(client: Socket, traceId: string): Promise<void> {
+    this.clients.add(client);
+    gatewayWsConnections.inc();
     // 初始化应用帧时间戳：0 = 会话刚创建，还没收发过业务帧。
     // heartbeat 回调跳过 0 值，避免握手刚完就触发兜底踢线。
     this.lastAppFrameAt.set(client.id, 0);
@@ -426,6 +431,23 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('system.error', { version: 0, payload: { code: 10007, message: err.message } });
       });
 
+      /**
+       * 下游被服务端主动断开（跨 Pod 顶替 `disconnect(true)`）时，必须同步收掉客户端连接：
+       * 否则旧设备成为僵尸连接 —— 收不到推送、发消息全进无界队列。
+       */
+      sock.on('disconnect', (reason: string) => {
+        if (clientGone) return;
+        this.logger.warn(`room-service disconnected for client ${client.id}: ${reason}`);
+        this.dropPeer(client.id);
+        if (reason === 'io server disconnect') {
+          client.emit('system.error', {
+            version: 0,
+            payload: { code: ErrCode.FORBIDDEN, message: '账号已在其他设备登录' },
+          });
+          client.disconnect(true);
+        }
+      });
+
       // 下游 ack 回程 → 客户端 ack。
       // 回程的事件名就是网关生成的 correlation id，因此任何**不在**
       // 契约 S→C 清单里的事件名都只可能是 ack 回程，不会与推送混淆。
@@ -459,7 +481,28 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket): void {
+    if (this.clients.delete(client)) gatewayWsConnections.dec();
     this.dropPeer(client.id);
+  }
+
+  /**
+   * k3s 优雅停机（spec 2026-10-27 D16）：SIGTERM 时先释放本 Pod 持有的 WS 名额，
+   * 再断开客户端；否则名额要靠 60s TTL 兜底，缩容/滚动更新后同 IP 用户会短暂连不上。
+   */
+  async onApplicationShutdown(): Promise<void> {
+    const clients = [...this.clients];
+    this.clients.clear();
+    await Promise.allSettled(
+      clients.map(async (client) => {
+        const slot = wsConnSlotOf(client);
+        if (slot) {
+          await releaseWsConnSlot(this.redis, slot.ip, slot.member).catch((err) =>
+            this.logger.error(`Failed to release WS conn slot on shutdown: ${String(err)}`),
+          );
+        }
+        client.disconnect(true);
+      }),
+    );
   }
 
   /** 下游连上后，把握手期间暂存的请求按原顺序发出。 */

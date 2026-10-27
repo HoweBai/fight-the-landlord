@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-service
+  namespace: ftl
+  labels: { app: config-service }
+spec:
+  selector: { app: config-service }
+  ports:
+    - { name: http, port: 3006, targetPort: 3006 }
+    - { name: rpc, port: 3106, targetPort: 3106 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-service
+  namespace: ftl
+  labels: { app: config-service }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: config-service }
+  template:
+    metadata:
+      labels: { app: config-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9006"
+        prometheus.io/path: "/metrics"
+    spec:
+      priorityClassName: ftl-data-critical
+      nodeSelector: { ftl-role: data }
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: config-service
+          image: ghcr.io/howebai/fight-the-landlord-config-service:IMAGE_TAG_PLACEHOLDER
+          ports:
+            - { name: http, containerPort: 3006 }
+            - { name: rpc, containerPort: 3106 }
+            - { name: metrics, containerPort: 9006 }
+          env:
+            - { name: DB_HOST, value: mysql }
+            - { name: DB_PORT, value: "3306" }
+            - { name: DB_USER, value: root }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: DB_PASSWORD } }
+            - { name: DB_NAME, value: fight_the_landlord }
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: RPC_PORT, value: "3106" }
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: ADMIN_PASSWORD } }
+            - name: ADMIN_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: ADMIN_JWT_SECRET } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: JWT_SECRET } }
+            - name: PAY_CONFIG_ENC_KEY
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: PAY_CONFIG_ENC_KEY } }
+            - name: PAY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: PAY_CHANNEL_PULL_TOKEN } }
+            - name: NOTIFY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: NOTIFY_CHANNEL_PULL_TOKEN } }
+            - name: AD_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: AD_CHANNEL_PULL_TOKEN } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+            - { name: DB_MIGRATIONS_RUN, value: "false" }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 1, memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3006 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health/live, port: 3006 }
+            initialDelaySeconds: 30
+            periodSeconds: 20

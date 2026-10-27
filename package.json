@@ -13,6 +13,8 @@
     "verify:agent": "node scripts/verify-agent-static.mjs",
     "verify:admin-players": "node scripts/admin-players-probe.mjs",
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
+    "verify:k8s": "node scripts/verify-k8s-manifests.mjs",
+    "verify:shutdown": "node scripts/verify-shutdown-hooks.mjs",
     "clean": "turbo run clean"
   },
   "devDependencies": {
@@ -21,6 +23,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^11.0.0",
+    "js-yaml": "4.3.2",
     "sqlite3": "^6.0.1",
     "turbo": "^2.3.0",
     "typescript": "^5.7.0"

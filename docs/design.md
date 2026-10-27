@@ -168,6 +168,7 @@
 
 - **不使用服务发现**（参考文档 §3.6 提到的 Consul 仅 3 行注释、无实现）。地址一律由环境变量注入。
 - K8s 见 `docs/appendix/platform-roadmap.md` §5。
+  - 📌 **注记（2026-10-27）**：生产迁移目标 = **自建 k3s**（2 节点；node-a = 控制面 + 数据 + 入口，node-b = 可牺牲算力）。设计见 `docs/superpowers/specs/2026-10-27-k3s-autoscaling-design.md`，实现与偏差见 `docs/superpowers/plans/2026-10-27-k3s-autoscaling.md`；开发/联调与 conformance **继续用 compose**。
 
 ### 2.3 环境变量表
 

@@ -103,9 +103,15 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "ws_connections",
-          "legendFormat": "ws_connections",
+          "expr": "sum(ws_connections)",
+          "legendFormat": "room-service",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "expr": "sum(gateway_ws_connections)",
+          "legendFormat": "api-gateway",
+          "refId": "B"
         }
       ],
       "title": "WS 连接数（告警线 4000 / 8000）",

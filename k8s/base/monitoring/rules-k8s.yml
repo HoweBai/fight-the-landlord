@@ -1,0 +1,50 @@
+# k3s 专用告警（不进 compose 镜像的 32 条计数；只挂载到 k8s Prometheus）。
+# 依赖 kube-state-metrics / Pushgateway。
+groups:
+  - name: ftl-k8s-alerts
+    rules:
+      - alert: KubeNodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: '节点 {{ $labels.node }} 未 Ready'
+          runbook: '看 kubectl describe node / k3s 日志；node-a 故障 = 数据层与入口同时中断。'
+      - alert: KubePodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="ftl"}[15m]) > 3
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Pod {{ $labels.pod }} 容器反复重启'
+          runbook: 'kubectl logs --previous；先看 OOMKilled/探针失败/依赖未就绪。'
+      - alert: KubePodPending
+        expr: kube_pod_status_phase{namespace="ftl",phase="Pending"} == 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Pod {{ $labels.pod }} 长期 Pending'
+          runbook: '看 resources 是否超节点容量、PVC 是否绑定、imagePullSecret 是否可拉。'
+      - alert: KubePVCPending
+        expr: kube_persistentvolumeclaim_status_phase{namespace=~"ftl|ftl-monitoring",phase="Pending"} == 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'PVC {{ $labels.persistentvolumeclaim }} 长期 Pending'
+          runbook: '看 local-path StorageClass、节点亲和与磁盘水位；数据层 PVC 绑定失败会阻塞对应 StatefulSet。'
+      - alert: KubeHPAMaxedOut
+        expr: |
+          kube_horizontalpodautoscaler_status_current_replicas{namespace="ftl"}
+          >= on (namespace, horizontalpodautoscaler)
+          kube_horizontalpodautoscaler_spec_max_replicas{namespace="ftl"}
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: 'HPA {{ $labels.horizontalpodautoscaler }} 顶到 maxReplicas'
+          runbook: '先看容量与瓶颈；节点固定 2 台，必要时人工加机器/升配。'
+      - alert: FtlBackupStale
+        expr: time() - backup_last_success_timestamp_seconds > 7200
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: 'MySQL 备份超过 2 小时未成功'
+          runbook: '看 /home/ubuntu/ftl-backups/backup.log 与备份 cron；不要等到发版才红。'

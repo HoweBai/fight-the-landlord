@@ -1,7 +1,8 @@
 // packages/room-service/src/rooms/rooms.autostart.ts
-import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit, Optional, Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { runWithTrace } from '@fight-the-landlord/shared';
+import { LeaderLease } from '../coordination/leader-lease.service';
 import { RoomsService, type Room } from './rooms.service';
 import { RoomStartService } from './rooms.start';
 import { ConfigCacheService } from '../config/config-cache.service';
@@ -24,6 +25,12 @@ import { ConfigCacheService } from '../config/config-cache.service';
 @Injectable()
 export class RoomsAutostartTask implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(RoomsAutostartTask.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /**
    * 扫描循环的定时器。片⑦ T7 起是 **`setTimeout` 自重排链**（不再是 `setInterval`；
    * 周期来自 `configCache.cycleMs('room.autostartIntervalMs')` —— env 常量
@@ -82,7 +89,8 @@ export class RoomsAutostartTask implements OnModuleInit, OnApplicationShutdown {
    */
   private runOnce(): void {
     runWithTrace({ traceId: null, source: 'timer' }, () => {
-      void this.scanOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.scanOnce() : undefined))
         .catch((err) => this.logger.error(`Autostart scan failed: ${String(err)}`))
         .finally(() => {
           // 🔴 关停闸：在途一轮的迟到回执不得在关停后再排定时器（T6 修复轮的同一纪律）。

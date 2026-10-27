@@ -38,6 +38,8 @@ async function bootstrap() {
   );
 
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+  // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
+  app.enableShutdownHooks();
   // Task 4（R1106）：网关是**边缘** ⇒ `overwriteExisting: true`：**总是生成**新 id、
   // **不采信**客户端传入的 `X-Trace-Id`（否则客户端可以拿别人的 id 污染链路）。
   // 中间件会把这个 id 同时回写到响应头与 `req.headers`（后者供 `headersOf()` 转发下一跳）。

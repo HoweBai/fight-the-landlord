@@ -59,6 +59,14 @@ describe('可信客户端 IP（R1204–R1207）', () => {
     const base = clientIpFrom({ 'x-forwarded-for': '203.0.113.7' }, EDGE, trust);
     expect(clientIpFrom({ 'x-forwarded-for': '203.0.113.7', forwarded: 'for=7.7.7.7', 'x-real-ip': '6.6.6.6' }, EDGE, trust)).toBe(base);
   });
+
+  it('C9 k3s 形态：CIDR 信任表命中采信 XFF，未命中忽略', () => {
+    const trust = parseTrustProxy('10.0.0.0/8,2001:db8::/32');
+    expect(clientIpFrom({ 'x-forwarded-for': '203.0.113.9' }, '10.1.2.3', trust)).toBe('203.0.113.9');
+    expect(clientIpFrom({ 'x-forwarded-for': '203.0.113.9' }, '192.0.2.7', trust)).toBe('192.0.2.7');
+    // 网段外的伪造头不得改变结果（同 C3 的 k8s 形态）
+    expect(clientIpFrom({ 'x-forwarded-for': '1.1.1.1' }, '172.16.0.9', trust)).toBe('172.16.0.9');
+  });
 });
 
 /**

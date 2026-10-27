@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus-adapter, namespace: ftl-monitoring }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus-adapter-config, namespace: ftl-monitoring }
+data:
+  config.yaml: |
+    rules:
+      - seriesQuery: 'ws_connections{namespace="ftl"}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod: { resource: pod }
+        name:
+          matches: '^ws_connections$'
+          as: 'ws_connections'
+        metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (pod, namespace)'
+      - seriesQuery: 'gateway_ws_connections{namespace="ftl"}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod: { resource: pod }
+        name:
+          matches: '^gateway_ws_connections$'
+          as: 'gateway_ws_connections'
+        metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (pod, namespace)'
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus-adapter, namespace: ftl-monitoring, labels: { app: prometheus-adapter } }
+spec:
+  selector: { app: prometheus-adapter }
+  ports:
+    - { name: https, port: 443, targetPort: 6443 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus-adapter, namespace: ftl-monitoring, labels: { app: prometheus-adapter } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: prometheus-adapter } }
+  template:
+    metadata: { labels: { app: prometheus-adapter } }
+    spec:
+      priorityClassName: ftl-monitoring
+      serviceAccountName: prometheus-adapter
+      containers:
+        - name: prometheus-adapter
+          image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0
+          args:
+            - --cert-dir=/tmp/certs
+            - --config=/etc/adapter/config.yaml
+            - --prometheus-url=http://prometheus.ftl-monitoring.svc:9090/
+            - --metrics-relist-interval=30s
+            - --v=2
+          ports:
+            - { name: https, containerPort: 6443 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 6443, scheme: HTTPS }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - { name: config, mountPath: /etc/adapter }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-adapter-config }

@@ -1,0 +1,169 @@
+# 迁移 Job：Deployment 一律 DB_MIGRATIONS_RUN=false，迁移只在这里跑一次。
+# 部署脚本先删除同 label 的旧 Job，再 apply（Job 不可变）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-config
+  namespace: ftl
+  labels: { app: migrate }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: { app: migrate }
+    spec:
+      restartPolicy: Never
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: migrate
+          image: ghcr.io/howebai/fight-the-landlord-config-service:IMAGE_TAG_PLACEHOLDER
+          env:
+            - { name: DB_HOST, value: mysql }
+            - { name: DB_PORT, value: "3306" }
+            - { name: DB_USER, value: root }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: DB_PASSWORD } }
+            - { name: DB_NAME, value: fight_the_landlord }
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: RPC_PORT, value: "3106" }
+            - { name: DB_MIGRATIONS_RUN, value: "true" }
+            - { name: DB_MIGRATIONS_ONLY, value: "true" }
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: ADMIN_PASSWORD } }
+            - name: ADMIN_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: ADMIN_JWT_SECRET } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: JWT_SECRET } }
+            - name: PAY_CONFIG_ENC_KEY
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: PAY_CONFIG_ENC_KEY } }
+            - name: PAY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: PAY_CHANNEL_PULL_TOKEN } }
+            - name: NOTIFY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: NOTIFY_CHANNEL_PULL_TOKEN } }
+            - name: AD_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: AD_CHANNEL_PULL_TOKEN } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-user
+  namespace: ftl
+  labels: { app: migrate }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: { app: migrate }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/howebai/fight-the-landlord-user-service:IMAGE_TAG_PLACEHOLDER
+          env:
+            - { name: DB_HOST, value: mysql }
+            - { name: DB_PORT, value: "3306" }
+            - { name: DB_USER, value: root }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: DB_PASSWORD } }
+            - { name: DB_NAME, value: fight_the_landlord }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: JWT_SECRET } }
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: RPC_PORT, value: "3101" }
+            - { name: CURRENCY_SERVICE_RPC_HOST, value: currency-service }
+            - { name: CURRENCY_SERVICE_RPC_PORT, value: "3104" }
+            - { name: DB_MIGRATIONS_RUN, value: "true" }
+            - { name: DB_MIGRATIONS_ONLY, value: "true" }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-currency
+  namespace: ftl
+  labels: { app: migrate }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: { app: migrate }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/howebai/fight-the-landlord-currency-service:IMAGE_TAG_PLACEHOLDER
+          env:
+            - { name: DB_HOST, value: mysql }
+            - { name: DB_PORT, value: "3306" }
+            - { name: DB_USER, value: root }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: DB_PASSWORD } }
+            - { name: DB_NAME, value: fight_the_landlord }
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: RPC_PORT, value: "3104" }
+            - { name: CONFIG_SERVICE_RPC_HOST, value: config-service }
+            - { name: CONFIG_SERVICE_RPC_PORT, value: "3106" }
+            - { name: USER_SERVICE_RPC_HOST, value: user-service }
+            - { name: USER_SERVICE_RPC_PORT, value: "3101" }
+            - { name: DB_MIGRATIONS_RUN, value: "true" }
+            - { name: DB_MIGRATIONS_ONLY, value: "true" }
+            - name: AGENT_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: AGENT_JWT_SECRET } }
+            - name: AGENT_PHONE_HMAC_KEY
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: AGENT_PHONE_HMAC_KEY } }
+            - name: AD_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: AD_CHANNEL_PULL_TOKEN } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-payment
+  namespace: ftl
+  labels: { app: migrate }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: { app: migrate }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/howebai/fight-the-landlord-payment-service:IMAGE_TAG_PLACEHOLDER
+          env:
+            - { name: DB_HOST, value: mysql }
+            - { name: DB_PORT, value: "3306" }
+            - { name: DB_USER, value: root }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: DB_PASSWORD } }
+            - { name: DB_NAME, value: fight_the_landlord }
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: CONFIG_SERVICE_RPC_HOST, value: config-service }
+            - { name: CONFIG_SERVICE_RPC_PORT, value: "3106" }
+            - { name: DB_MIGRATIONS_RUN, value: "true" }
+            - { name: DB_MIGRATIONS_ONLY, value: "true" }
+            - name: PAY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: PAY_CHANNEL_PULL_TOKEN } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 500m, memory: 1Gi }
