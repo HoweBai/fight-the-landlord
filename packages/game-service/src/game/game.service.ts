@@ -1,5 +1,5 @@
 // packages/game-service/src/game/game.service.ts
-import { Inject, Injectable, Logger, OnApplicationShutdown, Optional, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit, Optional, forwardRef } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { gameSettleFailuresTotal } from '../metrics/game.metrics';
 import {
@@ -86,7 +86,7 @@ const SESSION_TTL_SECONDS = 3600;
  * `GameSession` 是整体状态机，`version` 是乐观锁（§6.5 / §10.2）。
  */
 @Injectable()
-export class GameService implements OnApplicationShutdown {
+export class GameService implements OnApplicationShutdown, OnModuleInit {
   private readonly logger = new Logger(GameService.name);
   /**
    * 进程内**缓存**，不是真源。
@@ -884,6 +884,48 @@ export class GameService implements OnApplicationShutdown {
   }
 
   // ─── 定时器（玩法 §9.2）─────────────────────────────────────────
+
+  /**
+   * k3s 重启恢复（spec 2026-10-27 §4.10.3）：会话真源在 Redis，但回合定时器只在进程内。
+   * 启动时扫描活跃会话，按 `turnDeadlineAt` 重建定时器；扫描失败不阻止启动（fail-safe）。
+   */
+  async onModuleInit(): Promise<void> {
+    await this.recoverTurnTimers();
+  }
+
+  async recoverTurnTimers(): Promise<void> {
+    let cursor = '0';
+    try {
+      do {
+        const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'game:session:*', 'COUNT', 100);
+        cursor = next;
+        for (const key of keys) {
+          const roomCode = key.slice('game:session:'.length);
+          try {
+            const raw = await this.redis.get(key);
+            if (!raw) continue;
+            const session = JSON.parse(raw) as AnyGameSession;
+            if (
+              !session ||
+              session.state === GameState.Ended ||
+              session.state === GameState.Init ||
+              typeof session.turnDeadlineAt !== 'number'
+            ) {
+              continue;
+            }
+            this.cache.set(roomCode, session);
+            this.startTurnTimer(roomCode, session, {
+              overrideMs: Math.max(0, session.turnDeadlineAt - Date.now()),
+            });
+          } catch (err) {
+            this.logger.warn(`Failed to recover turn timer for ${roomCode}: ${String(err)}`);
+          }
+        }
+      } while (cursor !== '0');
+    } catch (err) {
+      this.logger.warn(`Turn timer recovery scan failed: ${String(err)}`);
+    }
+  }
 
   async onApplicationShutdown(): Promise<void> {
     for (const handle of this.timers.values()) {
