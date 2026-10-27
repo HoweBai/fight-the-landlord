@@ -12,7 +12,7 @@ import {
 import { DomainError } from '../http/errors';
 import { REDIS } from '../redis/redis.module';
 import { hashPassword, verifyPassword } from './agent-password';
-import { normalizePhone, toSafeInt } from './agent.util';
+import { maskPhone, normalizePhone, toSafeInt } from './agent.util';
 export const AGENT_JWT_TTL_SECONDS = 12 * 60 * 60;
 export const AGENT_LOGIN_MAX_FAILURES = 5;
 export const AGENT_LOGIN_FAIL_TTL_SECONDS = 300;
@@ -51,7 +51,7 @@ export interface AgentLoginResult {
   agent: {
     id: string;
     name: string;
-    phone: string;
+    phoneMasked: string;
     rateBp: number;
     status: string;
     mustChangePassword: boolean;
@@ -112,7 +112,7 @@ export class AgentAuthService {
       agent: {
         id: String(row.id),
         name: String(row.name),
-        phone,
+        phoneMasked: maskPhone(phone),
         rateBp: toSafeInt(row.rate_bp, 'agent_accounts.rate_bp'),
         status: String(row.status),
         mustChangePassword: Number(row.must_change_password) === 1,
