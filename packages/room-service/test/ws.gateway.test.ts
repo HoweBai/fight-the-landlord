@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { Logger } from '@nestjs/common';
 import { createCapturingSink, createRedactingLogger, type LogRecord } from '@fight-the-landlord/shared';
 import type { Server, Socket } from 'socket.io';
@@ -6,6 +7,7 @@ import type { Redis } from 'ioredis';
 import type { Ack, Card, PlayerView, RecordWriteRequest, SettlementResult } from '@fight-the-landlord/protocol';
 import {
   GAME_EVENTS_CHANNEL,
+  MATCH_EVENTS_CHANNEL,
   WsGateway,
   currentTurnPayload,
   type GameEvent,
@@ -2820,5 +2822,137 @@ describe('玩家管理页：在线 presence（2026-10-22）', () => {
     expect(gateway.activeConnections.get('user-2')).toBe(sock);
     await expect(gateway.handleDisconnect(sock)).resolves.toBeUndefined();
     expect(gateway.activeConnections.has('user-2')).toBe(false);
+  });
+});
+
+/**
+ * **Redis 订阅生命周期**（2026-10-27 真栈事故的回归门）。
+ *
+ * 事故形态：conformance run 40539527543 里 room-service 启动时两条订阅连接各报一次
+ * `Redis subscriber error: Connection in subscriber mode, only subscriber commands may
+ * be used`，此后 `room.matched` / `game.deal` 一条都送不出去 —— 但匹配、建房、开局全正常
+ *（服务端有真人座位超时的对局，客户端却等不到推送）。
+ *
+ * 真因（上游 redis/ioredis#2037）：ioredis ≥5.8.2 的握手窗口内下发 SUBSCRIBE 会先置
+ * subscriber 模式，随后 ready-check 的 `INFO` 被本地拒收 ⇒ 客户端断开重连，且
+ * `autoResubscribe` 在这种形态下**不生效** ⇒ 订阅永久丢失、之后不再报错。
+ *
+ * ⇒ 三条纪律由本组钉住：**只在 ready 后订阅**、**每次 ready 幂等重订**、
+ * **失败响亮**。`message` 处理器先于订阅注册（首条消息不得落空）另有一条。
+ */
+describe('Redis 订阅生命周期（ioredis 握手竞态的永久丢订阅）', () => {
+  const ORIGINAL = process.env.INTERNAL_SERVICE_TOKEN;
+
+  beforeEach(() => {
+    process.env.INTERNAL_SERVICE_TOKEN = 'internal-secret';
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.INTERNAL_SERVICE_TOKEN;
+    else process.env.INTERNAL_SERVICE_TOKEN = ORIGINAL;
+    // M4：`Logger.overrideLogger` 是进程级的 —— 用后还原，防后续用例静默写进死 sink。
+    Logger.overrideLogger(new Logger());
+  });
+
+  /** 可控的订阅连接替身：`status` 决定 ready 门是否放行；`on`/`emit` 走真 EventEmitter。 */
+  type FakeSubscriber = EventEmitter & {
+    status: string;
+    subscribe: ReturnType<typeof vi.fn>;
+    quit: ReturnType<typeof vi.fn>;
+  };
+  function fakeSubscriber(status: string): FakeSubscriber {
+    const emitter = new EventEmitter() as FakeSubscriber;
+    emitter.status = status;
+    emitter.subscribe = vi.fn(async () => 1);
+    emitter.quit = vi.fn(async () => 'OK');
+    return emitter;
+  }
+
+  /** 把网关里某条真实订阅连接换成替身（构造期 `new Redis(...)` 在单测里不连网）。 */
+  function swapSubscriber(
+    gateway: WsGateway,
+    field: 'matchEventsRedis' | 'gameEventsRedis',
+    fake: FakeSubscriber,
+  ): () => void {
+    const holder = gateway as unknown as Record<string, unknown>;
+    const real = holder[field] as Redis;
+    holder[field] = fake;
+    return () => (real as unknown as { disconnect: () => void }).disconnect();
+  }
+
+  it('未 ready 不订阅；ready 后订阅；再次 ready（重连）幂等重订', async () => {
+    const { gateway } = makeGateway();
+    const sub = fakeSubscriber('connecting');
+    const restore = swapSubscriber(gateway, 'matchEventsRedis', sub);
+    try {
+      await gateway.subscribeToMatchEvents();
+      expect(
+        sub.subscribe,
+        '未 ready 不得下发 SUBSCRIBE —— 握手窗口内的订阅会被 ioredis#2037 吞掉且不自动恢复',
+      ).not.toHaveBeenCalled();
+
+      sub.status = 'ready';
+      sub.emit('ready');
+      await vi.waitFor(() => expect(sub.subscribe).toHaveBeenCalledWith(MATCH_EVENTS_CHANNEL));
+      expect(sub.subscribe).toHaveBeenCalledTimes(1);
+
+      // 竞态（或任何断线）造成的重连：再次 ready ⇒ 必须重订，不能依赖 autoResubscribe。
+      sub.emit('ready');
+      await vi.waitFor(() => expect(sub.subscribe).toHaveBeenCalledTimes(2));
+    } finally {
+      restore();
+    }
+  });
+
+  it('`message` 处理器先于 SUBSCRIBE 注册（首条消息不得落空）', async () => {
+    const { gateway } = makeGateway();
+    const sub = fakeSubscriber('ready');
+    const restore = swapSubscriber(gateway, 'matchEventsRedis', sub);
+    const order: string[] = [];
+    const realOn = sub.on.bind(sub);
+    vi.spyOn(sub, 'on').mockImplementation(((event: string, listener: (...a: never[]) => void) => {
+      if (event === 'message') order.push('on:message');
+      return realOn(event, listener);
+    }) as never);
+    sub.subscribe.mockImplementation((async () => {
+      order.push('subscribe');
+      return 1;
+    }) as never);
+    try {
+      await gateway.subscribeToMatchEvents();
+      await vi.waitFor(() => expect(order).toContain('subscribe'));
+      expect(
+        order.indexOf('on:message'),
+        'message 处理器必须先于 SUBSCRIBE 注册 —— 反了会丢首条消息',
+      ).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf('on:message')).toBeLessThan(order.indexOf('subscribe'));
+    } finally {
+      restore();
+    }
+  });
+
+  it('订阅失败记 error（不吞、不崩）；下一次 ready 重试并成功', async () => {
+    const records = installSink();
+    const { gateway } = makeGateway();
+    const sub = fakeSubscriber('ready');
+    sub.subscribe.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(1);
+    const restore = swapSubscriber(gateway, 'matchEventsRedis', sub);
+    try {
+      await gateway.subscribeToMatchEvents();
+      await vi.waitFor(() => {
+        const failed = records.find((r) => r.msg.startsWith(`Failed to subscribe ${MATCH_EVENTS_CHANNEL}`));
+        expect(failed, '订阅失败必须留一条 error（静默 = 推送链可以不存在）').toBeDefined();
+        expect(failed!.level).toBe('error');
+      });
+
+      sub.emit('ready');
+      await vi.waitFor(() => expect(sub.subscribe).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() =>
+        expect(records.some((r) => r.msg === `Subscribed to ${MATCH_EVENTS_CHANNEL}`)).toBe(true),
+      );
+    } finally {
+      restore();
+    }
   });
 });
