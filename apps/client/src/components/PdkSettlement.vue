@@ -251,7 +251,7 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 }
 .pdk-settlement__th--rank,
 .pdk-settlement__row-rank {
-  text-align: left;
+  text-align: center;
 }
 .pdk-settlement__th--remaining,
 .pdk-settlement__row-remaining {
@@ -259,7 +259,7 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 }
 .pdk-settlement__th--delta,
 .pdk-settlement__delta {
-  text-align: right;
+  text-align: center;
 }
 .pdk-settlement__th--gold,
 .pdk-settlement__gold {

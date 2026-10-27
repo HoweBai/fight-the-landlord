@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+﻿﻿﻿<script setup lang="ts">
 /**
  * 结算面板（玩法 §8.5 / 主规格 §6.3 的 `game.settlement` 载荷）。
  *
