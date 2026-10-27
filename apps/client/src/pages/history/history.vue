@@ -428,88 +428,95 @@ onMounted(() => {
         <!-- 玩法 -->
         <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">玩法</text>
-          <button
-            type="button"
-            class="history__select"
-            :class="{ 'history__select--open': activeFilter === 'game' }"
-            @click="toggleFilter('game')"
-          >
-            <text class="history__select-value">{{ GAME_LABEL[filterGame] }}</text>
-            <text class="history__select-arrow">▾</text>
-          </button>
-          <view v-if="activeFilter === 'game'" class="history__dropdown">
+          <!-- anchor 是 wrapper（position:relative），dropdown 在其下绝对定位 -->
+          <view class="history__select-wrap">
             <button
-              v-for="m in GAME_MODES"
-              :key="m.id"
               type="button"
-              class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterGame === m.id }"
-              @click="selectGame(m.id)"
-            >{{ m.name }}</button>
+              class="history__select"
+              :class="{ 'history__select--open': activeFilter === 'game' }"
+              @click="toggleFilter('game')"
+            >
+              <text class="history__select-value">{{ GAME_LABEL[filterGame] }}</text>
+              <text class="history__select-arrow">▾</text>
+            </button>
+            <view v-if="activeFilter === 'game'" class="history__dropdown">
+              <button
+                v-for="m in GAME_MODES"
+                :key="m.id"
+                type="button"
+                class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterGame === m.id }"
+                @click="selectGame(m.id)"
+              >{{ m.name }}</button>
+            </view>
           </view>
         </view>
 
         <!-- 场次 -->
         <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">场次</text>
-          <button
-            type="button"
-            class="history__select"
-            :class="{ 'history__select--open': activeFilter === 'mode' }"
-            @click="toggleFilter('mode')"
-          >
-            <text class="history__select-value">{{ MODE_LABEL_SHORT[filterMode ?? 'all'] }}</text>
-            <text class="history__select-arrow">▾</text>
-          </button>
-          <view v-if="activeFilter === 'mode'" class="history__dropdown">
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterMode === undefined }"
-              @click="selectMode()"
-            >全部</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterMode === 'random' }"
-              @click="selectMode('random')"
-            >匹配</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterMode === 'practice' }"
-              @click="selectMode('practice')"
-            >好友房</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterMode === 'gold' }"
-              @click="selectMode('gold')"
-            >金币场</button>
+          <view class="history__select-wrap">
+            <button
+              type="button"
+              class="history__select"
+              :class="{ 'history__select--open': activeFilter === 'mode' }"
+              @click="toggleFilter('mode')"
+            >
+              <text class="history__select-value">{{ MODE_LABEL_SHORT[filterMode ?? 'all'] }}</text>
+              <text class="history__select-arrow">▾</text>
+            </button>
+            <view v-if="activeFilter === 'mode'" class="history__dropdown">
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterMode === undefined }"
+                @click="selectMode()"
+              >全部</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterMode === 'random' }"
+                @click="selectMode('random')"
+              >匹配</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterMode === 'practice' }"
+                @click="selectMode('practice')"
+              >好友房</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterMode === 'gold' }"
+                @click="selectMode('gold')"
+              >金币场</button>
+            </view>
           </view>
         </view>
 
         <!-- 日期 -->
         <view class="history__filter-group" @click.stop>
           <text class="history__filter-label">日期</text>
-          <button
-            type="button"
-            class="history__select"
-            :class="{ 'history__select--open': activeFilter === 'date' }"
-            @click="toggleFilter('date')"
-          >
-            <text class="history__select-value">{{ DATE_LABEL[filterDate] }}</text>
-            <text class="history__select-arrow">▾</text>
-          </button>
-          <view v-if="activeFilter === 'date'" class="history__dropdown">
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterDate === 'all' }"
-              @click="selectDate('all')"
-            >全部</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterDate === 'today' }"
-              @click="selectDate('today')"
-            >今日</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterDate === 'week' }"
-              @click="selectDate('week')"
-            >本周</button>
-            <button type="button" class="history__dropdown-item"
-              :class="{ 'history__dropdown-item--active': filterDate === 'month' }"
-              @click="selectDate('month')"
-            >本月</button>
+          <view class="history__select-wrap">
+            <button
+              type="button"
+              class="history__select"
+              :class="{ 'history__select--open': activeFilter === 'date' }"
+              @click="toggleFilter('date')"
+            >
+              <text class="history__select-value">{{ DATE_LABEL[filterDate] }}</text>
+              <text class="history__select-arrow">▾</text>
+            </button>
+            <view v-if="activeFilter === 'date'" class="history__dropdown">
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterDate === 'all' }"
+                @click="selectDate('all')"
+              >全部</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterDate === 'today' }"
+                @click="selectDate('today')"
+              >今日</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterDate === 'week' }"
+                @click="selectDate('week')"
+              >本周</button>
+              <button type="button" class="history__dropdown-item"
+                :class="{ 'history__dropdown-item--active': filterDate === 'month' }"
+                @click="selectDate('month')"
+              >本月</button>
+            </view>
           </view>
         </view>
       </view>
@@ -707,11 +714,21 @@ onMounted(() => {
   white-space: nowrap;
 }
 /**
+ * select + dropdown 的共同锚点容器。
+ * position: relative ⇒ 下拉浮层绝对定位时 left/top 相对于它，
+ * 精确对齐 trigger 按钮的左边缘。
+ */
+.history__select-wrap {
+  position: relative;
+  display: inline-flex;
+}
+/**
  * 下拉触发按钮：冷灰弱底 + 淡描边 + 右对齐箭头。
  * 宿主是 `<button>` ⇒ flex 居中 + margin:0 是 uni-button 的标准骨架。
+ * ⚠️ 绝对定位锚点是父容器 `.history__select-wrap`（position: relative），
+ *    不是按钮自身 —— dropdown 是 wrap 的另一个子节点。
  */
 .history__select {
-  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
