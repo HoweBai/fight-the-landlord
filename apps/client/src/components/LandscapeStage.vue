@@ -145,6 +145,14 @@ const canvasStyle = computed(() => ({
       绘制层级（谁在后谁在上）；挪到 canvas 之后会把整页盖住。
     -->
     <image class="stage__backdrop" :src="backdropImage" mode="aspectFill" />
+    <!--
+      全局暗化遮罩（UI 优化步骤①，2026-10-27）：压暗画布基底、提升 UI 面板对比度。
+      放在底纹层之上、画布内容之下 —— 底纹仍可见但不再"亮"，面板的 0.62 透明叠加后
+      实际效果接近 0.85+，整体观感从"雾蒙蒙"变成"有实体感"。
+      ⚠️ pointer-events: none —— 不拦截任何点击事件（穿透给画布内的 UI）。
+      顶部/底部稍暗（安全区边缘）、中部稍亮（UI 内容集中区），径向渐变聚焦中心。
+    -->
+    <view class="stage__scrim" />
     <view v-if="portrait" class="stage__rotate">
       <text class="stage__rotate-title">请旋转设备</text>
       <text class="stage__rotate-hint">本游戏以横屏游玩</text>
@@ -212,6 +220,41 @@ const canvasStyle = computed(() => ({
   left: 0;
   width: 100%;
   height: 100%;
+}
+/**
+ * 全局暗化遮罩（UI 优化步骤①，2026-10-27）。
+ * DOM 序在 `.stage__backdrop` 之后、`.canvas` / `.stage__rotate` 之前 ——
+ * z 序严格：底纹 → 遮罩 → 内容。
+ *
+ * 渐变策略：径向渐变聚焦中心（UI 内容主要在舞台中央），边缘压暗让"舞台"有边界感。
+ * 叠加一层上下微渐变：顶部/底部安全区额外加深一点（那里没有内容、加深不影响可读性）。
+ *
+ * 强度设计：中心 `rgba(night, 0.32)` → 边缘 `rgba(night-deep, 0.58)`。
+ * 面板 `rgba(night, 0.62)` + 遮罩中心 `rgba(night, 0.32)` 叠加 → 基底底色已是 night 色阶、
+ * 面板再盖一层 0.62 的 night，实际观感接近"实色深蓝面板"，底纹不再明显透穿。
+ */
+.stage__scrim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 85% 70% at 50% 50%,
+      rgba($ftl-color-night, 0.32) 0%,
+      rgba($ftl-color-night-deep, 0.58) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba($ftl-color-night-deep, 0.18),
+      transparent 20%,
+      transparent 80%,
+      rgba($ftl-color-night-deep, 0.18)
+    );
 }
 /** 竖屏提示层。⚠️ `position: relative` 是给底纹层让位的 z 序要求（见上）。 */
 .stage__rotate {
