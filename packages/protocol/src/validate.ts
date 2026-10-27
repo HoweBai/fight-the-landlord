@@ -23,6 +23,9 @@ import {
 import type { Card, GameView, PlayerView, RoomPlayer } from './views';
 import type { DdzSettlementResult } from './views';
 import type { PdkPlayerView, PdkSettlementResult } from './pdk/types';
+import type { MahjongAction } from './mahjong/actions';
+import type { MahjongPlayerView, MahjongSettlementResult } from './mahjong/types';
+import { isTile, type Tile } from './mahjong/tile';
 import { pdkRecentActionsWindow } from './pdk/window';
 import type { SettlementResult } from './settlement';
 
@@ -54,6 +57,10 @@ export const FORBIDDEN_OUTBOUND_KEYS: readonly string[] = [
   'botIds',
   'botSkillLevels',
   'botThinkingSpeeds',
+  // 麻将：牌墙/RNG/过水内部结构，永不出站
+  'wall',
+  'rngSeed',
+  'passedHu',
 ] as const;
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -313,9 +320,133 @@ function assertPdkPlayerView(v: unknown, path: string): asserts v is PdkPlayerVi
   }
 }
 
+function assertTile(v: unknown, path: string): asserts v is Tile {
+  if (!isTile(v)) throw new ProtocolError(`${path} must be a mahjong tile {s:0|1|2,r:1..9}`);
+}
+
+function assertTileArray(v: unknown, path: string): asserts v is Tile[] {
+  if (!Array.isArray(v)) throw new ProtocolError(`${path} must be a Tile array`);
+  v.forEach((t, i) => assertTile(t, `${path}[${i}]`));
+}
+
+function assertClientMahjongAction(v: unknown, path: string): asserts v is MahjongAction {
+  if (!isObj(v)) throw new ProtocolError(`${path} must be a MahjongAction object`);
+  assertStr(v.type, `${path}.type`);
+  switch (v.type) {
+    case 'exchange': {
+      assertTileArray(v.tiles, `${path}.tiles`);
+      if (v.tiles.length !== 3) throw new ProtocolError(`${path}.tiles must have exactly 3 tiles`);
+      if (new Set(v.tiles.map((t) => t.s)).size !== 1) {
+        throw new ProtocolError(`${path}.tiles must be the same suit`);
+      }
+      break;
+    }
+    case 'lack':
+      if (v.suit !== 0 && v.suit !== 1 && v.suit !== 2) {
+        throw new ProtocolError(`${path}.suit must be 0|1|2`);
+      }
+      break;
+    case 'discard':
+    case 'concealedGang':
+    case 'addedGang':
+      assertTile(v.tile, `${path}.tile`);
+      break;
+    case 'selfDrawHu':
+      break;
+    case 'claim':
+      if (v.claim !== 'hu' && v.claim !== 'gang' && v.claim !== 'peng' && v.claim !== 'pass') {
+        throw new ProtocolError(`${path}.claim must be hu|gang|peng|pass`);
+      }
+      break;
+    default:
+      throw new ProtocolError(`${path}.type is unknown: ${JSON.stringify(v.type)}`);
+  }
+}
+
+function assertMahjongPlayerView(v: unknown, path: string): asserts v is MahjongPlayerView {
+  if (!isObj(v)) throw new ProtocolError(`${path} must be a MahjongPlayerView object`);
+  if (v.gameType !== 'mahjong') throw new ProtocolError(`${path}.gameType must be 'mahjong'`);
+  if (v.playerCount !== 4) throw new ProtocolError(`${path}.playerCount must be 4`);
+  assertStr(v.roomCode, `${path}.roomCode`);
+  assertNum(v.version, `${path}.version`);
+  assertNum(v.seat, `${path}.seat`);
+  assertNum(v.baseScore, `${path}.baseScore`);
+  const phases = ['exchange', 'lack', 'play', 'claim', 'rob', 'draw', 'ended'];
+  if (!phases.includes(v.state as string)) throw new ProtocolError(`${path}.state is invalid`);
+  assertTileArray(v.hand, `${path}.hand`);
+  if (!Array.isArray(v.cardCounts) || v.cardCounts.length !== 4) {
+    throw new ProtocolError(`${path}.cardCounts must have length 4`);
+  }
+  if (!Array.isArray(v.trustees) || v.trustees.length !== 4) {
+    throw new ProtocolError(`${path}.trustees must have length 4`);
+  }
+  assertNum(v.dealerSeat, `${path}.dealerSeat`);
+  assertNum(v.wallCount, `${path}.wallCount`);
+  if (!Array.isArray(v.lackSuits) || v.lackSuits.length !== 4) {
+    throw new ProtocolError(`${path}.lackSuits must have length 4`);
+  }
+  for (let i = 0; i < 4; i += 1) {
+    const suit = v.lackSuits[i];
+    if (suit !== null && suit !== 0 && suit !== 1 && suit !== 2) {
+      throw new ProtocolError(`${path}.lackSuits[${i}] must be null|0|1|2`);
+    }
+  }
+  if (!Array.isArray(v.melds) || v.melds.length !== 4) {
+    throw new ProtocolError(`${path}.melds must have length 4`);
+  }
+  if (!Array.isArray(v.discards) || v.discards.length !== 4) {
+    throw new ProtocolError(`${path}.discards must have length 4`);
+  }
+  v.discards.forEach((d, i) => assertTileArray(d, `${path}.discards[${i}]`));
+  if (!Array.isArray(v.isOut) || v.isOut.length !== 4) {
+    throw new ProtocolError(`${path}.isOut must have length 4`);
+  }
+  if (!Array.isArray(v.huInfos)) throw new ProtocolError(`${path}.huInfos must be an array`);
+  if (!Array.isArray(v.activeSeats)) throw new ProtocolError(`${path}.activeSeats must be an array`);
+  if (!Array.isArray(v.claimsForMe)) throw new ProtocolError(`${path}.claimsForMe must be an array`);
+  if (!isObj(v.mahjongRules)) throw new ProtocolError(`${path}.mahjongRules must be an object`);
+  if (!Array.isArray(v.revealedHands)) throw new ProtocolError(`${path}.revealedHands must be an array`);
+  if (v.windowId !== undefined) assertStr(v.windowId, `${path}.windowId`);
+}
+
+function assertMahjongSettlement(v: unknown, path: string): asserts v is MahjongSettlementResult {
+  if (!isObj(v)) throw new ProtocolError(`${path} must be a MahjongSettlementResult object`);
+  if (v.gameType !== 'mahjong') throw new ProtocolError(`${path}.gameType must be 'mahjong'`);
+  if (v.playerCount !== 4) throw new ProtocolError(`${path}.playerCount must be 4`);
+  assertStr(v.roomCode, `${path}.roomCode`);
+  assertNum(v.baseScore, `${path}.baseScore`);
+  if (!Array.isArray(v.winnerSeats)) throw new ProtocolError(`${path}.winnerSeats must be an array`);
+  if (!Array.isArray(v.scoreChanges) || v.scoreChanges.length !== 4) {
+    throw new ProtocolError(`${path}.scoreChanges must have length 4`);
+  }
+  let sum = 0;
+  v.scoreChanges.forEach((c, i) => {
+    if (!isObj(c)) throw new ProtocolError(`${path}.scoreChanges[${i}] must be an object`);
+    assertNum(c.seat, `${path}.scoreChanges[${i}].seat`);
+    assertNum(c.delta, `${path}.scoreChanges[${i}].delta`);
+    sum += c.delta as number;
+  });
+  if (sum !== 0) throw new ProtocolError(`${path}: scoreChanges must be zero-sum, got ${sum}`);
+  if (!Array.isArray(v.fanDetails)) throw new ProtocolError(`${path}.fanDetails must be an array`);
+  if (!Array.isArray(v.events)) throw new ProtocolError(`${path}.events must be an array`);
+  if (!Array.isArray(v.burn)) throw new ProtocolError(`${path}.burn must be an array`);
+  assertNum(v.rakeTotal, `${path}.rakeTotal`);
+  if (!Array.isArray(v.chajiao)) throw new ProtocolError(`${path}.chajiao must be an array`);
+  if (typeof v.liuju !== 'boolean') throw new ProtocolError(`${path}.liuju must be boolean`);
+  if (!Array.isArray(v.huazhuSeats)) throw new ProtocolError(`${path}.huazhuSeats must be an array`);
+  if (v.endReason !== 'threeWinners' && v.endReason !== 'wallEmpty') {
+    throw new ProtocolError(`${path}.endReason is invalid`);
+  }
+  if (!Array.isArray(v.writtenOff)) throw new ProtocolError(`${path}.writtenOff must be an array`);
+}
+
 function assertGameView(v: unknown, path: string): asserts v is GameView {
   if (isObj(v) && v.gameType === 'paodekuai') {
     assertPdkPlayerView(v, path);
+    return;
+  }
+  if (isObj(v) && v.gameType === 'mahjong') {
+    assertMahjongPlayerView(v, path);
     return;
   }
   assertPlayerView(v, path);
@@ -391,6 +522,10 @@ function assertPdkSettlement(v: unknown, path: string): asserts v is PdkSettleme
 function assertSettlement(v: unknown, path: string): asserts v is SettlementResult {
   if (isObj(v) && v.gameType === 'paodekuai') {
     assertPdkSettlement(v, path);
+    return;
+  }
+  if (isObj(v) && v.gameType === 'mahjong') {
+    assertMahjongSettlement(v, path);
     return;
   }
   assertDdzSettlement(v, path);
@@ -564,6 +699,7 @@ export function validateClientMessage(type: unknown, body: unknown): ClientMessa
   assertStr(body.reqId, '$.reqId');
   assertNum(body.baseVersion, '$.baseVersion');
   assertNum(body.timestamp, '$.timestamp');
+  if (body.windowId !== undefined) assertStr(body.windowId, '$.windowId');
   const p = body.payload;
   if (!isObj(p)) throw new ProtocolError('$.payload must be an object');
   switch (type as ClientMessageType) {
@@ -607,12 +743,22 @@ export function validateClientMessage(type: unknown, body: unknown): ClientMessa
     case 'game.trustee':
       if (typeof p.on !== 'boolean') throw new ProtocolError('$.payload.on must be a boolean');
       break;
-    case 'game.play':
-      assertCardArray(p.cards, '$.payload.cards');
-      if ((p.cards as Card[]).length === 0) {
-        throw new ProtocolError('$.payload.cards must not be empty — use game.pass instead');
+    case 'game.play': {
+      const hasCards = p.cards !== undefined;
+      const hasMahjong = p.mahjong !== undefined;
+      if (hasCards === hasMahjong) {
+        throw new ProtocolError('$.payload must contain exactly one of cards|mahjong');
+      }
+      if (hasCards) {
+        assertCardArray(p.cards, '$.payload.cards');
+        if ((p.cards as Card[]).length === 0) {
+          throw new ProtocolError('$.payload.cards must not be empty — use game.pass instead');
+        }
+      } else {
+        assertClientMahjongAction(p.mahjong, '$.payload.mahjong');
       }
       break;
+    }
     case 'game.reconnect':
       if (p.lastVersion !== undefined) assertNum(p.lastVersion, '$.payload.lastVersion');
       break;
@@ -632,6 +778,7 @@ export function validateClientMessage(type: unknown, body: unknown): ClientMessa
       reqId: body.reqId as string,
       baseVersion: body.baseVersion as number,
       timestamp: body.timestamp as number,
+      ...(body.windowId === undefined ? {} : { windowId: body.windowId as string }),
     },
     payload: p,
   } as ClientMessage;

@@ -7,6 +7,7 @@
 
 import type { GameType } from './game';
 import type { PdkPlayerView } from './pdk/types';
+import type { MahjongPlayerView } from './mahjong/types';
 import { ProtocolError } from './validate';
 
 /**
@@ -172,7 +173,7 @@ export interface PlayerView extends GameViewBase<Card> {
 }
 
 /** 出站对局视图联合（按 `gameType` 判别；缺失 ⇒ 斗地主）。 */
-export type GameView = PlayerView | PdkPlayerView;
+export type GameView = PlayerView | PdkPlayerView | MahjongPlayerView;
 
 /**
  * 视图玩法解析的**唯一入口**（spec §4.5.1 / S5.3）。
@@ -184,6 +185,7 @@ export type GameView = PlayerView | PdkPlayerView;
  */
 export function resolveGameType(view: GameViewBase): GameType {
   if (view.gameType === 'paodekuai') return 'paodekuai';
+  if (view.gameType === 'mahjong') return 'mahjong';
   if (view.gameType === 'doudizhu' || view.gameType === undefined) {
     if (view.gameType === undefined && ('canPass' in view || 'pdkRules' in view)) {
       throw new ProtocolError(

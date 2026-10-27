@@ -7,9 +7,14 @@
  */
 import type { DdzSettlementResult } from './views';
 import type { PdkSettlementResult } from './pdk/types';
+import type { MahjongSettlementResult } from './mahjong/types';
 
-export type SettlementResult = DdzSettlementResult | PdkSettlementResult;
+export type SettlementResult = DdzSettlementResult | PdkSettlementResult | MahjongSettlementResult;
 
 export function isPdkSettlementResult(r: SettlementResult): r is PdkSettlementResult {
   return 'gameType' in r && r.gameType === 'paodekuai';
+}
+
+export function isMahjongSettlementResult(r: SettlementResult): r is MahjongSettlementResult {
+  return 'gameType' in r && r.gameType === 'mahjong';
 }

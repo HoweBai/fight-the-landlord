@@ -10,6 +10,7 @@
 import type { Card, GameView, RoomPlayer, RoomInfo } from './views';
 import type { SettlementResult } from './settlement';
 import type { GameType } from './game';
+import type { MahjongAction } from './mahjong/actions';
 
 /**
  * 每个请求都携带的元信息。**线格式里这些字段是平铺在请求体里的**（§6.2）：
@@ -31,6 +32,8 @@ export interface RequestMeta {
   baseVersion: number;
   /** 客户端毫秒时间戳。服务端校验 |clientTs - serverTs| < 5000ms（M01）。 */
   timestamp: number;
+  /** 麻将多行动者窗口 id；非麻将/单人回合忽略。 */
+  windowId?: string;
 }
 
 /** 请求的线格式（socket.io 的 emit 载荷） */
@@ -51,7 +54,7 @@ export type ClientMessage =
   | { type: 'room.join'; meta: RequestMeta; payload: { roomCode: string; gameType?: GameType } }
   | { type: 'room.leave'; meta: RequestMeta; payload: { roomCode: string } }
   | { type: 'game.bid'; meta: RequestMeta; payload: { grab: boolean } }
-  | { type: 'game.play'; meta: RequestMeta; payload: { cards: Card[] } }
+  | { type: 'game.play'; meta: RequestMeta; payload: { cards?: Card[]; mahjong?: MahjongAction } }
   | { type: 'game.pass'; meta: RequestMeta; payload: Record<string, never> }
   | { type: 'game.reconnect'; meta: RequestMeta; payload: { lastVersion?: number } }
   /** 重新拉取当前裁剪快照。**这是 §6.5 中 13004 的唯一恢复通道**，

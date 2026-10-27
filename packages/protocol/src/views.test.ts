@@ -39,6 +39,10 @@ describe('resolveGameType', () => {
   });
 
   it('未知 gameType ⇒ ProtocolError（不静默当斗地主）', () => {
-    expect(() => resolveGameType({ ...base, gameType: 'mahjong' } as never)).toThrow(ProtocolError);
+    expect(() => resolveGameType({ ...base, gameType: 'texas' } as never)).toThrow(ProtocolError);
+  });
+
+  it('gameType=mahjong ⇒ mahjong', () => {
+    expect(resolveGameType({ ...base, gameType: 'mahjong' })).toBe('mahjong');
   });
 });
