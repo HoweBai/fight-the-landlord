@@ -1,34 +1,35 @@
 # 配置中心分域页签：重内容域拆成页内页签 — 设计
 
 - 日期：2026-10-27
-- 状态：待对抗审查
+- 状态：对抗审查已修订（2 阻断 + 6 高 + 7 低，见 §8），待实现计划
 - 范围：`admin/` 静态三件套 + `scripts/verify-admin-static.mjs` + 新增 jsdom 探针；**不动** CONFIG_IA 键集合 / API / 协议 / 服务端
 - 用户裁决：配置内容较多的域（斗地主、跑得快等）参考代理工作台，拆成独立页签。
 
 ## 1. 背景与问题
 
-`CONFIG_IA` 早已按「域 → 页签」定义配置归属（斗地主 6 个、跑得快 6 个、风控安全 5 个、
-支付与提现 3 个、货币经济 2 个、房间与机器人 2 个；广告/对局记录/代理各 1 个）。
+`CONFIG_IA` 早已按「域 → 页签」定义配置归属（斗地主 6、跑得快 6、风控安全 5、
+支付与提现 3、货币经济 2、房间与机器人 2；广告/对局记录/代理各 1）。
 但 v2.1 渲染时把所有页签的键**按顺序堆成一页**（`renderConfigRows` 里每个页签只生成一个
-`h3.settings-section` 标题），重内容域需要长距离滚动，且不同页签的键混在一起。
+`h3.settings-section` 标题），重内容域需要长距离滚动。
 
-2026-10-26 代理工作台已采用「页内 6 页签」形态（`.tabs` / `.tab-btn`），本次把同一形态
-用于配置中心的重内容域。
+代理工作台（2026-10-26）已采用「页内页签 + 各面板保留 DOM、只切 hidden」的形态，
+本次把同一形态用于配置中心的重内容域。
 
 ## 2. 范围
 
 ### 做
 
-- 任意 `CONFIG_IA` 域若 `tabs.length > 1`：页面顶部（玩法开关键卡之后）渲染页内页签；
-  只渲染**当前页签**的键。
+- 任意 `CONFIG_IA` 域若 `tabs.length > 1`：渲染页内页签；**每个页签一个面板，全部渲染，
+  仅 active 面板可见**（切换只改 `hidden`，不重建 DOM）。
 - 单页签域（广告 / 对局记录 / 代理 / 未分组）保持现状（无页签条、保留分区标题）。
 - 搜索态保持**全量扁平结果**（跨域、跨页签），不渲染页签条；清空搜索回到原域+原页签。
-- 页签状态 `cfgUI.tabId`：切域复位；默认取「第一个有键的页签」；显式点击空页签则停留在空态。
+- 页签状态 `cfgUI.tabId` + `cfgUI.tabDomainId`（成对校验）；切域复位；默认取「第一个有键页签」；
+  显式点击空页签停留在空态面板。
 
 ### 不做（YAGNI）
 
 - 不改 `CONFIG_IA` 的域/页签/键归属，不改 85 键计数与静态闸的键集合断言。
-- 不改配置保存链路（`saveRow` / `loadAll` / drafts）。
+- 不改配置保存链路（`saveRow` / `loadAll` / drafts / 结构化编辑器）。
 - 不改代理工作台、凭据两页、其它运营视图。
 - 不引入折叠、二级树或 URL 路由。
 
@@ -36,103 +37,146 @@
 
 | 编号 | 决策 | 理由 |
 |---|---|---|
-| D1 | 页签条对所有 `tabs.length > 1` 的域生效（ddz/pdk/risk/pay/currency/roomOps） | 统一规则，避免「重内容」主观阈值；roomOps 暂无左树叶，仅影响未来可达路径 |
-| D2 | 复用 `.tabs` / `.tab-btn`（审计/代理页同款），容器类名 `cfg-tabs` | 零新增视觉语言；静态闸可钉 `cfg-tabs` |
-| D3 | 状态 `cfgUI.tabId`（默认 null）；`openCfgDomain` 复位；渲染时解析：有效则用，失效则取第一个**有键**的页签 | 切域不串页签；快照缺键时不落空页 |
-| D4 | 多页签域只渲染当前页签的键，且**不再渲染 `h3.settings-section`**；单页签域保留原分区标题 | 页签名已承担标题职责，避免重复 |
-| D5 | 搜索态：不渲染页签条、按现有扁平结果渲染；`cfgUI.query` 非空时不改 `tabId` | 搜索语义不变；清空后回到原页签 |
-| D6 | 玩法顶部开关键卡保持在页签条**之前** | 它是域级开关（斗地主/跑得快开关），不属某个页签 |
-| D7 | 页签点击：更新 `tabId` → `renderConfigRows()`（非 preserve）→ `settings-host.scrollTop = 0` | 与左树叶切换一致的滚动语义 |
-| D8 | 保存后 `loadAll()` 的 preserve 重渲染保留当前 `tabId` 与滚动位置 | 现有行为不退化；草稿由 drafts 承载 |
-| D9 | 测试：静态闸新增结构断言 + 新增 jsdom 探针（页签切换/搜索/单页签域/零异常），接入 `scripts/ci.sh` | 静态闸无法验证状态机；同代理工作台先例 |
+| D1 | 页签条对所有 `tabs.length > 1` 的域生效（ddz/pdk/risk/pay/currency；roomOps 暂无左树叶，仅未来可达） | 统一规则；roomOps 无入口不产生行为 |
+| D2 | 复用 `.tabs` / `.tab-btn`，容器只用 **class `cfg-tabs`**（不得用 id `cfg-tabs`：静态闸 REMOVED_IDS 已禁） | 零新增视觉语言；防假红 |
+| D3 | **每个页签渲染为独立面板**（`div.cfg-tab-panel[data-tab]`），非 active 加 `hidden`；切换只 `applyCfgTabUI(tabId)`，**不重渲染** | 审查阻断 1：全量重建会丢 struct/JSON 未保存编辑（drafts 只覆盖简单行） |
+| D4 | 多页签域不渲染 `h3.settings-section`；每个面板**按自身键数**判空，空则渲染「本页签暂无可展示的键」 | 审查阻断 2：header 开关键会污染全局 `rendered===0` 判空 |
+| D5 | 状态 `cfgUI.tabId` + `cfgUI.tabDomainId`；渲染时仅当 `tabDomainId === domain.id` 才采用 `tabId`，否则取第一个有键页签并写回两者 | 审查高 5：ddz/pdk 有同名页签（rules/rooms/risk），必须按域配对 |
+| D6 | `openCfgDomain` 仅在 `domainId !== cfgUI.domainId` 时复位页签；`normalizeCfgDomain` 改域时同样复位（写回 `tabDomainId`） | 审查高 6：重复点当前域叶不应重置页签 |
+| D7 | 搜索态不渲染页签条、维持现有扁平结果；`cfgUI.query` 非空时不改 `tabId`/`tabDomainId` | 搜索语义不变；清空后回原域+原页签 |
+| D8 | 玩法顶部开关键卡保持在页签条之前（域级开关）；页签切换不影响它（DOM 保留，PUT 在途也不重建） | 审查低 13 |
+| D9 | 页签点击：`applyCfgTabUI` + `settings-host.scrollTop = 0`；按钮 `type="button"` + `data-tab` + `aria-selected`；容器限定 `#settings-rows .cfg-tabs` | 审查高 8/低 11/低 12 |
+| D10 | 保存后 `loadAll()` 的 preserve 重渲染保留 `tabId`/`tabDomainId` 与滚动位置；焦点恢复逻辑不变 | 现有行为不退化 |
+| D11 | 测试：静态闸新增结构/条件断言 + 新增 jsdom 探针（页签切换/DOM 保留/搜索/单页签域/零异常），接入 `scripts/ci.sh` | 静态闸无法验证状态机；同代理工作台先例 |
 
 ## 4. 实现设计
 
 ### 4.1 状态
 
 ```js
-const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null });
+const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDomainId: null });
 ```
 
-- `openCfgDomain(domainId)`：`cfgUI.tabId = null`（切域复位）。
-- `normalizeCfgDomain()` 若把域改掉：`cfgUI.tabId = null`。
-- `renderConfigRows` 非搜索分支解析当前页签：
+- `openCfgDomain(domainId)`：仅当域变化时 `cfgUI.tabId = null; cfgUI.tabDomainId = null;`。
+- `normalizeCfgDomain()` 若改域：同样复位。
+- `renderConfigRows` 非搜索分支解析：
   - `tabs = domain.tabs`；
-  - `stored = tabs.find(t => t.id === cfgUI.tabId)`；
-  - 若 `stored` 存在 ⇒ 用它（即使该页签无键，尊重显式点击）；
-  - 否则取第一个 `t.keys.some(k => k in currentConfig)` 的页签；再退 `tabs[0]`；
-  - 写回 `cfgUI.tabId = active?.id ?? null`。
+  - `stored = cfgUI.tabDomainId === domain.id ? tabs.find(t => t.id === cfgUI.tabId) : null`；
+  - 有 `stored` ⇒ 用它（显式点空页签也停留）；
+  - 否则取第一个 `t.keys.some(k => k in currentConfig)` 的页签，再退 `tabs[0]`；
+  - 写回 `cfgUI.tabId` / `cfgUI.tabDomainId`。
 
 ### 4.2 渲染（`renderConfigRows`）
 
 非搜索、`tabs.length > 1` 时：
 
-1. 先渲染 `headerDomain.headerKeys` 的开关键卡（现状不变）。
-2. 追加 `buildConfigTabStrip(domain, tabs)`：`div.tabs.cfg-tabs` + 每个页签一个
-   `button.tab-btn`（`active` 按 `cfgUI.tabId`），点击写入 `tabId` 并重渲染 + 滚到顶。
-3. 只渲染 active 页签的键（过滤 `k in currentConfig`），不渲染 `h3.settings-section`。
+1. 渲染 `headerDomain.headerKeys` 开关键卡（现状不变）。
+2. 追加 `buildConfigTabStrip(domain, tabs)`（`div.tabs.cfg-tabs`，每个页签一个 `button.tab-btn`）。
+3. 逐页签渲染 `div.cfg-tab-panel[data-tab]`（非 active 加 `hidden`）：
+   - 页签键集合 `t.keys.filter(k => k in currentConfig)`；
+   - 空 ⇒ 面板内 `<p class="settings-empty">本页签暂无可展示的键</p>`；
+   - 非空 ⇒ 逐键 `buildKeyCard(key)`。
+4. 全局空态：当域内**所有页签键数 + header 键数 = 0** 时，在页签条前/后显示
+   「（暂无可展示的配置键）」（与现状同义）。
 
-`tabs.length === 1`：维持现状（逐页签分区标题 + 键）。
+`tabs.length === 1`：维持现状（`h3.settings-section` + 键）。
 
-搜索态（`q` 非空）：维持现状（扁平结果、无页签条、无开关键卡）。
+搜索态：维持现状（扁平结果、无页签条、无开关键卡）。
 
-空态：`rendered === 0` 时仍显示「（暂无可展示的配置键）」。
+`applyCfgTabUI(tabId)`：遍历 `.cfg-tabs .tab-btn` 与 `.cfg-tab-panel`，切换 `active` /
+`hidden` / `aria-selected`；写 `cfgUI.tabId`（`tabDomainId` 已在渲染时写定）。
+点击已 active 的页签 = no-op（不滚动）。
 
 ### 4.3 CSS
 
 ```css
-.cfg-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 4px;
-}
+.cfg-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.cfg-tab-panel { display: flex; flex-direction: column; gap: 10px; }
 ```
 
-（`.tabs` / `.tab-btn` 复用现有规则。）
+（`.tabs` / `.tab-btn` 复用现有规则；`[hidden]` 全局兜底已存在。）
 
 ### 4.4 静态闸
 
-- `DEFAULT_CFG_UI` 含 `tabId`；`openCfgDomain` 含 `cfgUI.tabId = null`。
-- 存在 `function buildConfigTabStrip`；`renderConfigRows` 块含 `cfg-tabs`。
-- `style.css` 含 `.cfg-tabs` 规则。
+- `DEFAULT_CFG_UI` 含 `tabId` 与 `tabDomainId`。
+- `openCfgDomain` 含条件复位（`tabDomainId = null`）。
+- 存在 `function buildConfigTabStrip` 且 `renderConfigRows` 块**调用** `buildConfigTabStrip(`。
+- `renderConfigRows` 块含 `tabs.length > 1` 条件与 `cfg-tab-panel`；搜索分支不出现 `cfg-tabs`（搜索分支在前、页签渲染在后，可用块内顺序断言）。
+- `normalizeCfgDomain` 块含 `tabDomainId = null`。
+- `CONFIG_IA` 的 `headerKeys` 与各页签键**无交集**（vm 执行 IA，逐域校验）。
+- `style.css` 含 `.cfg-tabs` 与 `.cfg-tab-panel` 规则。
 - 既有断言（85 键、IA 覆盖、`scrollEl.scrollTop = scrollTop`、零 innerHTML）保持。
 
 ### 4.5 探针（`scripts/admin-config-tabs-probe.mjs`）
 
-jsdom + 桩 `/api/admin/config`（快照含斗地主 assist/rooms 键、跑得快 switches 键、广告键）：
+jsdom + 桩 `/api/admin/config`，快照含：
 
-1. 默认进入斗地主：`.cfg-tabs` 6 个按钮；默认页签=第一个有键页签；只渲染该页签键。
-2. 点「场次开关」：该页签键出现，前一页签键消失。
-3. 点跑得快叶：页签复位到第一个有键页签，6 个按钮。
-4. 搜索 `cardCounter`：`.cfg-tabs` 不存在，跨域扁平结果出现。
-5. 清空搜索：回到斗地主原页签。
-6. 点广告叶：无 `.cfg-tabs`（单页签域）。
+- `game.doudizhu.enabled`（header 开关）
+- assist 三键（`game.doudizhu.cardCounterEnabled` / 两个价格）
+- rooms 一键（`game.doudizhu.freeRoomEnabled`）
+- pdk switches 一键（`game.paodekuai.twoPlayerEnabled`）
+- 广告一键（`ad.reliefAdpid`）
+- 货币两键（`currency.signupGrant` / `currency.reliefEnabled`）
+
+桩另含 `/api/admin/ad-channel/`（点广告叶时避免脏提示）与 `/api/admin/agents/settings` 等
+无关端点兜底 `{code:0,data:{}}`。
+
+用例（顺序避免跨域不可达）：
+
+1. 等首屏 `loadAll` 完成（轮询 `.cfg-tabs` 或 sleep 80ms）；默认斗地主：`#settings-rows .cfg-tabs`
+   **6 个** `.tab-btn`；active = 对局辅助（第一个有键页签）；assist 面板可见、rooms 面板 hidden。
+2. 勾选 assist 的 cardCounter 开关（产生脏值），点「场次开关」→ rooms 面板可见、assist 面板 hidden；
+   点回「对局辅助」→ 开关仍为勾选态（**DOM 保留**，drafts 不参与）。
+3. 搜索 `cardCounter` → `.cfg-tabs` 不存在；斗地主 assist 键与跑得快同名键均在扁平结果中。
+4. 清空搜索 → 回到斗地主，active 仍为对局辅助（tabId 保留）。
+5. 点跑得快叶 → 6 个按钮；active = 开关（第一个有键页签），`game.paodekuai.twoPlayerEnabled` 面板可见。
+6. 点广告叶 → 无 `.cfg-tabs`（单页签域）；`ad.reliefAdpid` 行渲染。
 7. 全程零运行时异常。
+8. 页签按钮选择器一律限定 `#settings-rows .cfg-tabs .tab-btn`（审计/代理页签复用 `.tab-btn`）。
 
 ## 5. 测试判据
 
-- `pnpm verify:admin` 先红后绿（新增结构断言）。
+- `pnpm verify:admin` 先红后绿（新增结构/条件断言）。
 - `node scripts/admin-config-tabs-probe.mjs` 先红后绿。
 - `pnpm verify:admin-players`、`node scripts/admin-agents-probe.mjs` 回归通过。
 - `node --check admin/app.js`。
 
 ## 6. 边界与风险
 
-- 快照缺键：默认页签跳过空页签；显式点空页签显示空态（不自动跳走）。
-- `tabId` 失效（域切换/快照变化）：回退第一个有键页签。
-- 搜索中切域：`openCfgDomain` 清空 query（现状），页签复位。
-- 保存后 preserve 渲染：保持 `tabId` 与滚动位置；焦点恢复逻辑不变。
-- 单页签域/数据广告面板（`syncAdSection`）不受影响。
-- 与 v2.1「无页签」旧决策的关系：仅在「多页签域」恢复页签，搜索与单页签域保持 v2.1 形态。
+- 快照缺键：默认页签跳过空页签；显式点空页签显示面板空态（不自动跳走）。
+- `tabId` 跨域同名：以 `tabDomainId` 配对，杜绝 ddz 的 `rules` 映射到 pdk。
+- 搜索清空：回原域+原页签；搜索期间的简单行草稿由 drafts 保留（现状）。
+- 保存后 preserve 渲染：`tabId`/`tabDomainId`、滚动、焦点恢复保持。
+- 单页签域/广告回调面板（`syncAdSection`）不受影响。
+- 已接受的取舍（审查低 14）：自动选中的页签会写回 `tabId`，之后快照缺键时停在空面板而非自动跳走；
+  用户可手动切页签。记录在案，不额外加 explicit 标记。
+- roomOps/records 无左树叶（仅搜索可达），本次不新增入口（审查低 9）。
 
 ## 7. 涉及文件
 
-- `admin/app.js`：`DEFAULT_CFG_UI`、`cfgUI`、`openCfgDomain`、`normalizeCfgDomain`、`renderConfigRows`、新增 `buildConfigTabStrip`。
-- `admin/style.css`：`.cfg-tabs`。
-- `scripts/verify-admin-static.mjs`：结构断言。
+- `admin/app.js`：`DEFAULT_CFG_UI`、`cfgUI`、`openCfgDomain`、`normalizeCfgDomain`、`renderConfigRows`、新增 `buildConfigTabStrip` / `applyCfgTabUI`。
+- `admin/style.css`：`.cfg-tabs` / `.cfg-tab-panel`。
+- `scripts/verify-admin-static.mjs`：结构/条件/IA 交叉断言。
 - `scripts/admin-config-tabs-probe.mjs`（新增）、`package.json`、`scripts/ci.sh`。
 
 ## 8. 审查记录
 
-（对抗审查后回填）
+独立 reviewer 设计对抗审查：2 阻断 / 6 高 / 7 低，处置：
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| 1 | 阻断 | 切页签全量重建丢 struct/JSON 未保存编辑 | D3 改为「全面板渲染、只切 hidden」 |
+| 2 | 阻断 | header 键使全局空态失效，空页签无提示 | D4 每面板独立空态 |
+| 3 | 高 | 探针顺序跨域不可达 | §4.5 用例顺序重排（搜索在切 pdk 前） |
+| 4 | 高 | 探针桩/断言口径未定死 | §4.5 列明快照键与 active 期望；header 键不参与面板断言 |
+| 5 | 高 | tabId 跨域同名 | D5 `tabDomainId` 配对 |
+| 6 | 高 | 重复点当前域叶重置页签 | D6 仅域变化时复位 |
+| 7 | 高 | 闸断言可假绿/容器 id 撞 REMOVED_IDS | D2 仅 class；§4.4 钉调用/条件/搜索顺序 |
+| 8 | 高 | 探针作用域与异步 | D9 选择器限定；§4.5 首屏等待 |
+| 9 | 低 | roomOps/records 无入口 | 记录，不新增入口 |
+| 10 | 低 | headerKeys 与 tabs 未来可能重叠 | §4.4 IA 交叉断言 |
+| 11 | 低 | 页签点击焦点丢失 | D3 DOM 保留后不再发生 |
+| 12 | 低 | 按钮可访问性 | D9 type/data-tab/aria-selected |
+| 13 | 低 | 开关键 PUT 在途切换 | D8 DOM 保留，不重建 |
+| 14 | 低 | 自动落选页签写回无法区分显式 | §6 记录为已接受取舍 |
+| 15 | 低 | 其余无回归 | 已核对 |
