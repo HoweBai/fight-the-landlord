@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
@@ -110,8 +110,10 @@ export const GATEWAY_UPSTREAM_TIMEOUT_MS = 5000;
   // 超限的客户端拿到 `connect_error`（而不是「连上 → system.error → 被踢」，R152）。
   allowRequest: delegateAllowRequest,
 })
-export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect, OnApplicationShutdown {
   private readonly logger = new Logger(ProxyGateway.name);
+  /** 活跃客户端连接（SIGTERM 时逐个释放 §5.4 名额并关闭）。 */
+  private readonly clients = new Set<Socket>();
   private readonly roomSvcUrl = process.env.ROOM_SERVICE_WS_URL ?? 'http://localhost:3002';
   private readonly namespace = '/ws/ddz';
 
@@ -273,6 +275,7 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * `client.connected`，验签失败或客户端已走都**不建**下游连接。
    */
   private async handleConnectionInner(client: Socket, traceId: string): Promise<void> {
+    this.clients.add(client);
     // 初始化应用帧时间戳：0 = 会话刚创建，还没收发过业务帧。
     // heartbeat 回调跳过 0 值，避免握手刚完就触发兜底踢线。
     this.lastAppFrameAt.set(client.id, 0);
@@ -459,7 +462,28 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket): void {
+    this.clients.delete(client);
     this.dropPeer(client.id);
+  }
+
+  /**
+   * k3s 优雅停机（spec 2026-10-27 D16）：SIGTERM 时先释放本 Pod 持有的 WS 名额，
+   * 再断开客户端；否则名额要靠 60s TTL 兜底，缩容/滚动更新后同 IP 用户会短暂连不上。
+   */
+  async onApplicationShutdown(): Promise<void> {
+    const clients = [...this.clients];
+    this.clients.clear();
+    await Promise.allSettled(
+      clients.map(async (client) => {
+        const slot = wsConnSlotOf(client);
+        if (slot) {
+          await releaseWsConnSlot(this.redis, slot.ip, slot.member).catch((err) =>
+            this.logger.error(`Failed to release WS conn slot on shutdown: ${String(err)}`),
+          );
+        }
+        client.disconnect(true);
+      }),
+    );
   }
 
   /** 下游连上后，把握手期间暂存的请求按原顺序发出。 */

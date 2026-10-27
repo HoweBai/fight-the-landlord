@@ -42,6 +42,8 @@ async function bootstrap() {
   //（Nest 给 json/urlencoded 两个解析器挂 verify 钩子存原始 Buffer；对表单体 = 精确事实，
   //  不依赖可缺失/可伪造的 `content-length`）。其余端点只见增益（原样解析行为不变）。
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
+  app.enableShutdownHooks();
   // 顺序照 currency-service：trace 中间件**必须排在最前**（否则更早的中间件打的日志
   // 没有 trace 上下文）→ HTTP 指标 → 内部 token 边界。
   app.use(createTraceMiddleware());

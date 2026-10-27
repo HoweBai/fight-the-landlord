@@ -14,6 +14,7 @@
     "verify:admin-players": "node scripts/admin-players-probe.mjs",
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
     "verify:k8s": "node scripts/verify-k8s-manifests.mjs",
+    "verify:shutdown": "node scripts/verify-shutdown-hooks.mjs",
     "clean": "turbo run clean"
   },
   "devDependencies": {
