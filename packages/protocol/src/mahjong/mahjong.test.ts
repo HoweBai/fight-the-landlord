@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GAME_META } from '../game';
 import { resolveGameType } from '../views';
 import { validateClientMessage, validateOutbound, ProtocolError } from '../validate';
-import { decodeMahjongHand, encodeMahjongHand, tileFromType, type Tile } from './tile';
+import { decodeMahjongHand, encodeMahjongHand, type Tile } from './tile';
 import type { MahjongPlayerView, MahjongSettlementResult } from './types';
 import type { MahjongRulesConfig } from './rules';
 
