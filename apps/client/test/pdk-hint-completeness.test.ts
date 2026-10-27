@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PdkHandType, parsePdkHand, type Card, type PdkRulesConfig } from '@fight-the-landlord/protocol';
 import { suggestPdkPlays } from '../src/game/pdk-hint';
+import { collectSourceFiles } from './helpers/source-scan';
 
 /**
  * 审查 P1-1/P2-1：首出提示必须覆盖 14/16 张合法组合，且不得再靠
@@ -131,5 +132,12 @@ describe('提示结构化生成：14/16 张与差分等价（审查 P1-1/P2-1）
     for (const hand of [eightPairs, mixed]) {
       expect(suggestPdkPlays(hand, null, DEFAULT_RULES).length).toBeLessThan(2000);
     }
+  });
+
+  it('源码闸：不得回退到任意牌子集枚举', () => {
+    const source = collectSourceFiles().find((f) => f.path === 'src/game/pdk-hint.ts')!.content;
+    expect(source).toContain('enumerateRankSelections');
+    expect(source).not.toMatch(/combinations\(/);
+    expect(source).not.toContain('Math.min(12');
   });
 });

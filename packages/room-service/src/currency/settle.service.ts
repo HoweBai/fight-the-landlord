@@ -166,23 +166,6 @@ export interface SettleComputation {
 }
 
 /**
- * 结算算法（spec 2026-10-26 起为**最大余数法**；纯函数 —— 单测矩阵直接打它）。
- *
- * ```
- * raw[i]   = seat i 是 landlord ? result.landlordScoreChange : result.farmerScoreChange
- * 输家 i:  pay[i] = min(−raw[i], balance[i])    // balance 缺失（exists=false）按 0
- *          delta[i] = −pay[i];  P += pay[i]
- * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // 基础分摊（BigInt 精确）
- *          frac[i] = raw[i] × P − g[i] × Σraw     // 精确余数 ∈ [0, Σraw)
- *          R = P − Σg[i]（∈ [0, 赢家数)）⇒ 按 frac 降序、座位升序前 R 名各 +1
- *          rake[i] = floor(g[i] × rakePercent / 100)   // 基数 = 分发零头后的最终所得
- *          delta[i] = g[i] − rake[i]
- * residue  = P − Σg[i] ≡ 0（正常路径；赢家空/Σraw≤0 的防御路径 = P，仍销毁）
- * entries  = 非零 delta 的 {ownerId, ownerType, delta}
- * ```
- * 分差为 0 的座位（理论不发生）⇒ 不产生 entry，但 `deltas` 向量仍含 0（规格 §4 末行）。
- */
-/**
  * 审查 P1-4：结算结果必须与**房间玩法**一致，且 pdk 向量必须覆盖每个座位。
  *
  * 返回 `null` 表示形状合法；否则返回可读原因（调用方 `dropWarn` / 纯函数抛错）。
@@ -225,6 +208,26 @@ export function settlementShapeProblem(
   return null;
 }
 
+/**
+ * 结算算法（spec 2026-10-26 起为**最大余数法**；纯函数 —— 单测矩阵直接打它）。
+ *
+ * ```
+ * raw[i]   = seat i 是 landlord ? result.landlordScoreChange : result.farmerScoreChange
+ * 输家 i:  pay[i] = min(−raw[i], balance[i])    // balance 缺失（exists=false）按 0
+ *          delta[i] = −pay[i];  P += pay[i]
+ * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // 基础分摊（BigInt 精确）
+ *          frac[i] = raw[i] × P − g[i] × Σraw     // 精确余数 ∈ [0, Σraw)
+ *          R = P − Σg[i]（∈ [0, 赢家数)）⇒ 按 frac 降序、座位升序前 R 名各 +1
+ *          rake[i] = floor(g[i] × rakePercent / 100)   // 基数 = 分发零头后的最终所得
+ *          delta[i] = g[i] − rake[i]
+ * residue  = P − Σg[i] ≡ 0（正常路径；赢家空/Σraw≤0 的防御路径 = P，仍销毁）
+ * entries  = 非零 delta 的 {ownerId, ownerType, delta}
+ * ```
+ * 分差为 0 的座位（理论不发生）⇒ 不产生 entry，但 `deltas` 向量仍含 0（规格 §4 末行）。
+ *
+ * 玩法分流按**房间** `gameType`（审查 P1-4），不按结果形状猜；形状/座位覆盖由
+ * `settlementShapeProblem` 先校验，非法输入直接抛错。
+ */
 export function computeSettlement(input: {
   roomCode: string;
   version: number;
@@ -409,8 +412,11 @@ export class SettleService {
     } catch (err) {
       // 顶层兜底：settle 的调用方是 `void …` ⇒ 任何逃逸的 rejection 都会把进程打成
       // crash-loop（Node 默认 --unhandled-rejections=throw）。宁可账面可见地响一声。
-      const topGameType = input.result !== undefined && isPdkSettlementResult(input.result)
-        ? 'paodekuai' : 'doudizhu';
+      const topGameType =
+        input.room?.gameType ??
+        (input.result !== undefined && isPdkSettlementResult(input.result)
+          ? 'paodekuai'
+          : DEFAULT_GAME_TYPE);
       this.dropError(input.roomCode, input.version, topGameType, 'unexpected error', err);
     }
   }
