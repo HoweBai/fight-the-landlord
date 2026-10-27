@@ -39,7 +39,7 @@ export interface GameMode {
  * **救不了** —— `satisfies` 不会把目标类型的可选键加进条目类型。
  * 显式写 `undefined` 正是「这一条没有图标素材」的如实声明。
  */
-import { GAME_META, type GameType } from '@fight-the-landlord/protocol';
+import { GAME_META, MAHJONG_RULE_SUMMARY, type GameType } from '@fight-the-landlord/protocol';
 
 export const GAME_MODES = [
   {
@@ -78,6 +78,13 @@ export const GAME_MODES = [
       '· unitScore = 底分 × 综合倍数\n' +
       '· 综合倍数 = 叫抢倍数 × 2^(局内炸弹数) × 春天倍数\n' +
       '· 春天：地主胜且两农民一手未出（×2）；反春：农民胜且地主恰好出过一手（×2）',
+  },
+  {
+    id: GAME_META.mahjong.id,
+    name: GAME_META.mahjong.name,
+    tagline: '血战到底，四家继续打',
+    icon: undefined,
+    description: MAHJONG_RULE_SUMMARY,
   },
   {
     id: GAME_META.paodekuai.id,
@@ -126,6 +133,7 @@ export const DEFAULT_MODE_ID: GameModeId = GAME_MODES[0]!.id;
 export const CLIENT_TABLE_PLAYER_COUNTS: Readonly<Record<GameType, readonly number[]>> = {
   doudizhu: [3],
   paodekuai: [2, 3, 4],
+  mahjong: [4],
 };
 
 /** 按 id 查玩法；查不到返回 `undefined`（**不**编一个默认对象）。 */

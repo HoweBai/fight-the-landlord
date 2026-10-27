@@ -85,14 +85,15 @@ export type ServerMessage =
    */
   | { type: 'match.wait_prompt'; version: number; payload: { message: string } }
   | { type: 'game.deal'; version: number; payload: GameView }
-  | { type: 'game.current_turn'; version: number; payload: { seat: number; timeoutMs: number } }
+  | { type: 'game.current_turn'; version: number; payload: { seat: number; seats?: number[]; timeoutMs: number; windowId?: string } }
   | { type: 'game.state_update'; version: number; payload: GameView }
   | {
       type: 'game.finished';
       version: number;
       payload:
         | { winner: 'landlord' | 'farmer' }
-        | { gameType: 'paodekuai'; winnerSeats: number[] };
+        | { gameType: 'paodekuai'; winnerSeats: number[] }
+        | { gameType: 'mahjong'; winnerSeats: number[]; endReason: 'threeWinners' | 'wallEmpty'; huazhuSeats: number[] };
     }
   | { type: 'game.settlement'; version: number; payload: SettlementResult }
   /**

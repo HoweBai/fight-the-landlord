@@ -250,10 +250,14 @@ function traceIdOf(socket: Socket): string | null {
  * 行动者的判定（§9.4 / 玩法 §9.1）：叫抢阶段是 `bidPhase.currentBidder`，
  * 出牌阶段才是 `currentPlayer`。
  */
-export function currentTurnPayload(view: GameView): { seat: number; timeoutMs: number } {
+export function currentTurnPayload(view: GameView): { seat: number; seats: number[]; timeoutMs: number; windowId?: string } {
+  const seat = view.state === 'bidding' ? view.bidPhase.currentBidder : view.currentPlayer;
+  const mj = view.gameType === 'mahjong' ? view : null;
   return {
-    seat: view.state === 'bidding' ? view.bidPhase.currentBidder : view.currentPlayer,
+    seat,
+    seats: view.activeSeats ?? [seat],
     timeoutMs: Math.max(0, view.turnDeadlineAt - Date.now()),
+    ...(mj?.windowId === undefined ? {} : { windowId: mj.windowId }),
   };
 }
 
