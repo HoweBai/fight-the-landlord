@@ -44,6 +44,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
   app.enableShutdownHooks();
+  // k3s 迁移 Job 专用：启动迁移跑完即退出，不监听端口。
+  if (process.env.DB_MIGRATIONS_ONLY === 'true') {
+    await app.close();
+    process.exit(0);
+  }
   // 顺序照 currency-service：trace 中间件**必须排在最前**（否则更早的中间件打的日志
   // 没有 trace 上下文）→ HTTP 指标 → 内部 token 边界。
   app.use(createTraceMiddleware());

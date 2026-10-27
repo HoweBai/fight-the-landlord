@@ -69,6 +69,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /api/health, port: 3004 }
+            httpGet: { path: /api/health/live, port: 3004 }
             initialDelaySeconds: 30
             periodSeconds: 20
