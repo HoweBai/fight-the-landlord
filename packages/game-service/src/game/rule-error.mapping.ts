@@ -75,10 +75,16 @@ export const RULE_ERROR_MAPPINGS: readonly RuleErrorMapping[] = [
     code: ErrCode.ILLEGAL_ACTION,
     basis: '内部投影前置：pdk 会话形状写坏（不可达）',
   },
+  // 审查 P2-3：`decidePdkAutoAction` 只会返回 play/pass；bid 分支是类型面的
+  // 防御（不可达）。与上面同族——内部前置，触发即决策函数契约被破坏。
+  {
+    pattern: /unexpected pdk auto action/i,
+    code: ErrCode.ILLEGAL_ACTION,
+    basis: '内部前置：自动出牌决策不返回 bid（不可达）',
+  },
   {
     pattern: /seat .* is out of range/i,
-    code: ErrCode.ILLEGAL_ACTION,
-    basis: '内部投影前置：座位越界（不可达）',
+    code: ErrCode.ILLEGAL_ACTION,    basis: '内部投影前置：座位越界（不可达）',
   },
 ];
 
