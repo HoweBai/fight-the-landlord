@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge
+  namespace: ftl
+  labels: { app: edge }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: edge }
+  template:
+    metadata:
+      labels: { app: edge }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector: { ftl-role: data }
+      securityContext: { runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001 }
+      containers:
+        - name: edge
+          image: ghcr.io/howebai/fight-the-landlord-edge:IMAGE_TAG_PLACEHOLDER
+          ports:
+            - { name: http, containerPort: 80 }
+            - { name: https, containerPort: 443 }
+          env:
+            - name: SITE_ADDRESS
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: SITE_ADDRESS } }
+            - name: TLS_MODE
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: TLS_MODE } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - { name: caddy-data, mountPath: /data }
+      volumes:
+        - name: caddy-data
+          persistentVolumeClaim: { claimName: caddy-data }
