@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { LeaderLease } from '../coordination/leader-lease.service';
 import { runWithTrace, setGame } from '@fight-the-landlord/shared';
-import { isGameType, type GameType } from '@fight-the-landlord/protocol';
+import { GAME_TYPES, isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { Redis } from 'ioredis';
 import { roomsActive } from './room.metrics';
 
@@ -97,10 +97,7 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
     const results = await pipeline.exec(); // 整条失败 ⇒ 抛给 runRound，gauge 保留旧值
     if (results === null) throw new Error('rooms_active sample: pipeline aborted (null result)');
 
-    const counts = new Map<GameType, number>([
-      ['doudizhu', 0],
-      ['paodekuai', 0],
-    ]);
+    const counts = new Map<GameType, number>(GAME_TYPES.map((g) => [g, 0]));
     let bad = 0;
     for (const [err, value] of results ?? []) {
       if (err) {
@@ -115,7 +112,7 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
     if (bad > 0) {
       this.logger.warn(`rooms_active sample: ${bad} room(s) missing/invalid gameType — counted as doudizhu`);
     }
-    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+    for (const gameType of GAME_TYPES) {
       setGame(roomsActive, gameType, counts.get(gameType) ?? 0);
     }
   }

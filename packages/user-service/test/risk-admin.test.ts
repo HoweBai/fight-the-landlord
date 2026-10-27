@@ -51,6 +51,7 @@ import {
   RISK_ENTRIES_SQL,
   RISK_STATS_SQL,
   RISK_STATS_PDK_SQL,
+  RISK_STATS_MAHJONG_SQL,
 } from '../src/risk/admin-risk.service';
 import { AdminRiskController } from '../src/risk/admin-risk.controller';
 import {
@@ -84,6 +85,9 @@ const CONCURRENCY_MESSAGE = '并发冲突，请重试';
 /** 2026-10-26 跑得快详情 stats SQL 逐字（spec §5.6；测试侧独立誊写）。 */
 const SPEC_RISK_STATS_PDK_SQL =
   "SELECT r.player_count AS player_count, COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY r.player_count";
+/** T12 麻将详情 stats SQL 逐字（同上口径，4 人一局）。 */
+const SPEC_RISK_STATS_MAHJONG_SQL =
+  "SELECT COUNT(*) AS games, COALESCE(SUM(p.won), 0) AS wins FROM game_record_players_mahjong p JOIN game_records_mahjong r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_mahjong x WHERE x.record_id = p.record_id AND x.is_robot = 1)";
 
 const AUTH_READ = { [ADMIN_HEADER]: '1' };
 const AUTH_WRITE = { [ADMIN_HEADER]: '1', [ADMIN_ACTOR_HEADER]: 'tester' };
@@ -195,6 +199,7 @@ class FakeRiskAdminDb {
   winStats = new Map<string, { games: number; wins: number }>();
   /** 跑得快详情统计的定值回执（2026-10-25；缺省 {0,0}）。 */
   pdkWinStats = new Map<string, Array<{ player_count: number; games: number; wins: number }>>();
+  mahjongWinStats = new Map<string, { games: number; wins: number }>();
   queries: Statement[] = [];
   /** `dataSource.transaction` 调用次数（1213 重试断言面）。 */
   transactions = 0;
@@ -295,6 +300,7 @@ class FakeRiskAdminDb {
     this.users = new Map();
     this.winStats = new Map();
     this.pdkWinStats = new Map();
+    this.mahjongWinStats = new Map();
     this.queries = [];
     this.transactions = 0;
     this.failActionInsertOnce = null;
@@ -432,6 +438,11 @@ class FakeRiskAdminDb {
     if (sql === SPEC_RISK_STATS_PDK_SQL) {
       const [userId] = params as [string];
       return this.pdkWinStats.get(userId) ?? [];
+    }
+    if (sql === SPEC_RISK_STATS_MAHJONG_SQL) {
+      const [userId] = params as [string];
+      const s = this.mahjongWinStats.get(userId) ?? { games: 0, wins: 0 };
+      return [{ games: s.games, wins: s.wins }];
     }
     if (sql === RISK_DEVICE_COUNT_WINDOW_SQL) {
       const [userId, cutoff] = params as [string, Date];
@@ -644,6 +655,7 @@ describe('风控片 T6：管理端点（C19）', () => {
 
     it('SQL 常量全文 == 规格逐字：跑得快详情 stats（mode/is_robot/整局剔除；刻意不含 users.status）', () => {
       expect(RISK_STATS_PDK_SQL).toBe(SPEC_RISK_STATS_PDK_SQL);
+    expect(RISK_STATS_MAHJONG_SQL).toBe(SPEC_RISK_STATS_MAHJONG_SQL);
       expect(RISK_STATS_PDK_SQL).not.toContain('users.status');
       expect(RISK_STATS_SQL).not.toContain('users.status');
     });
@@ -1548,6 +1560,7 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
             '4': { games: 0, wins: 0, winRate: 0 },
           },
         },
+        mahjong: { games: 0, wins: 0, winRate: 0 },
       },
     });
     expect(data.devices).toHaveLength(3); // 原文 3 台（含窗口外）
@@ -1595,11 +1608,14 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
             '4': { games: 0, wins: 0, winRate: 0 },
           },
         },
+        mahjong: { games: 0, wins: 0, winRate: 0 },
       },
     });
     const sqls = db.queries.map((q) => q.sql);
     const iDdz = sqls.indexOf(RISK_STATS_SQL);
     const iPdk = sqls.indexOf(SPEC_RISK_STATS_PDK_SQL);
+    const iMj = sqls.indexOf(SPEC_RISK_STATS_MAHJONG_SQL);
+    expect(iMj).toBe(iPdk + 1);
     const iDev = sqls.indexOf(RISK_DEVICE_COUNT_WINDOW_SQL);
     expect(iDdz).toBeGreaterThanOrEqual(0);
     expect(iPdk).toBeGreaterThan(iDdz);

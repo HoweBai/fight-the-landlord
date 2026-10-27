@@ -679,6 +679,72 @@ const CONFIG_NOTES = {
     ['生效', '保存后 currency-service 秒级生效；最晚 ≤60s。'],
     ['注意', '不随任何玩法档位/倍率变化；缺失/坏值 ⇒ 救助端点 fail-closed（503），客户端回退旧算法。'],
   ],
+  'game.levels.mahjong': [
+    ['作用', '四川麻将四档底分表（休闲/标准/竞技/豪侠）与台费比例。'],
+    ['取值', 'JSON 数组；每项 {name, baseScore, entryFeePercent}，底分为正整数。默认与其它玩法同四档、台费 0。'],
+    ['生效', '保存后新开的房间/匹配按新档位；已在局中的不受影响。'],
+    ['注意', '客户端大厅按此表渲染场次卡；空表 ⇒ 不显示任何场次。'],
+  ],
+  'game.mahjong.rules': [
+    ['作用', '四川麻将规则快照（番表/封顶/换三张/呼叫转移/退税/花猪/时长等全部开关）。'],
+    ['取值', 'JSON 对象，字段见 docs/games/mahjong.md 与 protocol MahjongRulesConfig；服务端按严格 schema 解析。'],
+    ['生效', '保存后新开的房间使用新规则；已在局中的沿用开局快照。'],
+    ['注意', '非法 JSON/未知字段/越界值会被服务端拒绝；preset 仅作标注，不自动改其它字段。'],
+  ],
+  'game.mahjong.enabled': [
+    ['作用', '四川麻将总开关：关 ⇒ 大厅不显示、匹配/建房被拒绝（12012）。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。进行中的对局不受影响。'],
+    ['注意', '这是最后一个开放玩法时关闭会二次确认；场次开关还需各自的 free/gold/friend 键同时打开。'],
+  ],
+  'game.mahjong.freeRoomEnabled': [
+    ['作用', '麻将免费场（随机匹配）开关。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后新匹配立即按新值；已入队的票不追溯。'],
+    ['注意', '与金币场/好友房各自独立；总开关关闭时本键不生效。'],
+  ],
+  'game.mahjong.goldRoomEnabled': [
+    ['作用', '麻将金币场开关（结算走金币账本、台费/抽水按档位与 rakePercent）。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后新匹配立即按新值；已入队的票不追溯。'],
+    ['注意', 'sbr 预设的 48×底花猪 burn 在金币场还需 game.mahjong.sbrGoldEnabled 显式打开。'],
+  ],
+  'game.mahjong.friendRoomEnabled': [
+    ['作用', '麻将好友房（房号加入）开关。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后建房/加入立即按新值。'],
+    ['注意', '好友房不参与匹配；总开关关闭时本键不生效。'],
+  ],
+  'game.mahjong.freeBotFillEnabled': [
+    ['作用', '麻将免费场缺人时是否补机器人。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后下一轮补位按新值。'],
+    ['注意', '机器人决策由 game-service 的自动决策承担，不经 DouZero。'],
+  ],
+  'game.mahjong.goldBotFillEnabled': [
+    ['作用', '麻将金币场缺人时是否补机器人。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后下一轮补位按新值。'],
+    ['注意', '机器人同样按麻将自动决策出牌；金币场结算对机器人座不落钱包。'],
+  ],
+  'game.mahjong.entryMultiplier': [
+    ['作用', '麻将金币场入场门槛倍率：所需金币 = 档位底分 × 本值。'],
+    ['取值', '整数，≥0。默认 10（与其它玩法一致）。'],
+    ['生效', '保存后新匹配/建房立即按新门槛（14003 权威）。'],
+    ['注意', '客户端只做提示/置灰，真正门槛以服务端校验为准。'],
+  ],
+  'game.mahjong.rakePercent': [
+    ['作用', '麻将金币场结算抽水比例（对事件后正收益计，进 burn.rake）。'],
+    ['取值', '整数百分比，0 ≤ n ≤ 100。默认 0（零和起点）。'],
+    ['生效', '保存后下一局结算按新值。'],
+    ['注意', '抽水从赢家所得中扣除销毁，不重新分配；花猪 burn 另计。'],
+  ],
+  'game.mahjong.sbrGoldEnabled': [
+    ['作用', '是否允许 sbr 预设（花猪 48×底 burn）在金币场开局。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后新开的金币房按新值；已在局中的不受影响。'],
+    ['注意', '关闭时金币场 + sbr 规则会被开局链拒绝（房间保持 waiting）；免费场/好友房不受此闸限制。'],
+  ],
 };
 
 
@@ -829,6 +895,38 @@ const CONFIG_IA = [
               'game.paodekuai.risk.autoThrottleScore',
               'game.paodekuai.risk.winRateThreshold',
               'game.paodekuai.risk.minGames',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'mahjong',
+        name: '四川麻将',
+        headerKeys: ['game.mahjong.enabled'],
+        tabs: [
+          {
+            id: 'rules',
+            name: '玩法规则',
+            keys: ['game.levels.mahjong', 'game.mahjong.rules'],
+          },
+          {
+            id: 'rooms',
+            name: '场次开关',
+            keys: [
+              'game.mahjong.freeRoomEnabled',
+              'game.mahjong.goldRoomEnabled',
+              'game.mahjong.friendRoomEnabled',
+              'game.mahjong.freeBotFillEnabled',
+              'game.mahjong.goldBotFillEnabled',
+            ],
+          },
+          {
+            id: 'goldEconomy',
+            name: '金币场经济',
+            keys: [
+              'game.mahjong.entryMultiplier',
+              'game.mahjong.rakePercent',
+              'game.mahjong.sbrGoldEnabled',
             ],
           },
         ],
@@ -985,6 +1083,7 @@ const IA_DOMAINS = CONFIG_IA.flatMap((g) => g.domains.map((d) => ({ ...d, group:
 const GAME_SWITCH_DEFAULTS = {
   'game.doudizhu.enabled': true,
   'game.paodekuai.enabled': false,
+  'game.mahjong.enabled': false,
 };
 
 /** IA 中所有玩法域的 headerKeys（顶部开关键的全局清单）。 */
@@ -1113,12 +1212,24 @@ const CONFIG_CONTROLS = {
   'client.appEnabled': { label: 'App 端', type: 'bool' },
   'client.h5Enabled': { label: 'H5 端', type: 'bool' },
   'game.doudizhu.enabled': { label: '斗地主总开关', type: 'bool' },
+  // 四川麻将（9 简单键；档位表与规则 JSON 是结构化键）
+  'game.mahjong.enabled': { label: '麻将总开关', type: 'bool' },
+  'game.mahjong.freeRoomEnabled': { label: '免费场', type: 'bool' },
+  'game.mahjong.goldRoomEnabled': { label: '金币场', type: 'bool' },
+  'game.mahjong.friendRoomEnabled': { label: '好友房', type: 'bool' },
+  'game.mahjong.freeBotFillEnabled': { label: '免费场缺人补机器人', type: 'bool' },
+  'game.mahjong.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
+  'game.mahjong.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
+  'game.mahjong.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
+  'game.mahjong.sbrGoldEnabled': { label: '金币场允许 sbr 花猪 burn', type: 'bool' },
 };
 
-/** 5 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
+/** 7 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
 const STRUCT_KEYS = new Set([
   'game.levels.doudizhu',
   'game.levels.paodekuai',
+  'game.levels.mahjong',
+  'game.mahjong.rules',
   'pay.rechargePackages',
   'game.doudizhu.robot.skillDistribution',
   'game.doudizhu.robot.modelBySkill',
@@ -1127,6 +1238,8 @@ const STRUCT_KEYS = new Set([
 const STRUCT_META = {
   'game.levels.doudizhu': { label: '斗地主档位表' },
   'game.levels.paodekuai': { label: '跑得快档位表' },
+  'game.levels.mahjong': { label: '四川麻将档位表' },
+  'game.mahjong.rules': { label: '四川麻将规则 JSON' },
   'pay.rechargePackages': { label: '充值档位表' },
   'game.doudizhu.robot.skillDistribution': { label: '机器人技能分布' },
   'game.doudizhu.robot.modelBySkill': { label: '各档模型' },
@@ -1328,6 +1441,7 @@ const riskState = {
 const RISK_GAME_TYPE_LABELS = {
   doudizhu: '斗地主',
   paodekuai: '跑得快',
+  mahjong: '四川麻将',
   mixed: '混合',
   platform: '平台',
 };
@@ -2011,7 +2125,42 @@ function buildSimpleRow(key) {
 }
 
 /**
- * 4 结构化键整卡编辑器：头部（标题/键名/版本/作用/更多）+ 专属编辑件 + 同款行内保存协议。
+ * 麻将规则 JSON 编辑器：原样编辑对象（严格 schema 校验在服务端 parseMahjongRules）。
+ * 与其它结构化卡共用同一套行内保存协议：read 抛错 ⇒ 行内拦截、不发请求。
+ */
+function buildRulesJsonEditor(body, ctx) {
+  const box = document.createElement('textarea');
+  box.className = 'json-box';
+  box.rows = 12;
+  box.spellcheck = false;
+  const stringify = () => JSON.stringify(ctx.snap, null, 2);
+  box.value = stringify();
+  box.addEventListener('input', () => {
+    ctx.dirty();
+    ctx.state('', '');
+  });
+  ctx.bind(
+    () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(box.value);
+      } catch {
+        throw new Error('规则不是合法 JSON');
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('规则必须是 JSON 对象');
+      }
+      return parsed;
+    },
+    () => {
+      box.value = stringify();
+    },
+  );
+  body.append(box);
+}
+
+/**
+ * 结构化键整卡编辑器：头部（标题/键名/版本/作用/更多）+ 专属编辑件 + 同款行内保存协议。
  * ctx.bind(getter, resetter)：getter 读 UI 值（不合法抛 Error ⇒ 行内拦截）；resetter 一键还原。
  */
 function buildStructCard(key) {
@@ -2050,10 +2199,11 @@ function buildStructCard(key) {
     reset = resetter;
   };
 
-  if (key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai') buildLevelsEditor(body, ctx);
+  if (key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai' || key === 'game.levels.mahjong') buildLevelsEditor(body, ctx);
   else if (key === 'pay.rechargePackages') buildPackagesEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.skillDistribution') buildDistributionEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.modelBySkill') buildModelEditor(body, ctx);
+  else if (key === 'game.mahjong.rules') buildRulesJsonEditor(body, ctx);
 
   revertBtn.addEventListener('click', () => {
     reset();
@@ -2944,6 +3094,7 @@ function textCell(value, { num = false } = {}) {
 function gameLabelText(gameType) {
   if (gameType === 'doudizhu') return '斗地主';
   if (gameType === 'paodekuai') return '跑得快';
+  if (gameType === 'mahjong') return '四川麻将';
   return '—';
 }
 
@@ -4496,9 +4647,16 @@ function renderRiskDetail(td, row, d) {
     typeof d.stats?.byGame?.paodekuai?.winRate === 'number' && pdkGames > 0
       ? d.stats.byGame.paodekuai.winRate.toFixed(3)
       : '—';
+  const mjGames = d.stats?.byGame?.mahjong?.games ?? 0;
+  const mjWins = d.stats?.byGame?.mahjong?.wins ?? 0;
+  const mjRate =
+    typeof d.stats?.byGame?.mahjong?.winRate === 'number' && mjGames > 0
+      ? d.stats.byGame.mahjong.winRate.toFixed(3)
+      : '—';
   byGame.textContent =
     `分玩法：斗地主 ${ddzGames} 局 / ${ddzWins} 胜 · 胜率 ${ddzRate}；` +
-    `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}`;
+    `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}；` +
+    `四川麻将 ${mjGames} 局 / ${mjWins} 胜 · 胜率 ${mjRate}`;
   td.append(byGame);
 
   // 跑得快分人数（2026-10-26）：旧 user-service 无 byPlayerCount 时按 0/— 渲染。

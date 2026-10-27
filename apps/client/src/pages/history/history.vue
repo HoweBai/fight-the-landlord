@@ -28,7 +28,7 @@
  * **行为与「onReachBottom 翻页」一致**，且三端可用。
  */
 import { computed, onMounted, ref } from 'vue';
-import type { MyRecord, MyRecordPlayer, PdkRecord } from '../../net/rest';
+import type { MahjongRecordView, MyRecord, MyRecordPlayer, PdkRecord } from '../../net/rest';
 import * as rest from '../../net/rest';
 import { dispatchRestFailure } from '../../net/errors';
 import { playerMessage } from '../../net/copy';
@@ -68,6 +68,8 @@ function showHistoryError(text: string): void {
 const records = ref<MyRecord[]>([]);
 /** 已加载的跑得快对局（S6.3；与斗地主分开存，形状不同、接口按 gameType 分支）。 */
 const pdkRecords = ref<PdkRecord[]>([]);
+/** 四川麻将战绩（T12；与 ddz/pdk 分开存）。 */
+const mahjongRecords = ref<MahjongRecordView[]>([]);
 /**
  * 玩法筛选（S6.3）：历史页按玩法分表（pdk 单独建表）。
  * 缺省斗地主 —— 旧行为/旧客户端零破坏；切玩法 = 重置列表 + cursor 重新拉第一页。
@@ -123,11 +125,9 @@ const GAME_LABEL: Readonly<Record<typeof GAME_MODES[number]['id'], string>> = {
  * 历史页可筛的玩法：麻将战绩接口（`/records/mine?gameType=mahjong`）尚未接入
  * ⇒ **暂不出现在筛选下拉**（麻将记录已落库，接口补齐后在这里放开即可）。
  */
-type HistoryGame = 'doudizhu' | 'paodekuai';
-const HISTORY_GAME_MODES = GAME_MODES.filter(
-  (m): m is (typeof GAME_MODES)[number] & { id: HistoryGame } =>
-    m.id === 'doudizhu' || m.id === 'paodekuai',
-);
+type HistoryGame = 'doudizhu' | 'paodekuai' | 'mahjong';
+/** 历史页可筛的玩法（三种记录表都已接入）。 */
+const HISTORY_GAME_MODES = GAME_MODES;
 const MODE_LABEL_SHORT: Readonly<Record<string, string>> = {
   all: '全部',
   random: '匹配',
@@ -273,6 +273,19 @@ const pdkCards = computed(() =>
   })),
 );
 
+/** 麻将卡片视图模型（只做展示映射；胜负 = 服务端 isOut 字段）。 */
+const mahjongCards = computed(() =>
+  mahjongRecords.value.map((record) => {
+    const key = `mahjong:${record.roomCode}:${record.endedAt}`;
+    return {
+      key,
+      record,
+      mine: record.seats.find((p) => p.seat === record.ownSeat) ?? null,
+      open: expandedKeys.value.has(key),
+    };
+  }),
+);
+
 function toggle(key: string) {
   const next = new Set(expandedKeys.value);
   if (next.has(key)) next.delete(key);
@@ -316,6 +329,33 @@ async function load(cursor: string | undefined, replayed = false) {
   loading.value = true;
   error.value = '';
   try {
+    if (filterGame.value === 'mahjong') {
+      const res = await rest.fetchMahjongRecords(buildFetchOptions(cursor));
+      if (generation !== loadGeneration) return;
+      if (res.code === 0) {
+        const page = res.data ?? { items: [], nextCursor: null };
+        mahjongRecords.value =
+          cursor === undefined ? page.items : [...mahjongRecords.value, ...page.items];
+        nextCursor.value = page.nextCursor;
+        notices.dismiss('history');
+        return;
+      }
+      await dispatchRestFailure(res, {
+        toast: (report) => {
+          error.value = `历史战绩加载失败：${playerMessage(report.code, {
+            context: 'rest',
+            serverMessage: report.message,
+          })}`;
+          showHistoryError(error.value);
+        },
+        signOutLocally: (report) => {
+          stopGameSession();
+          auth.sessionEnded(playerMessage(report.code, { context: 'auth' }));
+        },
+        replay: () => (replayed ? Promise.resolve() : load(cursor, true)),
+      });
+      return;
+    }
     if (filterGame.value === 'paodekuai') {
       const res = await rest.fetchPdkRecords(buildFetchOptions(cursor));
       if (res.code === 0) {
@@ -395,6 +435,7 @@ async function load(cursor: string | undefined, replayed = false) {
 async function loadFirst() {
   records.value = [];
   pdkRecords.value = [];
+  mahjongRecords.value = [];
   nextCursor.value = null;
   await load(undefined);
 }
@@ -533,7 +574,7 @@ onMounted(() => {
 
       <view class="history__body">
         <scroll-view
-          v-if="records.length > 0 || pdkRecords.length > 0"
+          v-if="records.length > 0 || pdkRecords.length > 0 || mahjongRecords.length > 0"
           class="history__list"
           scroll-y
           @scrolltolower="loadMore"
@@ -591,7 +632,7 @@ onMounted(() => {
           </template>
 
           <!-- S6.3：跑得快战绩（不同于斗地主：无地主/底牌；显示名次、剩余张数、倍数与标记）。 -->
-          <template v-else>
+          <template v-else-if="filterGame === 'paodekuai'">
             <view v-for="card in pdkCards" :key="card.key" class="history__card history__card--pdk">
               <button type="button" class="history__summary" @click="toggle(card.key)">
                 <view class="history__row">
@@ -633,6 +674,50 @@ onMounted(() => {
                     <text class="history__player-score">{{ formatDelta(p.scoreChange) }}</text>
                   </view>
                   <Hand :cards="p.hand" size="small" enter="none" />
+                </view>
+              </view>
+            </view>
+          </template>
+
+          <!-- T12：四川麻将战绩（胡/未胡 + 缺门/番/分差；不展示他人未胡手牌）。 -->
+          <template v-else>
+            <view v-for="card in mahjongCards" :key="card.key" class="history__card history__card--pdk">
+              <button type="button" class="history__summary" @click="toggle(card.key)">
+                <view class="history__row">
+                  <text class="history__time">{{ formatTime(card.record.endedAt) }}</text>
+                  <text class="history__mode">{{ MODE_LABEL[card.record.mode] }}</text>
+                  <text class="history__mode">四川麻将</text>
+                  <text class="history__mode">{{ card.record.playerCount }} 人局</text>
+                </view>
+                <view class="history__row">
+                  <text
+                    class="history__result"
+                    :class="{
+                      'history__result--win': card.mine?.isOut === true,
+                      'history__result--lose': card.mine !== null && card.mine.isOut !== true,
+                    }"
+                  >{{ card.mine?.isOut ? '胡' : '未胡' }}</text>
+                  <text class="history__score">{{ card.mine ? formatDelta(card.mine.delta) : '—' }}</text>
+                  <text v-if="card.mine?.fan !== undefined" class="history__mode">
+                    {{ card.mine.fan }} 番
+                  </text>
+                  <text class="history__expand">{{ card.open ? '收起' : '展开' }}</text>
+                </view>
+              </button>
+
+              <view v-if="card.open" class="history__detail">
+                <view v-for="p in card.record.seats" :key="p.seat" class="history__player">
+                  <view class="history__player-head">
+                    <text class="history__player-name">
+                      {{ p.seat === card.record.ownSeat ? '我' : (p.nickname ?? `玩家${p.seat}`) }}
+                    </text>
+                    <text class="history__player-role">
+                      {{ p.lackSuit === null ? '未定缺' : `缺${['万', '筒', '条'][p.lackSuit]}` }}
+                    </text>
+                    <text class="history__player-role">{{ p.isOut ? '已胡' : '未胡' }}</text>
+                    <text v-if="p.fan !== undefined" class="history__player-role">{{ p.fan }} 番</text>
+                    <text class="history__player-score">{{ formatDelta(p.delta) }}</text>
+                  </view>
                 </view>
               </view>
             </view>

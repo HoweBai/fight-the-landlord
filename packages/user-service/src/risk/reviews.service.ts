@@ -132,11 +132,11 @@ export interface ScanReason {
 }
 
 /** 审核行的当前玩法维度（B 组 U5/D15-D16）。 */
-export type ReviewGameType = 'doudizhu' | 'paodekuai' | 'mixed' | 'platform';
+export type ReviewGameType = 'doudizhu' | 'paodekuai' | 'mahjong' | 'mixed' | 'platform';
 
 /** 旧行/未知值按 doudizhu 解释（U5：旧行缺省 ddz）。 */
 function normalizeReviewGameType(value: unknown): ReviewGameType {
-  return value === 'paodekuai' || value === 'mixed' || value === 'platform'
+  return value === 'paodekuai' || value === 'mahjong' || value === 'mixed' || value === 'platform'
     ? value
     : 'doudizhu';
 }
@@ -159,18 +159,20 @@ function parseReasonsValue(value: unknown): ScanReason[] {
  * 无 winRate 但有 devices ⇒ platform；无 reasons ⇒ null（调用方保留最新行值）。
  */
 function deriveReviewGameType(reasons: readonly ScanReason[]): ReviewGameType | null {
-  const games = new Set<'doudizhu' | 'paodekuai'>();
+  const games = new Set<'doudizhu' | 'paodekuai' | 'mahjong'>();
   let hasDevices = false;
   for (const reason of reasons) {
     if (reason.check === 'winRate') {
-      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+      const value = reason.detail.gameType;
+      games.add(value === 'paodekuai' || value === 'mahjong' ? value : 'doudizhu');
     } else if (reason.check === 'devices') {
       hasDevices = true;
     }
   }
-  if (games.has('doudizhu') && games.has('paodekuai')) return 'mixed';
+  if (games.size > 1) return 'mixed';
   if (games.has('doudizhu')) return 'doudizhu';
   if (games.has('paodekuai')) return 'paodekuai';
+  if (games.has('mahjong')) return 'mahjong';
   return hasDevices ? 'platform' : null;
 }
 
@@ -180,9 +182,11 @@ function reviewInvolvedGames(latest: LatestReviewRow): Set<GameType> {
   const column = normalizeReviewGameType(latest.game_type);
   if (column === 'doudizhu' || column === 'mixed') games.add('doudizhu');
   if (column === 'paodekuai' || column === 'mixed') games.add('paodekuai');
+  if (column === 'mahjong' || column === 'mixed') games.add('mahjong');
   for (const reason of parseReasonsValue(latest.reasons)) {
     if (reason.check === 'winRate') {
-      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+      const value = reason.detail.gameType;
+      games.add(value === 'paodekuai' || value === 'mahjong' ? value : 'doudizhu');
     }
   }
   return games;

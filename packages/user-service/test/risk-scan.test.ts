@@ -36,6 +36,7 @@ import {
   RISK_BANNED_FLAG_TTL_SECONDS,
   RISK_WIN_RATE_SQL,
   RISK_WIN_RATE_PDK_SQL,
+  RISK_WIN_RATE_MAHJONG_SQL,
   RISK_DEVICE_COUNT_SQL,
   RISK_BANNED_USERS_SQL,
   RISK_USER_STATUS_SQL,
@@ -58,6 +59,9 @@ const SPEC_RISK_WIN_RATE_SQL =
 /** 2026-10-25 跑得快胜率 SQL 逐字（spec §5.4）；2026-10-26 加 player_count + 机器人整局剔除。 */
 const SPEC_RISK_WIN_RATE_PDK_SQL =
   "SELECT p.user_id, r.player_count AS player_count, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id, r.player_count";
+/** T12 四川麻将胜率 SQL 逐字（同一口径：随机/金币场、排除机器人整局、只活跃账号）。 */
+const SPEC_RISK_WIN_RATE_MAHJONG_SQL =
+  "SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins FROM game_record_players_mahjong p JOIN game_records_mahjong r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_mahjong x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id";
 /** 规格 §2.5-2 SQL2（设备数）逐字。 */
 const SPEC_RISK_DEVICE_COUNT_SQL =
   "SELECT d.user_id, COUNT(DISTINCT d.device_id) AS devices FROM user_devices d JOIN users u ON u.id = d.user_id AND u.status='active' WHERE d.last_seen_at >= ? GROUP BY d.user_id";
@@ -242,6 +246,7 @@ class FakeScanDb {
     games: number | string;
     wins: number | string;
   }> = [];
+  mahjongWinRows: Array<{ user_id: string; games: number | string; wins: number | string }> = [];
   deviceRows: Array<{ user_id: string; devices: number | string }> = [];
   bannedIds: string[] = [];
   /** 复核读的回执（缺 ⇒ 返回 [] —— 「行已不在」形态）。 */
@@ -251,6 +256,7 @@ class FakeScanDb {
   /** true ⇒ 对应 SQL 直接 reject（单玩法/设备故障用例）。 */
   failDdz = false;
   failPdk = false;
+  failMahjong = false;
   failDevice = false;
   private held: Promise<unknown> | null = null;
 
@@ -275,6 +281,10 @@ class FakeScanDb {
       if (sql === SPEC_RISK_WIN_RATE_PDK_SQL) {
         if (this.failPdk) return Promise.reject(new Error('pdk db down（仿真）'));
         return Promise.resolve(this.pdkWinRows);
+      }
+      if (sql === SPEC_RISK_WIN_RATE_MAHJONG_SQL) {
+        if (this.failMahjong) return Promise.reject(new Error('mahjong db down（仿真）'));
+        return Promise.resolve(this.mahjongWinRows);
       }
       if (sql === SPEC_RISK_DEVICE_COUNT_SQL) {
         if (this.failDevice) return Promise.reject(new Error('device db down（仿真）'));
@@ -437,6 +447,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     expect(RISK_UPSERT_LOCK_SQL).toBe(SPEC_RISK_UPSERT_LOCK_SQL);
     expect(RISK_WIN_RATE_SQL).toBe(SPEC_RISK_WIN_RATE_SQL);
     expect(RISK_WIN_RATE_PDK_SQL).toBe(SPEC_RISK_WIN_RATE_PDK_SQL);
+    expect(RISK_WIN_RATE_MAHJONG_SQL).toBe(SPEC_RISK_WIN_RATE_MAHJONG_SQL);
     // D10：扫描 SQL 带 active 过滤（诊断详情 SQL 刻意不带，见 risk-admin 测试）。
     expect(RISK_WIN_RATE_PDK_SQL).toContain("u.status = 'active'");
     expect(RISK_WIN_RATE_SQL).toContain("u.status='active'");
@@ -1118,7 +1129,8 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       // 语句面：SQL1（斗地主，无参）→ SQL1b（跑得快，无参）→ SQL2（cutoff = now − 30d，逐毫秒）。
       expect(db.queries[0]).toEqual({ sql: SPEC_RISK_WIN_RATE_SQL, params: [] });
       expect(db.queries[1]).toEqual({ sql: SPEC_RISK_WIN_RATE_PDK_SQL, params: [] });
-      expect(db.queries[2]).toEqual({
+      expect(db.queries[2]).toEqual({ sql: SPEC_RISK_WIN_RATE_MAHJONG_SQL, params: [] });
+      expect(db.queries[3]).toEqual({
         sql: SPEC_RISK_DEVICE_COUNT_SQL,
         params: [new Date(T0 - 30 * DAY_MS)],
       });
@@ -1376,6 +1388,21 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual([]);
     });
 
+    it('四川麻将胜率命中：全局阈值 + gameType=mahjong 的 reason', async () => {
+      db.mahjongWinRows = [{ user_id: 'u-mj', games: 101, wins: 85 }];
+      await mkSvc(makeScanConfig({ minGames: 100, winRateThreshold: 0.8 })).runScanOnce(T0);
+      expect(reviews.applyScanResult).toHaveBeenCalledTimes(1);
+      const [userId, score, reasons] = reviews.applyScanResult.mock.calls[0]!;
+      expect(userId).toBe('u-mj');
+      expect(score).toBe(25);
+      expect(reasons).toEqual([
+        {
+          check: 'winRate',
+          detail: { gameType: 'mahjong', games: 101, wins: 85, winRate: 85 / 101 },
+        },
+      ]);
+    });
+
     it('斗地主阈值仍走自己的键（与 pdk 独立）', async () => {
       db.winRows = [{ user_id: 'u-ddz', games: 101, wins: 85 }];
 
@@ -1450,12 +1477,13 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       });
     });
 
-    it('查询顺序固定：斗地主 → 跑得快 → 设备 → 自愈名单 → open 计数', async () => {
+    it('查询顺序固定：斗地主 → 跑得快 → 麻将 → 设备 → 自愈名单 → open 计数', async () => {
       await mkSvc().runScanOnce(T0);
 
       expect(db.queries.map((q) => q.sql)).toEqual([
         SPEC_RISK_WIN_RATE_SQL,
         SPEC_RISK_WIN_RATE_PDK_SQL,
+        SPEC_RISK_WIN_RATE_MAHJONG_SQL,
         SPEC_RISK_DEVICE_COUNT_SQL,
         SPEC_RISK_BANNED_USERS_SQL,
         "SELECT COUNT(*) AS cnt FROM risk_reviews WHERE status='open'",
@@ -1520,9 +1548,10 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       );
       db.failDdz = true;
       db.failPdk = true;
+      db.failMahjong = true;
 
       await expect(mkSvc().runScanOnce(T0)).rejects.toThrowError(
-        /both game win-rate queries failed/,
+        /all game win-rate queries failed/,
       );
 
       expect(await labeledMetric('risk_scan_runs_total', '{result="fail"}')).toBe(failBefore + 1);

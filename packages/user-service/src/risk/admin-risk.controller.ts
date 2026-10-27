@@ -163,10 +163,11 @@ function parseReviewsQuery(query: QueryMap): {
     if (
       gameType !== 'doudizhu' &&
       gameType !== 'paodekuai' &&
+      gameType !== 'mahjong' &&
       gameType !== 'mixed' &&
       gameType !== 'platform'
     ) {
-      throw badRequest('gameType 非法：必须是 doudizhu|paodekuai|mixed|platform');
+      throw badRequest('gameType 非法：必须是 doudizhu|paodekuai|mahjong|mixed|platform');
     }
     filter.gameType = gameType;
   }

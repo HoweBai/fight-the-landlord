@@ -188,6 +188,7 @@ export interface MahjongRecordView {
   roomCode: string;
   endedAt: number;
   gameType: 'mahjong';
+  mode: 'random' | 'practice' | 'gold';
   playerCount: 4;
   dealerSeat: number;
   ownSeat: number;

@@ -13,6 +13,7 @@ import {
   type Card as ProtocolCard,
   type ClientConfig,
   type GameType,
+  type MahjongRecordView,
   type PdkRecord,
   type RoomInfo,
 } from '@fight-the-landlord/protocol';
@@ -296,7 +297,7 @@ export function rooms(gameType?: GameType): Promise<RestResponse<RoomInfo[]>> {
  * `fetchClientConfig()` 与消费它的 store 都必须用**同一个**类型
  * （各写一份就是第二真源；`BaseScoreLevel` 的本仓定义已收敛进 protocol）。
  */
-export type { BaseScoreLevel, PdkRecord, PdkRecordPlayer } from '@fight-the-landlord/protocol';
+export type { BaseScoreLevel, MahjongRecordView, PdkRecord, PdkRecordPlayer } from '@fight-the-landlord/protocol';
 
 /**
  * 片⑦：**客户端配置** —— `GET /api/config` → `{ code, data: { baseScoreLevels, friendRoomEnabled, version } }`。
@@ -513,6 +514,12 @@ export interface PdkRecordsPage {
   nextCursor: string | null;
 }
 
+/** 麻将战绩分页（同端点、`gameType=mahjong`；只给自己的初始手牌）。 */
+export interface MahjongRecordsPage {
+  items: MahjongRecordView[];
+  nextCursor: string | null;
+}
+
 /** 战绩筛选选项（全部可选；缺省 = 不过滤任何维度）。 */
 export interface FetchRecordsOptions {
   /** keyset 游标：客户端原样回传服务端签发的值，不解析不构造。 */
@@ -549,6 +556,17 @@ export function fetchPdkRecords(
 ): Promise<RestResponse<PdkRecordsPage>> {
   return fetchMyRecords({ ...options, gameType: 'paodekuai' }) as unknown as Promise<
     RestResponse<PdkRecordsPage>
+  >;
+}
+
+/**
+ * 麻将战绩（T12）：同一端点 + `gameType=mahjong`，按 `MahjongRecordView` 解码。
+ */
+export function fetchMahjongRecords(
+  options: Omit<FetchRecordsOptions, 'gameType'> = {},
+): Promise<RestResponse<MahjongRecordsPage>> {
+  return fetchMyRecords({ ...options, gameType: 'mahjong' }) as unknown as Promise<
+    RestResponse<MahjongRecordsPage>
   >;
 }
 
