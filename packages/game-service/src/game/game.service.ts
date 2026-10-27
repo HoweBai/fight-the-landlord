@@ -859,6 +859,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
           gameType: session.gameType,
           playerCount: session.playerCount,
           version: session.version,
+          startedAt: session.createdAt,
           result,
           ...(record ? { record } : {}),
         }),
@@ -902,9 +903,8 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
         for (const key of keys) {
           const roomCode = key.slice('game:session:'.length);
           try {
-            const raw = await this.redis.get(key);
-            if (!raw) continue;
-            const session = JSON.parse(raw) as AnyGameSession;
+            // 必须走 getSession/loadSession：旧会话迁移与坏形状 fail-closed 的唯一实现。
+            const session = await this.getSession<AnyGameSession>(roomCode);
             if (
               !session ||
               session.state === GameState.Ended ||
@@ -913,7 +913,6 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
             ) {
               continue;
             }
-            this.cache.set(roomCode, session);
             this.startTurnTimer(roomCode, session, {
               overrideMs: Math.max(0, session.turnDeadlineAt - Date.now()),
             });

@@ -144,6 +144,8 @@ export interface GameEvent {
    * 与 `notifyRoomEnded` 路径**两者都缺** ⇒ room 侧跳过写入 + WARN（设计 D1）。
    */
   record?: RecordEnvelope;
+  /** k3s 多副本：游戏会话创建时刻（幂等键用；旧生产者缺省）。 */
+  startedAt?: number;
 }
 
 /** 匹配事件载荷（§8.2 + R46）。 */
@@ -981,8 +983,8 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
         result && isPdkSettlementResult(result)
           ? { gameType: 'paodekuai' as const, winnerSeats: result.winnerSeats }
           : { winner: result?.winner ?? ('landlord' as const) };
-      this.broadcast(event.roomCode, 'game.finished', event.version, finishedPayload);
-      if (result) this.broadcast(event.roomCode, 'game.settlement', event.version, result);
+      this.broadcastLocal(event.roomCode, 'game.finished', event.version, finishedPayload);
+      if (result) this.broadcastLocal(event.roomCode, 'game.settlement', event.version, result);
       // §9.6 归池（R207）+ 记录片 T5（设计 D2）：**局终内务链** —— 顶部读一次
       // `room:{code}:bots`（座位对齐）供归池与记录组装**共用** ⇒ 归池、组装、投递。
       // 整链 fire-and-forget，**不阻塞**广播（局终推送是客户端的可见路径；内务失败只记日志）。
@@ -991,7 +993,9 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       // `finalizeRoomEnd` 的同步前缀会先发出昵称 Hash 的 `hgetall`；reaper 对 finished
       // 房间会立即 `deleteRoom`（删除集含 `nicknamesKey`）—— 谁先写 finished，谁就可能
       // 让昵称快照读成空（历史页间歇性「玩家N」）。
-      void this.finalizeGameEndedOnce(event, result);
+      void this.finalizeGameEndedOnce(event, result).catch((err) =>
+        this.logger.error(`finalizeGameEndedOnce failed for ${event.roomCode}: ${String(err)}`),
+      );
       // N35/R521：终局 ⇒ 派生键不再有意义（§6.4 规则 3 是「**仅对局中**下发」）⇒ 立即删掉，
       // 不留一份终局后的陈旧张数。读侧 `buildRoomPlayers()` 也已按 `status === 'playing'` 设闸，
       // 这里是**纵深防御**（也让 N31 的房间回收少一个要猜的键）。
@@ -1066,7 +1070,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     result: SettlementResult | undefined,
   ): Promise<void> {
     if (this.leader && !(await this.leader.isLeader())) return;
-    if (this.finalizer && !(await this.finalizer.claim(event.roomCode, event.version))) return;
+    if (this.finalizer && !(await this.finalizer.claim(event.roomCode, event.version, event.startedAt))) return;
     incGame(gamesEndedTotal, this.resolveGameEventType(event));
     try {
       await this.finalizeRoomEnd(event, result);
@@ -1342,6 +1346,18 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
 
   private broadcast(roomCode: string, type: string, version: number, payload: unknown): void {
     this.server?.to(roomCode).emit(type, envelope(version, payload));
+  }
+
+  /**
+   * 只投本 Pod 的 socket（事件驱动推送用）。
+   * `game.ended` 等事件被每个副本各处理一次；若走适配器广播会 N 倍重复。
+   */
+  private broadcastLocal(roomCode: string, type: string, version: number, payload: unknown): void {
+    // 单测的 server 替身可能没有 `local` 标志 ⇒ 回落 `to`（不改变生产语义）。
+    const target = (this.server as unknown as { local?: unknown })?.local ?? this.server;
+    (target as { to?: (room: string) => { emit: (t: string, m: unknown) => void } } | undefined)
+      ?.to?.(roomCode)
+      .emit(type, envelope(version, payload));
   }
 
   /**

@@ -10,6 +10,13 @@ groups:
         annotations:
           summary: '节点 {{ $labels.node }} 未 Ready'
           runbook: '看 kubectl describe node / k3s 日志；node-a 故障 = 数据层与入口同时中断。'
+      - alert: KubePodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="ftl"}[15m]) > 3
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Pod {{ $labels.pod }} 容器反复重启'
+          runbook: 'kubectl logs --previous；先看 OOMKilled/探针失败/依赖未就绪。'
       - alert: KubePodPending
         expr: kube_pod_status_phase{namespace="ftl",phase="Pending"} == 1
         for: 10m

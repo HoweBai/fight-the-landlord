@@ -9,6 +9,6 @@
 import { createGauge } from '@fight-the-landlord/shared';
 
 export const gatewayWsConnections: ReturnType<typeof createGauge> = createGauge(
-  'ws_connections',
+  'gateway_ws_connections',
   'api-gateway 当前客户端 WebSocket 连接数。',
 );

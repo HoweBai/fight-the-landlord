@@ -13,8 +13,15 @@ spec:
     metadata:
       labels: { app: edge }
     spec:
+      priorityClassName: ftl-data-critical
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      dnsConfig:
+        searches:
+          - ftl-monitoring.svc.cluster.local
+          - ftl.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
       nodeSelector: { ftl-role: data }
       securityContext: { runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001 }
       containers:
@@ -35,6 +42,10 @@ spec:
             httpGet: { path: /, port: 80 }
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 60
+            periodSeconds: 20
           volumeMounts:
             - { name: caddy-data, mountPath: /data }
       volumes:

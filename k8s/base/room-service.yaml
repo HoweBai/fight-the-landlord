@@ -5,6 +5,7 @@ metadata:
   namespace: ftl
   labels: { app: room-service }
 spec:
+  clusterIP: None
   selector: { app: room-service }
   ports:
     - { name: http, port: 3002, targetPort: 3002 }

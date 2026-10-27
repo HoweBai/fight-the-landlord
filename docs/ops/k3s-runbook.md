@@ -31,10 +31,10 @@ kubectl top nodes
 kubectl top pods -n ftl
 ```
 
-- 调 HPA 阈值/上限：改 `k8s/base/hpa.yaml` 后走发布；压测脚本：
+- 调 HPA 阈值/上限：改 `k8s/base/hpa.yaml` 后走发布；压测脚本（必须从**多个源 IP**分别运行，单源受 WS 5 条/HTTP 限流）：
 
 ```bash
-pnpm ws-load -- --url https://<域名> --users 500 --hold 300
+GW=https://<域名> pnpm --filter @fight-the-landlord/conformance ws-load -- --users 5 --hold 300
 ```
 
 ## 3. 节点维护

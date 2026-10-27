@@ -26,6 +26,7 @@ spec:
     metadata:
       labels: { app: mysql }
     spec:
+      priorityClassName: ftl-data-critical
       nodeSelector: { ftl-role: data }
       terminationGracePeriodSeconds: 120
       securityContext: { fsGroup: 999 }

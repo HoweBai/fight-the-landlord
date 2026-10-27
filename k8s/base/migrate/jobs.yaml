@@ -10,6 +10,8 @@ spec:
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
+    metadata:
+      labels: { app: migrate }
     spec:
       restartPolicy: Never
       nodeSelector: { ftl-role: data }
@@ -57,6 +59,8 @@ spec:
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
+    metadata:
+      labels: { app: migrate }
     spec:
       restartPolicy: Never
       containers:
@@ -93,6 +97,8 @@ spec:
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
+    metadata:
+      labels: { app: migrate }
     spec:
       restartPolicy: Never
       containers:
@@ -135,6 +141,8 @@ spec:
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
+    metadata:
+      labels: { app: migrate }
     spec:
       restartPolicy: Never
       containers:

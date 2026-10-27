@@ -30,6 +30,7 @@ spec:
         prometheus.io/port: "9003"
         prometheus.io/path: "/metrics"
     spec:
+      priorityClassName: ftl-data-critical
       nodeSelector: { ftl-role: data }
       terminationGracePeriodSeconds: 120
       containers:

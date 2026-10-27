@@ -431,6 +431,23 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         client.emit('system.error', { version: 0, payload: { code: 10007, message: err.message } });
       });
 
+      /**
+       * 下游被服务端主动断开（跨 Pod 顶替 `disconnect(true)`）时，必须同步收掉客户端连接：
+       * 否则旧设备成为僵尸连接 —— 收不到推送、发消息全进无界队列。
+       */
+      sock.on('disconnect', (reason: string) => {
+        if (clientGone) return;
+        this.logger.warn(`room-service disconnected for client ${client.id}: ${reason}`);
+        this.dropPeer(client.id);
+        if (reason === 'io server disconnect') {
+          client.emit('system.error', {
+            version: 0,
+            payload: { code: ErrCode.FORBIDDEN, message: '账号已在其他设备登录' },
+          });
+          client.disconnect(true);
+        }
+      });
+
       // 下游 ack 回程 → 客户端 ack。
       // 回程的事件名就是网关生成的 correlation id，因此任何**不在**
       // 契约 S→C 清单里的事件名都只可能是 ack 回程，不会与推送混淆。

@@ -73,8 +73,12 @@ echo "✅ 备份完成：$MANIFEST"
 "${kc[@]}" -n ftl-monitoring port-forward svc/pushgateway 19091:9091 >/dev/null 2>&1 &
 pf=$!
 sleep 2
-printf 'backup_last_success_timestamp_seconds %s\n' "$(date +%s)" \
-  | curl -fsS --max-time 10 --data-binary @- http://127.0.0.1:19091/metrics/job/backup >/dev/null || true
+if ! printf 'backup_last_success_timestamp_seconds %s\n' "$(date +%s)" \
+  | curl -fsS --max-time 10 --data-binary @- http://127.0.0.1:19091/metrics/job/backup >/dev/null; then
+  kill "$pf" 2>/dev/null || true
+  echo '❌ 备份成功但 Pushgateway 指标推送失败（FtlBackupStale 将失效）' >&2
+  exit 1
+fi
 kill "$pf" 2>/dev/null || true
 
 find "$DEST" -maxdepth 1 -type f -mtime "+$RETENTION_DAYS" -delete

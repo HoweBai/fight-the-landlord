@@ -31,7 +31,8 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 
-  async close(): Promise<void> {
+  async close(server?: any): Promise<void> {
+    await super.close(server);
     await Promise.allSettled([
       this.pubClient?.quit() ?? Promise.resolve(),
       this.subClient?.quit() ?? Promise.resolve(),

@@ -3,7 +3,8 @@ import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 
 const KEY = 'ftl:room:leader';
-const TTL_MS = 10_000;
+// 120s = 3× 最慢循环周期（reaper 60s）；每轮 tick 续约，单轮 >120s 才会双执行。
+const TTL_MS = 120_000;
 
 const RENEW = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then

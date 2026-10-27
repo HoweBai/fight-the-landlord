@@ -1,4 +1,5 @@
 # 默认拒绝 + 显式放行。hostNetwork 的 edge 不受 NetworkPolicy 约束（见 spec §4.3）。
+# 来源身份统一用 `app` 标签；mac 迁移 Job 用 `app: migrate`。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -38,7 +39,25 @@ spec:
       ports:
         - { protocol: TCP, port: 3000 }
 ---
-# 业务面互访：gateway/room/game/robot 之间走 HTTP/RPC。
+# Caddy 直连的回调面：支付异步通知 / 收银台、广告激励回调。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-callbacks
+  namespace: ftl
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [payment-service, currency-service] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: NODE_A_IP_PLACEHOLDER/32 }
+      ports:
+        - { protocol: TCP, port: 3007 }
+        - { protocol: TCP, port: 3004 }
+---
+# 业务面互访：所有 ftl 应用 Pod 之间（MySQL/Redis 另有更严的入站策略）。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -47,7 +66,11 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: app, operator: In, values: [api-gateway, room-service, game-service, robot-service] }
+      - key: app
+        operator: In
+        values:
+          [api-gateway, room-service, game-service, robot-service,
+           user-service, config-service, currency-service, payment-service, douzero]
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
@@ -56,7 +79,7 @@ spec:
     - to:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl } }
 ---
-# Redis 使用方：全部业务服务。
+# Redis 使用方：全部业务服务 + 迁移 Job。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -71,11 +94,11 @@ spec:
             matchExpressions:
               - key: app
                 operator: In
-                values: [api-gateway, room-service, game-service, robot-service, user-service, config-service, currency-service, payment-service]
+                values: [api-gateway, room-service, game-service, robot-service, user-service, config-service, currency-service, payment-service, migrate]
       ports:
         - { protocol: TCP, port: 6379 }
 ---
-# MySQL 使用方：只有四个持库服务。
+# MySQL 使用方：只有四个持库服务 + 迁移 Job。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -90,11 +113,11 @@ spec:
             matchExpressions:
               - key: app
                 operator: In
-                values: [user-service, config-service, currency-service, payment-service]
+                values: [user-service, config-service, currency-service, payment-service, migrate]
       ports:
         - { protocol: TCP, port: 3306 }
 ---
-# 四持库服务与 monitoring 命名空间的出站（DB/配置拉取）。
+# 四持库服务与迁移 Job 的出站。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -103,7 +126,7 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: app, operator: In, values: [user-service, config-service, currency-service, payment-service] }
+      - { key: app, operator: In, values: [user-service, config-service, currency-service, payment-service, migrate] }
   policyTypes: [Egress]
   egress:
     - to:
@@ -116,6 +139,21 @@ spec:
         - { protocol: TCP, port: 6379 }
     - to:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl } }
+---
+# 外部 HTTPS：payment-service 调支付宝（渠道域名可配置，放行 443）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-payment-external
+  namespace: ftl
+spec:
+  podSelector: { matchLabels: { app: payment-service } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        - { protocol: TCP, port: 443 }
 ---
 # Prometheus / alert-relay / am-renderer 访问业务指标与 config RPC。
 apiVersion: networking.k8s.io/v1

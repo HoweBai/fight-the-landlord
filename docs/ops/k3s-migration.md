@@ -28,11 +28,14 @@ kubectl apply -k k8s/bootstrap
 
 - [ ] 创建 Secret（**不落 git**）：`ftl-secrets` 含
   `DB_PASSWORD`、`JWT_SECRET`、`ADMIN_PASSWORD`、`ADMIN_JWT_SECRET`、`AGENT_JWT_SECRET`、`AGENT_PHONE_HMAC_KEY`、`INTERNAL_SERVICE_TOKEN`、`PAY_CONFIG_ENC_KEY`、`PAY_CHANNEL_PULL_TOKEN`、`NOTIFY_CHANNEL_PULL_TOKEN`、`AD_CHANNEL_PULL_TOKEN`、`GRAFANA_ADMIN_PASSWORD`、`GRAFANA_ROOT_URL`、`SITE_ADDRESS`、`TLS_MODE`。
-- [ ] 创建 `ghcr-pull`（只读 PAT）：
+  ⚠️ **`ftl` 与 `ftl-monitoring` 两个命名空间各建一份**（Prometheus/Grafana/Alertmanager 在同命名空间解析 Secret）：
+  - [ ] 创建 `ghcr-pull`（只读 PAT）——**两个命名空间各一份**：
 
 ```bash
-kubectl -n ftl create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io --docker-username=<user> --docker-password=<read-only-pat>
+for ns in ftl ftl-monitoring; do
+  kubectl -n "$ns" create secret docker-registry ghcr-pull \
+    --docker-server=ghcr.io --docker-username=<user> --docker-password=<read-only-pat>
+done
 ```
 
   ⚠️ 清单尚未统一引用 `imagePullSecrets`；应用前确认每个 Pod 模板已加（或给 `ftl-deployer`/default SA 绑定）。
@@ -63,10 +66,10 @@ curl -sfL https://get.k3s.io | K3S_URL=https://<node-b-ip>:6443 K3S_TOKEN=<token
 ```
 
 5. 校验：`kubectl get nodes` 两节点 Ready；跨节点 Pod 网络连通；`kubectl get sc local-path -o yaml` 的 `volumeBindingMode=WaitForFirstConsumer`。
-6. 创建 PVC 并确认 Bound：
+6. 创建 PVC 并确认 Bound（**只应用数据层**，不含业务镜像占位符）：
 
 ```bash
-kubectl apply -k k8s/overlays/prod
+kubectl apply -k k8s/overlays/data
 kubectl -n ftl get pvc
 kubectl -n ftl-monitoring get pvc
 ```

@@ -46,7 +46,7 @@ kind: Role
 metadata: { name: ftl-deployer, namespace: ftl-monitoring }
 rules:
   - apiGroups: [""]
-    resources: [pods, pods/exec, pods/log, services, configmaps, persistentvolumeclaims, serviceaccounts]
+    resources: [pods, pods/exec, pods/log, pods/portforward, services, configmaps, persistentvolumeclaims, serviceaccounts]
     verbs: [get, list, watch, create, update, patch, delete]
   - apiGroups: [""]
     resources: [secrets]

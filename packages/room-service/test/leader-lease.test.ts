@@ -27,7 +27,7 @@ describe('FinalizationGuard', () => {
     const guard = new FinalizationGuard(redis);
     await expect(guard.claim('r1', 7)).resolves.toBe(true);
     await expect(guard.claim('r1', 7)).resolves.toBe(false);
-    expect(redis.set).toHaveBeenCalledWith('room:finalized:r1:7', '1', 'EX', 86400, 'NX');
+    expect(redis.set).toHaveBeenCalledWith('room:finalized:r1:legacy:7', '1', 'EX', 86400, 'NX');
   });
 });
 

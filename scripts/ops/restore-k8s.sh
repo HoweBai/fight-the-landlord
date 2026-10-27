@@ -16,11 +16,13 @@ done
 [ "$YES" = 1 ] || { echo '恢复会覆盖数据；确认后加 --yes' >&2; exit 2; }
 
 kc=(kubectl --kubeconfig "$KUBECONFIG")
+# 先删 HPA：否则 minReplicas 会立刻把副本拉回，恢复期间业务会连到半恢复的库。
+"${kc[@]}" -n ftl delete hpa --all --ignore-not-found >/dev/null
+"${kc[@]}" -n ftl scale deploy --all --replicas=0
+"${kc[@]}" -n ftl scale statefulset/game-service --replicas=0
 live="$("${kc[@]}" -n ftl get deploy -o jsonpath='{range .items[*]}{.spec.replicas}{"\n"}{end}' | grep -v '^0$' || true)"
 if [ -n "$live" ]; then
-  echo '❌ 仍有 Deployment 副本 > 0。先执行：' >&2
-  echo '   kubectl -n ftl scale deploy --all --replicas=0' >&2
-  echo '   kubectl -n ftl scale statefulset/game-service --replicas=0' >&2
+  echo '❌ 仍有 Deployment 副本 > 0，恢复中止' >&2
   exit 1
 fi
 
@@ -36,7 +38,7 @@ if [ -n "$CADDY_FILE" ]; then
   echo '── 恢复 caddy-data（一次性 Pod）──'
   name="caddy-restore-$RANDOM"
   "${kc[@]}" -n ftl run "$name" --rm -i --restart=Never --image=alpine:3.20 \
-    --overrides='{"apiVersion":"v1","spec":{"containers":[{"name":"restore","image":"alpine:3.20","stdin":true,"stdinOnce":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"caddy-data"}}]}}' \
+    --overrides='{"apiVersion":"v1","spec":{"nodeSelector":{"ftl-role":"data"},"containers":[{"name":"restore","image":"alpine:3.20","stdin":true,"stdinOnce":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"caddy-data"}}]}}' \
     < "$CADDY_FILE"
 fi
 

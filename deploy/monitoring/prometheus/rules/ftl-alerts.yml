@@ -73,7 +73,7 @@ groups:
 
       # ── WS 连接数（8000 = M0.3 既定线，监控先到岗）──────────────────────
       - alert: WsConnectionsHigh
-        expr: ws_connections > 4000
+        expr: sum(ws_connections) > 4000
         for: 10m
         labels:
           severity: warning
@@ -81,7 +81,7 @@ groups:
           summary: WS 连接数 > 4000
           runbook: 先看是否推广/活动带来的正常增长；再看 `ratelimit:ws-conn:*` 是否有单 IP 刷连接
       - alert: WsConnectionsCritical
-        expr: ws_connections > 8000
+        expr: sum(ws_connections) > 8000
         for: 5m
         labels:
           severity: critical

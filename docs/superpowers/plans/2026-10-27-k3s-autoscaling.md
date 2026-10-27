@@ -603,3 +603,40 @@ A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 →（计划审查后）B1 �
 | `slice-07.4-pipeline --render` | 待重跑（k3s job 已收回 deploy job） |
 
 **未在本机验证（预演环境必做）**：k3s 渲染/apply、镜像拉取、HPA 扩缩、2 副本跨 Pod 回归、备份/恢复演练、迁移夜全流程（spec §10.4）。
+
+## 代码审查记录（2026-10-27，独立 reviewer）
+
+审查范围：`dev..HEAD` 93 文件。Critical 7 / Important 16 / Minor 5。处置：
+
+| # | 发现 | 处置 |
+|---|---|---|
+| C1 | NetworkPolicy 未选中 user/config/currency/payment/douzero，登录不可用 | **已修**：allow-app-mesh 扩到全部业务 Pod；edge 回调面单独放行 |
+| C2 | 迁移 Job Pod 无 label，被 default-deny 切断 MySQL | **已修**：template 打 `app: migrate`；mysql/redis/egress 放行 migrate |
+| C3 | ftl-monitoring 缺 ftl-secrets/ghcr-pull | **已修**：手册要求两个命名空间各建一份；preflight 双检查 |
+| C4 | game.ended 每副本经 adapter 广播 ⇒ N 倍重复 | **已修**：新增 broadcastLocal（server.local.to），事件驱动只投本地；补单测 |
+| C5 | payment 外部 HTTPS 出站被拒 | **已修**：allow-payment-external 443 |
+| C6 | edge 直连 payment/currency 回调被拒 | **已修**：allow-edge-callbacks ipBlock node-a |
+| C7 | finalizeGameEndedOnce 的 leader/幂等 await 无 catch | **已修**：调用点 `.catch` |
+| I1 | 跨 Pod 顶替后旧客户端成僵尸、队列无界 | **已修**：gateway 监听下游 disconnect，`io server disconnect` 时通知并断开客户端 |
+| I2 | RedisIoAdapter.close 丢 server | **已修**：`close(server)` 调 super 后关闭 Redis clients |
+| I3 | LeaderLease TTL 10s 与 sweeper 周期相等 | **已修**：TTL 120s |
+| I4 | 幂等键房间号复用碰撞 | **已修**：game.ended 带 startedAt，键含会话创建时刻 |
+| I5 | 部署失败不自动回滚 | **已修**：deploy-k3s.sh EXIT trap rollout undo |
+| I6 | 迁移手册直接 apply 含占位符的 prod overlay | **已修**：新增 data overlay，手册只建数据层 |
+| I7 | 备份指标 port-forward 无权限且失败被吞 | **已修**：RBAC 加 pods/portforward；push 失败退出非零 |
+| I8 | k3s 运维脚本未投递 | **已修**：deploy-k3s.sh 投递 ftl-ops 并调 install-cron-k8s |
+| I9 | restore 与 HPA/本地卷冲突 | **已修**：先删 HPA、scale 到 0；caddy 恢复 Pod 钉 node-a |
+| I10 | 数据层无 PriorityClass | **已修**：bootstrap 建 ftl-data-critical/ftl-monitoring 并引用 |
+| I11 | Redis maxmemory 与 limit 相等 | **已修**：limit 1Gi（maxmemory 512mb） |
+| I12 | edge 无法解析跨命名空间 grafana | **已修**：dnsConfig searches 加 ftl-monitoring |
+| I13 | 旧告警在 k8s 标签下失效 | **部分修**：新增 KubePodCrashLooping；旧 ContainerRestartFlapping 在 k8s 不生效（登记）；WS 阈值改 sum |
+| I14 | 恢复绕过 loadSession 迁移 | **已修**：recoverTurnTimers 改走 getSession/loadSession；测试夹具补形状 |
+| I15 | ws-load 单 IP 只能 5 条 | **已修**：>5 且未 `--allow-single-ip` 直接拒绝，要求多源 IP |
+| I16 | 多副本回归只覆盖顶替 | **登记**：跨 Pod 广播/结算唯一执行由单测 + 预演人工对局覆盖；环境无法强制两连接落不同 Pod |
+| M1 | adapter 单测恒真 | **已修**：断言 `server.of('/').adapter` 是 FakeAdapter 实例 |
+| M2 | runbook 压测命令不存在 | **已修**：改为 conformance 包命令 |
+| M3 | room-service Service 非 headless | **已修**：clusterIP None |
+| M4 | rollout 等待漏 edge/监控 | **已修**：补 edge、prometheus-adapter、DaemonSet |
+| M5 | edge 缺 liveness | **已修**：补 livenessProbe |
+
+**仍未覆盖/需预演环境验证**：跨 Pod 广播与结算恰一次的自动化（I16）、旧告警在 k8s 的标签适配（I13）、HPA 实际扩缩、备份/恢复演练、迁移夜全流程。

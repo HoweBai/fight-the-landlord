@@ -29,8 +29,10 @@ sc="$(kubectl get storageclass local-path -o jsonpath='{.volumeBindingMode}' 2>/
 [ "$sc" = 'WaitForFirstConsumer' ] || bad "StorageClass local-path 的 volumeBindingMode=$sc（期望 WaitForFirstConsumer）"
 
 say '── Secret / 镜像 ──'
-kubectl -n "$NS" get secret ftl-secrets >/dev/null 2>&1 || bad '缺 Secret ftl-secrets（按 runbook 创建）'
-kubectl -n "$NS" get secret ghcr-pull >/dev/null 2>&1 || bad '缺 imagePullSecret ghcr-pull'
+for ns in ftl ftl-monitoring; do
+  kubectl -n "$ns" get secret ftl-secrets >/dev/null 2>&1 || bad "缺 Secret $ns/ftl-secrets（按 runbook 创建，两个命名空间各一份）"
+  kubectl -n "$ns" get secret ghcr-pull >/dev/null 2>&1 || bad "缺 imagePullSecret $ns/ghcr-pull"
+done
 
 say '── 入口端口 ──'
 if command -v ss >/dev/null 2>&1; then
@@ -44,6 +46,8 @@ fi
 say '── 备份目录 ──'
 mkdir -p /home/ubuntu/ftl-backups
 [ -w /home/ubuntu/ftl-backups ] || bad '/home/ubuntu/ftl-backups 不可写'
+kubectl auth can-i create pods/portforward -n ftl-monitoring --kubeconfig "$KUBECONFIG" | grep -qx yes \
+  || bad '部署账户无 pods/portforward（备份新鲜度指标推不进去）'
 
 if [ "$fail" -ne 0 ]; then
   echo '❌ 预检未通过' >&2

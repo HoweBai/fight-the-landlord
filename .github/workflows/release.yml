@@ -289,4 +289,3 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
           bash scripts/ops/check-backup-fresh.sh
-

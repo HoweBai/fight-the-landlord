@@ -56,9 +56,13 @@ describe('ConnectionRegistry（跨 Pod 顶替）', () => {
 
 describe('RedisIoAdapter', () => {
   it('createIOServer 挂载适配器构造函数', () => {
+    class FakeAdapter {
+      init() {}
+      close() {}
+    }
     const adapter = new RedisIoAdapter({} as any);
-    (adapter as any).adapterConstructor = class FakeAdapter { init() {} close() {} };
+    (adapter as any).adapterConstructor = FakeAdapter;
     const server = adapter.createIOServer(0, {});
-    expect(typeof server.adapter).toBe('function');
+    expect(server.of('/').adapter).toBeInstanceOf(FakeAdapter);
   });
 });

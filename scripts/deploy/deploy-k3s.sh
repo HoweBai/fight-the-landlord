@@ -56,7 +56,12 @@ Q_TAG="$(printf '%q' "$TAG")"
 Q_SITE="$(printf '%q' "$SITE_URL")"
 Q_NODE_A="$(printf '%q' "$NODE_A_IP")"
 
-echo "───── 投递 k8s/ ─────"
+echo "───── 投递 k8s/ 与运维脚本 ─────"
+ssh_do "mkdir -p /home/ubuntu/ftl-ops $Q_REMOTE_DIR && chmod 700 /home/ubuntu/ftl-ops"
+scp -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new \
+  scripts/ops/backup-k8s.sh scripts/ops/restore-k8s.sh scripts/ops/install-cron-k8s.sh \
+  "$TARGET:/home/ubuntu/ftl-ops/"
+ssh_do "chmod 700 /home/ubuntu/ftl-ops/*.sh"
 tar -czf - k8s | ssh_do "rm -rf $Q_REMOTE_DIR && mkdir -p $Q_REMOTE_DIR && tar -xzf - -C $Q_REMOTE_DIR"
 
 echo "───── apply + 迁移 + rollout + 冒烟 ─────"
@@ -75,6 +80,21 @@ if grep -Rq 'PLACEHOLDER' "$tmp" --include='*.yaml' --include='*.yml'; then
 fi
 
 kc=(kubectl --kubeconfig "$KUBECONFIG_PATH")
+rollback_on_fail() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ 部署失败（rc=$rc）——尝试 rollout undo 到上一 revision" >&2
+    for d in api-gateway room-service robot-service user-service config-service currency-service payment-service douzero edge; do
+      "${kc[@]}" -n ftl rollout undo "deployment/$d" >/dev/null 2>&1 || true
+    done
+    for s in mysql redis game-service; do
+      "${kc[@]}" -n ftl rollout undo "statefulset/$s" >/dev/null 2>&1 || true
+    done
+    "${kc[@]}" -n ftl get pods -o wide >&2 || true
+  fi
+  exit "$rc"
+}
+trap rollback_on_fail EXIT
 "${kc[@]}" -n ftl delete job -l app=migrate --ignore-not-found >/dev/null
 
 echo "───── 阶段一：迁移 Job（先于业务滚动）─────"
@@ -92,8 +112,9 @@ echo "───── 阶段二：业务与监控 ─────"
 "${kc[@]}" apply -k "$tmp/overlays/prod"
 
 echo "───── rollout ─────"
-for d in api-gateway room-service robot-service user-service config-service currency-service payment-service douzero; do
-  "${kc[@]}" -n ftl rollout status "deployment/$d" --timeout=300s
+for d in api-gateway room-service robot-service user-service config-service currency-service payment-service douzero edge prometheus-adapter; do
+  "${kc[@]}" -n ftl rollout status "deployment/$d" --timeout=300s 2>/dev/null \
+    || "${kc[@]}" -n ftl-monitoring rollout status "deployment/$d" --timeout=300s
 done
 for s in mysql redis game-service; do
   "${kc[@]}" -n ftl rollout status "statefulset/$s" --timeout=300s
@@ -101,6 +122,12 @@ done
 for d in prometheus grafana alertmanager alert-relay am-renderer kube-state-metrics pushgateway; do
   "${kc[@]}" -n ftl-monitoring rollout status "deployment/$d" --timeout=300s
 done
+for d in node-exporter cadvisor; do
+  "${kc[@]}" -n ftl-monitoring rollout status "daemonset/$d" --timeout=300s
+done
+
+echo "───── 安装备份 cron ─────"
+KUBECONFIG_PATH="$KUBECONFIG_PATH" bash /home/ubuntu/ftl-ops/install-cron-k8s.sh
 
 echo "───── imagePullSecret 断言 ─────"
 for ns in ftl ftl-monitoring; do

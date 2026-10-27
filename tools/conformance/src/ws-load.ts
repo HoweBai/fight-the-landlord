@@ -21,7 +21,14 @@ async function main(): Promise<void> {
   const users = arg('users', 100);
   const hold = arg('hold', 120);
   const batch = arg('batch', 50);
+  const allowSingleIp = process.argv.includes('--allow-single-ip');
   if (!Number.isFinite(users) || users <= 0) throw new Error('--users 必须是正整数');
+  if (users > 5 && !allowSingleIp) {
+    throw new Error(
+      '单源 IP 受 gateway 的 WS 5 连接上限（且注册受 HTTP IP 限流）—— ' +
+        '容量压测必须从多个源 Pod/机器分别运行，或仅做冒烟时加 --allow-single-ip。',
+    );
+  }
 
   console.log(`目标 ${GATEWAY_URL}：${users} 个连接，保持 ${hold}s`);
   const clients: HarnessClient[] = [];

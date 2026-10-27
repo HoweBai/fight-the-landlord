@@ -20,6 +20,7 @@ spec:
   template:
     metadata: { labels: { app: prometheus } }
     spec:
+      priorityClassName: ftl-monitoring
       serviceAccountName: prometheus
       nodeSelector: { ftl-role: data }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
@@ -64,6 +65,7 @@ spec:
   template:
     metadata: { labels: { app: grafana } }
     spec:
+      priorityClassName: ftl-monitoring
       nodeSelector: { ftl-role: data }
       securityContext: { runAsUser: 472, runAsGroup: 472, fsGroup: 472 }
       containers:
@@ -106,6 +108,7 @@ spec:
   template:
     metadata: { labels: { app: alertmanager } }
     spec:
+      priorityClassName: ftl-monitoring
       nodeSelector: { ftl-role: data }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
       containers:
@@ -145,6 +148,7 @@ spec:
   template:
     metadata: { labels: { app: alert-relay } }
     spec:
+      priorityClassName: ftl-monitoring
       nodeSelector: { ftl-role: data }
       securityContext: { fsGroup: 1000 }
       containers:
@@ -177,6 +181,7 @@ spec:
   template:
     metadata: { labels: { app: am-renderer } }
     spec:
+      priorityClassName: ftl-monitoring
       nodeSelector: { ftl-role: data }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
       containers:
@@ -216,6 +221,7 @@ spec:
   template:
     metadata: { labels: { app: node-exporter } }
     spec:
+      priorityClassName: ftl-monitoring
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       tolerations: [{ operator: Exists }]
@@ -250,6 +256,7 @@ spec:
   template:
     metadata: { labels: { app: cadvisor } }
     spec:
+      priorityClassName: ftl-monitoring
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       tolerations: [{ operator: Exists }]
@@ -302,6 +309,7 @@ spec:
   template:
     metadata: { labels: { app: kube-state-metrics } }
     spec:
+      priorityClassName: ftl-monitoring
       serviceAccountName: kube-state-metrics
       containers:
         - name: kube-state-metrics
@@ -329,6 +337,7 @@ spec:
   template:
     metadata: { labels: { app: pushgateway } }
     spec:
+      priorityClassName: ftl-monitoring
       containers:
         - name: pushgateway
           image: prom/pushgateway:v1.9.0

@@ -17,6 +17,15 @@ data:
           matches: '^ws_connections$'
           as: 'ws_connections'
         metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (pod, namespace)'
+      - seriesQuery: 'gateway_ws_connections{namespace="ftl"}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod: { resource: pod }
+        name:
+          matches: '^gateway_ws_connections$'
+          as: 'gateway_ws_connections'
+        metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (pod, namespace)'
 ---
 apiVersion: v1
 kind: Service
@@ -36,6 +45,7 @@ spec:
   template:
     metadata: { labels: { app: prometheus-adapter } }
     spec:
+      priorityClassName: ftl-monitoring
       serviceAccountName: prometheus-adapter
       containers:
         - name: prometheus-adapter
