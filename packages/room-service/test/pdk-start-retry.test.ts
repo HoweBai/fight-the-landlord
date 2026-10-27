@@ -117,6 +117,36 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
     expect(redis.hashes.has(botsKey('PDK001'))).toBe(false);
   });
 
+  it('重试恢复已入座机器人：acquire 透传 gameType=paodekuai，原绑定不被替换（审查 P0-3）', async () => {
+    await pdkRoom('PDK003');
+    configCache.pdkRules.mockImplementation(() => {
+      throw new Error('bad config');
+    });
+
+    // 第一次：正常补位（acquireBot 已正确传 gameType），机器人入座并落绑定
+    await service.startRoomOutcome('PDK003', { strict: false });
+    const firstAcquires = calls.filter((c) => c.pattern === RPC_PATTERNS.robotAcquire);
+    expect(firstAcquires).toHaveLength(2);
+    for (const call of firstAcquires) {
+      expect((call.data as { gameType?: string }).gameType).toBe('paodekuai');
+    }
+
+    // 第二次：房已满 ⇒ 走 recoverBotBindings 恢复分支（一次 acquire 覆盖所有缺座）
+    calls.length = 0;
+    await service.startRoomOutcome('PDK003', { strict: false });
+    const recovered = calls.filter((c) => c.pattern === RPC_PATTERNS.robotAcquire);
+    expect(recovered).toHaveLength(1);
+    expect((recovered[0]!.data as { seats: number[] }).seats).toEqual([1, 2]);
+    expect(
+      (recovered[0]!.data as { gameType?: string }).gameType,
+      '恢复分支漏传 gameType 会按 doudizhu 处理并换绑错池机器人',
+    ).toBe('paodekuai');
+
+    // 原绑定未被替换（stub 幂等返回同一 botId）
+    const bound = redis.hashes.get(botsKey('PDK003'))!;
+    expect(Object.values(bound).sort()).toEqual(['bot-1', 'bot-2']);
+  });
+
   it('retryable 不取消房/不归池（票与房都留待下一轮）', async () => {
     await pdkRoom('PDK002', ['u1', 'u2', 'u3']);
     configCache.pdkRules.mockImplementation(() => {
