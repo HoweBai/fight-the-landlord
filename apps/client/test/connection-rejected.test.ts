@@ -118,7 +118,7 @@ describe('N15：服务端踢线后的重连处置（R166）', () => {
     socket.emitDisconnect('io server disconnect');
 
     expect(reasons[0]!.message).toBe(
-      '同一网络的连接数已达上限。请关闭其它窗口或设备后点「重新连接」再试。',
+      '同一网络的连接数已达上限，请关闭其它窗口或设备。',
     );
   });
 

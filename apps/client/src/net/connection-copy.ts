@@ -35,7 +35,7 @@ export interface ConnectionCopy {
 }
 
 /** 10006 并发上限的完整玩家话术（死态三面 + socket 踢线共用，逐字一致）。 */
-const RATE_LIMITED_MESSAGE = '同一网络的连接数已达上限。请关闭其它窗口或设备后点「重新连接」再试。';
+const RATE_LIMITED_MESSAGE = '同一网络的连接数已达上限，请关闭其它窗口或设备。';
 
 /**
  * 终态（`phase === 'dead'`）的标题/正文/动作策略。
@@ -60,7 +60,7 @@ export function connectionDeadCopy(state: ConnectionState): ConnectionCopy {
   if (state.deadReason === 'idle') {
     return {
       title: '连接已暂停',
-      message: '长时间未操作，连接已暂停。点「重新连接」即可继续。',
+      message: '长时间未操作，连接已暂停。',
       canRetry: true,
       canRelogin: false,
     };
@@ -104,7 +104,7 @@ export function connectionDeadCopy(state: ConnectionState): ConnectionCopy {
   }
   return {
     title: '连接已断开',
-    message: '多次自动重连仍未成功，请检查网络后手动重试。',
+    message: '多次自动重连仍未成功。',
     canRetry,
     canRelogin,
   };
@@ -123,5 +123,5 @@ export function connectionKickMessage(code: number | null): string {
   if (code === ErrCode.RATE_LIMITED) {
     return RATE_LIMITED_MESSAGE;
   }
-  return code === null ? '服务端主动断开了连接。' : '连接已被服务端断开，请重新连接。';
+  return code === null ? '服务端主动断开了连接。' : '连接已被服务端断开。';
 }
