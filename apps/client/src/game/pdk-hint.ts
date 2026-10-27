@@ -15,7 +15,6 @@ import {
 } from '@fight-the-landlord/protocol';
 
 const byCard = (a: Card, b: Card): number => a.r - b.r || a.s - b.s;
-const cardKey = (c: Card): string => `${c.r},${c.s}`;
 
 /** 一手牌的**张数**（与规则解析结果一一对应；仅用于确定枚举大小）。 */
 function handSize(parsed: PdkParsedHand): number {
@@ -47,21 +46,51 @@ function handSize(parsed: PdkParsedHand): number {
   }
 }
 
-function combinations(hand: readonly Card[], size: number, visit: (cards: Card[]) => void): void {
-  if (size < 1 || size > hand.length) return;
+interface RankGroup {
+  rank: number;
+  /** 同点牌按花色升序；枚举时取前 k 张（花色不影响牌型/比较）。 */
+  cards: Card[];
+}
+
+/** 按点数分组（升序）。 */
+function groupByRank(sorted: readonly Card[]): RankGroup[] {
+  const groups = new Map<number, Card[]>();
+  for (const card of sorted) {
+    const at = groups.get(card.r);
+    if (at) at.push(card);
+    else groups.set(card.r, [card]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([rank, cards]) => ({ rank, cards }));
+}
+
+/**
+ * 枚举**点数多重集**（每个点数取 0..该点张数），而不是任意牌子集。
+ *
+ * 为什么这样等价且更快：
+ *  - 牌型/比较只看点数多重集，同点取哪几张花色对结果无影响 ⇒ 每个多重集取
+ *    花色最小的代表即可；
+ *  - 枚举量 = Π(count+1)（最坏 16 张约 1–2 万），远小于 Σ C(16,k) ≈ 6.5 万；
+ *  - 14/16 张组合（7/8 连对、4 连三+4 单）天然包含，不再依赖张数白名单。
+ *
+ * 候选仍逐手交 `parsePdkHand` 裁决 —— 客户端不实现规则。
+ */
+function enumerateRankSelections(groups: readonly RankGroup[], visit: (cards: Card[]) => void): void {
   const picked: Card[] = [];
-  const dfs = (start: number, remaining: number): void => {
-    if (remaining === 0) {
-      visit([...picked]);
+  const dfs = (index: number): void => {
+    if (index === groups.length) {
+      if (picked.length > 0) visit([...picked]);
       return;
     }
-    for (let i = start; i <= hand.length - remaining; i += 1) {
-      picked.push(hand[i]!);
-      dfs(i + 1, remaining - 1);
-      picked.pop();
+    const group = groups[index]!;
+    for (let take = 0; take <= group.cards.length; take += 1) {
+      for (let i = 0; i < take; i += 1) picked.push(group.cards[i]!);
+      dfs(index + 1);
+      for (let i = 0; i < take; i += 1) picked.pop();
     }
   };
-  dfs(0, size);
+  dfs(0);
 }
 
 interface Candidate {
@@ -69,8 +98,12 @@ interface Candidate {
   parsed: PdkParsedHand;
 }
 
-/** 候选去重键（同一手牌的不同顺序 / 不同花色选择只保留一份）。 */
-const dedupeKey = (cards: readonly Card[]): string => cards.map(cardKey).sort().join('|');
+/** 候选去重键：点数多重集（花色已归一成最小代表）。 */
+const dedupeKey = (cards: readonly Card[]): string =>
+  cards
+    .map((c) => c.r)
+    .sort((a, b) => a - b)
+    .join(',');
 
 function rankSeq(cards: readonly Card[]): number[] {
   return cards.map((c) => c.r).sort((a, b) => a - b);
@@ -91,8 +124,8 @@ function compareCandidate(a: Candidate, b: Candidate): number {
 /**
  * 枚举提示候选。
  *
- * - `target === null`（首出）：枚举所有常见张数（1–12、15）的组合，保留能被解析成合法牌型的；
- * - 跟牌：只枚举「同型张数」与「炸弹 4 张」两种大小，再按 `canBeatPdk` 过滤。
+ * - `target === null`（首出）：按点数多重集枚举**全部**合法牌型（含 14/16 张）；
+ * - 跟牌：只保留「同型张数」与「炸弹 4 张」两种大小，再按 `canBeatPdk` 过滤。
  *
  * 返回按「非炸弹 → 主键小 → 张数少」排序；**无解 ⇒ `[]`**（页面隐藏/降级提示入口）。
  */
@@ -103,28 +136,22 @@ export function suggestPdkPlays(
 ): Card[][] {
   if (hand.length === 0) return [];
   const sorted = [...hand].sort(byCard);
-  const sizes: number[] = [];
-  if (target) {
-    const size = handSize(target);
-    for (const n of [size, 4]) if (n >= 1 && n <= sorted.length && !sizes.includes(n)) sizes.push(n);
-  } else {
-    for (let n = 1; n <= Math.min(12, sorted.length); n += 1) sizes.push(n);
-    if (sorted.length >= 15) sizes.push(15);
-  }
+  const allowedSizes = target
+    ? new Set([handSize(target), 4].filter((n) => n >= 1 && n <= sorted.length))
+    : null;
 
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
-  for (const size of sizes) {
-    combinations(sorted, size, (cards) => {
-      const parsed = parsePdkHand(cards, rules);
-      if (parsed.type === PdkHandType.Invalid) return;
-      if (target && !canBeatPdk(parsed, target, rules)) return;
-      const key = dedupeKey(cards);
-      if (seen.has(key)) return;
-      seen.add(key);
-      candidates.push({ cards: cards.map((c) => ({ ...c })), parsed });
-    });
-  }
+  enumerateRankSelections(groupByRank(sorted), (cards) => {
+    if (allowedSizes && !allowedSizes.has(cards.length)) return;
+    const parsed = parsePdkHand(cards, rules);
+    if (parsed.type === PdkHandType.Invalid) return;
+    if (target && !canBeatPdk(parsed, target, rules)) return;
+    const key = dedupeKey(cards);
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ cards: cards.map((c) => ({ ...c })), parsed });
+  });
   candidates.sort(compareCandidate);
   return candidates.map((c) => c.cards);
 }
