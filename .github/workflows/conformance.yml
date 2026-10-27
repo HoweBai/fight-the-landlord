@@ -16,9 +16,7 @@ name: conformance
 
 on:
   push:
-    # ⚠️ 2026-10-28 临时：ioredis 订阅事故修复需在 GitHub 上连跑两轮真栈（用户已授权；
-    # 跑完 revert 本行与 slice-07.4 的 pushBranches 期望）。
-    branches: [master, dev]
+    branches: [master]
     tags-ignore: ['**']
   workflow_call:
     inputs:
