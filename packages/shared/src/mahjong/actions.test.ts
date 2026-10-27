@@ -181,3 +181,51 @@ describe('杠上炮：呼叫转移 / 退回', () => {
     expect(resulted.events.every((e) => !(e.kind === 'refund' && e.reason === 'notReady' && e.ref === gang.seq))).toBe(true);
   });
 });
+
+describe('整局自动推进（超时/托管同一条自动决策）', () => {
+  it('从发牌到结束：状态机不卡死，结算零和且事件账可重算', () => {
+    let s = createMahjongSession({
+      roomCode: 'AUTO',
+      baseScore: 1,
+      players: [0, 1, 2, 3].map((seat) => ({ id: `p${seat}`, seat, isBot: true })),
+      rules: DEFAULT_CHENGDU_RULES,
+      random: () => 0,
+      testWall: createMahjongDeck(),
+    });
+    let guard = 0;
+    while (s.state !== 'ended' && guard < 2000) {
+      s = timeoutMahjong(s, () => 0);
+      guard += 1;
+    }
+    expect(s.state, `状态机在 ${guard} 步后仍未结束`).toBe('ended');
+    const result = settleMahjong(s);
+    expect(result.scoreChanges.reduce((a, b) => a + b.delta, 0)).toBe(0);
+    // 事件账独立重算必须与 scoreChanges 一致（资金层截断前的前置）。
+    const deltas = [0, 0, 0, 0];
+    for (const e of result.events) {
+      if (e.kind === 'gang' || e.kind === 'hu') {
+        for (const p of e.payers) {
+          deltas[p.seat]! -= p.amount;
+          deltas[e.seat]! += p.amount;
+        }
+      } else if (e.kind === 'transfer') {
+        deltas[e.fromSeat]! -= e.amount;
+        deltas[e.toSeat]! += e.amount;
+      } else if (e.kind === 'refund') {
+        for (const p of e.toSeats) {
+          deltas[e.fromSeat]! -= p.amount;
+          deltas[p.seat]! += p.amount;
+        }
+      } else if (e.kind === 'chajiao') {
+        deltas[e.fromSeat]! -= e.amount;
+        deltas[e.toSeat]! += e.amount;
+      } else if (e.kind === 'huazhu' && e.mode === 'payEach') {
+        for (const p of e.payees) {
+          deltas[e.seat]! -= p.amount;
+          deltas[p.seat]! += p.amount;
+        }
+      }
+    }
+    expect(result.scoreChanges.map((c) => c.delta)).toEqual(deltas);
+  });
+});

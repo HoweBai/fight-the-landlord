@@ -180,18 +180,6 @@ const endText = computed(() =>
       </text>
     </view>
 
-    <view v-if="settlement.burn.length > 0" class="mj-settlement__events">
-      <text v-for="(b, i) in settlement.burn" :key="`burn-${i}`" class="mj-settlement__event">
-        花猪罚分：{{ nameOf(b.seat) }} {{ b.amount }}
-      </text>
-    </view>
-
-    <view v-if="settlement.chajiao.length > 0" class="mj-settlement__events">
-      <text v-for="(c, i) in settlement.chajiao" :key="`cj-${i}`" class="mj-settlement__event">
-        查叫：{{ nameOf(c.from) }} → {{ nameOf(c.to) }} {{ c.amount }}
-      </text>
-    </view>
-
     <view v-if="settlement.writtenOff.length > 0" class="mj-settlement__events">
       <text v-for="(w, i) in settlement.writtenOff" :key="`wo-${i}`" class="mj-settlement__event">
         未收：{{ nameOf(w.seat) }} {{ w.amount }}（{{ w.reason }}）

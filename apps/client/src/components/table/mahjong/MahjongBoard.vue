@@ -69,6 +69,9 @@ const myClaims = computed<readonly MahjongClaimOption[]>(() => props.view?.claim
 const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
+const myLack = computed(() => props.view?.lackSuits[me.value] ?? null);
+const myPendingDelta = computed(() => pendingDelta(me.value));
+const myHu = computed(() => props.view?.huInfos.find((h) => h.seat === me.value) ?? null);
 
 /** 手牌可选的条件：交互开启 + 未结算 + （换三张窗口 | 出牌窗口）。 */
 const handSelectable = computed(() => {
@@ -286,7 +289,23 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
         </view>
       </view>
 
-      <view v-if="myMelds.length > 0 || myDiscards.length > 0 || myRevealed" class="mj__mine">
+      <view class="mj__mine">
+        <view class="mj__me-meta">
+          <text v-if="me === dealerSeat" class="mj__me-badge mj__me-badge--dealer">庄</text>
+          <text v-if="myLack !== null" class="mj__me-badge">
+            缺{{ MAHJONG_SUIT_NAMES[myLack] }}
+          </text>
+          <text v-if="myHu" class="mj__me-badge mj__me-badge--pos">
+            胡{{ myHu.fan > 0 ? ` ${myHu.fan}番` : '' }}
+          </text>
+          <text
+            v-if="myPendingDelta !== 0"
+            class="mj__me-badge"
+            :class="myPendingDelta > 0 ? 'mj__me-badge--pos' : 'mj__me-badge--neg'"
+          >
+            {{ myPendingDelta > 0 ? `+${myPendingDelta}` : myPendingDelta }}
+          </text>
+        </view>
         <view v-for="(meld, i) in myMelds" :key="`my-meld-${i}`" class="mj__my-meld">
           <text class="mj__my-meld-label">
             {{ meld.kind === 'peng' ? '碰' : meld.kind === 'gang' ? '杠' : '暗杠' }}
@@ -554,6 +573,31 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
   display: flex;
   align-items: center;
   gap: 2px;
+}
+.mj__me-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: $ftl-space-2;
+}
+.mj__me-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.mj__me-badge--dealer {
+  background: $ftl-color-accent;
+  color: $ftl-color-on-primary;
+}
+.mj__me-badge--pos {
+  background: rgba($ftl-color-gold, 0.35);
+  color: $ftl-color-gold-light;
+}
+.mj__me-badge--neg {
+  background: rgba($ftl-color-danger, 0.3);
 }
 .mj__my-meld-label {
   margin-right: 2px;
