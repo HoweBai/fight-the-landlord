@@ -52,7 +52,9 @@ const redisState = vi.hoisted(() => ({
 }));
 
 vi.mock('ioredis', () => {
-  const ctor = vi.fn(() => {
+  // Vitest 4：`vi.fn` 的箭头函数实现不可 `new`（`is not a constructor`）；
+  // 生产代码是 `new Redis(...)` ⇒ 用普通 function 保留 construct 语义。
+  const ctor = vi.fn(function () {
     const instance = {
       on: vi.fn(),
       subscribe: vi.fn(async () => undefined),

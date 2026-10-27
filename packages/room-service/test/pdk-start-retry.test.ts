@@ -214,7 +214,10 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
   });
 
   it('A1：bot fill 失败计 reason=bot_fill（不出现 rules）', async () => {
-    const original = rpcSend.getMockImplementation()!;
+    const original = rpcSend.getMockImplementation()! as (
+      pattern: string,
+      data: unknown,
+    ) => unknown;
     rpcSend.mockImplementation((pattern: string, data: unknown) =>
       pattern === RPC_PATTERNS.robotAcquire
         ? of({ ok: false, code: ErrCode.UPSTREAM_UNAVAILABLE, message: 'down' })

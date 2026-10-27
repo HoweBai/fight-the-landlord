@@ -93,7 +93,7 @@ describe('apply 并发控制流（假 DB；原子性判据在 T10 真栈）', ()
     expect(db.flows).toHaveLength(0);
     expect(db.accounts.get('u-race')).toEqual({ ownerType: 'user', balance: 3 });
     expect(redis.calls).toHaveLength(0);
-    expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('14001'))).toBe(true);
+    expect(warnSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('14001'))).toBe(true);
   });
 
   it('② ⚙️12 窄洞：并发他人首建**异型** ⇒ 重查命中 ⇒ 10001（而非 14001/静默）', async () => {
@@ -122,7 +122,7 @@ describe('apply 并发控制流（假 DB；原子性判据在 T10 真栈）', ()
     // 响亮（owner_type_mismatch 是 §2.12 明列的 error 级）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('10001') && String(args[0]).includes('u-race'),
+        (args: unknown[]) => String(args[0]).includes('10001') && String(args[0]).includes('u-race'),
       ),
     ).toBe(true);
   });
@@ -198,7 +198,7 @@ describe('apply 并发控制流（假 DB；原子性判据在 T10 真栈）', ()
     expect(db.txLog[1]!.statements.map((s) => kindOf(s.sql))).toEqual(['ops.select']);
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('14002') && String(args[0]).includes('admin:race-conflict'),
+        (args: unknown[]) => String(args[0]).includes('14002') && String(args[0]).includes('admin:race-conflict'),
       ),
     ).toBe(true);
   });

@@ -1195,7 +1195,9 @@ describe('MatchService', () => {
     it('🔴 房间已被别人开起来（playing）⇒ 降级不得把它改回 cancelled（spec §3.3）', async () => {
       // 注入点：房间**刚建好、开局链还没跑**的那一刻 —— 这正是 §0.2 那个竞态的窗口
       //（匹配扫描器正在补位，另一个定时器（自动开局扫描器）把房间推到了 `playing`）。
-      const original = roomsService.createGameRoom.getMockImplementation()!;
+      const original = roomsService.createGameRoom.getMockImplementation()! as (
+        ...args: any[]
+      ) => Promise<import('../src/rooms/rooms.service').Room>;
       roomsService.createGameRoom.mockImplementation(
         async (ids: string[], mode: 'random' | 'practice', baseScore: number) => {
           const room = await original(ids, mode, baseScore);
@@ -2086,7 +2088,11 @@ describe('MatchService', () => {
      *（`robot.client.acquire` 与 `game.client.call`），且都在同一段 ALS 里。
      */
     async function triggerStartViaRoomStart(): Promise<void> {
-      await roomsService.createGameRoom(['u1'], 'random', 15);
+      await (
+        roomsService.createGameRoom as unknown as (
+          ...args: any[]
+        ) => Promise<unknown>
+      )(['u1'], 'random', 15);
       const roomStart = new RoomStartService(
         redis as unknown as Redis,
         roomsService as unknown as RoomsService,

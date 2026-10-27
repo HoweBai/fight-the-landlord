@@ -298,7 +298,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     expect(redis.calls.filter((call) => call.op === 'set')).toHaveLength(setCallsAfterFirst);
     // 三桶：这次是 replay（不是 ok）
     expect(await counterValue(currencyApplyTotal, { source: 'admin_adjust', result: 'replay' })).toBeGreaterThan(0);
-    expect(logSpy.mock.calls.some((args) => String(args[0]).includes('replay'))).toBe(true);
+    expect(logSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('replay'))).toBe(true);
   });
 
   it('⚙️13 重放重建排序：混合大小写 ownerId 下，重放响应仍按 hash/执行序（JS code-unit 升序）而非 DB collation 序', async () => {
@@ -348,7 +348,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮（level=error，含 actionId 与错误码 14002）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('14002') && String(args[0]).includes('admin:c1'),
+        (args: unknown[]) => String(args[0]).includes('14002') && String(args[0]).includes('admin:c1'),
       ),
     ).toBe(true);
     expect(await counterValue(currencyApplyTotal, { source: 'admin_adjust', result: 'reject' })).toBe(rejectBefore + 2);
@@ -386,7 +386,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
       'ownerType.select',
       'balance.update',
     ]);
-    expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('14001'))).toBe(true);
+    expect(warnSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('14001'))).toBe(true);
     // 失败不写缓存
     expect(redis.calls.filter((call) => call.op === 'set')).toHaveLength(0);
   });
@@ -432,7 +432,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 「爽亮」error 级（§2.12：owner_type_mismatch 响亮）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('10001') && String(args[0]).includes('ownerId=bot-1'),
+        (args: unknown[]) => String(args[0]).includes('10001') && String(args[0]).includes('ownerId=bot-1'),
       ),
     ).toBe(true);
   });
@@ -484,7 +484,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮（§2.12：owner_type_mismatch 是 error 级）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('10001') && String(args[0]).includes('u-pos'),
+        (args: unknown[]) => String(args[0]).includes('10001') && String(args[0]).includes('u-pos'),
       ),
     ).toBe(true);
     // 失败整批 ⇒ 不写缓存
@@ -534,7 +534,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮：error 日志（含 internal error 与读数）；不写缓存（系统级抛穿，不走信封）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('internal error') && String(args[0]).includes('affectedRows=2'),
+        (args: unknown[]) => String(args[0]).includes('internal error') && String(args[0]).includes('affectedRows=2'),
       ),
     ).toBe(true);
     expect(redis.calls).toHaveLength(0);
@@ -629,7 +629,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // warn + 单一计数器（§2.11：写穿失败与对账删除同一计数器）
     expect(
       warnSpy.mock.calls.some(
-        (args) => String(args[0]).includes('cache_write_failed') && String(args[0]).includes('u-a'),
+        (args: unknown[]) => String(args[0]).includes('cache_write_failed') && String(args[0]).includes('u-a'),
       ),
     ).toBe(true);
     expect(await counterValue(currencyReconcileCacheDriftTotal)).toBe(driftBefore + 1);

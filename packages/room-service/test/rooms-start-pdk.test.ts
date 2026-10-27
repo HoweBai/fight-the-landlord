@@ -107,7 +107,9 @@ describe('RoomStartService：跑得快开局链（Task 2.4）', () => {
       return of({ ok: true, data: {} });
     });
     const publish = redis.publish as ReturnType<typeof vi.fn>;
-    const realPublish = publish.getMockImplementation()!;
+    const realPublish = publish.getMockImplementation()! as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
     publish.mockImplementation(async (...args: unknown[]) => {
       if (args[0] === CHANNELS.matchEvents) order.push('announce');
       return realPublish(...args);
