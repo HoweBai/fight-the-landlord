@@ -192,6 +192,25 @@ describe('ConfigCacheService（客户端接入片 T4：网关快照缓存）', (
     cache.onApplicationShutdown();
   });
 
+  it('ready（重连）⇒ 幂等重订 config:changed（ioredis 握手竞态/断线的自愈门）', async () => {
+    const { client, snapshot } = makeClient();
+    snapshot.mockResolvedValue(snapshotWith({}));
+    const cache = new ConfigCacheService(client);
+    cache.onModuleInit();
+    await cache.waitForFirstSnapshot();
+
+    const subscriber = redisState.instances[0]!;
+    expect(subscriber.subscribe).toHaveBeenCalledTimes(1);
+    const ready = subscriber.on.mock.calls.find(([event]) => event === 'ready')?.[1] as
+      | (() => void)
+      | undefined;
+    expect(ready, '必须注册 ready 重订监听（否则竞态/断线后订阅永久丢失）').toBeDefined();
+    ready!();
+    await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalledTimes(2));
+    expect(subscriber.subscribe).toHaveBeenLastCalledWith('config:changed');
+    cache.onApplicationShutdown();
+  });
+
   it('④ 专用连接结构钉：订阅只发生在服务自建的独立连接上（未触碰任何共享 REDIS——本用例没给过它共享实例）', async () => {
     const { client, snapshot } = makeClient();
     snapshot.mockResolvedValue(snapshotWith({ 'client.appEnabled': true }));
