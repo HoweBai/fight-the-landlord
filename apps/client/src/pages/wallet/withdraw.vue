@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 提现子页（2026-10-23 钱包拆分 §4.4）：第 8 页，钱包页「提现」入口 `navigateTo` 压栈。
  *
@@ -410,7 +410,7 @@ function onBack() {
   padding: $ftl-space-5 $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-md;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .wallet-withdraw__stat-label {
   color: rgba($ftl-color-on-primary, 0.7);
@@ -432,7 +432,7 @@ function onBack() {
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .wallet-withdraw__section-title {
   color: $ftl-color-on-primary;
@@ -495,7 +495,7 @@ function onBack() {
   line-height: 1.4;
 }
 .wallet-withdraw__muted {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }

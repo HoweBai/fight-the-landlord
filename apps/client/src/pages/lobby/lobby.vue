@@ -1294,7 +1294,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__menu-head {
   display: flex;
@@ -1365,7 +1365,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__relief-head {
   display: flex;
@@ -1438,7 +1438,7 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__rule-head {
   display: flex;
@@ -1481,7 +1481,7 @@ onUnmounted(() => stopBgm());
  * 「这块现在是什么状态」；具体原因与「重试」出口在浮层 `levels` 项。
  */
 .lobby__levels-empty {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1510,7 +1510,7 @@ onUnmounted(() => stopBgm());
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-sm;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   font-size: $ftl-font-md;
   line-height: 1.2;
@@ -1529,7 +1529,7 @@ onUnmounted(() => stopBgm());
 /** 双关空态（② §14）：没有可进入的场次 —— 其中性对等于「加载中」档，不是错误。 */
 .lobby__sessions-empty {
   flex: 0 0 auto;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1555,7 +1555,7 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__modes-title,
 .lobby__levels-title {
@@ -1621,8 +1621,8 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-5 $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-md;
-  background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  background: rgba($ftl-color-night-deep, 0.38);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   cursor: pointer;
 }
@@ -1658,11 +1658,11 @@ onUnmounted(() => stopBgm());
   min-height: $ftl-space-5 * 2 + $ftl-font-lg * 1.2 + $ftl-space-3 * 3 +
     $ftl-font-md * 1.2 + $ftl-font-xs * 1.2 * 2;
 }
-/** **选中**语言（§5.2.1）：描边金 + 底 `rgba(gold,.18)` + 字 `$ftl-color-gold-light` + 700。 */
+/** **选中**语言（§5.2.1）：描边金 + 底 `rgba(gold,.25)` + 字 `$ftl-color-gold-light` + 700。 */
 .lobby__mode--active,
 .lobby__level--active {
   border-color: $ftl-color-gold;
-  background: rgba($ftl-color-gold, 0.18);
+  background: rgba($ftl-color-gold, 0.25);
   color: $ftl-color-gold-light;
   font-weight: 700;
 }
@@ -1702,7 +1702,7 @@ onUnmounted(() => stopBgm());
     最多两行 + ellipsis：与 `.lobby__mode` 的 min-height（预留两行）呼应，
     将来加更长 tagline 时也不会撑破等高布局。 */
 .lobby__mode-tagline {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
   display: -webkit-box;
@@ -1747,14 +1747,14 @@ onUnmounted(() => stopBgm());
 }
 /** ② 金币门槛（`baseScore × entryMultiplier`）：卡内最弱一档的标签字。 */
 .lobby__level-need {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
   white-space: nowrap;
 }
 /* 台费「入场费」行：与门槛行同观感（同色同字号）——不引新令牌。 */
 .lobby__level-fee {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
   white-space: nowrap;

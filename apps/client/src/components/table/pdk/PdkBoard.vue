@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 跑得快牌桌（S6.1 / spec §4.10.2）。
  *
@@ -555,7 +555,7 @@ function onTrustee(on: boolean): void {
 .pdk__base,
 .pdk__bombs {
   font-size: $ftl-font-sm;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   line-height: 1.2;
 }
 .pdk__trustee--on {
@@ -697,7 +697,7 @@ function onTrustee(on: boolean): void {
   flex: 0 0 auto;
   padding: 0 $ftl-space-7;
   border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
   color: $ftl-color-on-primary;
   font-size: $ftl-font-md;
   line-height: 1.8;
@@ -728,7 +728,7 @@ function onTrustee(on: boolean): void {
     0 -2px 0 $ftl-color-night-deep;
 }
 .pdk__scene-base {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-md;
   line-height: 1.2;
 }
@@ -745,7 +745,7 @@ function onTrustee(on: boolean): void {
   flex: 0 0 auto;
   padding: 0 $ftl-space-7;
   border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
   color: $ftl-color-on-primary;
   font-size: $ftl-font-md;
   line-height: 1.8;

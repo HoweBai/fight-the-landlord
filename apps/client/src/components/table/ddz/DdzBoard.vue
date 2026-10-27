@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 斗地主牌桌（S5.2：从 `pages/table/table.vue` 迁出的**玩法专属 board**）。
  *
@@ -1217,7 +1217,7 @@ function onTrustee(on: boolean): void {
   flex: 0 0 auto;
   padding: 0 $ftl-space-7;
   border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
   color: $ftl-color-on-primary;
   font-size: $ftl-font-md;
   line-height: 1.8;
@@ -1233,7 +1233,7 @@ function onTrustee(on: boolean): void {
   flex: 0 0 auto;
   padding: 0 $ftl-space-7;
   border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
   border: $ftl-hairline solid $ftl-color-gold;
   color: $ftl-color-gold-light;
   font-size: $ftl-font-md;
@@ -1283,7 +1283,7 @@ function onTrustee(on: boolean): void {
     0 -2px 0 $ftl-color-night-deep;
 }
 .table__scene-base {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-md;
   line-height: 1.2;
 }

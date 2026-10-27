@@ -697,7 +697,7 @@ onMounted(() => {
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 /**
  * 面板内的中性标签字（「加载中…」/静态失败态/空态共用）。Task 6 起失败**原因**在
@@ -706,7 +706,7 @@ onMounted(() => {
  */
 .history__muted,
 .history__empty {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -749,7 +749,7 @@ onMounted(() => {
   gap: $ftl-space-5;
 }
 .history__time {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.2;
 }
@@ -792,7 +792,7 @@ onMounted(() => {
 /** 「展开/收起」提示：贴右，弱化（它只是可点性的可见提示，不是按钮）。 */
 .history__expand {
   margin-left: auto;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
 }
 /** 展开区：与摘要以发丝线分隔。 */
@@ -820,7 +820,7 @@ onMounted(() => {
   line-height: 1.2;
 }
 .history__player-role {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
 }
 .history__player-score {
@@ -833,7 +833,7 @@ onMounted(() => {
   gap: $ftl-space-4;
 }
 .history__bottom-title {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
 }
 /** 本页原生 `<button class="btn …">` 的观感自持（与 `lobby.vue` / `game.vue` 同款两条）。 */

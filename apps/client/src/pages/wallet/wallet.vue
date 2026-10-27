@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 钱包页（支付片 T14 / 规格 §4 全 + 设计 §11）：**第 6 页**。
  *
@@ -825,7 +825,7 @@ function onBack() {
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .wallet__section-title {
   color: $ftl-color-on-primary;
@@ -854,7 +854,7 @@ function onBack() {
 }
 /** 「加载中…/暂无记录」是中性信息（不是错误）⇒ 面板内标签字，与错误行分开。 */
 .wallet__muted {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -955,7 +955,7 @@ function onBack() {
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-pill;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   cursor: pointer;
 }
@@ -1000,13 +1000,13 @@ function onBack() {
   line-height: 1.2;
 }
 .wallet__row-time {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
 }
 .wallet__row-no {
   margin-left: auto;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
   word-break: break-all;

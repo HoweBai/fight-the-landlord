@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 跑得快结算面板（S6.2 / spec §4.10.2）。
  *
@@ -235,7 +235,7 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
 .pdk-settlement__tr--head {
   padding: $ftl-space-3 $ftl-space-5;
   border-radius: $ftl-radius-sm $ftl-radius-sm 0 0;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.15);
   border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.15);
 }
 /* 表头：全部 flex:1 等分，按列与内容共享 text-align */
@@ -273,7 +273,7 @@ const myHeadline = computed<{ won: boolean; delta: number } | null>(() => {
   gap: $ftl-space-4;
   align-items: center;
   padding: $ftl-space-4 $ftl-space-5;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.12);
   font-size: $ftl-font-md;
   border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.08);
 }

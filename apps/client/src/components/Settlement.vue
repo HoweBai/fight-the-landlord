@@ -442,7 +442,7 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
   align-items: center;
   padding: $ftl-space-3 $ftl-space-5;
   border-radius: $ftl-radius-sm $ftl-radius-sm 0 0;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.15);
   border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.15);
 }
 /** 表头：**标签住在这里**（参考图二的形态 —— 格子里只写裸值）。 */
@@ -485,7 +485,7 @@ const mySeatResult = computed<{ won: boolean; delta: number } | null>(() => {
   gap: $ftl-space-4;
   align-items: center;
   padding: $ftl-space-4 $ftl-space-5;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.12);
   border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.08);
 }
 .settlement__row:last-child {

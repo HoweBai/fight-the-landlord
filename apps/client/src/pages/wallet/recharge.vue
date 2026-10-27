@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 充值子页（2026-10-23 钱包拆分 §4.3）：第 7 页，钱包页「充值」入口 `navigateTo` 压栈。
  *
@@ -216,7 +216,7 @@ function onBack() {
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .wallet-recharge__section-title {
   color: $ftl-color-on-primary;
@@ -225,7 +225,7 @@ function onBack() {
   line-height: 1.2;
 }
 .wallet-recharge__balance {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -260,7 +260,7 @@ function onBack() {
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-md;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -281,13 +281,13 @@ function onBack() {
   line-height: 1.2;
 }
 .wallet-recharge__coins {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.2;
 }
 /** 中性状态字（空档位 / 暂未开放）——不是错误。 */
 .wallet-recharge__muted {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }

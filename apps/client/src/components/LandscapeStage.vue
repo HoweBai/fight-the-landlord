@@ -229,9 +229,9 @@ const canvasStyle = computed(() => ({
  * 渐变策略：径向渐变聚焦中心（UI 内容主要在舞台中央），边缘压暗让"舞台"有边界感。
  * 叠加一层上下微渐变：顶部/底部安全区额外加深一点（那里没有内容、加深不影响可读性）。
  *
- * 强度设计：中心 `rgba(night, 0.32)` → 边缘 `rgba(night-deep, 0.58)`。
- * 面板 `rgba(night, 0.62)` + 遮罩中心 `rgba(night, 0.32)` 叠加 → 基底底色已是 night 色阶、
- * 面板再盖一层 0.62 的 night，实际观感接近"实色深蓝面板"，底纹不再明显透穿。
+ * 强度设计（加强版，2026-10-27 用户反馈原 0.32/0.58 效果不明显）：
+ * 中心 `rgba(night, 0.50)` → 边缘 `rgba(night-deep, 0.72)`，上下额外加深 0.22。
+ * 面板透明度同步提到 0.85（步骤②）。
  */
 .stage__scrim {
   position: absolute;
@@ -245,15 +245,15 @@ const canvasStyle = computed(() => ({
   background:
     radial-gradient(
       ellipse 85% 70% at 50% 50%,
-      rgba($ftl-color-night, 0.32) 0%,
-      rgba($ftl-color-night-deep, 0.58) 100%
+      rgba($ftl-color-night, 0.50) 0%,
+      rgba($ftl-color-night-deep, 0.72) 100%
     ),
     linear-gradient(
       180deg,
-      rgba($ftl-color-night-deep, 0.18),
-      transparent 20%,
-      transparent 80%,
-      rgba($ftl-color-night-deep, 0.18)
+      rgba($ftl-color-night-deep, 0.22),
+      transparent 18%,
+      transparent 82%,
+      rgba($ftl-color-night-deep, 0.22)
     );
 }
 /** 竖屏提示层。⚠️ `position: relative` 是给底纹层让位的 z 序要求（见上）。 */

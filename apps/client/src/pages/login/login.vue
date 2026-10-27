@@ -335,7 +335,7 @@ async function submit() {
   padding: $ftl-space-5;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 /**
  * 品牌 logo（U3）。源图 237×147（比例 1.612）⇒ 盒宽 192、高 **96**（Task 2b 压缩，原 120）；
@@ -365,7 +365,7 @@ async function submit() {
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-sm;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-md;
   line-height: 1.2;
   cursor: pointer;
@@ -387,7 +387,7 @@ async function submit() {
   flex-direction: column;
   gap: $ftl-space-2;
   font-size: $ftl-font-sm;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 .login__field input {
   box-sizing: border-box;
@@ -433,7 +433,7 @@ async function submit() {
   padding: 0;
   border: 0px;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
   cursor: pointer;
@@ -529,7 +529,7 @@ async function submit() {
   border-color: rgba($ftl-color-on-primary, 0.45);
   background: transparent;
   background-image: none;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
 }
 .btn[disabled] {

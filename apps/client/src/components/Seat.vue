@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 座位（➌ 座位几何）。
  *
@@ -564,7 +564,7 @@ const balanceText = computed(() => compactBalance(props.balance));
   display: flex;
   align-items: center;
   gap: $ftl-space-2;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 .seat__score-icon {
   flex: 0 0 auto;
@@ -577,7 +577,7 @@ const balanceText = computed(() => compactBalance(props.balance));
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
-  color: rgba($ftl-color-on-primary, 0.55);
+  color: rgba($ftl-color-on-primary, 0.8);
   /* 用一个微小的 CSS 绘制：圆形灰色小底上放"分"字 */
   background: rgba($ftl-color-night-deep, 0.5);
   border-radius: $ftl-radius-pill;
@@ -595,7 +595,7 @@ const balanceText = computed(() => compactBalance(props.balance));
   padding: 2px 6px;
   border-radius: $ftl-radius-md;
   background: rgba($ftl-color-night-deep, 0.35);
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 .seat--opponent .seat__score-icon {
   width: $ftl-font-sm;
