@@ -14,7 +14,8 @@
     "verify:admin-players": "node scripts/admin-players-probe.mjs",
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
     "clean": "turbo run clean",
-    "verify:admin-agents": "node scripts/admin-agents-probe.mjs"
+    "verify:admin-agents": "node scripts/admin-agents-probe.mjs",
+    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

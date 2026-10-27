@@ -704,6 +704,59 @@ ok(renderSettingsBlock.includes('renderConfigRows()'), 'renderSettings 块完整
 ok(viewsBlock.includes('accounts:'), 'VIEWS 块完整（含 accounts）');
 ok(renderConfigRowsBlock.includes('scrollEl.scrollTop = scrollTop'), 'renderConfigRows 块完整（含滚动恢复）');
 
+/* ── 12b. 2026-10-27 配置中心重内容域页内页签 ─────────────────────
+ * 页签面板全部渲染、只切 hidden（保 struct/JSON 未保存编辑）；tabId 与 tabDomainId
+ * 成对校验（ddz/pdk 有同名页签 rules/rooms/risk）。 */
+const cfgUiBlock = balancedBlock(app, 'const DEFAULT_CFG_UI', '{', '}');
+ok(cfgUiBlock !== '', '找到 DEFAULT_CFG_UI 字面量');
+ok(cfgUiBlock.includes('tabId') && cfgUiBlock.includes('tabDomainId'), 'DEFAULT_CFG_UI 含 tabId/tabDomainId');
+for (const fn of ['function buildConfigTabStrip', 'function applyCfgTabUI', 'function renderCfgDomain']) {
+  ok(app.includes(fn), `app.js 含页签针脚 ${JSON.stringify(fn)}`);
+}
+const renderCfgDomainBlock = functionBody(app, 'function renderCfgDomain');
+ok(renderCfgDomainBlock !== '', '找到 renderCfgDomain 函数体');
+for (const needle of [
+  'buildConfigTabStrip(',
+  'tabs.length > 1',
+  'cfg-tab-panel',
+  'cfg-tab-empty',
+]) {
+  ok(renderCfgDomainBlock.includes(needle), `renderCfgDomain 含 ${JSON.stringify(needle)}`);
+}
+const resolveCfgTabBlock = functionBody(app, 'function resolveCfgTab');
+ok(
+  resolveCfgTabBlock !== '' && resolveCfgTabBlock.includes('tabDomainId === domain.id'),
+  'resolveCfgTab 按域配对 tabDomainId',
+);
+ok(renderConfigRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
+ok(openCfgDomainBlock.includes('tabDomainId = null'), 'openCfgDomain 复位 tabDomainId');
+const normalizeCfgDomainBlock = functionBody(app, 'function normalizeCfgDomain');
+ok(
+  normalizeCfgDomainBlock !== '' && normalizeCfgDomainBlock.includes('tabDomainId = null'),
+  'normalizeCfgDomain 复位 tabDomainId',
+);
+let iaDomainsForTabs = [];
+if (iaBlock !== '') {
+  try {
+    iaDomainsForTabs = vm.runInNewContext(`(${iaBlock})`);
+  } catch {
+    iaDomainsForTabs = [];
+  }
+}
+let headerTabOverlap = 0;
+for (const g of iaDomainsForTabs) {
+  for (const d of g.domains ?? []) {
+    const tabKeys = new Set((d.tabs ?? []).flatMap((t) => t.keys));
+    for (const hk of d.headerKeys ?? []) if (tabKeys.has(hk)) headerTabOverlap += 1;
+  }
+}
+ok(iaDomainsForTabs.length > 0, 'CONFIG_IA 可被 vm 解析（页签交叉断言）');
+ok(headerTabOverlap === 0, `CONFIG_IA 的 headerKeys 与页签键无交集（实测 ${headerTabOverlap}）`);
+ok(
+  /\.cfg-tabs\s*\{/.test(css) && /\.cfg-tab-panel\s*\{/.test(css),
+  'style.css 含 .cfg-tabs / .cfg-tab-panel 规则',
+);
+
 
 /* ── 11. 2026-10-22 玩家管理页 ────────────────────────────────────── */
 for (const id of ['nav-players-btn', 'players-view', 'pl-summary', 'pl-body', 'pl-detail', 'pl-back-btn', 'pl-page-size']) {
