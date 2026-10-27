@@ -22,6 +22,9 @@ const cardKey = (c: Card): string => `${c.r},${c.s}`;
 
 /** 是否属于跑得快 48 张合法集合（无王、无被去掉的四张）。 */
 export function isPdkCard(c: Card): boolean {
+  // 审查 P2-2：NaN 对 `<`/`>` 恒 false、小数落在范围内也会被放行 ⇒ 必须整数校验。
+  if (typeof c !== 'object' || c === null) return false;
+  if (!Number.isInteger(c.r) || !Number.isInteger(c.s)) return false;
   if (c.s < 0 || c.s > 3) return false;
   if (c.r < 3 || c.r > 17) return false;
   if (c.r === 15 || c.r === 16) return false;

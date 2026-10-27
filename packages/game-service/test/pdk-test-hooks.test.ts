@@ -96,6 +96,9 @@ describe('Task 4.4：pdk seed/testDeck 测试钩子', () => {
       ['张数不是 48', valid.slice(0, 47)],
       ['重复牌', [...valid.slice(0, 47), { ...valid[0]! }]],
       ['牌不在 pdk 合法集', [...valid.slice(0, 47), { r: 15, s: 0 }]],
+      // 审查 P2-2：NaN/小数曾通过范围比较
+      ['NaN 点数', [...valid.slice(0, 47), { r: Number.NaN, s: 0 }]],
+      ['小数点数', [...valid.slice(0, 47), { r: 3.5, s: 0 }]],
     ];
 
     for (const [label, deck] of cases) {
