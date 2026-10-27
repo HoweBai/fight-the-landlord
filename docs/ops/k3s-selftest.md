@@ -57,20 +57,18 @@ CACHE=0 IMAGE_PREFIX=ghcr.io/howebai/fight-the-landlord PUSH=1 \
   bash scripts/deploy/build-images.sh "sha-$(git rev-parse --short HEAD)"
 ```
 
-## C. 预演环境（真 k3s，建议 2 台小机器）
+## C. 预演环境（单节点 k3s 也能完整测 HPA）
 
-> 单节点预演不够：`ftl-role=data` 与 `ftl-role=compute` 是同一个标签键的两个值，
-> 一个节点只能取一个 ⇒ douzero 会 Pending。要么 2 台，要么临时用 overlay 去掉
-> douzero 的 nodeSelector（只限预演）。
+> **单节点完全能扩缩容**：HPA 不要求多节点。我们之前只把节点角色写成同一个标签键的
+> 两个值，现已拆成 `ftl-data` / `ftl-compute` 两个独立键 ⇒ 一台机器可以同时带两个标签。
+> 单节点限制只有两条：容量上限（HPA 扩出的 Pod 可能 Pending）和「node-b 关机」这类
+> 多节点故障演练做不了；跨 Pod 广播/顶替仍可测（不同 Pod 进程）。
 
-1. 新机装 k3s（node-b 控制面；另一台 node-a 数据）：
+1. 一台 Linux 机器（建议 8C16G；Windows 用 WSL2/VM）装单节点 k3s：
 
 ```bash
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --secrets-encryption --node-name node-b" sh -
-# node-a：
-curl -sfL https://get.k3s.io | K3S_URL=https://<node-b-ip>:6443 K3S_TOKEN=<token> INSTALL_K3S_EXEC="agent --node-name node-a" sh -
-kubectl label node <node-a> ftl-role=data
-kubectl label node <node-b> ftl-role=compute
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --secrets-encryption --node-name node-a" sh -
+kubectl label node node-a ftl-data=true ftl-compute=true
 ```
 
 2. 一次性 bootstrap + 双命名空间 Secret：
@@ -80,12 +78,14 @@ kubectl apply -k k8s/bootstrap
 # ftl 与 ftl-monitoring 各建 ftl-secrets 与 ghcr-pull（见 k3s-migration.md）
 ```
 
-3. 预检 + 部署：
+3. 预检 + 单节点 overlay 部署（HPA 阈值调低，便于观察）：
 
 ```bash
 KUBECONFIG=/home/ubuntu/.kube/ftl-deploy.yaml bash scripts/deploy/k8s-preflight.sh
-bash scripts/deploy/deploy-k3s.sh "sha-$(git rev-parse --short HEAD)"
+K8S_OVERLAY=overlays/single-node bash scripts/deploy/deploy-k3s.sh "sha-$(git rev-parse --short HEAD)"
 ```
+
+生产两节点仍用默认 `overlays/prod`：node-a 只打 `ftl-data=true`、node-b 只打 `ftl-compute=true`。
 
 4. 功能验收（按顺序点一遍）：
 

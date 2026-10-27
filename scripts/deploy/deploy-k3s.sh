@@ -14,6 +14,7 @@ fi
 : "${SSH_KEY:?缺 SSH_KEY（部署私钥路径）}"
 USER_="${SSH_USER:-ubuntu}"
 K8S_KUBECONFIG="${K8S_KUBECONFIG:-/home/ubuntu/.kube/ftl-deploy.yaml}"
+K8S_OVERLAY="${K8S_OVERLAY:-overlays/prod}"
 REMOTE_DIR="/srv/pokergame-k8s"
 SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 TARGET="$USER_@$SSH_HOST"
@@ -55,6 +56,7 @@ TAG="${1:?用法：deploy-k3s.sh <tag> | --assert-clean}"
 Q_TAG="$(printf '%q' "$TAG")"
 Q_SITE="$(printf '%q' "$SITE_URL")"
 Q_NODE_A="$(printf '%q' "$NODE_A_IP")"
+Q_OVERLAY="$(printf '%q' "$K8S_OVERLAY")"
 
 echo "───── 投递 k8s/ 与运维脚本 ─────"
 ssh_do "mkdir -p /home/ubuntu/ftl-ops $Q_REMOTE_DIR && chmod 700 /home/ubuntu/ftl-ops"
@@ -65,7 +67,7 @@ ssh_do "chmod 700 /home/ubuntu/ftl-ops/*.sh"
 tar -czf - k8s | ssh_do "rm -rf $Q_REMOTE_DIR && mkdir -p $Q_REMOTE_DIR && tar -xzf - -C $Q_REMOTE_DIR"
 
 echo "───── apply + 迁移 + rollout + 冒烟 ─────"
-ssh_do "IMAGE_TAG=$Q_TAG SITE_URL=$Q_SITE NODE_A_IP=$Q_NODE_A KUBECONFIG_PATH=$Q_KUBECONFIG bash -s" <<'REMOTE'
+ssh_do "IMAGE_TAG=$Q_TAG SITE_URL=$Q_SITE NODE_A_IP=$Q_NODE_A KUBECONFIG_PATH=$Q_KUBECONFIG OVERLAY=$Q_OVERLAY bash -s" <<'REMOTE'
 set -euo pipefail
 cd /srv/pokergame-k8s
 tmp="$(mktemp -d)"
@@ -108,8 +110,8 @@ for j in migrate-config migrate-user migrate-currency migrate-payment; do
   fi
 done
 
-echo "───── 阶段二：业务与监控 ─────"
-"${kc[@]}" apply -k "$tmp/overlays/prod"
+echo "───── 阶段二：业务与监控（overlay=$OVERLAY）─────"
+"${kc[@]}" apply -k "$tmp/$OVERLAY"
 
 echo "───── rollout ─────"
 for d in api-gateway room-service robot-service user-service config-service currency-service payment-service douzero edge prometheus-adapter; do

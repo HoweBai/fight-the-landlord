@@ -10,11 +10,10 @@ say() { printf '%s\n' "$*"; }
 bad() { printf '❌ %s\n' "$*" >&2; fail=1; }
 
 say '── 节点 ──'
-nodes="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.metadata.labels.ftl-role}{"\n"}{end}')"
+nodes="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.metadata.labels.ftl-data}{"\t"}{.metadata.labels.ftl-compute}{"\n"}{end}')"
 printf '%s\n' "$nodes"
-[ "$(printf '%s\n' "$nodes" | grep -c $'\tTrue\t' || true)" -ge 2 ] || bad 'Ready 节点少于 2 个'
-printf '%s\n' "$nodes" | grep -q $'\tTrue\tdata' || bad '缺 ftl-role=data 节点（node-a）'
-printf '%s\n' "$nodes" | grep -q $'\tTrue\tcompute' || bad '缺 ftl-role=compute 节点（node-b）'
+printf '%s\n' "$nodes" | grep -q $'True\ttrue' || bad '缺 ftl-data=true 节点（node-a；单节点可同时带 ftl-compute=true）'
+printf '%s\n' "$nodes" | grep -q 'True.*true.*true' || bad '缺 ftl-compute=true 节点（node-b；单节点可与 ftl-data 同机）'
 
 say '── bootstrap ──'
 for ns in ftl ftl-monitoring; do

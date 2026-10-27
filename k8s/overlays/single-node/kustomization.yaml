@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 单节点预演覆盖：只把 HPA 阈值调低，便于一台机器观察扩缩；生产不要用。
+resources:
+  - ../prod
+patches:
+  - target: { kind: HorizontalPodAutoscaler, name: room-service-hpa }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+      - op: replace
+        path: /spec/metrics/1/pods/target/averageValue
+        value: "1"
+  - target: { kind: HorizontalPodAutoscaler, name: api-gateway-hpa }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+      - op: replace
+        path: /spec/metrics/1/pods/target/averageValue
+        value: "1"

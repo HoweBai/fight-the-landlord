@@ -131,8 +131,8 @@ for (const name of singleInstance) {
     errors.push(`${name}: 单实例 Deployment 必须 strategy.type=Recreate`);
   }
   const podSpec = found.d.spec?.template?.spec;
-  if (podSpec?.nodeSelector?.['ftl-role'] !== 'data') {
-    errors.push(`${name}: 必须钉 nodeSelector ftl-role=data`);
+  if (podSpec?.nodeSelector?.['ftl-data'] !== 'true') {
+    errors.push(`${name}: 必须钉 nodeSelector ftl-data=true`);
   }
 }
 

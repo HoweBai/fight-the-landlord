@@ -16,8 +16,8 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --secr
 - [ ] 打节点标签：
 
 ```bash
-kubectl label node <node-a> ftl-role=data
-kubectl label node <node-b> ftl-role=compute
+kubectl label node <node-a> ftl-data=true
+kubectl label node <node-b> ftl-compute=true
 ```
 
 - [ ] 用管理员 kubeconfig 应用 bootstrap（一次性）：

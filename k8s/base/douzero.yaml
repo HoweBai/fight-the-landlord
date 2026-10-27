@@ -24,7 +24,7 @@ spec:
     metadata:
       labels: { app: douzero }
     spec:
-      nodeSelector: { ftl-role: compute }
+      nodeSelector: { ftl-compute: "true" }
       terminationGracePeriodSeconds: 60
       containers:
         - name: douzero

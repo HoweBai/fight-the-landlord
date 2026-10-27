@@ -22,7 +22,7 @@ spec:
     spec:
       priorityClassName: ftl-monitoring
       serviceAccountName: prometheus
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
       containers:
         - name: prometheus
@@ -66,7 +66,7 @@ spec:
     metadata: { labels: { app: grafana } }
     spec:
       priorityClassName: ftl-monitoring
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       securityContext: { runAsUser: 472, runAsGroup: 472, fsGroup: 472 }
       containers:
         - name: grafana
@@ -109,7 +109,7 @@ spec:
     metadata: { labels: { app: alertmanager } }
     spec:
       priorityClassName: ftl-monitoring
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
       containers:
         - name: alertmanager
@@ -149,7 +149,7 @@ spec:
     metadata: { labels: { app: alert-relay } }
     spec:
       priorityClassName: ftl-monitoring
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       securityContext: { fsGroup: 1000 }
       containers:
         - name: alert-relay
@@ -182,7 +182,7 @@ spec:
     metadata: { labels: { app: am-renderer } }
     spec:
       priorityClassName: ftl-monitoring
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
       containers:
         - name: am-renderer

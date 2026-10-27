@@ -37,7 +37,7 @@ spec:
       spec: { storageClassName: local-path, accessModes: [ReadWriteOnce], resources: { requests: { storage: 20Gi } } }
   template:
     spec:
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: mysql
           image: mysql:8.0
@@ -54,7 +54,7 @@ spec:
       spec: { storageClassName: local-path, accessModes: [ReadWriteOnce], resources: { requests: { storage: 5Gi } } }
   template:
     spec:
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: redis
           image: redis:7-alpine
@@ -69,7 +69,7 @@ spec:
   template:
     spec:
       hostNetwork: true
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: edge
           image: ghcr.io/x/edge:IMAGE_TAG_PLACEHOLDER
@@ -83,7 +83,7 @@ spec:
   serviceName: game-service
   template:
     spec:
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: game-service
           image: ghcr.io/x/game-service:IMAGE_TAG_PLACEHOLDER
@@ -97,7 +97,7 @@ spec:
   strategy: { type: Recreate }
   template:
     spec:
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: config-service
           image: ghcr.io/x/config-service:IMAGE_TAG_PLACEHOLDER

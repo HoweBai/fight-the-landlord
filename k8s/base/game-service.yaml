@@ -31,7 +31,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       priorityClassName: ftl-data-critical
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       terminationGracePeriodSeconds: 120
       containers:
         - name: game-service

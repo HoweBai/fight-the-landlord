@@ -38,7 +38,7 @@ if [ -n "$CADDY_FILE" ]; then
   echo '── 恢复 caddy-data（一次性 Pod）──'
   name="caddy-restore-$RANDOM"
   "${kc[@]}" -n ftl run "$name" --rm -i --restart=Never --image=alpine:3.20 \
-    --overrides='{"apiVersion":"v1","spec":{"nodeSelector":{"ftl-role":"data"},"containers":[{"name":"restore","image":"alpine:3.20","stdin":true,"stdinOnce":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"caddy-data"}}]}}' \
+    --overrides='{"apiVersion":"v1","spec":{"nodeSelector":{"ftl-data":"true"},"containers":[{"name":"restore","image":"alpine:3.20","stdin":true,"stdinOnce":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"caddy-data"}}]}}' \
     < "$CADDY_FILE"
 fi
 

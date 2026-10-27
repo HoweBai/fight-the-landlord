@@ -14,7 +14,7 @@ spec:
       labels: { app: migrate }
     spec:
       restartPolicy: Never
-      nodeSelector: { ftl-role: data }
+      nodeSelector: { ftl-data: "true" }
       containers:
         - name: migrate
           image: ghcr.io/howebai/fight-the-landlord-config-service:IMAGE_TAG_PLACEHOLDER

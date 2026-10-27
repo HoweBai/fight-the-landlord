@@ -109,7 +109,7 @@ git commit -m "feat(k8s): 清单骨架与机械闸（含自证夹具）"
 
 MySQL StatefulSet（1 副本）：
 - `serviceName: mysql`，headless Service `mysql`（`clusterIP: None`）端口 3306。
-- `nodeSelector: { ftl-role: data }`；`volumeClaimTemplates` 名 `mysql-data`，`storageClassName: local-path`，`20Gi`（迁移前实测后调整）。
+- `nodeSelector: { ftl-data: "true" }`；`volumeClaimTemplates` 名 `mysql-data`，`storageClassName: local-path`，`20Gi`（迁移前实测后调整）。
 - `securityContext: { fsGroup: 999 }`；`resources.requests/limits` 相同（`cpu: 500m`、`memory: 2Gi`，压测后校准）。
 - env 从 `secretKeyRef: ftl-secrets` 取 `DB_PASSWORD`；`MYSQL_ROOT_PASSWORD` 同源；`MYSQL_DATABASE: fight_the_landlord`。
 - readinessProbe/livenessProbe：`exec: mysqladmin ping -h 127.0.0.1 -uroot -p$(MYSQL_ROOT_PASSWORD)`（用 `sh -c` 以展开变量）。
@@ -118,7 +118,7 @@ MySQL StatefulSet（1 副本）：
 Redis StatefulSet（1 副本）：
 - headless Service `redis` 端口 6379；PVC `redis-data` `5Gi`。
 - `command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]`。
-- probes：`redis-cli ping`；`terminationGracePeriodSeconds: 60`；`nodeSelector: ftl-role: data`。
+- probes：`redis-cli ping`；`terminationGracePeriodSeconds: 60`；`nodeSelector: ftl-data: "true"`。
 
 - [ ] **Step 2: 跑闸**
 
@@ -144,7 +144,7 @@ git commit -m "feat(k8s): MySQL/Redis StatefulSet 与本地卷"
 - [ ] **Step 1: 写清单**
 
 edge：
-- Deployment 1 副本，`strategy: { type: Recreate }`，`hostNetwork: true`，`dnsPolicy: ClusterFirstWithHostNet`，`nodeSelector: { ftl-role: data }`。
+- Deployment 1 副本，`strategy: { type: Recreate }`，`hostNetwork: true`，`dnsPolicy: ClusterFirstWithHostNet`，`nodeSelector: { ftl-data: "true" }`。
 - 容器端口 80/443；env `SITE_ADDRESS`、`TLS_MODE` 从 `ftl-secrets`；挂 `caddy-data` PVC 到 `/data`；`securityContext: { runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001 }`。
 - readinessProbe：`httpGet: { path: /, port: 80 }`（Caddy 对 http 返回 308，探针按 `httpGet` 2xx/3xx 判定）。
 - resources `100m/128Mi` 请求、`500m/512Mi` 限制。
@@ -254,7 +254,7 @@ api-gateway：
   - 成功时 `curl -X POST --data-binary @- http://pushgateway:9091/metrics/job/backup` 推 `backup_last_success_timestamp_seconds`。
   - 失败 `exit 1`，CronJob 保留失败 Pod 日志。
 - [ ] **Step 2: restore-k8s.sh**：参数 `--artifact <path>`、`--target mysql|caddy`；恢复前要求 Deployment 已停止（脚本检查并提示 `kubectl scale`）；恢复后跑行数校验。
-- [ ] **Step 3: k8s-preflight.sh**：检查两节点 Ready、`ftl-role` 标签、StorageClass `WaitForFirstConsumer`、`ftl-secrets` 存在、GHCR 拉取、node-a IP、DNS TTL、80/443 空闲。
+- [ ] **Step 3: k8s-preflight.sh**：检查节点 Ready、`ftl-data`/`ftl-compute` 标签（单节点可同机带两个）、StorageClass `WaitForFirstConsumer`、双命名空间 `ftl-secrets`、GHCR 拉取、node-a IP、DNS TTL、80/443 空闲。
 - [ ] **Step 4: deploy-k3s.sh**
   - 变量同 `deploy.sh`（`SSH_HOST`/`SSH_USER`/`SSH_KEY`）+ `K8S_KUBECONFIG`（部署 SA，默认 `/home/ubuntu/.kube/ftl-deploy.yaml`）。
   - 远端：`mkdir -p /srv/pokergame-k8s`；`scp -r k8s`；在远端临时目录 `sed "s/IMAGE_TAG_PLACEHOLDER/$TAG/g"`；`kubectl apply -k`；`kubectl -n ftl wait --for=condition=complete job/migrate-* --timeout=300s`；`kubectl rollout status`；冒烟（复用现有 `Q_SITE_URL` 检查）。
@@ -583,6 +583,7 @@ A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 →（计划审查后）B1 �
 9. **Caddy trusted_proxies**：Caddy 是第一跳、无上游代理，未配置；网关信任 node-a 内网 IP。
 10. **告警缺口**：PVC 水位告警待补；证书到期依赖外部 exporter，一期登记。
 11. **ws-load**：放 conformance 包（根包无 `socket.io-client`），命令 `pnpm --filter ... ws-load`。
+12. **节点标签**：改为 `ftl-data=true` / `ftl-compute=true` 两个独立键（原 `ftl-role` 单键两值使单节点无法同时承载数据层与 douzero）；新增 `k8s/overlays/single-node`，单节点预演可完整观察 HPA。
 
 ## 验证记录（2026-10-27）
 
