@@ -17,6 +17,13 @@ groups:
         annotations:
           summary: 'Pod {{ $labels.pod }} 长期 Pending'
           runbook: '看 resources 是否超节点容量、PVC 是否绑定、imagePullSecret 是否可拉。'
+      - alert: KubePVCPending
+        expr: kube_persistentvolumeclaim_status_phase{namespace=~"ftl|ftl-monitoring",phase="Pending"} == 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'PVC {{ $labels.persistentvolumeclaim }} 长期 Pending'
+          runbook: '看 local-path StorageClass、节点亲和与磁盘水位；数据层 PVC 绑定失败会阻塞对应 StatefulSet。'
       - alert: KubeHPAMaxedOut
         expr: |
           kube_horizontalpodautoscaler_status_current_replicas{namespace="ftl"}

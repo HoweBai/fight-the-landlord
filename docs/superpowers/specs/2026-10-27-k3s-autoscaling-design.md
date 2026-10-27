@@ -194,7 +194,7 @@
 
 ### 4.7 备份与恢复
 
-- **CronJob `mysql-backup`**：每小时 `mysqldump --single-transaction`，写 PVC，校验和 + `manifest.json`；再复制到腾讯云 COS（异地副本）。
+- **备份**：一期用 node-a 主机 cron（`scripts/ops/backup-k8s.sh`，每小时 `mysqldump --single-transaction`），产物写本机 + 可选 `RCLONE_REMOTE` 同步 COS；CronJob 形态延后（原因见 plan「执行偏差」）。
 - **CronJob `caddy-backup`**：证书卷（含属主）每天备份。
 - **告警**：`backup_last_success_timestamp_seconds` 超过 2 小时即告警（现有「只上板不告警」升级）。
 - **恢复**：`restore-k8s.sh` 支持「恢复到新 PVC / 指定时间点备份」；迁移前在预演环境真跑一次完整恢复演练（含证书与 `.env` 之外的全部 Secret 清单核对）。
@@ -238,7 +238,7 @@
 
 - 安装 `@socket.io/redis-adapter`（复用 `REDIS_URL`，pub/sub 用独立连接）。
 - 每个 socket 加入 `user:<userId>` 与 `room:<roomCode>` 房间。
-- **跨 Pod 顶替**：握手时 `io.in('user:'+id).fetchSockets()`，对旧 socket 以 `SESSION_REPLACED` 主动断开；`seatOwners` 改为 Redis 权威键（`ws:owner:{userId}`，带连接代次 + TTL），陈旧断线不误减指标。
+- **跨 Pod 顶替**：握手时 `io.in('user:'+id).fetchSockets()`，对旧 socket 以 `SESSION_REPLACED` 主动断开；新增 Redis 权威键 `ws:owner:{userId}`（连接代次 + TTL）用于属主清理；`seatOwners` 仍保留本地 Map 供投递。陈旧断线**必须**照常递减本地 gauge（代次不得用于跳过 dec）。
 - **请求驱动广播**（join/leave/toggle/state_update）走 `io.to(room)`，由适配器跨 Pod 扇出。
 - **事件驱动推送**（`game:events` / `match:events`）：保留「每个副本订阅、只投本地 socket」的模型，保证每条消息对每个 socket 恰好一次；不改成适配器广播，避免 N 倍重复。
 - **副作用唯一执行**：`game.ended` 触发的结算、`record.write`、`robot.release`、`updateStatus`、指标累加，全部移到 leader lease 保护下的单执行点；再加 `SET NX EX` 的 `(roomCode, version)` 幂等闸兜底。
@@ -445,3 +445,12 @@
 5. 备份/恢复演练成功；备份新鲜度告警可触发。
 6. 迁移夜预演 ≥ 2 次，切换后冒烟全绿。
 7. 文档：`docs/ops/k3s-migration.md`、`docs/ops/k3s-runbook.md`、`docs/design.md` §2.2 更新完毕。
+
+---
+
+## 12. 实现偏差
+
+实现期与本文的偏差逐条登记在
+`docs/superpowers/plans/2026-10-27-k3s-autoscaling.md` 的「执行偏差」节。
+关键三项：备份一期用主机 cron（非 CronJob）、集群级资源拆到 `k8s/bootstrap`、
+k8s 告警独立挂载（不改变 compose 的 32 条计数）。

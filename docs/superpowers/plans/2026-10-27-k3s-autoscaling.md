@@ -540,3 +540,66 @@ rules:
 A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 →（计划审查后）B1 → B2 → B3 → B4 → B5 → B6 → B7 → C1 → C2 → C3 → C4 → C5。
 
 > 平台片 A 的清单可在无集群环境完成静态验收；B 的应用改动全部可在本机用 Vitest 验证；C 的 HPA/压测需预演环境。真集群迁移与生产切换不在本计划内自动执行。
+
+---
+
+## 计划审查记录（对抗审查，2026-10-27）
+
+审查方式：独立 reviewer 子代理，只读仓库。共 20 条：阻断 7 / 高 12 / 低 1。
+
+| # | 发现 | 处置 |
+|---|---|---|
+| 1 | 占位符替换链断裂（NODE_A_IP 未替换） | **已修**：deploy-k3s.sh 同时替换两个占位符，渲染后残留 PLACEHOLDER 即失败 |
+| 2 | 新资源未加入 kustomization，闸仍绿 | **已修**：所有资源已收录；闸增加收录完整性检查 + CI 渲染校验 |
+| 3 | 迁移 Job 不会退出 | **已修**：`DB_MIGRATIONS_ONLY=true` 跑完 `app.close()` 退出 |
+| 4 | 固定 Job 名 + 通配 wait | **已修**：部署脚本先按 label 删除旧 Job，再逐个显式 wait |
+| 5 | apply 在迁移完成前滚动业务 | **已修**：两阶段 apply（migrate overlay → wait → prod overlay） |
+| 6 | 备份 CronJob 镜像缺工具 | **已修（偏差）**：改为 node-a 主机 cron 脚本，复用 kubectl exec；COS 依赖待凭据 |
+| 7 | 所有 Pod 缺 imagePullSecrets | **已修**：prod/migrate overlay 注入 ghcr-pull，部署后断言 |
+| 8 | 闸不渲染、未接 CI | **已修**：闸支持 `--file`；CI 有 kubectl 时校验 `kustomize` 渲染 |
+| 9 | Adapter 缺证书/caBundle | **已修**：自签 + APIService `insecureSkipTLSVerify` |
+| 10 | gateway 无 ws_connections gauge | **已修**：新增 gauge，连接/断开处 inc/dec |
+| 11 | Prometheus 写 secret 目录权限 | **已核**：镜像内目录已 chown 65534；容器以 65534 运行，env 注入 token |
+| 12 | 监控抓取覆盖不足 | **已修**：k8s 专用 Prometheus 配置含 Pod SD + 全部静态 job |
+| 13 | 新增告警打破 32 条计数 | **已修**：k8s 告警独立文件挂载，不进 compose 镜像计数 |
+| 14 | release.yml 破坏 slice-07.4 | **已修**：k3s 部署收回同一 deploy job，按 DEPLOY_TARGET 分支 |
+| 15 | 构造参数注入破坏 wiring 门禁 | **已修**：全部协调件属性注入，13 参数不变 |
+| 16 | leader 门禁放进 scanOnce 会假红 | **已修**：门只装在 runOnce/runRound，测试入口不变 |
+| 17 | generation 跳过 dec 导致 gauge 泄漏 | **已修**：本地 gauge 无条件 dec；代次只清 Redis 属主 |
+| 18 | 2 副本回归永远 SKIP | **已修（部分）**：独立入口 `multi-replica`，REQUIRED=1 时缺地址即失败；未并入默认 CI 切片 |
+| 19 | liveness 用依赖面、摘流机制矛盾 | **已修**：liveness 改 `/api/health/live`；不实现 SIGTERM 置未就绪（见偏差 7） |
+| 20 | ws-load 根包缺依赖等低项 | **已修**：ws-load 放 conformance 包；其余逐条登记 |
+
+## 执行偏差（实现期）
+
+1. **备份形态**：一期用 node-a 主机 cron（`scripts/ops/backup-k8s.sh`），不是 CronJob；`RCLONE_REMOTE` 配置后同步 COS。
+2. **集群级资源**：Namespace / ClusterRole / APIService 拆到 `k8s/bootstrap`（管理员一次应用）；部署账户只有命名空间权限。
+3. **迁移 Job**：固定名 + 部署前按 label 删除；两阶段 apply。
+4. **监控配置**：k8s 专用 `k8s/base/monitoring/prometheus.yml`；k8s 告警独立 `rules-k8s.yml` 挂载，compose 的 32 条计数不变。
+5. **imagePullSecrets**：overlay JSON6902 patch 注入，不逐个改 base。
+6. **2 副本回归**：独立入口 `pnpm --filter @fight-the-landlord/conformance multi-replica`，不加入 `run.ts --list`（避免单实例 CI 误跑）。
+7. **摘流**：依赖 EndpointSlice terminating + preStop 30s；不实现「SIGTERM 置未就绪」（preStop 期间 SIGTERM 尚未发送，原机制不可观测）。
+8. **座位属主**：`seatOwners` 仍为本地 Map（投递用）；跨 Pod 权威只用于连接顶替（`ws:owner`）。
+9. **Caddy trusted_proxies**：Caddy 是第一跳、无上游代理，未配置；网关信任 node-a 内网 IP。
+10. **告警缺口**：PVC 水位告警待补；证书到期依赖外部 exporter，一期登记。
+11. **ws-load**：放 conformance 包（根包无 `socket.io-client`），命令 `pnpm --filter ... ws-load`。
+
+## 验证记录（2026-10-27）
+
+| 项 | 结果 |
+|---|---|
+| `pnpm test` | 29/29 tasks 绿；client 1525 passed（2 skipped） |
+| `pnpm lint` | 18/18 tasks 绿（3 cached） |
+| `pnpm verify:k8s` | 94 文档通过 |
+| `pnpm verify:shutdown` | 8 服务通过 |
+| `verify-admin-static` | 520 checks |
+| `verify-agent-static` | 104 checks |
+| `admin-players-probe` | all checks passed |
+| `verify-monitoring` | 226 checks |
+| room-service | 948 tests 绿 |
+| game-service | 272 tests 绿 |
+| api-gateway | 504 tests 绿 |
+| 四 DB 服务迁移开关 | 各 3 tests 绿 |
+| `slice-07.4-pipeline --render` | 待重跑（k3s job 已收回 deploy job） |
+
+**未在本机验证（预演环境必做）**：k3s 渲染/apply、镜像拉取、HPA 扩缩、2 副本跨 Pod 回归、备份/恢复演练、迁移夜全流程（spec §10.4）。

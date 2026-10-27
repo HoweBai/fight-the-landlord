@@ -74,7 +74,6 @@ jobs:
       always() && !cancelled()
       && (needs.images.result == 'success' || needs.images.result == 'skipped')
       && (needs.conformance.result == 'success' || needs.conformance.result == 'skipped')
-      && vars.DEPLOY_TARGET != 'k3s'
     runs-on: ubuntu-latest
     # ⚠️ 复评 Minor·第二轮：`conformance` job 有 60 分钟上限（终审 M11），而**部署**这一步此前没有
     #    —— 远端 `docker compose pull` 不设超时、`ssh` 也没设 `ServerAlive*` ⇒ 一次挂死的部署可以
@@ -138,8 +137,13 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ runner.temp }}/deploy_key
           DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
         run: |
           set -euo pipefail
+          if [ "${DEPLOY_TARGET:-}" = "k3s" ]; then
+            echo 'ℹ️ [release] k3s：备份由 node-a 主机 cron 承担，跳过 compose 的投递 + 装 cron'
+            exit 0
+          fi
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"; chmod 600 "$SSH_KEY"
           SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
           TARGET="${SSH_USER:-ubuntu}@$SSH_HOST"
@@ -164,13 +168,20 @@ jobs:
           SITE_URL: ${{ vars.SITE_URL }}
           GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+          NODE_A_IP: ${{ vars.NODE_A_IP }}
+          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
           # ⚠️ tag push ⇒ 部署 `v1.2.3`；dispatch（回滚）⇒ 部署输入里那个**既有** tag。
           IMAGE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.image_tag }}
         run: |
           set -euo pipefail
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
-          bash scripts/deploy/deploy.sh "$IMAGE_TAG"
+          if [ "${DEPLOY_TARGET:-}" = "k3s" ]; then
+            bash scripts/deploy/deploy-k3s.sh "$IMAGE_TAG"
+          else
+            bash scripts/deploy/deploy.sh "$IMAGE_TAG"
+          fi
       # ── 片③-B（设计 §3.1 / §5）第三件：**仅当还没有 `ok:true` 的 manifest 时**立刻跑一次备份。
       #    🔴 它必须排在 `部署` **之后**（第一轮修复轮 C1 —— 修前它在部署之前，**首次发布会死锁**）：
       #       新服务器上备份目录是空的 ⇒ 这一步**一定会跑**；而 `backup.sh` 要 `docker exec` 进
@@ -195,8 +206,13 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ runner.temp }}/deploy_key
           DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
         run: |
           set -euo pipefail
+          if [ "${DEPLOY_TARGET:-}" = "k3s" ]; then
+            echo 'ℹ️ [release] k3s：首跑备份由主机 cron 承担，跳过 compose 路径'
+            exit 0
+          fi
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"; chmod 600 "$SSH_KEY"
           SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
           TARGET="${SSH_USER:-ubuntu}@$SSH_HOST"
@@ -238,10 +254,16 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ runner.temp }}/deploy_key
           DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
         run: |
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
-          bash scripts/deploy/deploy.sh --assert-clean
+          if [ "${DEPLOY_TARGET:-}" = "k3s" ]; then
+            bash scripts/deploy/deploy-k3s.sh --assert-clean
+          else
+            bash scripts/deploy/deploy.sh --assert-clean
+          fi
       # ── 片③-B（设计 §6.4 / 第二轮 I-1）：备份新鲜度 —— **本 job 的最后一步**。
       #    🔴 位置是承诺，不是习惯：手册「备份还活着吗」逐字写着「那次发布会**在最后一步红**」
       #       ⇒ 它必须排在上面那个 `if: always()` 的 C4 收尾断言**之后**（否则那一句不可能发生 ——
@@ -257,58 +279,14 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_KEY: ${{ runner.temp }}/deploy_key
           DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
         run: |
           set -euo pipefail
+          if [ "${DEPLOY_TARGET:-}" = "k3s" ]; then
+            echo 'ℹ️ [release] k3s：备份新鲜度由 FtlBackupStale 告警承担，跳过 compose 检查'
+            exit 0
+          fi
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
           bash scripts/ops/check-backup-fresh.sh
 
-  # ── k3s 部署（DEPLOY_TARGET=k3s 时启用；与上面的 compose 部署互斥）──────────
-  deploy-k3s:
-    needs: [images, conformance]
-    if: |
-      always() && !cancelled()
-      && (needs.images.result == 'success' || needs.images.result == 'skipped')
-      && (needs.conformance.result == 'success' || needs.conformance.result == 'skipped')
-      && vars.DEPLOY_TARGET == 'k3s'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: 前置：tag 指向的提交必须在 master 上（R1308）
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --unshallow origin 2>/dev/null || true
-          git fetch --no-tags origin master:refs/remotes/origin/master
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
-      - name: 部署到 k3s
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_KEY: ${{ runner.temp }}/deploy_key
-          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
-          SITE_URL: ${{ vars.SITE_URL }}
-          NODE_A_IP: ${{ vars.NODE_A_IP }}
-          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
-          IMAGE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.image_tag }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
-          chmod 600 "$SSH_KEY"
-          bash scripts/deploy/deploy-k3s.sh "$IMAGE_TAG"
-      - name: 收尾断言：部署账户与服务器凭据（C4）
-        if: always()
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_KEY: ${{ runner.temp }}/deploy_key
-          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
-          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
-          chmod 600 "$SSH_KEY"
-          bash scripts/deploy/deploy-k3s.sh --assert-clean
