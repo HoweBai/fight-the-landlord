@@ -244,6 +244,31 @@ describe('AgentLedgerService：台费记账', () => {
     expect(db.quota.get('u1')).toEqual({ inflow_total: 100, consumed_total: 1 });
   });
 
+  /**
+   * 🔴 2026-10-27 真栈（slice-32-agent）：链查询的递归 join 方向曾被写反
+   * （`a.parent_id = _chain.id` = 向下取「下级」），真库上只返回直接代理一人 ⇒
+   * `top_rate_bp` 少算上级比例（8000 记成 6000）、上级那档佣金**整档不发**。
+   * 假 manager 按**语义**走链（与 SQL 无关），方向写反也全绿 ⇒ 本用例在**字符串级**
+   * 钉住方向（该缺陷的唯一低成本机械闸）。
+   */
+  it('链查询方向闸：递归项必须沿 parent_id 向上（a.id = _chain.parent_id）', async () => {
+    const db = makeDb({
+      bindings: { u1: { agent_id: 'a', phone_hash: hmacPhone('13900000000') } },
+      agents: agents9060,
+      quota: { u1: { inflow: 100, consumed: 0 } },
+    });
+    const { ledger } = makeLedger();
+    await ledger.onApply(db.manager, ctx('entry_fee', -1));
+
+    const chainSql = db.calls.find((sql) => sql.includes('WITH RECURSIVE _chain'));
+    expect(chainSql, '链查询必须存在（否则本条空转）').toBeDefined();
+    expect(chainSql).toContain('JOIN _chain ON a.`id` = _chain.`parent_id`');
+    expect(
+      chainSql,
+      '反方向（a.parent_id = _chain.id）只取到下级 —— 真库上会让上级佣金整档不发',
+    ).not.toContain('JOIN _chain ON a.`parent_id` = _chain.`id`');
+  });
+
   it('未绑定：写 unbound event、无佣金、不动额度', async () => {
     const db = makeDb({ quota: { u1: { inflow: 100, consumed: 0 } } });
     const { ledger } = makeLedger();
