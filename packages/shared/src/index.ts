@@ -54,3 +54,7 @@ export * from './pdk/autoplay';
 export * from './pdk/features';
 // 麻将（2026-10-28）：会话形状；规则/状态机在后续任务补齐。
 export * from './mahjong/session';
+export * from './mahjong/deck';
+export * from './mahjong/exchange';
+export * from './mahjong/lack';
+export * from './mahjong/meld';
