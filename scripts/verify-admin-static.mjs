@@ -333,7 +333,7 @@ const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', 
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
 const renderRowsBlock = /function renderConfigRows\([\s\S]*?\n\}/.exec(app)?.[0] ?? '';
-ok(renderRowsBlock.includes('buildGameHeader('), 'renderConfigRows 调用 buildGameHeader');
+ok(app.includes('buildGameHeader(') && renderRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 经 renderCfgDomain 渲染开关键卡');
 const fnBody = balancedBlock(app, 'function lastEnabledGameWarning', '{', '}');
 ok(fnBody !== '', '找到 lastEnabledGameWarning');
 const lastWarn = new Function(

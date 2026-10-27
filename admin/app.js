@@ -1006,7 +1006,7 @@ const IA_KEY_SET = new Set(
 );
 /** 快照表外键的虚拟域（计数 0 时不渲染）。 */
 const UNGROUPED_DOMAIN_ID = '__ungrouped';
-const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '' });
+const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDomainId: null });
 
 /**
  * 左树配置叶 id ⇄ IA 域 id（HTML 静态树用固定叶 id；IA 表保留源生域 id）。
@@ -1589,10 +1589,16 @@ function normalizeCfgDomain() {
       domainSnapshotCount(IA_DOMAINS.find((d) => d.id === m.domain)) > 0,
   );
   cfgUI.domainId = first ? first.domain : UNGROUPED_DOMAIN_ID;
+  cfgUI.tabId = null;
+  cfgUI.tabDomainId = null;
 }
 
 /** 点左树配置叶：切域（已在 config 视图只重渲染，避免重复懒加载与状态复位）。 */
 function openCfgDomain(domainId) {
+  if (domainId !== cfgUI.domainId) {
+    cfgUI.tabId = null;
+    cfgUI.tabDomainId = null;
+  }
   cfgUI.domainId = domainId;
   cfgUI.query = '';
   $('settings-search').value = '';
@@ -1630,47 +1636,33 @@ function renderConfigRows({ preserve = false } = {}) {
 
   host.textContent = '';
   const q = cfgUI.query.trim().toLowerCase();
-  let sections;
-  let headerDomain = null;
+  let rendered = 0;
+  let multiTab = false;
   if (q) {
     const keys = snapshotKeys().filter(
       (k) =>
         !LEGACY_KEY_SET.has(k) &&
         (k.toLowerCase().includes(q) || notesHaystack(k).includes(q)),
     );
-    sections = [{ name: `搜索结果（${keys.length}）`, keys }];
+    if (keys.length > 0) {
+      const title = document.createElement('h3');
+      title.className = 'settings-section';
+      title.textContent = `搜索结果（${keys.length}）`;
+      host.append(title);
+      for (const key of keys) {
+        host.append(buildKeyCard(key));
+        rendered += 1;
+      }
+    }
   } else {
     normalizeCfgDomain();
     const domain = domainById(cfgUI.domainId);
-    headerDomain = domain;
-    sections = domain
-      ? domain.tabs
-          .map((t) => ({
-            name: t.name,
-            keys: t.keys.filter((k) => k in currentConfig),
-          }))
-          .filter((s) => s.keys.length > 0)
-      : [];
-  }
-
-  let rendered = 0;
-  // 玩法域顶部开关卡（搜索态不渲染；搜索态里该键作为普通布尔行走 buildKeyCard）。
-  for (const key of headerDomain?.headerKeys ?? []) {
-    host.append(buildGameHeader(headerDomain, key));
-    rendered += 1;
-  }
-  for (const sec of sections) {
-    if (sec.keys.length === 0) continue;
-    const title = document.createElement('h3');
-    title.className = 'settings-section';
-    title.textContent = sec.name;
-    host.append(title);
-    for (const key of sec.keys) {
-      host.append(buildKeyCard(key));
-      rendered += 1;
+    if (domain) {
+      multiTab = (domain.tabs ?? []).length > 1;
+      rendered = renderCfgDomain(host, domain);
     }
   }
-  if (rendered === 0) {
+  if (rendered === 0 && !multiTab) {
     const empty = document.createElement('p');
     empty.className = 'settings-empty';
     empty.textContent = q ? '没有匹配的配置键' : '（暂无可展示的配置键）';
@@ -1684,6 +1676,91 @@ function renderConfigRows({ preserve = false } = {}) {
     const card = host.querySelector(`[data-key="${cssEscape(focusedKey)}"]`);
     card?.querySelector('input, textarea, select')?.focus();
   }
+}
+
+/** 非搜索域渲染：header 开关键卡 →（多页签）页签条 + 全部面板 /（单页签）分区标题 + 键。 */
+function renderCfgDomain(host, domain) {
+  let rendered = 0;
+  // 玩法域顶部开关卡：域级开关，永远在页签条之前。
+  for (const key of domain.headerKeys ?? []) {
+    host.append(buildGameHeader(domain, key));
+    rendered += 1;
+  }
+  const tabs = domain.tabs ?? [];
+  if (tabs.length > 1) {
+    const active = resolveCfgTab(domain, tabs);
+    host.append(buildConfigTabStrip(domain, tabs));
+    for (const t of tabs) {
+      const keys = t.keys.filter((k) => k in currentConfig);
+      const panel = el('div', 'cfg-tab-panel');
+      panel.dataset.tab = t.id;
+      panel.hidden = t.id !== active?.id;
+      if (keys.length === 0) {
+        panel.append(el('p', 'settings-empty cfg-tab-empty', '本页签暂无可展示的键'));
+      } else {
+        for (const key of keys) panel.append(buildKeyCard(key));
+        rendered += keys.length;
+      }
+      host.append(panel);
+    }
+    return rendered;
+  }
+  for (const t of tabs) {
+    const keys = t.keys.filter((k) => k in currentConfig);
+    if (keys.length === 0) continue;
+    host.append(el('h3', 'settings-section', t.name));
+    for (const key of keys) {
+      host.append(buildKeyCard(key));
+      rendered += 1;
+    }
+  }
+  return rendered;
+}
+
+/** 当前页签解析：tabId 必须与 tabDomainId 配对（ddz/pdk 有同名页签）。 */
+function resolveCfgTab(domain, tabs) {
+  const stored =
+    cfgUI.tabDomainId === domain.id ? tabs.find((t) => t.id === cfgUI.tabId) : null;
+  const active =
+    stored ??
+    tabs.find((t) => t.keys.some((k) => k in currentConfig)) ??
+    tabs[0] ??
+    null;
+  cfgUI.tabId = active?.id ?? null;
+  cfgUI.tabDomainId = active ? domain.id : null;
+  return active;
+}
+
+/** 页签条：点击只切 UI（DOM 保留），不重建设置行。 */
+function buildConfigTabStrip(domain, tabs) {
+  const strip = el('div', 'tabs cfg-tabs');
+  for (const t of tabs) {
+    const on = t.id === cfgUI.tabId;
+    const b = btn(t.name, `tab-btn${on ? ' active' : ''}`);
+    b.dataset.tab = t.id;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      if (t.id === cfgUI.tabId) return;
+      applyCfgTabUI(t.id);
+      $('settings-host').scrollTop = 0;
+    });
+    strip.append(b);
+  }
+  return strip;
+}
+
+/** 页签切换：active 高亮 + 面板显隐（全部面板常驻 DOM）。 */
+function applyCfgTabUI(tabId) {
+  const host = $('settings-rows');
+  for (const b of host.querySelectorAll('.cfg-tabs .tab-btn')) {
+    const on = b.dataset.tab === tabId;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  for (const p of host.querySelectorAll('.cfg-tab-panel')) {
+    p.hidden = p.dataset.tab !== tabId;
+  }
+  cfgUI.tabId = tabId;
 }
 
 /**
