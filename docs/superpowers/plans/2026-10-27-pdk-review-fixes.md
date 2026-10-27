@@ -371,6 +371,29 @@
 - 提交文档、报告 SHA/验证证据/未做事项（C3、4 人金币真栈、权威轮）。
 - 推送/合并按用户指示执行（不擅自推远端）。
 
+## 验证记录（2026-10-27 本机）
+
+分支 `fix/pdk-review-findings`，基线 `dev@aa0cbfe9`；实现提交 `38b07cc5..e6a24075`。
+
+| 包 | 结果 |
+|---|---|
+| protocol | 304 passed；lint/build 绿 |
+| shared | 404 passed；lint/build 绿 |
+| game-service | 275 passed；lint 绿 |
+| room-service | 989 passed；lint 绿 |
+| user-service | 406 passed；lint 绿 |
+| apps/client | 1535 passed / 5 failed / 2 skipped；`vue-tsc` 绿 |
+| tools/conformance | `pnpm -C tools/conformance run lint`（tsc --noEmit）绿 |
+
+- client 5 失败全部为 **dev 基线既有**：`git show dev:apps/client/src/pages/history/history.vue`
+  已无 `history__game`（测试仍断言该选择器，4 例）；`ui-tokens` 单位违规 1 例。
+  本片 diff 未触碰这些文件。
+- `pnpm exec turbo run test lint --force`：17/35 后停在 `currency-service#lint`
+  （`@nestjs/jwt`/`rxjs` 模块缺失 + `ALL_ACCOUNTS_SQL` 未使用）。经 `git show dev` 确认
+  该文件与依赖状态自 dev 起未变，属既有环境/基线问题；改动的 6 个包已逐个全量复跑。
+- 真栈 `slice-05` / `slice-29-paodekuai` **未跑**：需要 3000–3003 真实服务与镜像；
+  本片为单元/契约级修复，按 spec §5 登记，合 master 权威轮补齐。
+
 ## 计划审查记录
 
 ### 2026-10-27 计划对抗审查（独立 reviewer）
@@ -390,4 +413,20 @@
 
 ## 代码审查记录
 
-- 待实现完成后填写。
+### 2026-10-27 代码审查（独立 reviewer，`dev..HEAD`）
+
+结论：**无 Critical / Important**；9 条 Minor，处置如下。
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| M1 | Minor | 形状守卫在 version 守卫之后，spec 要求 result 后、version 前 | 登记：仅影响 WARN 文案优先级，不写钱 |
+| M2 | Minor | 结算算法 JSDoc 悬空；顶层指标按结果形状猜玩法 | 已修：注释归位；`topGameType` 优先 `room.gameType` |
+| M3 | Minor | hint 注释低估枚举量；跟牌仍全量枚举再过滤 | 注释已改；跟牌枚举空间登记 |
+| M4 | Minor | 性能测试只看过滤后候选数，回退子集枚举仍可能绿 | 已加源码闸：禁 `combinations(`/`Math.min(12` |
+| M5 | Minor | 客户端测试自建 `DEFAULT_RULES` 与 shared 双真源 | 登记：客户端不依赖 shared，无法复用 |
+| M6 | Minor | validate 六调用点只覆盖 3 处 | 登记：行为面 + 源码闸已覆盖主要漂移 |
+| M7 | Minor | 新规则错误映射未断言码值 | 登记：覆盖闸已保证新增 throw 有人负责 |
+| M8 | Minor | 规则文案“若都在扣牌中”仅 2 人局成立 | 已修：明确“2 人局” |
+| M9 | Minor | spec/plan 状态未更新 | 已更新 |
+
+审查后提交：`e6a24075 chore: 代码审查 Minor 收口`；受影响包测试与 lint 复跑绿。
