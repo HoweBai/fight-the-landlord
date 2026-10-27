@@ -7,7 +7,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, Optional } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import {
   ErrCode,
@@ -58,6 +58,7 @@ import {
 } from '../metrics/room.metrics';
 // 记牌器收费片：房间状态（room:{code}:ccstate）的读/发共用件（重连补发三条路径之一）。
 import { emitCardCounterStatus, readCardCounterStatus } from './card-counter-status';
+import { ConnectionRegistry } from '../coordination/connection-registry.service';
 
 /** 网关代理的 ack 关联字段（与 api-gateway 的 `CORRELATION_KEY` 必须同名）。 */
 export const CORRELATION_KEY = '__ackId';
@@ -253,6 +254,15 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
   /** Maps `${roomCode}:${seat}` → userId，投递 `seatViews` 时用。 */
   readonly seatOwners = new Map<string, string>();
 
+  /**
+   * 跨 Pod 连接登记（spec 2026-10-27 D12）。
+   * ⚠️ 属性注入而非构造参数：保持 13 个构造依赖的 wiring 门禁不变；直连 `new WsGateway(...)`
+   * 的单测里为 null ⇒ 退化为本 Pod 旧行为。
+   */
+  @Optional()
+  @Inject(ConnectionRegistry)
+  connections: ConnectionRegistry | null = null;
+
   /** 独立的订阅连接：subscriber 模式下连接不能执行普通命令。 */
   private readonly gameEventsRedis: Redis;
   private readonly matchEventsRedis: Redis;
@@ -442,6 +452,15 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
        * `ws.gateway.test.ts` 的「硬换手不双计 / 陈旧断线不误减」。
        */
       if (!previous) wsConnections.inc();
+      // 跨 Pod 顶替：先登记新连接（会断开其他 Pod 上同 user 的旧 socket）。
+      // 失败方向：登记失败只记 error，不回滚本地连接（Redis 已是登录/对局硬依赖）。
+      if (this.connections) {
+        try {
+          await this.connections.register(this.server, socket, userId);
+        } catch (err) {
+          this.logger.error(`Connection registry register failed for ${userId}: ${String(err)}`);
+        }
+      }
       this.logger.log(`Client connected: ${socket.id} (user: ${userId})`);
 
       /**
@@ -572,6 +591,8 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
      * （它的顶替连接还在册）；握手被拒的连接也从未 inc 过（更走不到这里）。
      */
     wsConnections.dec();
+    // 属主键清理是 best-effort；本地 gauge 已在上一行无条件递减（不得用代次跳过）。
+    if (this.connections) void this.connections.unregister(socket, () => {});
     for (const [key, owner] of this.seatOwners) {
       if (owner === userId) this.seatOwners.delete(key);
     }
