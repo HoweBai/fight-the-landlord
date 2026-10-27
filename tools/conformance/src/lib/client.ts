@@ -122,6 +122,20 @@ export class HarnessClient {
     this.socket.disconnect();
   }
 
+  /** 等待服务端/网络断开（多副本顶替回归用）；超时即失败。 */
+  waitForDisconnect(timeoutMs = 8000): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new ConformanceError(`${this.label} 未在 ${timeoutMs}ms 内断开`)),
+        timeoutMs,
+      );
+      this.socket.once('disconnect', (reason: string) => {
+        clearTimeout(timer);
+        resolve(reason);
+      });
+    });
+  }
+
   close(): void {
     this.socket.removeAllListeners();
     this.socket.disconnect();
