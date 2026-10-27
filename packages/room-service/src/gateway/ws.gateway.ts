@@ -1158,6 +1158,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
         botBySeat,
         botNicknames,
         endedAt,
+        settleRoom,
       );
     } catch (err) {
       // 组装期异常 = 没有可入箱/可直投的请求 ⇒ 永久丢失；settle 已派发，互不影响。
@@ -1224,9 +1225,15 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     botBySeat: ReadonlyMap<number, string>,
     botNicknames: Readonly<Record<string, string>>,
     endedAt: number,
+    /**
+     * 审查 P2-4：`finalizeRoomEnd` 已为结算读过一次房间；正常路径复用同一快照，
+     * 避免同局两次 HGETALL。**仅在首读失败（null）时兜底重读**，保持既有
+     * 「settle 跳过但记录仍可写」的 TTL 降级语义。
+     */
+    roomHint: Room | null,
   ): Promise<PreparedRecord | null> {
     // ── 跳过判据二：房间数据缺失（房键已过期 —— 已接受窗口，台账登记）────────────
-    const room = await this.roomsService.findOne(event.roomCode);
+    const room = roomHint ?? (await this.roomsService.findOne(event.roomCode));
     if (!room) {
       incGame(recordWriteSkipsTotal, record.gameType, 1, { reason: 'room_ttl' });
       this.logger.warn(
