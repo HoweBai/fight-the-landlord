@@ -31,16 +31,21 @@ export function huContext(
   seat: number,
   selfDraw: boolean,
   robbingKong = false,
+  /** 杠上炮的**显式事实**（弃牌来自杠后补牌）；抢杠窗口必须传 false。 */
+  shootAfterKong = false,
 ): HuContext {
   const last = session.lastDraw;
   return {
     ...EMPTY_HU_CONTEXT,
     selfDraw,
     winAfterKong: selfDraw && last?.seat === seat && last.fromKong === true,
-    shootAfterKong: !selfDraw && last?.fromKong === true && last.seat !== seat,
+    shootAfterKong:
+      !selfDraw &&
+      !robbingKong &&
+      (shootAfterKong || (last?.fromKong === true && last.seat !== seat)),
     robbingKong,
-    underTheSea: session.wallCount === 0,
-    lastFour: session.wallCount <= 4,
+    underTheSea: session.wall.length === 0,
+    lastFour: session.wall.length <= 4,
   };
 }
 
@@ -56,6 +61,7 @@ export function checkHu(
   tile: Tile,
   selfDraw: boolean,
   robbingKong = false,
+  shootAfterKong = false,
 ): HuCheck {
   const player = session.players[seat];
   if (!player || player.isOut) return { ok: false };
@@ -67,7 +73,7 @@ export function checkHu(
     melds: player.melds,
     lackSuit: player.lackSuit!,
     winningTile: tile,
-    context: huContext(session, seat, selfDraw, robbingKong),
+    context: huContext(session, seat, selfDraw, robbingKong, shootAfterKong),
     rules: session.rules,
   });
   if (score.fan < session.rules.minFanToHu) return { ok: false };
@@ -103,7 +109,16 @@ export function claimCandidates(session: MahjongSession): number[] {
   const out: number[] = [];
   for (const seat of activeSeats(session)) {
     if (seat === pc.fromSeat) continue;
-    if (checkHu(session, seat, pc.discard, false, pc.kind === 'rob').ok) {
+    if (
+      checkHu(
+        session,
+        seat,
+        pc.discard,
+        false,
+        pc.kind === 'rob',
+        pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+      ).ok
+    ) {
       out.push(seat);
       continue;
     }
@@ -117,10 +132,18 @@ export function claimCandidates(session: MahjongSession): number[] {
 }
 
 export function isForcedHu(session: MahjongSession, seat: number, tile: Tile): boolean {
+  const pc = session.pendingClaims;
   return (
     session.rules.lastFourForcedHu &&
-    session.wallCount <= 4 &&
-    checkHu(session, seat, tile, false, session.pendingClaims?.kind === 'rob').ok
+    session.wall.length <= 4 &&
+    checkHu(
+      session,
+      seat,
+      tile,
+      false,
+      pc?.kind === 'rob',
+      pc?.kind === 'claim' && pc.gangShootSeq !== undefined,
+    ).ok
   );
 }
 

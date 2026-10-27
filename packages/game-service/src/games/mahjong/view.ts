@@ -39,7 +39,14 @@ function claimsForMe(session: MahjongSession, seat: number): MahjongClaimOption[
   const pc = session.pendingClaims;
   if (session.state === 'claim' && pc?.candidates.includes(seat)) {
     if (pc.responses.some((r) => r.seat === seat)) return [];
-    const hu = checkHu(session, seat, pc.discard, false, pc.kind === 'rob');
+    const hu = checkHu(
+      session,
+      seat,
+      pc.discard,
+      false,
+      pc.kind === 'rob',
+      pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+    );
     if (hu.ok) out.push({ claim: 'hu', tile: pc.discard, fan: hu.score!.fan });
     if (pc.kind === 'claim') {
       if (canGangFromDiscard(session, seat, pc.discard)) out.push({ claim: 'gang', tile: pc.discard });
@@ -56,7 +63,11 @@ function claimsForMe(session: MahjongSession, seat: number): MahjongClaimOption[
     }
     const counts = countTiles(player.hand);
     for (let type = 0; type < counts.length; type += 1) {
-      if (counts[type] === 4) out.push({ claim: 'gang', tile: tileFromType(type) });
+      if (counts[type] === 4) {
+        const tile = tileFromType(type);
+        // 缺门牌不能杠（与 canPeng/canMeldedGang 同一条规则）。
+        if (tile.s !== player.lackSuit) out.push({ claim: 'gang', tile });
+      }
     }
     for (const meld of player.melds) {
       if (meld.kind !== 'peng') continue;

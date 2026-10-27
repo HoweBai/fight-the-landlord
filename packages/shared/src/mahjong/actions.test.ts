@@ -155,6 +155,8 @@ describe('杠上炮：呼叫转移 / 退回', () => {
       amount: 60,
       reason: 'gangShoot',
     });
+    const hu = s.scoreEvents.find((e) => e.kind === 'hu');
+    expect(hu && hu.kind === 'hu' ? hu.items.join('|') : '').toContain('杠上炮');
   });
 
   it('none：杠分退回原付款人（shootAfterGang），不产生转移', () => {
@@ -227,5 +229,38 @@ describe('整局自动推进（超时/托管同一条自动决策）', () => {
       }
     }
     expect(result.scoreChanges.map((c) => c.delta)).toEqual(deltas);
+  });
+});
+
+describe('缺门与抢杠边界', () => {
+  it('缺门牌不能暗杠（即使手上有 4 张）', () => {
+    const hand = [t(0, 1), t(0, 1), t(0, 1), t(0, 1), ...ranks(1, [2, 3, 4, 5, 6, 7, 8, 9, 1])];
+    const s = makeGame([hand, ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4]), ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4]), ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4])], 0);
+    s.players[0]!.lackSuit = 0; // 缺万
+    expect(() => applyMahjongAction(s, 0, { type: 'concealedGang', tile: t(0, 1) }, () => 0)).toThrow(
+      /缺门牌不能杠/,
+    );
+  });
+
+  it('抢杠一炮多响：两个赢家都能胡（物理牌只移除一次）', () => {
+    const p0 = [t(1, 7), ...ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9])];
+    const wait7 = [...ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]), ...ranks(1, [4, 5, 6]), t(1, 7)];
+    const junk = ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4]);
+    let s = makeGame([p0, wait7, wait7, junk], 0);
+    s.players[0]!.melds = [{ kind: 'peng', tiles: [t(1, 7), t(1, 7), t(1, 7)], fromSeat: 1 }];
+    s = applyMahjongAction(s, 0, { type: 'addedGang', tile: t(1, 7) }, () => 0);
+    expect(s.state).toBe('claim');
+    expect(s.pendingClaims?.kind).toBe('rob');
+    s = applyMahjongAction(s, 1, { type: 'claim', claim: 'hu' }, () => 0);
+    s = applyMahjongAction(s, 2, { type: 'claim', claim: 'hu' }, () => 0);
+    const ended = s;
+    expect(ended.players[1]!.isOut).toBe(true);
+    expect(ended.players[2]!.isOut).toBe(true);
+    // 抢杠窗口不继承杠后补牌标志 ⇒ 不额外算杠上炮。
+    const hu2 = ended.scoreEvents.filter((e) => e.kind === 'hu');
+    expect(hu2).toHaveLength(2);
+    for (const e of hu2) {
+      if (e.kind === 'hu') expect(e.items.join('|')).not.toContain('杠上炮');
+    }
   });
 });

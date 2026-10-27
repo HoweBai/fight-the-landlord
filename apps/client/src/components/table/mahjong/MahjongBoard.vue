@@ -82,8 +82,10 @@ const handSelectable = computed(() => {
 });
 
 const selected = ref<number[]>([]);
+// 只在**手牌内容**变化时清空选择：换三张阶段别人提交也会 bump version，
+// 若把 version 纳入 watch 源，我正在选的第 2/3 张会被别人的动作清掉。
 watch(
-  () => `${props.view?.version ?? -1}:${hand.value.map(tileType).join(',')}`,
+  () => hand.value.map(tileType).join(','),
   () => {
     selected.value = [];
   },

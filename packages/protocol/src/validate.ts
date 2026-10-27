@@ -638,6 +638,21 @@ export function validateOutbound(msg: unknown): ServerMessage {
         p.winnerSeats.forEach((s, i) => assertInt(s, `$.payload.winnerSeats[${i}]`, 0, 3));
         break;
       }
+      if (p.gameType === 'mahjong') {
+        // 血战可能无人胡（荒庄）⇒ winnerSeats 允许空数组。
+        if (!Array.isArray(p.winnerSeats)) {
+          throw new ProtocolError('$.payload.winnerSeats must be an array');
+        }
+        p.winnerSeats.forEach((s, i) => assertInt(s, `$.payload.winnerSeats[${i}]`, 0, 3));
+        if (p.endReason !== 'threeWinners' && p.endReason !== 'wallEmpty') {
+          throw new ProtocolError("$.payload.endReason must be 'threeWinners' | 'wallEmpty'");
+        }
+        if (!Array.isArray(p.huazhuSeats)) {
+          throw new ProtocolError('$.payload.huazhuSeats must be an array');
+        }
+        p.huazhuSeats.forEach((s, i) => assertInt(s, `$.payload.huazhuSeats[${i}]`, 0, 3));
+        break;
+      }
       if (p.winner !== 'landlord' && p.winner !== 'farmer') {
         throw new ProtocolError("$.payload.winner must be 'landlord' | 'farmer'");
       }

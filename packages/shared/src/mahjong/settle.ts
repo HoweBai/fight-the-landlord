@@ -76,7 +76,12 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
     const active = activeSeats(session);
     const flowerPigs = active.filter((seat) => {
       const p = session.players[seat]!;
-      return p.lackSuit !== null && (hasLackTiles(p.hand, p.lackSuit) || presentSuits(p.hand).length === 3);
+      return (
+        p.lackSuit !== null &&
+        (hasLackTiles(p.hand, p.lackSuit) ||
+          p.melds.some((m) => m.tiles.some((t) => t.s === p.lackSuit)) ||
+          presentSuits(p.hand).length === 3)
+      );
     });
     huazhuSeats.push(...flowerPigs);
     const nonPig = active.filter((seat) => !flowerPigs.includes(seat));
@@ -86,37 +91,7 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
     });
     const notReady = nonPig.filter((seat) => !ready.includes(seat));
 
-    if (session.rules.chajiaoEnabled && !(session.rules.chajiaoAllSameState === 'none' && notReady.length === 0)) {
-      for (const from of notReady) {
-        for (const to of ready) {
-          const p = session.players[to]!;
-          const maxFan = tingResult(p.hand, p.melds, p.lackSuit!, session.rules).maxFan;
-          const amount = 2 ** Math.max(0, Math.min(maxFan, session.rules.fanCap) - session.rules.fanBase) * base;
-          events.push({ kind: 'chajiao', seq: nextSeq(), fromSeat: from, toSeat: to, amount, fan: maxFan });
-          chajiao.push({ from, to, amount });
-        }
-      }
-    }
-
-    for (const seat of flowerPigs) {
-      if (session.rules.huazhuMode === 'payEach') {
-        const payees = nonPig.map((x) => ({ seat: x, amount: capMultiplier(session) * base }));
-        events.push({
-          kind: 'huazhu',
-          seq: nextSeq(),
-          seat,
-          amount: capMultiplier(session) * base,
-          mode: 'payEach',
-          payees,
-        });
-      } else if (session.rules.huazhuMode === 'burn48') {
-        const amount = 48 * base;
-        events.push({ kind: 'huazhu', seq: nextSeq(), seat, amount, mode: 'burn48', payees: [] });
-        burn.push({ seat, amount, reason: 'flowerPig' });
-      }
-    }
-
-    // 退税：杠者荒庄未听，退回尚未转移的杠分（呼叫转移/杠上炮已处置过的不再退）。
+    // 退税（spec §4.6 第 4 步）：必须在查叫/花猪之前生成，截断时优先退还尚未转移的杠分。
     // `refundOnDraw` 两档在当前事件模型下同义：退税对象都是**杠事件收款人（杠者）**
     // 且该座未听/花猪；保留配置是为了让规则预设自描述（SBR 文档写“仅杠者”）。
     const notReadySet = new Set<number>([...notReady, ...flowerPigs]);
@@ -138,6 +113,41 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
         reason: 'notReady',
       });
     }
+
+    if (session.rules.chajiaoEnabled && !(session.rules.chajiaoAllSameState === 'none' && notReady.length === 0)) {
+      for (const from of notReady) {
+        for (const to of ready) {
+          const p = session.players[to]!;
+          const maxFan = tingResult(p.hand, p.melds, p.lackSuit!, session.rules).maxFan;
+          const amount = 2 ** Math.max(0, Math.min(maxFan, session.rules.fanCap) - session.rules.fanBase) * base;
+          events.push({ kind: 'chajiao', seq: nextSeq(), fromSeat: from, toSeat: to, amount, fan: maxFan });
+          chajiao.push({ from, to, amount });
+        }
+      }
+    }
+
+    for (const seat of flowerPigs) {
+      if (session.rules.huazhuMode === 'payEach') {
+        const payeeSeats =
+          session.rules.huazhuPayees === 'nonFlowerPig'
+            ? [0, 1, 2, 3].filter((x) => !flowerPigs.includes(x))
+            : nonPig;
+        const payees = payeeSeats.map((x) => ({ seat: x, amount: capMultiplier(session) * base }));
+        events.push({
+          kind: 'huazhu',
+          seq: nextSeq(),
+          seat,
+          amount: capMultiplier(session) * base,
+          mode: 'payEach',
+          payees,
+        });
+      } else if (session.rules.huazhuMode === 'burn48') {
+        const amount = 48 * base;
+        events.push({ kind: 'huazhu', seq: nextSeq(), seat, amount, mode: 'burn48', payees: [] });
+        burn.push({ seat, amount, reason: 'flowerPig' });
+      }
+    }
+
   }
 
   const deltas = [0, 0, 0, 0];

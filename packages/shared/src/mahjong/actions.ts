@@ -108,14 +108,9 @@ function drawFor(s: MahjongSession, seat: number, fromKong: boolean): void {
   const player = s.players[seat]!;
   player.hand.push(next);
   s.lastDraw = { seat, tile: next, fromKong };
-  // 回放/审计：摸牌也入动作账（不属于客户端动作，但缺了它回放无法重演手牌）。
-  s.actionLog = [
-    ...s.actionLog,
-    { version: s.version, seat, action: { type: 'draw', tile: next, fromKong } },
-  ];
   nextTurn(s, seat);
   // 最后 4 张能胡必胡：自摸自动胡。
-  if (s.rules.lastFourForcedHu && s.wallCount <= 4) {
+  if (s.rules.lastFourForcedHu && s.wall.length <= 4) {
     const check = checkHu(s, seat, next, true);
     if (check.ok) {
       applySelfDrawHu(s, seat, check.score!);
@@ -144,6 +139,8 @@ function openClaimWindow(
   s.windowSeq += 1;
   s.windowId = `${kind}:${s.windowSeq}`;
   s.state = 'claim';
+  // 抢杠窗口不继承「上一次杠后补牌」的 lastDraw（否则抢杠胡会被再算一次杠上炮）。
+  if (kind === 'rob') s.lastDraw = null;
   s.pendingClaims = {
     kind,
     discard,
@@ -319,7 +316,14 @@ function resolveClaims(s: MahjongSession): void {
   const huSeats: number[] = [];
   for (const seat of pc.candidates) {
     if (pc.responses.some((r) => r.seat === seat && r.claim === 'hu')) {
-      const check = checkHu(s, seat, pc.discard, false, pc.kind === 'rob');
+      const check = checkHu(
+        s,
+        seat,
+        pc.discard,
+        false,
+        pc.kind === 'rob',
+        pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+      );
       if (check.ok) huSeats.push(seat);
     }
   }
@@ -329,9 +333,19 @@ function resolveClaims(s: MahjongSession): void {
     if (pc.kind === 'claim' && pc.gangShootSeq !== undefined) {
       applyGangShoot(s, pc.gangShootSeq, huSeats);
     }
-    for (const seat of huSeats) {
-      const check = checkHu(s, seat, pc.discard, false, pc.kind === 'rob');
-      markHu(s, seat, pc.fromSeat, pc.discard, check.score!, pc.kind === 'rob');
+    for (let i = 0; i < huSeats.length; i += 1) {
+      const seat = huSeats[i]!;
+      const check = checkHu(
+        s,
+        seat,
+        pc.discard,
+        false,
+        pc.kind === 'rob',
+        pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+      );
+      // 抢杠一炮多响：物理杠牌只从杠者手牌移除一次；后续赢家按「复制一张」处理
+      //（tileFromHand=false 不会去 discards 删除，只把牌加入自己手牌）。
+      markHu(s, seat, pc.fromSeat, pc.discard, check.score!, pc.kind === 'rob' && i === 0);
     }
     s.pendingClaims = null;
     if (checkFinished(s)) return;
@@ -487,6 +501,9 @@ export function applyMahjongAction(
     case 'concealedGang': {
       if (s.state !== 'play' || s.currentPlayer !== seat) throw new ProtocolError('不是你的回合');
       if (s.wall.length === 0) throw new ProtocolError('牌墙已空，不能杠');
+      if (player.lackSuit !== null && action.tile.s === player.lackSuit) {
+        throw new ProtocolError('缺门牌不能杠');
+      }
       const made = makeConcealedGang(player.hand, action.tile);
       player.hand = made.hand;
       player.melds.push(made.meld);
@@ -526,12 +543,28 @@ export function applyMahjongAction(
       if (!pc.candidates.includes(seat)) throw new ProtocolError('你不在响应候选中');
       if (pc.responses.some((r) => r.seat === seat)) throw new ProtocolError('已响应');
       if (action.claim === 'hu') {
-        if (!checkHu(s, seat, pc.discard, false, pc.kind === 'rob').ok) {
+        if (
+          !checkHu(
+            s,
+            seat,
+            pc.discard,
+            false,
+            pc.kind === 'rob',
+            pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+          ).ok
+        ) {
           throw new ProtocolError('不能胡这张牌');
         }
       } else if (action.claim === 'pass') {
         if (isForcedHu(s, seat, pc.discard)) throw new ProtocolError('最后四张能胡必胡');
-        const passed = checkHu(s, seat, pc.discard, false, pc.kind === 'rob');
+        const passed = checkHu(
+          s,
+          seat,
+          pc.discard,
+          false,
+          pc.kind === 'rob',
+          pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+        );
         if (passed.ok) {
           player.passedHu.push({ tile: tileType(pc.discard), fan: passed.score!.fan });
         }
@@ -601,7 +634,16 @@ export function autoAction(session: MahjongSession, seat: number): MahjongAction
   }
   if (session.state === 'claim') {
     const pc = session.pendingClaims!;
-    if (checkHu(session, seat, pc.discard, false, pc.kind === 'rob').ok) {
+    if (
+      checkHu(
+        session,
+        seat,
+        pc.discard,
+        false,
+        pc.kind === 'rob',
+        pc.kind === 'claim' && pc.gangShootSeq !== undefined,
+      ).ok
+    ) {
       return { type: 'claim', claim: 'hu' };
     }
     return { type: 'claim', claim: 'pass' };
