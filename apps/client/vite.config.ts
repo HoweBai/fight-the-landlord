@@ -25,7 +25,9 @@ import uniModule from '@dcloudio/vite-plugin-uni';
  *    修法：在 `uni()` **之后**追加一个只做覆盖的插件 —— Vite 的 plugin `config` 是
  *    **后合并者胜**，所以顺序不能反。
  *
- * 3. Vite 被**钉在 5.2.8**（`@dcloudio/vite-plugin-uni` 的 peer 是精确 `vite: "5.2.8"`，裁决 R431）。
+ * 3. Vite 已升到 **6.4.4**（2026-10-27 Dependabot 修复）。`@dcloudio/vite-plugin-uni`
+ *    的 peer 仍声明精确 `vite: "5.2.8"`，安装会有 peer warning；H5 / mp-weixin / app
+ *    三端构建均已实测通过（R431 的“钉 5.2.8”已被本批升级取代）。
  *
  * 4. **（Task 2 新增）微信小程序端：Node _modules 里的 easycom 组件会生成非法路径** ——
  *    现象（Task 2 引入 `wot-design-uni` 之后暴露）：

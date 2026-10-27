@@ -19,7 +19,7 @@ GitHub Dependabot 在 `dev`/默认分支报告 67 条 open alert（17 critical /
 | qs | 6.13/6.14 | 6.16.0/6.16.1 | override |
 | @intlify/core-base | 9.1.11 | 9.14.5 | override（message-resolver 保持 9.1.11） |
 | esbuild | 0.20.2 / 0.24.2 | 0.25.12 | override `^0.25.0` |
-| phin | 3.7.0 | 3.7.1 | override |
+| phin | 2.9.3 | 3.7.1 | override（仅 `@jimp/core` 链路，mp-weixin 构建实测通过） |
 | @babel/core | ≤7.29.0 | 7.29.7 | override |
 | cookie | <0.7.0 | 0.7.2 | override |
 | postcss-selector-parser | 6.1.x | 6.1.5 | override |
@@ -52,10 +52,13 @@ GitHub Dependabot 在 `dev`/默认分支报告 67 条 open alert（17 critical /
 - `pnpm exec turbo run test lint build --force`：**44/44 successful，0 cached**（1m44s）。
 - 各包测试：protocol 304 / shared 404 / game 278 / room 1003 / user 409 / payment 464 /
   currency 590 / client 1541（2 skipped）等。
-- `pnpm -C apps/client run build`（vue-tsc + uni build）：**DONE Build complete**（Vite 6.4.4）。
+- `pnpm -C apps/client run build`（vue-tsc + uni build）：**DONE Build complete**（Vite 6.4.4）；
+  `build:mp-weixin` 与 `build:app` 同样 **DONE**（覆盖 uni 插件、jimp/phin 链路）。
 - 安装版本核对（`pnpm list -r --depth Infinity`）：上表「修复后」全部命中；tinypool 不再安装。
-- `pnpm audit` 不可用（registry 为 npmmirror，无 audit endpoint）；以 Dependabot 清单 +
-  `first_patched_version` 逐包核对。
+- `node scripts/security/check-audit.mjs`（`pnpm audit --prod` + npmjs registry）：
+  **exit 0，0 条去重通告，critical/high 未处理 0 条，豁免 0 条**。
+  （默认 registry 为 npmmirror，没有 audit endpoint，这是门脚本显式切 npmjs 的原因。）
+- `pnpm install --frozen-lockfile`：通过（lockfile 与 package.json 一致）。
 
 ## 风险与边界
 
@@ -77,4 +80,19 @@ GitHub Dependabot 在 `dev`/默认分支报告 67 条 open alert（17 critical /
 
 ## 审查记录
 
-- 待独立代码审查。
+### 2026-10-27 独立代码审查
+
+结论：1 Critical / 3 Important / 3 Minor，全部处置后复跑。
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| C1 | Critical | `audit-exceptions.json` 的 3 条豁免已失效，`check-audit` 会红 | 已清空豁免；`slice-07.4` 的 `wantEx` 同步为空；门脚本实测 exit 0 |
+| I1 | Important | `send` override 未分主版本，把 express 5 的 `send ^1` 降到 0.19 | 改为 `send@0`：express 4 用 0.19.2、express 5 用 1.2.1 |
+| I2 | Important | `postcss-selector-parser` override 未分主版本，覆盖了 7.x 消费者 | 改为 `postcss-selector-parser@6`：6.1.5 与 7.1.7 并存 |
+| I3 | Important | phin 3.7.1 可能破坏 `@jimp/core`；Vite 6 只验了 H5 | `build:mp-weixin` 与 `build:app` 实测通过 |
+| M1 | Minor | 残留 Vite5/patchedDependencies 注释 | 已更新 `vite.config.ts`、`docs/design.md`、10 个 Dockerfile 注释 |
+| M2 | Minor | 本文旧版本号/"pnpm audit 不可用" | 已订正为 phin 2.9.3、门脚本切 npmjs |
+| M3 | Minor | 测试适配判别力 | 确认仅类型层；调用次数/行为断言未删 |
+
+审查后复跑：`turbo run test lint build --force` 44/44；`check-audit` exit 0；
+H5/mp-weixin/app 三端构建通过。
