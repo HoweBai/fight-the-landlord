@@ -107,4 +107,6 @@ jobs:
           curl -fsSLo /tmp/trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
           echo "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  /tmp/trivy.tar.gz" | sha256sum -c -
           tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
-          /tmp/trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore .
+          # `scripts/fixtures/` 是 verify-k8s 的**最小合法样本**（刻意不含 securityContext），
+          # 不是部署面；跳过它，避免把测试夹具当生产清单误报（2026-10-27 master 首跑修复）。
+          /tmp/trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore --skip-dirs scripts/fixtures .
