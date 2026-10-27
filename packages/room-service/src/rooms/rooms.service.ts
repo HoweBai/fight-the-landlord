@@ -202,6 +202,15 @@ export class RoomsService {
     const gameType = dto.gameType ?? DEFAULT_GAME_TYPE;
     const playerCount = dto.playerCount ?? GAME_META[gameType].defaultPlayerCount;
     /**
+     * 审查 P0-1（纵深防御）：HTTP 入口已剥离 `roomCode`；此处的显式房号只允许
+     * 内部/测试调用。仍校验形状与占用，避免内部误用再次覆盖存活房。
+     * 不强制 6 位：既有夹具用 `ROOM1`/`PDK1`/`ROOM10N` 等短码；只需阻断
+     * `:`/空白（派生键注入）与空串/超长。
+     */
+    if (dto.roomCode !== undefined) {
+      await this.assertExplicitRoomCodeUsable(dto.roomCode);
+    }
+    /**
      * 多玩法（Task 2.2 / D9/D16）：玩法开放与人数闸由 **room-service** 判定
      *（protocol 校验器拿不到配置）⇒ 统一 `12012 GAME_UNAVAILABLE`。
      * 放在档位读取**之前**：关着的玩法不得因为档位表故障被报成 10007。
@@ -529,6 +538,23 @@ export class RoomsService {
    * （恰为 `0` 时是 `"0"`，`0.5` 时是 `"0.i"`），`substring(2, 8)` 于是返回**空串/1~5 个字符**，
    * 而网关对路径参数有形状闸 `/^[0-9A-Z]{6}$/`（P0/R72）⇒ 这样的房间号**永远进不去**（被判 `10001`）。
    */
+  /**
+   * 审查 P0-1：显式房号（内部/测试缝）的纵深校验。
+   *
+   * HTTP 层已通过 DTO + controller 白名单彻底剥离 `roomCode`；本方法只防内部误用：
+   * 空串/超长/含 `:` 或空白（会把元数据写进派生键或让房号不可路由）/已占用。
+   * 用 `10001 BAD_PARAM`（该路径不对外，不新增协议码）。
+   */
+  private async assertExplicitRoomCodeUsable(code: string): Promise<void> {
+    if (code.length === 0 || code.length > 32 || /[\s:]/.test(code)) {
+      throw new DomainError(ErrCode.BAD_PARAM, '房间号不可用');
+    }
+    const exists = await this.redis.exists(`room:${code}`);
+    if (exists > 0) {
+      throw new DomainError(ErrCode.BAD_PARAM, '房间号不可用');
+    }
+  }
+
   private generateCode(): string {
     return Math.random().toString(36).substring(2, 8).toUpperCase().padEnd(6, '0');
   }

@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, IsEnum, IsIn } from 'class-validator';
+import { IsInt, IsOptional, IsEnum, IsIn } from 'class-validator';
 import { GAME_TYPES, type GameType } from '@fight-the-landlord/protocol';
 
 /**
@@ -13,13 +13,16 @@ export enum RoomMode {
   PRACTICE = 'practice',
 }
 
+/**
+ * 🔴 **不得**声明 `roomCode`（审查 P0-1）：HTTP 建房无任何合法自定义房号调用点，
+ * 而把客户端字段透传给 `RoomsService.create()` 会让任何已认证玩家覆盖存活房
+ * `room:{code}` 元数据（mode/gameType），局终结算静默跳过或记录丢失。
+ * 房号一律服务端 `generateCode()`；`RoomsService.create()` 的 `roomCode?` 只作
+ * 内部/测试缝。`ValidationPipe({whitelist:true})` 会把未声明字段静默剥离。
+ */
 export class CreateRoomDto {
   @IsEnum(RoomMode)
   mode!: RoomMode;
-
-  @IsOptional()
-  @IsString()
-  roomCode?: string;
 
   /**
    * 片规格 §2.4 协议⑤：底分。**是不是合法档位由 `RoomsService.create()` 校验**
