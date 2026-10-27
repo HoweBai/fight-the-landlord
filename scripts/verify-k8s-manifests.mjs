@@ -8,38 +8,44 @@
  * 只做**静态**断言；真集群的 kubectl dry-run / HPA / 网络行为在预演环境验收。
  * 判别力由 scripts/fixtures/k8s-{valid,invalid} 自证（见 plan Task A1）。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
 import yaml from 'js-yaml';
 
 const dirIdx = process.argv.indexOf('--dir');
+const fileIdx = process.argv.indexOf('--file');
+const FILE_MODE = fileIdx > -1;
 const ROOT = resolve(dirIdx > -1 ? process.argv[dirIdx + 1] : 'k8s');
+const FILE = FILE_MODE ? resolve(process.argv[fileIdx + 1]) : null;
 const errors = [];
 const docs = [];
+
+function pushDocs(source, text) {
+  let parsed;
+  try {
+    parsed = yaml.loadAll(text);
+  } catch (err) {
+    errors.push(`${source}: YAML 解析失败：${String(err)}`);
+    return;
+  }
+  for (const d of parsed) {
+    if (d && typeof d === 'object' && d.kind) docs.push({ p: source, d });
+  }
+}
 
 function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(p);
-    else if (/\.ya?ml$/.test(name)) {
-      let parsed;
-      try {
-        parsed = yaml.loadAll(readFileSync(p, 'utf8'));
-      } catch (err) {
-        errors.push(`${p}: YAML 解析失败：${String(err)}`);
-        continue;
-      }
-      for (const d of parsed) {
-        if (d && typeof d === 'object' && d.kind) docs.push({ p, d });
-      }
-    }
+    else if (/\.ya?ml$/.test(name)) pushDocs(p, readFileSync(p, 'utf8'));
   }
 }
 
 try {
-  walk(ROOT);
+  if (FILE_MODE) pushDocs(FILE, readFileSync(FILE, 'utf8'));
+  else walk(ROOT);
 } catch (err) {
-  console.error(`❌ 目录不可读：${ROOT}（${String(err)}）`);
+  console.error(`❌ 输入不可读：${FILE_MODE ? FILE : ROOT}（${String(err)}）`);
   process.exit(1);
 }
 
@@ -51,8 +57,43 @@ const imageOk = (image) => {
   return image.includes(':') && !image.endsWith(':latest');
 };
 
-if (!all('Namespace').some((d) => d.metadata?.name === 'ftl')) {
+if (!FILE_MODE && !all('Namespace').some((d) => d.metadata?.name === 'ftl')) {
   errors.push('缺 Namespace/ftl');
+}
+
+// kustomization 收录完整性：base 下每个顶层 YAML 都必须被 resources 引用（防「文件存在但没 apply」假绿）。
+if (!FILE_MODE) {
+  const kdir = existsSync(join(ROOT, 'base', 'kustomization.yaml'))
+    ? join(ROOT, 'base')
+    : existsSync(join(ROOT, 'kustomization.yaml'))
+      ? ROOT
+      : null;
+  if (kdir) {
+    let k;
+    try {
+      k = yaml.load(readFileSync(join(kdir, 'kustomization.yaml'), 'utf8')) ?? {};
+    } catch (err) {
+      errors.push(`kustomization.yaml 不可解析：${String(err)}`);
+    }
+    if (k) {
+      const listed = new Set((k.resources ?? []).map(String));
+      for (const f of readdirSync(kdir)) {
+        if (!/\.ya?ml$/.test(f) || f === 'kustomization.yaml') continue;
+        if (!listed.has(f)) errors.push(`kustomization 未收录 ${f}`);
+      }
+      for (const g of k.configMapGenerator ?? []) {
+        for (const f of g.files ?? []) {
+          if (!existsSync(join(kdir, f))) errors.push(`configMapGenerator 文件不存在：${f}`);
+        }
+      }
+      for (const rel of ['overlays/prod/kustomization.yaml', 'overlays/migrate/kustomization.yaml']) {
+        const p = join(dirname(kdir), rel);
+        if (!existsSync(p) || !readFileSync(p, 'utf8').includes('ghcr-pull')) {
+          errors.push(`${rel}: 缺 imagePullSecrets(ghcr-pull) 注入`);
+        }
+      }
+    }
+  }
 }
 
 const workloadKinds = ['Deployment', 'StatefulSet', 'DaemonSet'];

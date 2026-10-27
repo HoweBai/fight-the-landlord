@@ -68,20 +68,28 @@ trap 'rm -rf "$tmp"' EXIT
 cp -a k8s/. "$tmp"/
 find "$tmp" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 \
   | xargs -0 sed -i "s|IMAGE_TAG_PLACEHOLDER|$IMAGE_TAG|g; s|NODE_A_IP_PLACEHOLDER|$NODE_A_IP|g"
+if grep -Rq 'PLACEHOLDER' "$tmp" --include='*.yaml' --include='*.yml'; then
+  echo "❌ 渲染后仍含 PLACEHOLDER（检查 deploy-k3s.sh 的替换链）" >&2
+  grep -Rn 'PLACEHOLDER' "$tmp" --include='*.yaml' --include='*.yml' >&2 || true
+  exit 1
+fi
 
 kc=(kubectl --kubeconfig "$KUBECONFIG_PATH")
 "${kc[@]}" -n ftl delete job -l app=migrate --ignore-not-found >/dev/null
-"${kc[@]}" apply -k "$tmp/overlays/prod"
 
-echo "───── 迁移 Job（顺序执行）─────"
+echo "───── 阶段一：迁移 Job（先于业务滚动）─────"
+"${kc[@]}" apply -k "$tmp/overlays/migrate"
 for j in migrate-config migrate-user migrate-currency migrate-payment; do
   if ! "${kc[@]}" -n ftl wait --for=condition=complete "job/$j" --timeout=300s; then
-    echo "❌ 迁移 Job $j 失败；保留现场，不自动回滚" >&2
+    echo "❌ 迁移 Job $j 失败；业务工作负载尚未更新，保留现场" >&2
     "${kc[@]}" -n ftl describe "job/$j" >&2 || true
     "${kc[@]}" -n ftl logs "job/$j" --tail=100 >&2 || true
     exit 1
   fi
 done
+
+echo "───── 阶段二：业务与监控 ─────"
+"${kc[@]}" apply -k "$tmp/overlays/prod"
 
 echo "───── rollout ─────"
 for d in api-gateway room-service robot-service user-service config-service currency-service payment-service douzero; do
@@ -92,6 +100,15 @@ for s in mysql redis game-service; do
 done
 for d in prometheus grafana alertmanager alert-relay am-renderer kube-state-metrics pushgateway; do
   "${kc[@]}" -n ftl-monitoring rollout status "deployment/$d" --timeout=300s
+done
+
+echo "───── imagePullSecret 断言 ─────"
+for ns in ftl ftl-monitoring; do
+  bad="$("${kc[@]}" -n "$ns" get pods -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.imagePullSecrets[0].name}{"\n"}{end}' | grep -v ' ghcr-pull$' || true)"
+  if [ -n "$bad" ]; then
+    echo "❌ $ns 中以下 Pod 未引用 imagePullSecrets=ghcr-pull：$bad" >&2
+    exit 1
+  fi
 done
 
 echo "───── 冒烟（真证书）─────"
