@@ -267,6 +267,20 @@ export class GameService implements OnApplicationShutdown {
       }
       if (parsed.playerCount === undefined) parsed.playerCount = 3;
 
+      /**
+       * P0-1 / 审查 P0-2：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。
+       * `JSON.stringify` 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」
+       * ⇒ 不归一化的话，重载后**人类座位会被误判成机器人**（托管 toggle 被拒、
+       * `trustees` 恒 false、超时不计数）。
+       *
+       * ⚠️ **必须放在 pdk 早退之前**：本片之前只有 ddz 分支做了归一化，pdk 会话
+       * 重载后 `trustees` 恒 false（金币局无法取消托管）。`botIds` 是两玩法公共
+       * 基类字段，纯 map；坏形状仍由外层 catch fail-closed 成 null。
+       */
+      parsed.botIds = parsed.botIds?.map((id) =>
+        typeof id === 'string' && id.length > 0 ? id : undefined,
+      );
+
       // ── 跑得快会话：只做形状守卫；玩法字段交给 PdkRuntime（S4）──────────
       if (parsed.gameType === 'paodekuai') {
         const pdk = parsed as unknown as PdkSession;
@@ -324,16 +338,6 @@ export class GameService implements OnApplicationShutdown {
         timeoutCount: p.timeoutCount ?? 0,
         trustee: p.trustee ?? false,
       }));
-      /**
-       * P0-1：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。`JSON.stringify`
-       * 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」⇒ 不归一化的话，
-       * 重载后**人类座位会被误判成机器人**（托管 toggle 被拒、`trustees` 恒 false、
-       * 超时不计数）。这里把非字符串/空串一律折回 `undefined`，与 `startGame`
-       * 写入的稀疏形态一致。缺 `botIds`（老会话/全人类）保持原样。
-       */
-      session.botIds = session.botIds?.map((id) =>
-        typeof id === 'string' && id.length > 0 ? id : undefined,
-      );
       return session as unknown as S;
     } catch {
       this.logger.error(`Corrupt session in Redis for room ${roomCode}`);
