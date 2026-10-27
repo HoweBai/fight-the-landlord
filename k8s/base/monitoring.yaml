@@ -1,0 +1,376 @@
+# 监控栈（ftl-monitoring）。配置进镜像/ConfigMap，数据卷全部钉 node-a。
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus, namespace: ftl-monitoring }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: ftl-prometheus }
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: ftl-prometheus }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ftl-prometheus }
+subjects: [{ kind: ServiceAccount, name: prometheus, namespace: ftl-monitoring }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus, namespace: ftl-monitoring, labels: { app: prometheus } }
+spec:
+  selector: { app: prometheus }
+  ports: [{ name: http, port: 9090, targetPort: 9090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus, namespace: ftl-monitoring, labels: { app: prometheus } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus
+      nodeSelector: { ftl-role: data }
+      securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
+      containers:
+        - name: prometheus
+          image: ghcr.io/howebai/fight-the-landlord-prometheus:IMAGE_TAG_PLACEHOLDER
+          ports: [{ name: http, containerPort: 9090 }]
+          env:
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          readinessProbe: { httpGet: { path: /-/ready, port: 9090 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /-/healthy, port: 9090 }, initialDelaySeconds: 30, periodSeconds: 20 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml }
+            - { name: data, mountPath: /prometheus }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-config }
+        - name: data
+          persistentVolumeClaim: { claimName: prometheus-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grafana, namespace: ftl-monitoring, labels: { app: grafana } }
+spec:
+  selector: { app: grafana }
+  ports: [{ name: http, port: 3010, targetPort: 3010 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grafana, namespace: ftl-monitoring, labels: { app: grafana } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      nodeSelector: { ftl-role: data }
+      securityContext: { runAsUser: 472, runAsGroup: 472, fsGroup: 472 }
+      containers:
+        - name: grafana
+          image: ghcr.io/howebai/fight-the-landlord-grafana:IMAGE_TAG_PLACEHOLDER
+          ports: [{ name: http, containerPort: 3010 }]
+          env:
+            - { name: GF_SERVER_HTTP_PORT, value: "3010" }
+            - { name: GF_SERVER_SERVE_FROM_SUB_PATH, value: "true" }
+            - name: GF_SERVER_ROOT_URL
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: GRAFANA_ROOT_URL } }
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: GRAFANA_ADMIN_PASSWORD } }
+            - { name: GF_USERS_ALLOW_SIGN_UP, value: "false" }
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "false" }
+            - { name: GF_METRICS_ENABLED, value: "true" }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe: { httpGet: { path: /api/health, port: 3010 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          volumeMounts: [{ name: data, mountPath: /var/lib/grafana }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: grafana-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: alertmanager, namespace: ftl-monitoring, labels: { app: alertmanager } }
+spec:
+  selector: { app: alertmanager }
+  ports: [{ name: http, port: 9093, targetPort: 9093 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: alertmanager, namespace: ftl-monitoring, labels: { app: alertmanager } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: alertmanager } }
+  template:
+    metadata: { labels: { app: alertmanager } }
+    spec:
+      nodeSelector: { ftl-role: data }
+      securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
+      containers:
+        - name: alertmanager
+          image: ghcr.io/howebai/fight-the-landlord-alertmanager:IMAGE_TAG_PLACEHOLDER
+          ports: [{ name: http, containerPort: 9093 }]
+          env:
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe: { httpGet: { path: /-/healthy, port: 9093 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          volumeMounts:
+            - { name: live, mountPath: /alertmanager-live, readOnly: true }
+            - { name: data, mountPath: /alertmanager }
+      volumes:
+        - name: live
+          persistentVolumeClaim: { claimName: alertmanager-live, readOnly: true }
+        - name: data
+          persistentVolumeClaim: { claimName: alertmanager-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: alert-relay, namespace: ftl-monitoring, labels: { app: alert-relay } }
+spec:
+  selector: { app: alert-relay }
+  ports: [{ name: http, port: 8090, targetPort: 8090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: alert-relay, namespace: ftl-monitoring, labels: { app: alert-relay } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: alert-relay } }
+  template:
+    metadata: { labels: { app: alert-relay } }
+    spec:
+      nodeSelector: { ftl-role: data }
+      securityContext: { fsGroup: 1000 }
+      containers:
+        - name: alert-relay
+          image: ghcr.io/howebai/fight-the-landlord-alert-relay:IMAGE_TAG_PLACEHOLDER
+          ports: [{ name: http, containerPort: 8090 }]
+          env:
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+            - name: NOTIFY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: NOTIFY_CHANNEL_PULL_TOKEN } }
+            - { name: CONFIG_SERVICE_RPC_HOST, value: config-service.ftl.svc }
+            - { name: CONFIG_SERVICE_RPC_PORT, value: "3106" }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe: { httpGet: { path: /health, port: 8090 }, initialDelaySeconds: 5, periodSeconds: 10 }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: relay-data }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: am-renderer, namespace: ftl-monitoring, labels: { app: am-renderer } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: am-renderer } }
+  template:
+    metadata: { labels: { app: am-renderer } }
+    spec:
+      nodeSelector: { ftl-role: data }
+      securityContext: { runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534 }
+      containers:
+        - name: am-renderer
+          image: ghcr.io/howebai/fight-the-landlord-alert-relay:IMAGE_TAG_PLACEHOLDER
+          command: ["node", "packages/alert-relay/dist/am-renderer.js"]
+          env:
+            - name: NOTIFY_CHANNEL_PULL_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: NOTIFY_CHANNEL_PULL_TOKEN } }
+            - { name: CONFIG_SERVICE_RPC_HOST, value: config-service.ftl.svc }
+            - { name: CONFIG_SERVICE_RPC_PORT, value: "3106" }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+          readinessProbe:
+            exec: { command: ["sh", "-c", "test -f /alertmanager-live/alertmanager.yml"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts: [{ name: live, mountPath: /alertmanager-live }]
+      volumes:
+        - name: live
+          persistentVolumeClaim: { claimName: alertmanager-live }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: node-exporter, namespace: ftl-monitoring, labels: { app: node-exporter } }
+spec:
+  clusterIP: None
+  selector: { app: node-exporter }
+  ports: [{ name: metrics, port: 9100, targetPort: 9100 }]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: node-exporter, namespace: ftl-monitoring, labels: { app: node-exporter } }
+spec:
+  selector: { matchLabels: { app: node-exporter } }
+  template:
+    metadata: { labels: { app: node-exporter } }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.12.1
+          args: ["--path.rootfs=/rootfs"]
+          ports: [{ name: metrics, containerPort: 9100, hostPort: 9100 }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe: { httpGet: { path: /metrics, port: 9100 }, initialDelaySeconds: 5, periodSeconds: 15 }
+          volumeMounts:
+            - { name: root, mountPath: /rootfs, readOnly: true }
+      volumes:
+        - name: root
+          hostPath: { path: / }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: cadvisor, namespace: ftl-monitoring, labels: { app: cadvisor } }
+spec:
+  clusterIP: None
+  selector: { app: cadvisor }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: cadvisor, namespace: ftl-monitoring, labels: { app: cadvisor } }
+spec:
+  selector: { matchLabels: { app: cadvisor } }
+  template:
+    metadata: { labels: { app: cadvisor } }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations: [{ operator: Exists }]
+      containers:
+        - name: cadvisor
+          image: ghcr.io/google/cadvisor:v0.60.6
+          args:
+            - --docker_only=false
+            - --containerd=/run/k3s/containerd/containerd.sock
+            - --housekeeping_interval=30s
+            - --disable_metrics=percpu,sched,tcp
+          ports: [{ name: http, containerPort: 8080, hostPort: 8080 }]
+          securityContext: { privileged: true }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 15 }
+          volumeMounts:
+            - { name: root, mountPath: /rootfs, readOnly: true }
+            - { name: var-run, mountPath: /var/run, readOnly: true }
+            - { name: sys, mountPath: /sys, readOnly: true }
+            - { name: kubelet, mountPath: /var/lib/kubelet, readOnly: true }
+            - { name: containerd, mountPath: /run/k3s/containerd/containerd.sock, readOnly: true }
+      volumes:
+        - { name: root, hostPath: { path: / } }
+        - { name: var-run, hostPath: { path: /var/run } }
+        - { name: sys, hostPath: { path: /sys } }
+        - { name: kubelet, hostPath: { path: /var/lib/kubelet } }
+        - { name: containerd, hostPath: { path: /run/k3s/containerd/containerd.sock } }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: kube-state-metrics, namespace: ftl-monitoring }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: ftl-kube-state-metrics }
+rules:
+  - apiGroups: [""]
+    resources: [pods, nodes, services, endpoints, namespaces, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, secrets, configmaps]
+    verbs: [list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: ftl-kube-state-metrics }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ftl-kube-state-metrics }
+subjects: [{ kind: ServiceAccount, name: kube-state-metrics, namespace: ftl-monitoring }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kube-state-metrics, namespace: ftl-monitoring, labels: { app: kube-state-metrics } }
+spec:
+  clusterIP: None
+  selector: { app: kube-state-metrics }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: kube-state-metrics, namespace: ftl-monitoring, labels: { app: kube-state-metrics } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: kube-state-metrics } }
+  template:
+    metadata: { labels: { app: kube-state-metrics } }
+    spec:
+      serviceAccountName: kube-state-metrics
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.15.0
+          ports: [{ name: http, containerPort: 8080 }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: pushgateway, namespace: ftl-monitoring, labels: { app: pushgateway } }
+spec:
+  selector: { app: pushgateway }
+  ports: [{ name: http, port: 9091, targetPort: 9091 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: pushgateway, namespace: ftl-monitoring, labels: { app: pushgateway } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: pushgateway } }
+  template:
+    metadata: { labels: { app: pushgateway } }
+    spec:
+      containers:
+        - name: pushgateway
+          image: prom/pushgateway:v1.9.0
+          ports: [{ name: http, containerPort: 9091 }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          readinessProbe: { httpGet: { path: /-/healthy, port: 9091 }, initialDelaySeconds: 5, periodSeconds: 10 }

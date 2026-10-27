@@ -20,3 +20,9 @@ resources:
   - networkpolicy.yaml
   - pdb.yaml
   - hpa.yaml
+  - monitoring.yaml
+configMapGenerator:
+  - name: prometheus-config
+    namespace: ftl-monitoring
+    files:
+      - monitoring/prometheus.yml
