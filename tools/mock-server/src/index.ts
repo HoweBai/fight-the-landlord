@@ -225,6 +225,8 @@ ns.on('connection', (socket: Socket) => {
       case 'game.play': {
         if (!entry || mySeat === undefined) return ackErr(ack, ErrCode.GAME_NOT_STARTED);
         if (entry.game.getCurrentSeat() !== mySeat) return ackErr(ack, ErrCode.NOT_YOUR_TURN);
+        // mock 只驱动斗地主；麻将动作（payload.mahjong）不在 mock 范围内。
+        if (msg.payload.cards === undefined) return ackErr(ack, ErrCode.BAD_PARAM);
         ackOk(ack);
         broadcast(entry, entry.game.play(mySeat, msg.payload.cards));
         return;
