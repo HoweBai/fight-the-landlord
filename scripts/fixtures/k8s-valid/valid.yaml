@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ftl
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: room-service, namespace: ftl }
+spec:
+  template:
+    spec:
+      containers:
+        - name: room-service
+          image: ghcr.io/x/room-service:IMAGE_TAG_PLACEHOLDER
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: 250m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /api/health, port: 3002 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api-gateway, namespace: ftl }
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-gateway
+          image: ghcr.io/x/api-gateway:IMAGE_TAG_PLACEHOLDER
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: 250m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /api/health, port: 3000 } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: mysql, namespace: ftl }
+spec:
+  serviceName: mysql
+  volumeClaimTemplates:
+    - metadata: { name: mysql-data }
+      spec: { storageClassName: local-path, accessModes: [ReadWriteOnce], resources: { requests: { storage: 20Gi } } }
+  template:
+    spec:
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          resources: { requests: { cpu: 500m, memory: 2Gi }, limits: { cpu: 500m, memory: 2Gi } }
+          readinessProbe: { exec: { command: [mysqladmin, ping] } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis, namespace: ftl }
+spec:
+  serviceName: redis
+  volumeClaimTemplates:
+    - metadata: { name: redis-data }
+      spec: { storageClassName: local-path, accessModes: [ReadWriteOnce], resources: { requests: { storage: 5Gi } } }
+  template:
+    spec:
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: 250m, memory: 512Mi } }
+          readinessProbe: { exec: { command: [redis-cli, ping] } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: edge, namespace: ftl }
+spec:
+  strategy: { type: Recreate }
+  template:
+    spec:
+      hostNetwork: true
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: edge
+          image: ghcr.io/x/edge:IMAGE_TAG_PLACEHOLDER
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /, port: 80 } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: game-service, namespace: ftl }
+spec:
+  serviceName: game-service
+  template:
+    spec:
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: game-service
+          image: ghcr.io/x/game-service:IMAGE_TAG_PLACEHOLDER
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: 250m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /api/health, port: 3003 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: config-service, namespace: ftl }
+spec:
+  strategy: { type: Recreate }
+  template:
+    spec:
+      nodeSelector: { ftl-role: data }
+      containers:
+        - name: config-service
+          image: ghcr.io/x/config-service:IMAGE_TAG_PLACEHOLDER
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: 250m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /api/health, port: 3006 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: room-service-pdb, namespace: ftl }
+spec: { minAvailable: 1, selector: { matchLabels: { app: room-service } } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: api-gateway-pdb, namespace: ftl }
+spec: { minAvailable: 1, selector: { matchLabels: { app: api-gateway } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: room-service-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api-gateway-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: robot-service-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: user-service-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: currency-service-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: payment-service-hpa, namespace: ftl }
+spec: { behavior: { scaleDown: { stabilizationWindowSeconds: 1800 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: ftl }
+spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
