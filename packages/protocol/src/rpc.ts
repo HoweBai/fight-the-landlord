@@ -25,6 +25,7 @@ import type { Card, GameView } from './views';
 import type { SettlementResult } from './settlement';
 import type { MahjongAction } from './mahjong/actions';
 import type { Tile } from './mahjong/tile';
+import type { MahjongMeldView } from './mahjong/types';
 // 多玩法（Task 2.5）：`record.moneyDelta` 的玩法/人数校验要用运行期目录。
 import { isGameType, supportsPlayerCount, type GameType } from './game';
 import type { ConfigSnapshot } from './config';
@@ -376,6 +377,15 @@ export interface RecordWriteRequest {
     hand: string;
     /** 跑得快：本局实际打出的张数（关牌判定）；斗地主省略。 */
     playedCount?: number;
+    /** 麻将：终局手牌/副露/弃牌/缺门/胡信息/分数（可选；旧玩法省略）。 */
+    finalHand?: string;
+    melds?: MahjongMeldView[];
+    discards?: Tile[];
+    lackSuit?: number | null;
+    isOut?: boolean;
+    fan?: number;
+    multiplier?: number;
+    delta?: number;
     /**
      * 仅机器人座：本局展示昵称快照（room 从 `room:{code}:nicknames` 读取）。
      * 人类座必须省略/null —— 人类昵称仍由 user-service 按 `user_id` 查 `users`。

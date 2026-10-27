@@ -17,8 +17,10 @@ import {
   type Ack,
   type GameType,
   type GameView,
+  type MahjongMeldView,
   type RecordWriteRequest,
   type SettlementResult,
+  type Tile,
 } from '@fight-the-landlord/protocol';
 // ⚠️ **值导入**（不是 `import type`）：下面用 `runWithTrace` 把这些回调包进 ALS ——
 // 类型导入会被擦除、运行期只剩 undefined（本仓 DI 陷阱那条教训同族）。
@@ -137,7 +139,26 @@ export interface PdkRecordEnvelope {
   playerCount: 2 | 3 | 4;
 }
 
-export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope;
+export interface MahjongRecordEnvelope {
+  startedAt: number;
+  seats: Array<{
+    seat: number;
+    playerId: string;
+    hand: string;
+    finalHand?: string;
+    melds: MahjongMeldView[];
+    discards: Tile[];
+    lackSuit: number | null;
+    isOut: boolean;
+    fan?: number;
+    multiplier?: number;
+    delta: number;
+  }>;
+  gameType: 'mahjong';
+  playerCount: 4;
+}
+
+export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope | MahjongRecordEnvelope;
 
 /** 对局事件载荷（§4.4）。 */
 export interface GameEvent {
@@ -1302,6 +1323,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
     const gameType = record.gameType ?? 'doudizhu';
     const playerCount = record.playerCount ?? 3;
     const isPdk = record.gameType === 'paodekuai';
+    const isMahjong = record.gameType === 'mahjong';
     const envelopeSeats = record.seats;
     const roomSeats = room.players;
     const exactlySeats = (seats: readonly number[]): boolean =>
@@ -1315,8 +1337,10 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       !exactlySeats(roomSeats.map((s) => s.seat)) ||
       !result ||
       roomGameType !== gameType ||
-      // 结算形状必须与信封玩法一致（pdk 向量 vs 旧 9 键地主结算）
-      isPdk !== isPdkSettlementResult(result)
+      // 结算形状必须与信封玩法一致（pdk 向量 / 麻将向量 / 旧 9 键地主结算）
+      (isPdk && !isPdkSettlementResult(result)) ||
+      (isMahjong && !isMahjongSettlementResult(result)) ||
+      (!isPdk && !isMahjong && (isPdkSettlementResult(result) || isMahjongSettlementResult(result)))
     ) {
       incGame(recordWriteFailuresTotal, record.gameType, 1, { kind: 'record_lost' });
       this.logger.warn(
@@ -1331,8 +1355,8 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       gameVersion: event.version,
       mode: room.mode,
       baseScore: room.baseScore,
-      // 多玩法：pdk 显式带 gameType/playerCount；斗地主**省略**以保持旧请求形状（缺省 = ddz/3）。
-      ...(isPdk ? { gameType: 'paodekuai' as const, playerCount } : {}),
+      // 多玩法：pdk/麻将显式带 gameType/playerCount；斗地主**省略**以保持旧请求形状（缺省 = ddz/3）。
+      ...(isPdk || isMahjong ? { gameType, playerCount } : {}),
       result,
       seats: [...envelopeSeats]
         .sort((a, b) => a.seat - b.seat)
@@ -1353,17 +1377,34 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
              */
             nickname: seat.isRobot ? (botNicknames[seat.userId] ?? null) : null,
           };
-          // pdk：playedCount（关牌判定）；斗地主省略该键（旧请求形状不变）。
-          return isPdk
-            ? { ...baseSeat, playedCount: (envelopeSeat as PdkRecordEnvelope['seats'][number]).playedCount }
-            : baseSeat;
+          // pdk：playedCount（关牌判定）；麻将：副露/弃牌/缺门/胡信息；斗地主省略。
+          if (isPdk) {
+            return { ...baseSeat, playedCount: (envelopeSeat as PdkRecordEnvelope['seats'][number]).playedCount };
+          }
+          if (isMahjong) {
+            const mj = envelopeSeat as MahjongRecordEnvelope['seats'][number];
+            return {
+              ...baseSeat,
+              finalHand: mj.finalHand,
+              melds: mj.melds,
+              discards: mj.discards,
+              lackSuit: mj.lackSuit,
+              isOut: mj.isOut,
+              fan: mj.fan,
+              multiplier: mj.multiplier,
+              delta: mj.delta,
+            };
+          }
+          return baseSeat;
         }),
-      // pdk 无底牌；2 人局扣牌仅审计（3/4 人局**省略该键**，不是 undefined）。
+      // pdk/麻将无底牌；2 人局扣牌仅审计（3/4 人局**省略该键**，不是 undefined）。
       ...(isPdk
         ? (record as PdkRecordEnvelope).unusedCards === undefined
           ? {}
           : { unusedCards: (record as PdkRecordEnvelope).unusedCards }
-        : { bottomCards: (record as DdzRecordEnvelope).bottomCards }),
+        : isMahjong
+          ? {}
+          : { bottomCards: (record as DdzRecordEnvelope).bottomCards }),
       startedAt: record.startedAt,
       endedAt,
     };
