@@ -74,6 +74,7 @@ jobs:
       always() && !cancelled()
       && (needs.images.result == 'success' || needs.images.result == 'skipped')
       && (needs.conformance.result == 'success' || needs.conformance.result == 'skipped')
+      && vars.DEPLOY_TARGET != 'k3s'
     runs-on: ubuntu-latest
     # ⚠️ 复评 Minor·第二轮：`conformance` job 有 60 分钟上限（终审 M11），而**部署**这一步此前没有
     #    —— 远端 `docker compose pull` 不设超时、`ssh` 也没设 `ServerAlive*` ⇒ 一次挂死的部署可以
@@ -261,3 +262,53 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
           bash scripts/ops/check-backup-fresh.sh
+
+  # ── k3s 部署（DEPLOY_TARGET=k3s 时启用；与上面的 compose 部署互斥）──────────
+  deploy-k3s:
+    needs: [images, conformance]
+    if: |
+      always() && !cancelled()
+      && (needs.images.result == 'success' || needs.images.result == 'skipped')
+      && (needs.conformance.result == 'success' || needs.conformance.result == 'skipped')
+      && vars.DEPLOY_TARGET == 'k3s'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: 前置：tag 指向的提交必须在 master 上（R1308）
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --unshallow origin 2>/dev/null || true
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+      - name: 部署到 k3s
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          NODE_A_IP: ${{ vars.NODE_A_IP }}
+          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
+          IMAGE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          bash scripts/deploy/deploy-k3s.sh "$IMAGE_TAG"
+      - name: 收尾断言：部署账户与服务器凭据（C4）
+        if: always()
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ runner.temp }}/deploy_key
+          DEPLOY_KEY_CONTENT: ${{ secrets.SSH_KEY }}
+          K8S_KUBECONFIG: ${{ vars.K8S_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_KEY_CONTENT" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          bash scripts/deploy/deploy-k3s.sh --assert-clean
