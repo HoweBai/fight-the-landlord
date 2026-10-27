@@ -18,6 +18,7 @@ import {
 import { AdminController } from '../../src/config/admin.controller';
 import { ClientConfigController } from '../../src/config/client-config.controller';
 import { PlatformConfigService } from '../../src/config/platform-config.service';
+import { DEFAULT_CHENGDU_RULES } from '@fight-the-landlord/protocol';
 
 /**
  * T3 的测试夹具（**形态照** `test/platform-config.service.test.ts` —— 同一包的既有假库）。
@@ -247,6 +248,23 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['game.paodekuai.springMultiplierEnabled', true],
   ['game.paodekuai.multiplierCap', 64],
   ['game.paodekuai.baobenEnabled', true],
+  // 四川麻将（1798100000000-MahjongConfigSeed）
+  ['game.levels.mahjong', [
+    { name: '休闲场', baseScore: 15, entryFeePercent: 0 },
+    { name: '标准场', baseScore: 80, entryFeePercent: 0 },
+    { name: '竞技场', baseScore: 480, entryFeePercent: 0 },
+    { name: '豪侠场', baseScore: 1200, entryFeePercent: 0 },
+  ]],
+  ['game.mahjong.enabled', false],
+  ['game.mahjong.freeRoomEnabled', false],
+  ['game.mahjong.goldRoomEnabled', false],
+  ['game.mahjong.friendRoomEnabled', false],
+  ['game.mahjong.freeBotFillEnabled', false],
+  ['game.mahjong.goldBotFillEnabled', false],
+  ['game.mahjong.entryMultiplier', 10],
+  ['game.mahjong.rakePercent', 0],
+  ['game.mahjong.sbrGoldEnabled', false],
+  ['game.mahjong.rules', DEFAULT_CHENGDU_RULES],
   ['game.doudizhu.enabled', true],
   // 配置平行化（2026-10-24；来自 `SplitGameConfig1796600000000`）
   ['game.doudizhu.freeRoomEnabled', true],

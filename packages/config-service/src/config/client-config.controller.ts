@@ -186,7 +186,13 @@ export class ClientConfigController {
     const pdkGold = readBoolean(byKey, 'game.paodekuai.goldRoomEnabled', undefined, false);
     const pdkFriend = readBoolean(byKey, 'game.paodekuai.friendRoomEnabled', undefined, false);
     const pdkEntryMultiplier = readInt(byKey, 'game.paodekuai.entryMultiplier', undefined, 10);
-    const games: Record<'doudizhu' | 'paodekuai', ClientGameConfig> = {
+    const mahjongLevels = readLevels(byKey, 'game.levels.mahjong');
+    const mahjongEnabled = readBoolean(byKey, 'game.mahjong.enabled', undefined, false);
+    const mahjongFree = readBoolean(byKey, 'game.mahjong.freeRoomEnabled', undefined, false);
+    const mahjongGold = readBoolean(byKey, 'game.mahjong.goldRoomEnabled', undefined, false);
+    const mahjongFriend = readBoolean(byKey, 'game.mahjong.friendRoomEnabled', undefined, false);
+    const mahjongEntryMultiplier = readInt(byKey, 'game.mahjong.entryMultiplier', undefined, 10);
+    const games: Record<'doudizhu' | 'paodekuai' | 'mahjong', ClientGameConfig> = {
       doudizhu: {
         enabled: ddzEnabled,
         supportedPlayerCounts: [...GAME_META.doudizhu.supportedPlayerCounts],
@@ -196,6 +202,16 @@ export class ClientConfigController {
         goldRoomEnabled: ddzGold,
         friendRoomEnabled: ddzFriend,
         entryMultiplier: ddzEntryMultiplier,
+      },
+      mahjong: {
+        enabled: mahjongEnabled,
+        supportedPlayerCounts: [...GAME_META.mahjong.supportedPlayerCounts],
+        defaultPlayerCount: GAME_META.mahjong.defaultPlayerCount,
+        baseScoreLevels: mahjongLevels,
+        freeRoomEnabled: mahjongFree,
+        goldRoomEnabled: mahjongGold,
+        friendRoomEnabled: mahjongFriend,
+        entryMultiplier: mahjongEntryMultiplier,
       },
       paodekuai: {
         enabled: pdkEnabled,

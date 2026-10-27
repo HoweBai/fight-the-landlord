@@ -85,6 +85,21 @@ describe('GET /api/config（C7 半边）', () => {
           friendRoomEnabled: false,
           entryMultiplier: 10,
         },
+        mahjong: {
+          enabled: false,
+          supportedPlayerCounts: [4],
+          defaultPlayerCount: 4,
+          baseScoreLevels: [
+            { name: '休闲场', baseScore: 15, entryFeePercent: 0 },
+            { name: '标准场', baseScore: 80, entryFeePercent: 0 },
+            { name: '竞技场', baseScore: 480, entryFeePercent: 0 },
+            { name: '豪侠场', baseScore: 1200, entryFeePercent: 0 },
+          ],
+          freeRoomEnabled: false,
+          goldRoomEnabled: false,
+          friendRoomEnabled: false,
+          entryMultiplier: 10,
+        },
         paodekuai: {
           enabled: false,
           supportedPlayerCounts: [3],
