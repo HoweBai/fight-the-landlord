@@ -24,6 +24,7 @@ import type { ErrCode } from './errors';
 import type { Card, GameView } from './views';
 import type { SettlementResult } from './settlement';
 import type { MahjongAction } from './mahjong/actions';
+import type { Tile } from './mahjong/tile';
 // 多玩法（Task 2.5）：`record.moneyDelta` 的玩法/人数校验要用运行期目录。
 import { isGameType, supportsPlayerCount, type GameType } from './game';
 import type { ConfigSnapshot } from './config';
@@ -241,6 +242,8 @@ export interface StartGameRequest {
   /** 内部测试专用：固定随机种子/牌堆（仅 INTERNAL_TEST_HOOKS=1，生产默认关闭）。 */
   seed?: number;
   testDeck?: Card[];
+  /** 麻将确定性牌墙（仅内部测试钩子）。 */
+  testTiles?: Tile[];
   players: {
     /** 对外 ID：人类为 `userId`，机器人为 `displayId`（§9.2）。 */
     id: string;

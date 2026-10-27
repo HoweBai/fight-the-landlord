@@ -10,10 +10,13 @@ import type {
   GameMeta,
   GameType,
   GameView,
+  MahjongRecordEnvelope,
+  MahjongRobotFeatures,
   PdkRobotFeatures,
   RobotFeatures,
   SettlementResult,
   StartGameRequest,
+  Tile,
 } from '@fight-the-landlord/protocol';
 import type {
   GameAction,
@@ -37,6 +40,8 @@ export interface CreateGameInput {
   /** 内部测试钩子（仅 INTERNAL_TEST_HOOKS=1）。 */
   seed?: number;
   testDeck?: Card[];
+  /** 麻将确定性牌墙（仅内部测试钩子）。 */
+  testTiles?: Tile[];
 }
 
 export interface RuntimeCtx {
@@ -47,7 +52,7 @@ export interface RuntimeCtx {
   actorSeat: number;
 }
 
-export interface Transition<S extends GameSessionBase> {
+export interface Transition<S extends GameSessionBase<any, any>> {
   session: S;
   ended: boolean;
 }
@@ -67,10 +72,10 @@ export interface PdkRecordEnvelope {
   gameType: 'paodekuai';
   playerCount: 2 | 3 | 4;
 }
-export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope;
+export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope | MahjongRecordEnvelope;
 
 /** 机器人公开特征联合（pdk 类型见 protocol/pdk/types）。 */
-export type GameRobotFeatures = RobotFeatures | PdkRobotFeatures;
+export type GameRobotFeatures = RobotFeatures | PdkRobotFeatures | MahjongRobotFeatures;
 
 export interface GameRobotInput {
   view: GameView;

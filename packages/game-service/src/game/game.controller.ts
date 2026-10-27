@@ -8,7 +8,7 @@ import {
   Param,
   Post,
 } from '@nestjs/common';
-import { ErrCode, type Card, type GameView } from '@fight-the-landlord/protocol';
+import { ErrCode, type Card, type GameView, type MahjongAction } from '@fight-the-landlord/protocol';
 import { GameService } from './game.service';
 import { GameError } from './game.errors';
 
@@ -107,7 +107,7 @@ export class GameController {
   @Post(':roomCode/play')
   async playCards(
     @Param('roomCode') roomCode: string,
-    @Body() dto: { cards: Card[]; baseVersion?: number },
+    @Body() dto: { cards?: Card[]; mahjong?: MahjongAction; baseVersion?: number; windowId?: string },
     @Headers(USER_ID_HEADER) userId?: string,
   ) {
     return this.action(() =>
@@ -115,8 +115,9 @@ export class GameController {
         roomCode,
         this.requireUser(userId),
         'play',
-        { cards: dto.cards },
+        { cards: dto.cards, mahjong: dto.mahjong },
         dto.baseVersion,
+        dto.windowId,
       ),
     );
   }

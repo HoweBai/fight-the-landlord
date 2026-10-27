@@ -32,6 +32,7 @@ import type {
   Card,
   GameTrusteeRequest,
   GameView,
+  MahjongAction,
   RobotDecideResponse,
   SkillLevel,
 } from '@fight-the-landlord/protocol';
@@ -434,9 +435,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
      * 生产客户端即使误带也不能因此开局失败，但也绝不能让确定性牌堆流入生产）。
      */
     const hooksEnabled = process.env.INTERNAL_TEST_HOOKS === '1';
-    if ((dto.seed !== undefined || dto.testDeck !== undefined) && !hooksEnabled) {
+    if ((dto.seed !== undefined || dto.testDeck !== undefined || dto.testTiles !== undefined) && !hooksEnabled) {
       this.logger.warn(
-        `Ignoring test hooks (seed/testDeck) for room ${dto.roomCode}: INTERNAL_TEST_HOOKS is not '1'`,
+        `Ignoring test hooks (seed/testDeck/testTiles) for room ${dto.roomCode}: INTERNAL_TEST_HOOKS is not '1'`,
       );
     }
     let created: AnyGameSession;
@@ -451,6 +452,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
         random: this.random,
         seed: hooksEnabled ? dto.seed : undefined,
         testDeck: hooksEnabled ? dto.testDeck : undefined,
+        testTiles: hooksEnabled ? dto.testTiles : undefined,
       });
     } catch (err) {
       // 非法 testDeck / 非法规则快照（ProtocolError）⇒ 契约的 `10001`，不是 500。
@@ -621,10 +623,11 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     roomCode: string,
     userId: string,
     action: 'bid' | 'play' | 'pass',
-    payload: { grab?: boolean; cards?: Card[] },
+    payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction },
     baseVersion?: number,
+    windowId?: string,
   ): Promise<GameView> {
-    await this.applyById(roomCode, userId, action, payload, baseVersion);
+    await this.applyById(roomCode, userId, action, payload, baseVersion, windowId);
     const session = await this.getSession(roomCode);
     if (!session) throw new GameError(ErrCode.ROOM_NOT_FOUND, `Game not found: ${roomCode}`, 404);
     const seat = findSeatByUserId(session, userId);
@@ -636,14 +639,18 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     roomCode: string,
     userId: string,
     action: 'bid' | 'play' | 'pass',
-    payload: { grab?: boolean; cards?: Card[] },
+    payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction },
     baseVersion?: number,
+    windowId?: string,
   ): Promise<S> {
     switch (action) {
       case 'bid':
         return this.bid<S>(roomCode, userId, payload.grab ?? false, baseVersion);
       case 'play':
-        return this.playCards<S>(roomCode, userId, payload.cards ?? [], baseVersion);
+        if (payload.mahjong !== undefined) {
+          return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'mahjong', action: payload.mahjong }, windowId);
+        }
+        return this.playCards<S>(roomCode, userId, payload.cards ?? [], baseVersion, windowId);
       case 'pass':
         return this.pass<S>(roomCode, userId, baseVersion);
     }
@@ -663,8 +670,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     userId: string,
     cards: Card[],
     baseVersion?: number,
+    windowId?: string,
   ): Promise<S> {
-    return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'play', cards });
+    return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'play', cards }, windowId);
   }
 
   async pass<S extends AnyGameSession = GameSession>(

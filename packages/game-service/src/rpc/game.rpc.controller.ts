@@ -97,6 +97,7 @@ export class GameRpcController {
           // （那是 spec §3.5-A 记的类型断言绕过：编译器不报形状错）。
           dto?.payload,
           dto?.baseVersion,
+          dto?.windowId,
         ),
       dto?.meta,
     );

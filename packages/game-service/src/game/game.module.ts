@@ -10,6 +10,7 @@ import { ROBOT_RPC_PROXY, robotClientOptions } from '../rpc/rpc.options';
 import { GameRegistry } from '../games/registry';
 import { DdzRuntime } from '../games/ddz/runtime';
 import { PdkRuntime } from '../games/pdk/runtime';
+import { MahjongRuntime } from '../games/mahjong/runtime';
 
 /**
  * ⚠️ 两个控制器是 §4.2 的**两条通道**，不是重复：
@@ -52,15 +53,17 @@ import { PdkRuntime } from '../games/pdk/runtime';
     // 多玩法片 S1/S4：runtime 注册表（斗地主 + 跑得快；未知玩法 `get` 响亮失败）。
     { provide: DdzRuntime, useValue: new DdzRuntime() },
     { provide: PdkRuntime, useValue: new PdkRuntime() },
+    { provide: MahjongRuntime, useValue: new MahjongRuntime() },
     {
       provide: GameRegistry,
-      useFactory: (ddz: DdzRuntime, pdk: PdkRuntime) => {
+      useFactory: (ddz: DdzRuntime, pdk: PdkRuntime, mahjong: MahjongRuntime) => {
         const registry = new GameRegistry();
         registry.register(ddz);
         registry.register(pdk);
+        registry.register(mahjong);
         return registry;
       },
-      inject: [DdzRuntime, PdkRuntime],
+      inject: [DdzRuntime, PdkRuntime, MahjongRuntime],
     },
   ],
   exports: [GameService],

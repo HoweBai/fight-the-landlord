@@ -29,7 +29,7 @@ export interface MahjongPlayer extends GamePlayerBase<Tile> {
   passedHu: Array<{ tile: number; fan: number }>;
 }
 
-export type MahjongActionLogEntry = { version: number; seat: number; action: MahjongActionRecord; auto?: boolean };
+export type MahjongActionLogEntry = MahjongActionRecord;
 
 export interface MahjongPendingClaims {
   kind: 'claim' | 'rob';
@@ -43,7 +43,7 @@ export interface MahjongPendingClaims {
   gangMeldIndex?: number;
 }
 
-export interface MahjongSession extends GameSessionBase<Tile, MahjongActionLogEntry> {  gameType: 'mahjong';
+export interface MahjongSession extends GameSessionBase<Tile, MahjongActionRecord> {  gameType: 'mahjong';
   state: MahjongPhase;
   dealerSeat: number;
   /** 牌墙（服务端内部，永不出站）。 */
@@ -131,6 +131,7 @@ export function createMahjongSession(input: CreateMahjongSessionInput): MahjongS
     windowId: exchange ? 'exchange' : 'lack',
     windowSeq: 0,
     rngSeed: input.rngSeed,
+    initialHands: deal.hands.map((h) => [...h]),
   };
 }
 

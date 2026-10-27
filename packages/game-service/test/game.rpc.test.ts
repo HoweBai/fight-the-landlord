@@ -143,7 +143,7 @@ describe('game-service 的 §4.2 RPC handler（N20/R220）', () => {
       payload: { cards: h(3) },
       baseVersion: 7,
     });
-    expect(svc.actAndView).toHaveBeenCalledWith('R1', 'u1', 'play', { cards: h(3) }, 7);
+    expect(svc.actAndView).toHaveBeenCalledWith('R1', 'u1', 'play', { cards: h(3) }, 7, undefined);
   });
 
   /**
