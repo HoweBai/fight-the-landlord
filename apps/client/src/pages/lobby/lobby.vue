@@ -722,6 +722,35 @@ function openMenuItem(item: (typeof PLAYER_MENU)[number]) {
   uni.navigateTo({ url: item.url });
 }
 
+/* ------------------------------------------------------------------ *
+ * 玩法规则介绍弹层（信息入口）
+ *
+ * 形态 = 玩家菜单 / 救助弹层同款：全屏遮罩 + 居中可滚动面板。
+ * 入口是玩法卡内的 info 图标按钮（仅 `m.description` 存在时才渲染）。
+ * 数据单一 Modal + key 切换（经验：避免为每条规则独立弹层造成 DOM 膨胀）。
+ * ------------------------------------------------------------------ */
+
+const ruleOpen = ref(false);
+const ruleModeId = ref<string | null>(null);
+
+/** 当前弹层要展示的玩法 —— 从 GAME_MODES 查，找不到 ⇒ null（防边界）。 */
+const currentRuleMode = computed(() =>
+  ruleModeId.value !== null
+    ? GAME_MODES.find((m) => m.id === ruleModeId.value)
+    : undefined,
+);
+
+function openRule(modeId: string) {
+  ruleModeId.value = modeId;
+  ruleOpen.value = true;
+}
+
+function closeRule() {
+  ruleOpen.value = false;
+  // 关闭后清空 id —— 再打开别的玩法时确保重新渲染（单 Modal + key 切换）。
+  ruleModeId.value = null;
+}
+
 /**
  * 支付片 T14：**钱包入口**（规格 §4：「大厅钱包区（`lobby.vue` 金币显示处）点击 ⇒ 跳钱包页」）。
  *
@@ -866,31 +895,52 @@ onUnmounted(() => stopBgm());
         <view class="lobby__modes">
           <text class="lobby__modes-title">选择玩法</text>
           <view class="lobby__mode-list">
-            <button
+            <!--
+              外层 `.lobby__mode-wrap` 是**纯定位容器**（position: relative）—— 不接收 click，
+              只负责给 info 图标提供绝对定位基准。这样 info 图标与玩法卡 button 是**兄弟元素**，
+              零嵌套事件冲突（uni-app H5 的 button 组件有自己的事件拦截层，内层 view 点击会被吞）。
+            -->
+            <view
               v-for="m in visibleModes"
               :key="m.id"
-              type="button"
-              class="lobby__mode"
-              :class="{ 'lobby__mode--active': m.id === store.activeMode }"
-              @click="selectMode(m.id)"
+              class="lobby__mode-wrap"
             >
-              <!-- 图标位（R747）：给了文件名就渲染图，没给就走下面的 CSS 兜底 -->
-              <image
-                v-if="m.icon"
-                class="lobby__mode-icon"
-                :src="`/static/ui/${m.icon}`"
-                mode="aspectFit"
-              />
-              <view v-else class="lobby__mode-icon lobby__mode-icon--fallback">
-                <text class="lobby__mode-icon-char">{{
-                  m.name.slice(0, 1)
-                }}</text>
+              <button
+                type="button"
+                class="lobby__mode"
+                :class="{ 'lobby__mode--active': m.id === store.activeMode }"
+                @click="selectMode(m.id)"
+              >
+                <!-- 图标位（R747）：给了文件名就渲染图，没给就走下面的 CSS 兜底 -->
+                <image
+                  v-if="m.icon"
+                  class="lobby__mode-icon"
+                  :src="`/static/ui/${m.icon}`"
+                  mode="aspectFit"
+                />
+                <view v-else class="lobby__mode-icon lobby__mode-icon--fallback">
+                  <text class="lobby__mode-icon-char">{{
+                    m.name.slice(0, 1)
+                  }}</text>
+                </view>
+                <view class="lobby__mode-text">
+                  <text class="lobby__mode-name">{{ m.name }}</text>
+                  <text class="lobby__mode-tagline">{{ m.tagline }}</text>
+                </view>
+              </button>
+              <!--
+                info 图标（规则介绍入口）：**只在有 description 时才渲染**。
+                绝对定位在卡片右上角（z-index 1 确保盖在 button 之上）。
+                ⚠️ 在 button 外面，所以**不需要** @click.stop —— 事件不会再冒泡到 button。
+              -->
+              <view
+                v-if="m.description"
+                class="lobby__mode-info"
+                @click="openRule(m.id)"
+              >
+                <text class="lobby__mode-info-char">i</text>
               </view>
-              <view class="lobby__mode-text">
-                <text class="lobby__mode-name">{{ m.name }}</text>
-                <text class="lobby__mode-tagline">{{ m.tagline }}</text>
-              </view>
-            </button>
+            </view>
           </view>
           <text v-if="visibleModes.length === 0" class="lobby__modes-empty"
             >暂无开放的玩法，请稍后再试</text
@@ -1060,6 +1110,33 @@ onUnmounted(() => stopBgm());
               取消
             </button>
           </view>
+        </view>
+      </view>
+
+      <!--
+        玩法规则介绍弹层（信息入口）：与玩家菜单 / 救助弹层**同一条**遮罩+面板语言。
+        面板内正文区 `overflow-y: auto` —— 斗地主规则 ≈ 300–500 字，超出面板高时自然滚动。
+        ⚠️ 遮罩关闭 = 裸 click + 面板 `@click.stop`，**不得**用 `.self`（MoreMenu.vue 记过根因）。
+      -->
+      <view
+        v-if="ruleOpen && currentRuleMode"
+        class="lobby__rule-dialog"
+        @click="closeRule"
+      >
+        <view class="lobby__rule-panel" @click.stop>
+          <view class="lobby__rule-head">
+            <text class="lobby__rule-title">{{ currentRuleMode.name }} 玩法介绍</text>
+            <button
+              type="button"
+              class="btn btn--small lobby__rule-close"
+              @click="closeRule"
+            >
+              关闭
+            </button>
+          </view>
+          <!-- 正文区：white-space: pre-wrap 保留 description 里的 \n 换行；
+               overflow-y: auto 让长内容可滚；max-height 限死面板高度不溢出屏幕。 -->
+          <text class="lobby__rule-body">{{ currentRuleMode.description }}</text>
         </view>
       </view>
     </view>
@@ -1334,6 +1411,72 @@ onUnmounted(() => stopBgm());
   color: $ftl-color-on-primary;
 }
 /**
+ * 玩法规则介绍弹层：与玩家菜单 / 救助弹层**同一条**遮罩+面板语言（遮罩
+ * `rgba(night-deep,.62)` / 面板 `rgba(night,.62)` + 发丝描边 + radius-lg —— §5.2.1）。
+ * 面板正文区可滚（规则 ≈ 300–500 字，max-height 限死不溢出屏幕）。
+ */
+.lobby__rule-dialog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($ftl-color-night-deep, 0.62);
+}
+.lobby__rule-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-5;
+  width: 640px;
+  max-width: 90%;
+  max-height: 80%;
+  padding: $ftl-space-6;
+  border: $ftl-hairline solid $ftl-color-night-deep;
+  border-radius: $ftl-radius-lg;
+  background: rgba($ftl-color-night, 0.62);
+}
+.lobby__rule-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: $ftl-space-5;
+}
+.lobby__rule-title {
+  color: $ftl-color-on-primary;
+  font-size: $ftl-font-lg;
+  font-weight: 700;
+  line-height: 1.2;
+}
+/** 规则正文：保留 \n 换行；overflow-y:auto 让长内容可滚；max-height 卡死面板高度。 */
+.lobby__rule-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-md;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+/**
+ * 规则弹层里的按钮：次按钮语言（§5.2.1）——和菜单/救助弹层同款
+ * （透明底 + night-soft 描边 + 白字）。选择器带 `.lobby__rule-dialog` 前缀
+ * 的理由与菜单块/救助块逐字相同（`.btn` mixin 在文件末尾，同特指度后者胜）。
+ */
+.lobby__rule-dialog .lobby__rule-close {
+  flex: 0 0 auto;
+  margin: 0;
+  border-color: $ftl-color-night-soft;
+  background: transparent;
+  background-image: none;
+  color: $ftl-color-on-primary;
+}
+/**
  * 档位区三态状态位（Task 8）：失败 / 空表 / 加载中**同一条**中性标签字 —— 它们都只是
  * 「这块现在是什么状态」；具体原因与「重试」出口在浮层 `levels` 项。
  */
@@ -1430,6 +1573,14 @@ onUnmounted(() => stopBgm());
   min-height: 0;
   overflow-y: auto;
 }
+/**
+ * 玩法卡外层包装：**纯定位容器**（position: relative）。
+ * 作用 = 给 sibling 的 info 图标提供绝对定位基准；它自己不接收任何事件。
+ * ⚠️ gap 已经在 `.lobby__mode-list` 上，这里只负责 relative + 子元素高度跟随。
+ */
+.lobby__mode-wrap {
+  position: relative;
+}
 .lobby__modes-empty {
   color: $ftl-color-text-secondary;
   font-size: $ftl-font-sm;
@@ -1475,11 +1626,19 @@ onUnmounted(() => stopBgm());
   font: inherit;
   cursor: pointer;
 }
+/**
+ * 玩法卡：等高兜底（与 `.lobby__level` 同款纪律）。
+ * tagline 可能 1 行也可能 2 行（斗地主「三人一局，比谁先出完手牌」在窄画布会换行），
+ * 缺行的卡片底部留白补齐，选中描边框等高。
+ * 取值全部由令牌算（无字面量）：上下 padding + 名称行 + 名称-tagline gap + tagline 两行。
+ */
 .lobby__mode {
   align-items: center;
   justify-content: flex-start;
   gap: $ftl-space-5;
   text-align: left;
+  min-height: $ftl-space-5 * 2 + $ftl-font-lg * 1.2 + $ftl-space-2 +
+    $ftl-font-sm * 1.4 * 2;
 }
 /**
  * 底分卡：竖排（场次名在上、底分在下），与参考图 1 的卡片同形。
@@ -1539,11 +1698,45 @@ onUnmounted(() => stopBgm());
   white-space: nowrap;
 }
 /** 一句话说明：改浅色（面板内标签字，§5.2.1）—— 原来的 `$ftl-color-text-secondary`
-    是深底上的灰字，压在深蓝面板上读不清。 */
+    是深底上的灰字，压在深蓝面板上读不清。
+    最多两行 + ellipsis：与 `.lobby__mode` 的 min-height（预留两行）呼应，
+    将来加更长 tagline 时也不会撑破等高布局。 */
 .lobby__mode-tagline {
   color: rgba($ftl-color-on-primary, 0.75);
   font-size: $ftl-font-sm;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+/**
+ * info 图标（规则介绍入口）：圆形描边 + 小写 "i" 字符。
+ * ⚠️ 绝对定位 —— 与 `.lobby__mode` 是兄弟元素（在 `.lobby__mode-wrap` 内），
+ * 所以不会被 uni-app button 组件的事件拦截层吞掉。z-index 1 确保盖在 button 之上。
+ */
+.lobby__mode-info {
+  position: absolute;
+  top: $ftl-space-3;
+  right: $ftl-space-3;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: $ftl-hairline solid rgba($ftl-color-on-primary, 0.5);
+  border-radius: 50%;
+  background: rgba($ftl-color-night-deep, 0.4);
+  cursor: pointer;
+}
+.lobby__mode-info-char {
+  color: rgba($ftl-color-on-primary, 0.85);
+  font-size: $ftl-font-sm;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
 }
 /** 「底分 N」：与场次名同一族，弱一档（面板内标签字）。 */
 .lobby__level-base {
