@@ -38,6 +38,12 @@ describe('resolveGameType', () => {
     expect(() => resolveGameType({ ...base, pdkRules: {} } as never)).toThrow(/paodekuai fields/);
   });
 
+  it('麻将专属字段存在但缺 gameType ⇒ ProtocolError（fail closed）', () => {
+    expect(() => resolveGameType({ ...base, mahjongRules: {} } as never)).toThrow(/mahjong fields/);
+    expect(() => resolveGameType({ ...base, claimsForMe: [] } as never)).toThrow(ProtocolError);
+    expect(() => resolveGameType({ ...base, revealedHands: [] } as never)).toThrow(ProtocolError);
+  });
+
   it('未知 gameType ⇒ ProtocolError（不静默当斗地主）', () => {
     expect(() => resolveGameType({ ...base, gameType: 'texas' } as never)).toThrow(ProtocolError);
   });

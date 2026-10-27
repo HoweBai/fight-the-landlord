@@ -43,6 +43,17 @@ Audio files under `apps/client/src/static/audio/`,
 recorded license. Their terms are unknown; they are not covered by the root
 `LICENSE`.
 
+四川麻将专用素材另记来源：
+
+- `apps/client/src/pages/table/static/mahjong/*.png`（万/筒/条 1–9 牌面与牌背）
+  从 **幼麟棋牌** `babykylin/babykylin_scmj` 的 Cocos 图集 `Z_my` / `Z_bottom`
+  中按 plist 坐标裁切得到；同名衍生仓库 `zhaozhifei/scmj`、
+  `copperlib/majiang-cocos-creator` 的素材与本仓库所取文件逐字节一致。
+- `apps/client/src/pages/table/static/audio/mahjong/*.mp3`（碰/杠/胡/刮风/下雨/
+  发牌/洗牌/理牌/倒计时/两首 BGM）同出该仓库的音频目录。
+
+上述素材**未取得独立书面授权**，权属与再分发条款仍待核实，不适用根 `LICENSE`。
+
 ## 4. npm / PyPI dependencies
 
 Third-party packages declared in `package.json`, `pnpm-lock.yaml`,

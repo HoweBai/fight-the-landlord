@@ -20,7 +20,7 @@
  * ⚠️ 该顺序只在**同一 setup、默认 pre flush** 下成立，不得跨消息依赖。
  */
 import { watch } from 'vue';
-import { isPdkSettlementResult } from '@fight-the-landlord/protocol';
+import { isMahjongSettlementResult, isPdkSettlementResult } from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { playCue, cueForBid, cueForPass } from '../audio';
 import { cueForPlay } from '../audio/play-cues';
@@ -97,6 +97,11 @@ export function useTableSound(): void {
         lastCounts = now;
         return;
       }
+      // 麻将没有「报单/报双」（张数 13/14 恒定），直接跳过。
+      if (store.gameType === 'mahjong') {
+        lastCounts = now;
+        return;
+      }
       if (lastCounts) {
         now.forEach((count, seat) => {
           if (count === lastCounts![seat]) return;
@@ -115,6 +120,46 @@ export function useTableSound(): void {
     { immediate: true },
   );
 
+  // ── 麻将（T11）：副露 / 已胡人数 / 阶段切换 ────────────────────────────
+  /**
+   * 只比较服务端视图的**增量事实**：新增的碰/明杠/暗杠、已胡人数上涨、阶段推进。
+   * 挂载后第一版只登记、不补播（与 bootstrap 同一条纪律）。
+   */
+  const mahjongMeldCounts = (): { peng: number; gang: number; angang: number } => {
+    const out = { peng: 0, gang: 0, angang: 0 };
+    for (const m of store.mahjongView?.melds.flat() ?? []) out[m.kind] += 1;
+    return out;
+  };
+  let lastMjMelds = mahjongMeldCounts();
+  let lastMjHu = store.mahjongView?.huInfos.length ?? 0;
+  let lastMjPhase = store.mahjongView?.state ?? null;
+  let mjBootstrapped = store.mahjongView !== null;
+  watch(
+    () => store.mahjongView,
+    (v) => {
+      if (!v) return;
+      if (!mjBootstrapped) {
+        mjBootstrapped = true;
+        lastMjMelds = mahjongMeldCounts();
+        lastMjHu = v.huInfos.length;
+        lastMjPhase = v.state;
+        return;
+      }
+      if (store.settlement) return;
+      const melds = mahjongMeldCounts();
+      if (melds.peng > lastMjMelds.peng) playCue('MjPeng');
+      if (melds.gang > lastMjMelds.gang) playCue('MjGuafeng');
+      if (melds.angang > lastMjMelds.angang) playCue('MjRain');
+      if (v.huInfos.length > lastMjHu) playCue('MjHu');
+      // 换三张完成 → 理牌；定缺完成/庄家摸牌 → 发牌。
+      if (lastMjPhase === 'exchange' && v.state === 'lack') playCue('MjSort');
+      else if (lastMjPhase === 'lack' && v.state === 'play') playCue('MjDeal');
+      lastMjMelds = melds;
+      lastMjHu = v.huInfos.length;
+      lastMjPhase = v.state;
+    },
+  );
+
   // ── 胜负：结算载荷出现 ─────────────────────────────────────────────────
   watch(
     () => store.settlement,
@@ -124,6 +169,15 @@ export function useTableSound(): void {
       if (isPdkSettlementResult(s)) {
         if (store.mySeat !== null) {
           playCue(s.winnerSeats.includes(store.mySeat) ? 'Win' : 'Lose');
+        }
+        return;
+      }
+      // 麻将：赢家座位 + 花猪集合都是服务端字段；花猪按输处理。
+      if (isMahjongSettlementResult(s)) {
+        if (store.mySeat !== null) {
+          const won =
+            s.winnerSeats.includes(store.mySeat) && !s.huazhuSeats.includes(store.mySeat);
+          playCue(won ? 'Win' : 'Lose');
         }
         return;
       }

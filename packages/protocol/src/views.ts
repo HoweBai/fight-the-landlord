@@ -192,6 +192,14 @@ export function resolveGameType(view: GameViewBase): GameType {
         'view has paodekuai fields but no gameType (refusing to render pdk as doudizhu)',
       );
     }
+    if (
+      view.gameType === undefined &&
+      ('mahjongRules' in view || 'claimsForMe' in view || 'revealedHands' in view)
+    ) {
+      throw new ProtocolError(
+        'view has mahjong fields but no gameType (refusing to render mahjong as doudizhu)',
+      );
+    }
     return 'doudizhu';
   }
   throw new ProtocolError(`unknown gameType: ${String(view.gameType)}`);

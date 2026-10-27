@@ -17,14 +17,16 @@
  * 「再来一局」：只写意向 + 回玩法页（`room.match` 的唯一实现仍在玩法页）。
  */
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
-import { ErrCode, isPdkSettlementResult, type Card } from "@fight-the-landlord/protocol";
+import { ErrCode, isMahjongSettlementResult, isPdkSettlementResult, type Card, type MahjongAction } from "@fight-the-landlord/protocol";
 import ConnectionOverlay from "../../components/ConnectionOverlay.vue";
 import NoticeStack from "../../components/NoticeStack.vue";
 import MoreMenu from "../../components/MoreMenu.vue";
 import Settlement from "../../components/Settlement.vue";
 import PdkSettlement from "../../components/PdkSettlement.vue";
+import MahjongSettlement from "../../components/MahjongSettlement.vue";
 import DdzBoard from "../../components/table/ddz/DdzBoard.vue";
 import PdkBoard from "../../components/table/pdk/PdkBoard.vue";
+import MahjongBoard from "../../components/table/mahjong/MahjongBoard.vue";
 import { useGameStore } from "../../stores/game";
 import { CLIENT_TABLE_PLAYER_COUNTS } from "../../gameModes";
 import { useAuthStore } from "../../stores/auth";
@@ -45,6 +47,7 @@ import { ConnectionDeadError } from "../../net/socket";
 import {
   loadAudioPrefs,
   playBgm,
+  playCue,
   preheatCues,
   stopBgm,
   stopCues,
@@ -121,16 +124,20 @@ const balances = computed<Array<number | null>>(() => {
 });
 
 /**
- * S5.3：`store.view` 是 ddz/pdk 联合；斗地主壳这一侧先窄化（S6 按 gameType 渲染 board）。
- * pdk 视图在 PdkBoard 落地前不交给 DdzBoard（绝不把跑得快当斗地主渲染）。
+ * S5.3：`store.view` 是 ddz/pdk/麻将联合；斗地主壳这一侧先窄化（S6/R T11 按 gameType 渲染 board）。
+ * pdk/麻将视图不交给 DdzBoard（绝不把别的玩法当斗地主渲染）。
  */
 const ddzView = computed(() =>
-  store.view && store.view.gameType !== 'paodekuai' ? store.view : null,
+  store.view && store.view.gameType !== 'paodekuai' && store.view.gameType !== 'mahjong'
+    ? store.view
+    : null,
 );
 
-/** S5.3：结算联合；斗地主结算面板先只接旧 9 键形状（S6.2 接 pdk 变体）。 */
+/** S5.3：结算联合；斗地主结算面板只接旧 9 键形状（pdk/麻将各自面板）。 */
 const ddzSettlement = computed(() =>
-  store.settlement && !isPdkSettlementResult(store.settlement) ? store.settlement : null,
+  store.settlement && !isPdkSettlementResult(store.settlement) && !isMahjongSettlementResult(store.settlement)
+    ? store.settlement
+    : null,
 );
 
 /** S6：跑得快视图/结算（2/3/4 人）。 */
@@ -140,6 +147,13 @@ const pdkView = computed(() =>
 const isPdk = computed(() => pdkView.value !== null);
 const pdkSettlement = computed(() =>
   store.settlement && isPdkSettlementResult(store.settlement) ? store.settlement : null,
+);
+
+/** T11：麻将视图/结算（4 人血战到底）。 */
+const mahjongView = computed(() => store.mahjongView);
+const isMahjong = computed(() => mahjongView.value !== null);
+const mahjongSettlement = computed(() =>
+  store.settlement && isMahjongSettlementResult(store.settlement) ? store.settlement : null,
 );
 
 /**
@@ -195,6 +209,13 @@ const { seconds, start: startCountdown } = useCountdown({
 });
 startCountdown();
 
+/** T11：麻将行动窗口到点（0 秒）且轮到我 ⇒ 警示音；其他玩法不受影响。 */
+watch(seconds, (s) => {
+  if (s !== 0) return;
+  if (store.gameType !== 'mahjong' || !store.isMyTurn) return;
+  playCue('MjTimeup');
+});
+
 /**
  * 项 4 预热名单：高频对局内音效。U5 的 48 条牌型播报刻意不预热（D8）。
  */
@@ -217,7 +238,11 @@ const PREHEAT_CUES = [
 loadAudioPrefs();
 loadHapticsPrefs();
 preheatCues(PREHEAT_CUES);
-playBgm(CUES.BgmTable);
+/** T11：麻将用自己的两首 BGM（大厅/对局），其余玩法沿用斗地主牌桌 BGM。 */
+const tableBgm = computed<string>(() =>
+  store.gameType === 'mahjong' ? CUES.BgmMahjong : CUES.BgmTable,
+);
+playBgm(tableBgm.value);
 useTableSound();
 const { visible: redealVisible, epoch: redealEpoch } = useRedealNotice();
 /** 重发后本局内恒为 `redeal`（D9：不与横幅可见性绑定）。 */
@@ -247,10 +272,14 @@ const musicOn = ref(isMusicOn());
 const sfxOn = ref(isSfxOn());
 const hapticsOn = ref(isHapticsEnabled());
 const audioVolume = ref(getVolume());
+/** T11：视图玩法到达后切换麻将/斗地主 BGM（音乐关时只更新选择，不强行播放）。 */
+watch(tableBgm, (cue) => {
+  if (musicOn.value) playBgm(cue);
+});
 function onMusic(on: boolean) {
   setMusicOn(on);
   musicOn.value = on;
-  if (on) playBgm(CUES.BgmTable);
+  if (on) playBgm(tableBgm.value);
 }
 function onSfx(on: boolean) {
   setSfxOn(on);
@@ -283,13 +312,14 @@ function onConnectionRetry() {
 async function send(
   type: "game.bid" | "game.play" | "game.pass" | "game.trustee",
   payload: unknown,
+  windowId?: string,
 ) {
   if (busy.value) return;
   busy.value = true;
   notices.dismiss("table-local");
   notices.dismiss("table-12003");
   try {
-    const outcome = await getGameSession().client.send(type, payload);
+    const outcome = await getGameSession().client.send(type, payload, windowId);
     if (outcome.status === "blocked") {
       if (outcome.reason instanceof ConnectionDeadError) return;
       notices.setNotice("table-local", "上一个操作尚未确认，请稍候", { level: "warn" });
@@ -324,6 +354,10 @@ function onPlay(cards: Card[]): void {
 }
 function onPass(): void {
   void send("game.pass", {});
+}
+/** T11：麻将动作（服务端权威；窗口 id 原样回传）。 */
+function onMahjong(action: MahjongAction, windowId?: string): void {
+  void send("game.play", { mahjong: action }, windowId);
 }
 function onTrustee(on: boolean): void {
   void send("game.trustee", { on });
@@ -413,7 +447,7 @@ onMounted(() => {
 <template>
   <LandscapeStage backdrop="table">
     <DdzBoard
-      v-if="!isPdk"
+      v-if="!isPdk && !isMahjong"
       :view="ddzView"
       :my-seat="store.mySeat"
       :seconds="seconds"
@@ -472,7 +506,7 @@ onMounted(() => {
     </DdzBoard>
 
     <PdkBoard
-      v-else
+      v-else-if="isPdk"
       :view="pdkView"
       :my-seat="store.mySeat"
       :seconds="seconds"
@@ -531,6 +565,59 @@ onMounted(() => {
         />
       </template>
     </PdkBoard>
+
+    <MahjongBoard
+      v-else
+      :view="mahjongView"
+      :my-seat="store.mySeat"
+      :seconds="seconds"
+      :busy="busy"
+      :interactive="store.settlement === null"
+      :settlement-arrived="store.settlement !== null"
+      :settlement-revealed="settlementRevealed"
+      :waiting-for-deal="store.waitingForDeal"
+      :room-code="store.roomCode"
+      :seat-names="seatNames"
+      :balances="balances"
+      :level-name="store.viewLevelName"
+      @mahjong="onMahjong"
+      @trustee="onTrustee"
+      @more="moreOpen = true"
+      @leave="onBackToLobby"
+    >
+      <template #overlays>
+        <view
+          v-if="store.settlement && settlementRevealed"
+          class="table__scrim"
+        />
+        <MahjongSettlement
+          v-if="mahjongSettlement && settlementRevealed"
+          :settlement="mahjongSettlement"
+          :settlement-received-at="settlementReceivedAt ?? undefined"
+          @again="onAgain"
+          @back="auth.navigate('lobby')"
+        />
+        <MoreMenu
+          v-if="moreOpen && !settlementRevealed"
+          :music-on="musicOn"
+          :sfx-on="sfxOn"
+          :haptics-on="hapticsOn"
+          :volume="audioVolume"
+          @close="moreOpen = false"
+          @music="onMusic"
+          @sfx="onSfx"
+          @haptics="onHaptics"
+          @volume="onVolume"
+        />
+        <ConnectionOverlay
+          v-if="connectionState !== null && connectionState.phase !== 'connected'"
+          :state="connectionState"
+          @retry="onConnectionRetry"
+          @back="auth.navigate('lobby')"
+          @relogin="auth.clearLocalSession()"
+        />
+      </template>
+    </MahjongBoard>
 
     <template #overlay>
       <NoticeStack :items="noticeItems" surface="table" @dismiss="notices.dismiss" />

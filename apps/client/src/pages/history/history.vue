@@ -72,7 +72,7 @@ const pdkRecords = ref<PdkRecord[]>([]);
  * 玩法筛选（S6.3）：历史页按玩法分表（pdk 单独建表）。
  * 缺省斗地主 —— 旧行为/旧客户端零破坏；切玩法 = 重置列表 + cursor 重新拉第一页。
  */
-const filterGame = ref<'doudizhu' | 'paodekuai'>('doudizhu');
+const filterGame = ref<HistoryGame>('doudizhu');
 /** 不透明游标：`null` = 没有下一页。 */
 const nextCursor = ref<string | null>(null);
 /** 首次请求在挂载时发出 ⇒ 初值 `true`，防「加载中 → 空态」闪跳。 */
@@ -117,7 +117,17 @@ function toggleFilter(key: FilterKey) {
 const GAME_LABEL: Readonly<Record<typeof GAME_MODES[number]['id'], string>> = {
   doudizhu: '斗地主',
   paodekuai: '跑得快',
+  mahjong: '麻将',
 };
+/**
+ * 历史页可筛的玩法：麻将战绩接口（`/records/mine?gameType=mahjong`）尚未接入
+ * ⇒ **暂不出现在筛选下拉**（麻将记录已落库，接口补齐后在这里放开即可）。
+ */
+type HistoryGame = 'doudizhu' | 'paodekuai';
+const HISTORY_GAME_MODES = GAME_MODES.filter(
+  (m): m is (typeof GAME_MODES)[number] & { id: HistoryGame } =>
+    m.id === 'doudizhu' || m.id === 'paodekuai',
+);
 const MODE_LABEL_SHORT: Readonly<Record<string, string>> = {
   all: '全部',
   random: '匹配',
@@ -175,7 +185,7 @@ function selectMode(mode?: MyRecord['mode']) {
 }
 
 /** 选玩法（S6.3）：切表 + 重置列表。 */
-function selectGame(game: 'doudizhu' | 'paodekuai') {
+function selectGame(game: HistoryGame) {
   if (filterGame.value === game) {
     activeFilter.value = null;
     return;
@@ -441,7 +451,7 @@ onMounted(() => {
             </button>
             <view v-if="activeFilter === 'game'" class="history__dropdown">
               <button
-                v-for="m in GAME_MODES"
+                v-for="m in HISTORY_GAME_MODES"
                 :key="m.id"
                 type="button"
                 class="history__dropdown-item"
