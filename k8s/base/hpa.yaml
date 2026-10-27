@@ -34,6 +34,10 @@ spec:
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+    - type: Pods
+      pods:
+        metric: { name: ws_connections }
+        target: { type: AverageValue, averageValue: "100" }
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30

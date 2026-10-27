@@ -27,6 +27,7 @@ import {
   wsConnSlotOf,
 } from '../http/rate-limit';
 import { clientIpFrom, TRUST_TABLE } from '../http/trusted-client-ip';
+import { gatewayWsConnections } from '../metrics/ws.metrics';
 
 /** engine.io 的 `allowRequest` 回调签名：`success === false` ⇒ 在传输层拒绝握手。 */
 type AllowRequestCallback = (err: string | null | undefined, success: boolean) => void;
@@ -276,6 +277,7 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect, O
    */
   private async handleConnectionInner(client: Socket, traceId: string): Promise<void> {
     this.clients.add(client);
+    gatewayWsConnections.inc();
     // 初始化应用帧时间戳：0 = 会话刚创建，还没收发过业务帧。
     // heartbeat 回调跳过 0 值，避免握手刚完就触发兜底踢线。
     this.lastAppFrameAt.set(client.id, 0);
@@ -462,7 +464,7 @@ export class ProxyGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   handleDisconnect(client: Socket): void {
-    this.clients.delete(client);
+    if (this.clients.delete(client)) gatewayWsConnections.dec();
     this.dropPeer(client.id);
   }
 

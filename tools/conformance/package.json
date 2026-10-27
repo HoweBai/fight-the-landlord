@@ -8,6 +8,7 @@
     "lint": "tsc --noEmit",
     "conformance": "node dist/run.js",
     "multi-replica": "node dist/multi-replica-main.js",
+    "ws-load": "node dist/ws-load.js",
     "conformance:slice-05": "node dist/run.js slice-05",
     "conformance:slice-06": "node dist/run.js slice-06",
     "conformance:slice-07": "node dist/run.js slice-07",

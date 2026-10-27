@@ -21,8 +21,13 @@ resources:
   - pdb.yaml
   - hpa.yaml
   - monitoring.yaml
+  - prometheus-adapter.yaml
 configMapGenerator:
   - name: prometheus-config
     namespace: ftl-monitoring
     files:
       - monitoring/prometheus.yml
+  - name: prometheus-k8s-rules
+    namespace: ftl-monitoring
+    files:
+      - monitoring/rules-k8s.yml
