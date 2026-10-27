@@ -17,3 +17,6 @@ resources:
   - payment-service.yaml
   - douzero.yaml
   - migrate-jobs.yaml
+  - networkpolicy.yaml
+  - pdb.yaml
+  - hpa.yaml
