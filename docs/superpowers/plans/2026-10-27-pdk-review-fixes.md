@@ -394,6 +394,26 @@
 - 真栈 `slice-05` / `slice-29-paodekuai` **未跑**：需要 3000–3003 真实服务与镜像；
   本片为单元/契约级修复，按 spec §5 登记，合 master 权威轮补齐。
 
+### 合并后复跑（2026-10-27）
+
+`dev` 先快进到 `origin/dev@bcf06452`（k3s/多副本等 25 提交），再 `--no-ff` 合入本分支，
+merge commit `09b03a6d`；`pnpm install --frozen-lockfile` 装入 `@socket.io/redis-adapter`
+等新依赖后复跑：
+
+| 包 | 结果 |
+|---|---|
+| protocol | 304 passed；lint 绿 |
+| shared | 404 passed；lint 绿 |
+| game-service | 278 passed；lint 绿 |
+| room-service | 1003 passed；lint 绿 |
+| user-service | 409 passed；lint 绿 |
+| apps/client | 1541 passed / 2 skipped；`vue-tsc` 绿 |
+| tools/conformance | `tsc --noEmit` 绿 |
+
+- `pnpm exec turbo run test lint --force`：**44/44 successful，0 cached**（1m47s）。
+- 合并前登记的 client 5 失败与 currency-service lint 错误已被上游修复，合并后全绿。
+- 真栈 `slice-05` / `slice-29-paodekuai` 仍未跑（需真实服务/镜像），合 master 权威轮补齐。
+
 ## 计划审查记录
 
 ### 2026-10-27 计划对抗审查（独立 reviewer）
