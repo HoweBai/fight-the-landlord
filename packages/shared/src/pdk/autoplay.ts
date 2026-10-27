@@ -18,6 +18,8 @@ import {
   type PdkParsedHand,
   type PdkRulesConfig,
 } from '@fight-the-landlord/protocol';
+import type { GameAction } from '../core/action';
+import type { PdkSession } from './types';
 
 const byCard = (a: Card, b: Card): number => a.r - b.r || a.s - b.s;
 
@@ -27,6 +29,30 @@ export function chooseLeadPdk(hand: readonly Card[], rules: PdkRulesConfig): Car
   void rules;
   if (hand.length === 0) return [];
   return [{ ...[...hand].sort(byCard)[0]! }];
+}
+
+/**
+ * 审查 P2-3：**唯一**的自动出牌决策（托管 / 超时 / 规则机器人共用）。
+ *
+ * 只封装决策，不接管状态守卫：
+ *  - `handlePdkTimeout` 自己 `assertPlaying` + 空手牌检查后调用；
+ *  - `runtime.autoAction` 保持既有显式 seat 语义后调用。
+ *
+ * 首出（含自己就是最后出牌者）⇒ 最小单张；跟牌 ⇒ 最小可压；压不过 ⇒ pass。
+ */
+export function decidePdkAutoAction(session: PdkSession, seat: number): GameAction {
+  const player = session.players.find((p) => p.seat === seat);
+  if (!player) throw new Error(`Player at seat ${seat} not found`);
+  const mustLead = session.lastPlayedHand === null || session.lastPlayerIdx === seat;
+  if (!mustLead) {
+    const beating = findSmallestBeatingPdk(player.hand, session.lastPlayedHand!, session.rules);
+    return beating !== null && beating.length > 0
+      ? { kind: 'play', cards: beating }
+      : { kind: 'pass' };
+  }
+  const lead = chooseLeadPdk(player.hand, session.rules);
+  if (lead.length === 0) throw new Error(`Player ${player.id} has no card to play`);
+  return { kind: 'play', cards: lead };
 }
 
 /** 一手牌在规则下的牌型大小（张数）；用于确定需要枚举的组合大小。 */

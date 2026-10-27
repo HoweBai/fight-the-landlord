@@ -17,7 +17,7 @@ import {
   type PdkParsedHand,
 } from '@fight-the-landlord/protocol';
 import { dealPdk, resolveFirstLeader } from './deal';
-import { chooseLeadPdk, findSmallestBeatingPdk } from './autoplay';
+import { decidePdkAutoAction } from './autoplay';
 import type { PdkPlayer, PdkSession, PdkSessionInput } from './types';
 
 function findPlayerIndex(session: PdkSession, playerId: string): number {
@@ -171,9 +171,9 @@ export function handlePdkPass(session: PdkSession, playerId: string): PdkSession
 }
 
 /**
- * 超时/托管的自动动作（spec §5.7）—— 与规则 bot **共用** `shared/pdk/autoplay`：
- *  - 首出：`chooseLeadPdk` 打最小单张；
- *  - 跟牌：`findSmallestBeatingPdk` 打最小可压；无解则过牌。
+ * 超时/托管的自动动作（spec §5.7）—— 与规则 bot **共用** `decidePdkAutoAction`：
+ *  - 首出：最小单张；
+ *  - 跟牌：最小可压；无解则过牌。
  *
  * `rules` 恒取本局快照（`session.rules`）；关牌型后 autoplay 不会产出该牌型。
  */
@@ -184,16 +184,10 @@ export function handlePdkTimeout(session: PdkSession): PdkSession {
   if (!player) throw new Error(`Player at seat ${idx} not found`);
   if (player.hand.length === 0) throw new Error(`Player ${player.id} has no card to play`);
 
-  if (session.lastPlayedHand !== null && session.lastPlayerIdx !== idx) {
-    const beating = findSmallestBeatingPdk(player.hand, session.lastPlayedHand, session.rules);
-    return beating !== null && beating.length > 0
-      ? handlePdkPlay(session, player.id, beating)
-      : handlePdkPass(session, player.id);
-  }
-
-  const lead = chooseLeadPdk(player.hand, session.rules);
-  if (lead.length === 0) throw new Error(`Player ${player.id} has no card to play`);
-  return handlePdkPlay(session, player.id, lead);
+  const action = decidePdkAutoAction(session, idx);
+  if (action.kind === 'play') return handlePdkPlay(session, player.id, action.cards);
+  if (action.kind === 'pass') return handlePdkPass(session, player.id);
+  throw new Error(`unexpected pdk auto action: ${action.kind}`);
 }
 
 /** 是否已结束：状态为 ended，或任一玩家手牌为空（任一玩家出完即结束）。 */

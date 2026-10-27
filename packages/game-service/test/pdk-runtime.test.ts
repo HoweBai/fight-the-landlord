@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   ErrCode,
@@ -356,6 +357,22 @@ describe('Task 4.1：动作、错误映射与超时', () => {
       cards: session.players[0]!.hand.slice(0, 12),
     }).session;
     expect(runtime.autoAction(straightLead, 1)).toEqual({ kind: 'pass' });
+  });
+
+  it('单一决策源：runtime 与 timeout 都委托 decidePdkAutoAction（源码闸）', () => {
+    const runtimeSrc = readFileSync(
+      new URL('../src/games/pdk/runtime.ts', import.meta.url),
+      'utf8',
+    );
+    const playSrc = readFileSync(
+      new URL('../../shared/src/pdk/play.ts', import.meta.url),
+      'utf8',
+    );
+    expect(runtimeSrc).toContain('decidePdkAutoAction(');
+    expect(playSrc).toContain('decidePdkAutoAction(');
+    // 旧的两条策略只允许留在 autoplay 内部，不得再被两个入口各自调用
+    expect(runtimeSrc).not.toContain('findSmallestBeatingPdk');
+    expect(playSrc).not.toContain('findSmallestBeatingPdk');
   });
 });
 
