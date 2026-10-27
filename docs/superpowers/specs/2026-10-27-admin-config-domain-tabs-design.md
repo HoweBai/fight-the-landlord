@@ -74,14 +74,16 @@ const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDoma
 2. 追加 `buildConfigTabStrip(domain, tabs)`（`div.tabs.cfg-tabs`，每个页签一个 `button.tab-btn`）。
 3. 逐页签渲染 `div.cfg-tab-panel[data-tab]`（非 active 加 `hidden`）：
    - 页签键集合 `t.keys.filter(k => k in currentConfig)`；
-   - 空 ⇒ 面板内 `<p class="settings-empty">本页签暂无可展示的键</p>`；
+   - 空 ⇒ 面板内 `<p class="settings-empty cfg-tab-empty">本页签暂无可展示的键</p>`；
    - 非空 ⇒ 逐键 `buildKeyCard(key)`。
-4. 全局空态：当域内**所有页签键数 + header 键数 = 0** 时，在页签条前/后显示
-   「（暂无可展示的配置键）」（与现状同义）。
+4. 多页签域**只按面板判空**（`cfg-tab-empty`）；全局 `settings-empty` 仅用于单页签域与搜索态。
 
 `tabs.length === 1`：维持现状（`h3.settings-section` + 键）。
 
 搜索态：维持现状（扁平结果、无页签条、无开关键卡）。
+
+实现拆成 `renderCfgDomain(host, domain)`（非搜索域渲染：header 卡 → 页签条 → 面板/分区），
+由 `renderConfigRows` **只在非搜索分支**调用；搜索分支保持扁平结果。
 
 `applyCfgTabUI(tabId)`：遍历 `.cfg-tabs .tab-btn` 与 `.cfg-tab-panel`，切换 `active` /
 `hidden` / `aria-selected`；写 `cfgUI.tabId`（`tabDomainId` 已在渲染时写定）。
@@ -101,38 +103,42 @@ const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDoma
 - `DEFAULT_CFG_UI` 含 `tabId` 与 `tabDomainId`。
 - `openCfgDomain` 含条件复位（`tabDomainId = null`）。
 - 存在 `function buildConfigTabStrip` 且 `renderConfigRows` 块**调用** `buildConfigTabStrip(`。
-- `renderConfigRows` 块含 `tabs.length > 1` 条件与 `cfg-tab-panel`；搜索分支不出现 `cfg-tabs`（搜索分支在前、页签渲染在后，可用块内顺序断言）。
-- `normalizeCfgDomain` 块含 `tabDomainId = null`。
+- 存在 `function renderCfgDomain`，其块含 `buildConfigTabStrip(`、`tabs.length > 1`、`cfg-tab-panel`；
+- `renderConfigRows` 块含 `renderCfgDomain(`（搜索分支行为由探针覆盖，不用脆弱的文本截取断言）。
+- `normalizeCfgDomain` 块含 `tabDomainId = null`；`renderCfgDomain` 块含 `tabDomainId === domain.id` 守卫。
 - `CONFIG_IA` 的 `headerKeys` 与各页签键**无交集**（vm 执行 IA，逐域校验）。
 - `style.css` 含 `.cfg-tabs` 与 `.cfg-tab-panel` 规则。
 - 既有断言（85 键、IA 覆盖、`scrollEl.scrollTop = scrollTop`、零 innerHTML）保持。
 
 ### 4.5 探针（`scripts/admin-config-tabs-probe.mjs`）
 
-jsdom + 桩 `/api/admin/config`，快照含：
+jsdom + 登录态注入（`ftl-admin-token/username/role`）+ 桩 `/api/admin/config`，快照含：
 
 - `game.doudizhu.enabled`（header 开关）
 - assist 三键（`game.doudizhu.cardCounterEnabled` / 两个价格）
-- rooms 一键（`game.doudizhu.freeRoomEnabled`）
-- pdk switches 一键（`game.paodekuai.twoPlayerEnabled`）
+- ddz rooms 一键（`game.doudizhu.freeRoomEnabled`）
+- pdk switches 一键（`game.paodekuai.twoPlayerEnabled`）+ pdk rooms 一键（`game.paodekuai.freeRoomEnabled`，跨域同名页签判别）
 - 广告一键（`ad.reliefAdpid`）
-- 货币两键（`currency.signupGrant` / `currency.reliefEnabled`）
 
-桩另含 `/api/admin/ad-channel/`（点广告叶时避免脏提示）与 `/api/admin/agents/settings` 等
-无关端点兜底 `{code:0,data:{}}`。
+桩另含 `/api/admin/ad-channel` → `{code:0,data:{keys:[]}}`；其余路径 `{code:0,data:{}}`。
 
-用例（顺序避免跨域不可达）：
+用例（顺序即执行序）：
 
-1. 等首屏 `loadAll` 完成（轮询 `.cfg-tabs` 或 sleep 80ms）；默认斗地主：`#settings-rows .cfg-tabs`
-   **6 个** `.tab-btn`；active = 对局辅助（第一个有键页签）；assist 面板可见、rooms 面板 hidden。
-2. 勾选 assist 的 cardCounter 开关（产生脏值），点「场次开关」→ rooms 面板可见、assist 面板 hidden；
-   点回「对局辅助」→ 开关仍为勾选态（**DOM 保留**，drafts 不参与）。
-3. 搜索 `cardCounter` → `.cfg-tabs` 不存在；斗地主 assist 键与跑得快同名键均在扁平结果中。
-4. 清空搜索 → 回到斗地主，active 仍为对局辅助（tabId 保留）。
-5. 点跑得快叶 → 6 个按钮；active = 开关（第一个有键页签），`game.paodekuai.twoPlayerEnabled` 面板可见。
-6. 点广告叶 → 无 `.cfg-tabs`（单页签域）；`ad.reliefAdpid` 行渲染。
-7. 全程零运行时异常。
-8. 页签按钮选择器一律限定 `#settings-rows .cfg-tabs .tab-btn`（审计/代理页签复用 `.tab-btn`）。
+1. 等首屏 `#settings-rows .cfg-tabs .tab-btn` 出现（轮询 ≤1s）。
+2. 默认斗地主：6 个按钮；active=对局辅助；assist 面板可见、rooms 面板 hidden。
+3. **DOM 保留（判别性）**：保存 assist 面板内 cardCounter 复选框的**节点引用**；勾选；切到「场次开关」；
+   切回「对局辅助」；断言当前复选框 === 保存的节点引用且 checked（排除 drafts 还原造成的假绿）。
+4. **空页签提示**：点「玩法规则」→ 面板可见且含 `p.cfg-tab-empty` 文案「本页签暂无可展示的键」。
+5. **不重置**：点「场次开关」→ active=场次开关；再点斗地主叶 → 仍为场次开关（D6）。
+6. **搜索**：搜索 `freeRoomEnabled` → 无 `.cfg-tabs`；ddz 与 pdk 的同名键均在扁平结果；清空 → 回斗地主且
+   active=场次开关。
+7. **跨域同名页签**：切跑得快 → active=开关（若 `tabDomainId` 守卫缺失，`rooms` 会串到 pdk 的 rooms 页签，
+   断言失败）。
+8. **重复点 active 页签 no-op**：`settings-host.scrollTop = 50`，点当前 active 页签，断言 scrollTop 仍 50。
+9. 点广告叶 → 无 `.cfg-tabs`，`ad.reliefAdpid` 行存在。
+10. 全程零运行时异常 / 零未处理 rejection。
+
+选择器一律限定 `#settings-rows`；工具用 `clickIf`（不存在返回 false，不抛）。
 
 ## 5. 测试判据
 
@@ -146,7 +152,8 @@ jsdom + 桩 `/api/admin/config`，快照含：
 - 快照缺键：默认页签跳过空页签；显式点空页签显示面板空态（不自动跳走）。
 - `tabId` 跨域同名：以 `tabDomainId` 配对，杜绝 ddz 的 `rules` 映射到 pdk。
 - 搜索清空：回原域+原页签；搜索期间的简单行草稿由 drafts 保留（现状）。
-- 保存后 preserve 渲染：`tabId`/`tabDomainId`、滚动、焦点恢复保持。
+- 保存后 preserve 渲染：`tabId`/`tabDomainId`、滚动、焦点恢复保持；**保存仍会全量重建**（现状），
+  本次只保证「切页签不丢未保存编辑」。
 - 单页签域/广告回调面板（`syncAdSection`）不受影响。
 - 已接受的取舍（审查低 14）：自动选中的页签会写回 `tabId`，之后快照缺键时停在空面板而非自动跳走；
   用户可手动切页签。记录在案，不额外加 explicit 标记。
