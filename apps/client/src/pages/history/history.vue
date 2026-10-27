@@ -692,10 +692,10 @@ onMounted(() => {
 }
 /**
  * 单个筛选组：label + select 按钮（compact inline）。
- * position: relative —— 下拉浮层 .history__dropdown 定位在它下面。
+ * 下拉浮层定位锚点是 `.history__select`（有 position: relative），不是 group
+ * —— 这样下拉左边缘对齐 select 按钮、不包含 label 的宽度。
  */
 .history__filter-group {
-  position: relative;
   display: flex;
   align-items: center;
   gap: $ftl-space-3;
@@ -711,6 +711,7 @@ onMounted(() => {
  * 宿主是 `<button>` ⇒ flex 居中 + margin:0 是 uni-button 的标准骨架。
  */
 .history__select {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
