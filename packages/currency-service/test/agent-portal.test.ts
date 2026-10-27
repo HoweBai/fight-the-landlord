@@ -56,7 +56,7 @@ function makeDb(opts: {
       return [{ micro: opts.unsettledMicro ?? 6000 }];
     }
     if (sql.includes('SUM(`commission_micro`)')) return [{ micro: 9000 }];
-    if (sql.includes('SELECT `id`, `parent_id` FROM `agent_accounts`')) return [];
+    if (sql.includes('WITH RECURSIVE _sub')) return [];
     throw new Error(`fake portal DB 未识别 SQL：${sql.slice(0, 80)}`);
   });
   return { query };

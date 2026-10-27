@@ -30,6 +30,14 @@ const OVERRIDE_SUM_SQL =
   'SELECT COALESCE(SUM(`commission_micro`), 0) AS `micro` FROM `agent_commission_entries` ' +
   'WHERE `agent_id` = ? AND `level` > 0';
 const ALL_ACCOUNTS_SQL = 'SELECT `id`, `parent_id` FROM `agent_accounts`';
+// 递归 CTE：一次拉全子树，避免全表加载 + 应用层 BFS。LIMIT 作安全上限。
+const DESCENDANTS_CTE =
+  'WITH RECURSIVE _sub AS (' +
+  'SELECT `id` FROM `agent_accounts` WHERE `id` = ? ' +
+  'UNION ALL ' +
+  'SELECT a.`id` FROM `agent_accounts` a JOIN _sub ON a.`parent_id` = _sub.`id` ' +
+  'LIMIT 2048' +
+  ') SELECT `id` FROM _sub WHERE `id` <> ?';
 const SUBTREE_REVENUE_SQL =
   'SELECT COUNT(DISTINCT `owner_id`) AS `players`, COALESCE(SUM(`fee_amount`), 0) AS `fee` ' +
   'FROM `agent_revenue_events` WHERE `agent_id` IN';
@@ -358,25 +366,9 @@ export class AgentPortalService {
   }
 
   private async descendants(agentId: string): Promise<string[]> {
-    const rows = (await this.dataSource.query(ALL_ACCOUNTS_SQL)) as Array<Record<string, unknown>>;
-    const children = new Map<string, string[]>();
-    for (const r of rows) {
-      const parent = r.parent_id === null ? null : String(r.parent_id);
-      if (parent === null) continue;
-      const list = children.get(parent) ?? [];
-      list.push(String(r.id));
-      children.set(parent, list);
-    }
-    const out: string[] = [];
-    const queue = [...(children.get(agentId) ?? [])];
-    const seen = new Set<string>();
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      out.push(id);
-      queue.push(...(children.get(id) ?? []));
-    }
-    return out;
+    const rows = (await this.dataSource.query(DESCENDANTS_CTE, [agentId, agentId])) as Array<
+      Record<string, unknown>
+    >;
+    return rows.map((r) => String(r.id));
   }
 }
