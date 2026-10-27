@@ -53,6 +53,9 @@ kubectl uncordon <node>
 ### MySQL
 
 ```bash
+> ⚠️ 2026-10-27 安全加固：`ftl-deployer` 已移除 `pods/exec`/`pods/portforward`（KSV-0053）。
+> 下列 `kubectl exec` 需要**管理员 kubeconfig**（break-glass），不再由部署账户执行。
+
 kubectl -n ftl exec -it statefulset/mysql -- mysql -uroot -p
 kubectl -n ftl logs statefulset/mysql --tail=200
 ```

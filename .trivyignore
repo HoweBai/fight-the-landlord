@@ -1,3 +1,11 @@
 # trivy config 豁免登记（M0.1）。依据：docs/superpowers/specs/2026-10-02-security-scan-design.md D4。
 # 规则：逐 ID 一行；每条的上一行必须是 # 理由行；不许通配、不许 exp: 形态。
 # 首跑读数处置后在此逐条登记（能修则修优先）。
+# 2026-10-27 k3s 加固：以下 3 条为**平台固有**项，已收窄到最小面后登记（详见
+# docs/superpowers/plans/2026-10-27-k3s-security-hardening.md）。
+# node-exporter 采集主机指标必须 hostPID + 只读 host /proc（KSV-0010）
+KSV-0010
+# node-exporter 必须只读挂载 host /proc 才能采集主机指标（KSV-0121）
+KSV-0121
+# ftl-deployer 执行 apply -k 必须能写 Service/NetworkPolicy（KSV-0056）
+KSV-0056
