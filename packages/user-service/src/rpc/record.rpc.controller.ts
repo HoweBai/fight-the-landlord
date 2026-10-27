@@ -247,6 +247,12 @@ function invalidMahjongReason(r: Partial<RecordWriteRequest>): string | null {
   if (result.playerCount !== 4) return 'result.playerCount 必须是 4';
   if (r.playerCount !== undefined && r.playerCount !== 4) return 'playerCount 必须是 4';
   if (!Array.isArray(r.seats) || r.seats.length !== 4) return 'seats 必须恰 4 条';
+  if (
+    r.dealerSeat !== undefined &&
+    (!Number.isInteger(r.dealerSeat) || r.dealerSeat < 0 || r.dealerSeat > 3)
+  ) {
+    return 'dealerSeat 必须是 0..3';
+  }
   if (!Array.isArray(result.scoreChanges) || result.scoreChanges.length !== 4) {
     return 'result.scoreChanges 必须恰 4 条';
   }
@@ -583,7 +589,7 @@ export class RecordRpcController {
         'mahjong',
         4,
         req.baseScore,
-        req.seats[0]?.seat ?? 0,
+        req.dealerSeat ?? req.seats[0]?.seat ?? 0,
         result.endReason,
         result.liuju ? 1 : 0,
         JSON.stringify(result.winnerSeats),

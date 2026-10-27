@@ -35,8 +35,8 @@ describe('MahjongRuntime', () => {
     expect(runtime.pendingActors(s)).toEqual([s.currentPlayer]);
     const view = runtime.buildView(s, 0);
     expect(view.gameType).toBe('mahjong');
-    expect((view as Record<string, unknown>).wall).toBeUndefined();
-    expect((view as Record<string, unknown>).rngSeed).toBeUndefined();
+    expect((view as unknown as Record<string, unknown>).wall).toBeUndefined();
+    expect((view as unknown as Record<string, unknown>).rngSeed).toBeUndefined();
     expect(Array.isArray(view.hand)).toBe(true);
   });
 

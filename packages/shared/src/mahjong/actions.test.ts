@@ -9,12 +9,12 @@ import { settleMahjong } from './settle';
 const t = (s: 0 | 1 | 2, r: number): Tile => ({ s, r });
 const ranks = (s: 0 | 1 | 2, rs: number[]): Tile[] => rs.map((r) => t(s, r));
 
-function makeGame(hands: Tile[][], currentPlayer = 0) {
+function makeGame(hands: Tile[][], currentPlayer = 0, rules = DEFAULT_CHENGDU_RULES) {
   const s = createMahjongSession({
     roomCode: 'R',
     baseScore: 10,
     players: [0, 1, 2, 3].map((seat) => ({ id: `p${seat}`, seat, isBot: false })),
-    rules: DEFAULT_CHENGDU_RULES,
+    rules,
     random: () => 0,
     testWall: createMahjongDeck(),
   });
@@ -115,5 +115,69 @@ describe('mahjong discard/claim/settle', () => {
     s.wallCount = 3;
     s = applyMahjongAction(s, 0, { type: 'discard', tile: t(1, 4) }, () => 0);
     expect(() => applyMahjongAction(s, 1, { type: 'claim', claim: 'pass' }, () => 0)).toThrow(/能胡必胡/);
+  });
+});
+
+describe('杠上炮：呼叫转移 / 退回', () => {
+  // p0 暗杠 5筒 → 补牌 4筒 → 打 4筒；p1 手牌听 4筒。
+  const gangHand = [...ranks(1, [5, 5, 5, 5]), ...ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9])];
+  const waiting4 = [...ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]), ...ranks(1, [1, 1, 2, 3])];
+  const junk = ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4]);
+
+  function gangShoot(rules = DEFAULT_CHENGDU_RULES) {
+    let s = makeGame([gangHand, waiting4, junk, junk], 0, rules);
+    s.wall = [t(1, 4), ...createMahjongDeck().slice(52)];
+    s.wallCount = s.wall.length;
+    s = applyMahjongAction(s, 0, { type: 'concealedGang', tile: t(1, 5) }, () => 0);
+    s = applyMahjongAction(s, 0, { type: 'discard', tile: t(1, 4) }, () => 0);
+    s = applyMahjongAction(s, 1, { type: 'claim', claim: 'hu' }, () => 0);
+    return s;
+  }
+
+  it('toEachWinner：杠分全额转给每个赢家（事件顺序在胡之前）', () => {
+    const s = gangShoot();
+    const gang = s.scoreEvents.find((e) => e.kind === 'gang')!;
+    expect(gang.kind).toBe('gang');
+    // 暗杠：其余 3 家各 2×底 = 20 ⇒ 总 60。
+    const total = gang.kind === 'gang' ? gang.payers.reduce((a, p) => a + p.amount, 0) : 0;
+    expect(total).toBe(60);
+    const transferIdx = s.scoreEvents.findIndex(
+      (e) => e.kind === 'transfer' && e.ref === gang.seq,
+    );
+    const huIdx = s.scoreEvents.findIndex((e) => e.kind === 'hu');
+    expect(transferIdx).toBeGreaterThan(-1);
+    expect(transferIdx).toBeLessThan(huIdx);
+    const transfer = s.scoreEvents[transferIdx]!;
+    expect(transfer).toMatchObject({
+      kind: 'transfer',
+      fromSeat: 0,
+      toSeat: 1,
+      amount: 60,
+      reason: 'gangShoot',
+    });
+  });
+
+  it('none：杠分退回原付款人（shootAfterGang），不产生转移', () => {
+    const s = gangShoot({ ...DEFAULT_CHENGDU_RULES, gangTransfer: 'none' });
+    const gang = s.scoreEvents.find((e) => e.kind === 'gang')!;
+    const refund = s.scoreEvents.find((e) => e.kind === 'refund' && e.ref === gang.seq);
+    expect(refund).toMatchObject({ kind: 'refund', reason: 'shootAfterGang', fromSeat: 0 });
+    if (refund?.kind === 'refund') {
+      expect(refund.toSeats.map((x) => x.amount)).toEqual([20, 20, 20]);
+    }
+    expect(s.scoreEvents.some((e) => e.kind === 'transfer')).toBe(false);
+  });
+
+  it('荒庄退税不得重复退已转移/已退回的杠分', () => {
+    const s = gangShoot();
+    s.endReason = 'wallEmpty';
+    s.liuju = true;
+    const resulted = settleMahjong(finishMahjong(s, Date.now()));
+    const gang = resulted.events.find((e) => e.kind === 'gang')!;
+    const refs = resulted.events.filter(
+      (e) => (e.kind === 'transfer' || e.kind === 'refund') && e.ref === gang.seq,
+    );
+    expect(refs).toHaveLength(1);
+    expect(resulted.events.every((e) => !(e.kind === 'refund' && e.reason === 'notReady' && e.ref === gang.seq))).toBe(true);
   });
 });

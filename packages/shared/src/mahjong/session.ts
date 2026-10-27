@@ -41,6 +41,8 @@ export interface MahjongPendingClaims {
   fanBySeat?: Record<number, number>;
   /** 抢杠窗口：待应用的补杠。 */
   gangMeldIndex?: number;
+  /** 杠上炮：本次弃牌来自杠后补牌时，对应杠事件的 seq（结算生成转移/退回）。 */
+  gangShootSeq?: number;
 }
 
 export interface MahjongSession extends GameSessionBase<Tile, MahjongActionRecord> {  gameType: 'mahjong';

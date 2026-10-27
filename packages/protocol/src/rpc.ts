@@ -368,6 +368,8 @@ export interface RecordWriteRequest {
   /** 多玩法：过渡期可选；缺失 = doudizhu/3。 */
   gameType?: GameType;
   playerCount?: number;
+  /** 麻将：庄家座位（来自记录信封；旧请求/其他玩法省略 ⇒ 记录侧回落 seats[0]）。 */
+  dealerSeat?: number;
   result: SettlementResult;
   seats: Array<{
     seat: number;

@@ -116,11 +116,19 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
       }
     }
 
-    // 退税：杠者荒庄未听，退回尚未转移的杠分。
+    // 退税：杠者荒庄未听，退回尚未转移的杠分（呼叫转移/杠上炮已处置过的不再退）。
+    // `refundOnDraw` 两档在当前事件模型下同义：退税对象都是**杠事件收款人（杠者）**
+    // 且该座未听/花猪；保留配置是为了让规则预设自描述（SBR 文档写“仅杠者”）。
     const notReadySet = new Set<number>([...notReady, ...flowerPigs]);
+    const settledRefs = new Set(
+      events
+        .filter((e) => e.kind === 'transfer' || e.kind === 'refund')
+        .map((e) => e.ref),
+    );
     for (const event of [...events]) {
       if (event.kind !== 'gang') continue;
       if (!notReadySet.has(event.seat)) continue;
+      if (settledRefs.has(event.seq)) continue;
       events.push({
         kind: 'refund',
         seq: nextSeq(),

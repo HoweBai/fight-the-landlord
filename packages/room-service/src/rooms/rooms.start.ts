@@ -44,7 +44,7 @@ import { gameStartFailuresTotal, gamesStartedTotal } from '../metrics/room.metri
 import { incGame } from '@fight-the-landlord/shared';
 
 /** A1：failPdkStart 的指标 reason 枚举；null = start_rpc 已在 startAndAnnounce 的 catch 计过。 */
-type PdkStartFailureReason = 'bot_fill' | 'pending_write' | 'rules' | null;
+type PdkStartFailureReason = 'bot_fill' | 'pending_write' | 'rules' | 'sbr_gold_off' | null;
 import { entryFeeConflictTotal, entryFeeSkippedTotal } from '../metrics/room.metrics';
 import { cardCounterConsumedTotal, cardCounterConsumeErrorTotal } from '../metrics/room.metrics';
 
@@ -332,6 +332,20 @@ export class RoomStartService {
           filled.seats,
           'rules',
           `mahjong rules unavailable: ${err instanceof Error ? err.message : String(err)}`,
+          options.onSeats,
+        );
+      }
+      /**
+       * 资损闸（spec §3.2）：`sbr` 的 48×底花猪 burn 在金币场默认**不开** ——
+       * 只有显式打开 `game.mahjong.sbrGoldEnabled` 才放行；否则本房按规则不可开。
+       */
+      if (room.mode === 'gold' && rules.huazhuMode === 'burn48' && !this.configCache.mahjongSbrGoldEnabled()) {
+        return this.failPdkStart(
+          code,
+          room,
+          filled.seats,
+          'sbr_gold_off',
+          'mahjong sbr burn48 disabled in gold rooms',
           options.onSeats,
         );
       }

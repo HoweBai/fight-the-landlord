@@ -230,7 +230,7 @@ exchange(换三张, 可关) → lack(定缺) → play(摸打) ⇄ claim(响应�
 | 退税 | 仅**杠者**荒庄未听退全部杠分 |
 | 过水 | 同张（`sameTile`；不同张可胡） |
 | 三番起胡 | 关 |
-| 天胡/地胡/断幺九/海底/每杠/双龙/十八罗汉 | 关 |
+| 天胡/地胡/断幺九/每杠/双龙/十八罗汉 | 关（海底保留 1 分，见番表） |
 | 多局轮庄 | 不做（一局一房） |
 
 > **命名纪律**：在拿到 T/TFMJ 01-2024 全文逐条核对前，对外文案用 **“SBR 预设（近似）”**，
@@ -510,14 +510,17 @@ type MahjongScoreEvent =
 
 **截断**：
 
-- `settleMahjong` 先在内存按上列顺序对 events 做余额截断，产出 `appliedEvents` /
-  `scoreChanges` / `writtenOff`；**`computeSettlement` 的 mahjong 分支不得再 pool**，
-  只做形状校验、余额复核（余额变动则二次截断 + writeOff）与 rake。
-- 按事件顺序逐 payer 扣款；payer 余额不足 ⇒ 本次只付余额，`writtenOff` 记录差额；
+- `settleMahjong` 产出**未截断的规则事件账**；余额只在 room-service 可得，因此逐事件截断
+  的唯一实现在 `computeSettlement` 的 mahjong 分支（`computeMahjongSettlement`）：
+  按 `seq` 逐笔 `min(amount, payer 当时余额)`，`huazhu burn48` 最后按剩余余额烧，
+  抽水对事件后的正收益计；**不再走 ddz/pdk 的净额 pool**。
+- 按事件顺序逐 payer 扣款；payer 余额不足 ⇒ 本次只付余额（收款人同时少收）；
   **不把差额转嫁给其他 payer**（固定 `writeOff`；`redistribute` 不做）。
 - 截断后的事件净额仍零和（payer 少付、payee 少收，双方同时减少）。
-- `huazhu burn48` 的 payer 也只烧余额内的部分；差额 `writtenOff`，不产生负余额。
+- `huazhu burn48` 的 payer 也只烧余额内的部分；差额不产生负余额。
 - 不允许把 burn 的负数摊给赢家（与 pdk 的 pool 语义不同；麻将走事件账）。
+- 记录链的 `scoreChanges`（规则分）与 `money_delta`（实际钱包变动，含 burn）分别取值 ——
+  `scoreChanges` 是牌局分，`money_delta` 是资金事实，不强行合并成一个数。
 
 **结果**：
 

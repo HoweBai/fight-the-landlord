@@ -10,6 +10,7 @@ import {
   tileType,
   type MahjongAction,
   type MahjongMeldView,
+  type MahjongScoreEvent,
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
@@ -107,6 +108,11 @@ function drawFor(s: MahjongSession, seat: number, fromKong: boolean): void {
   const player = s.players[seat]!;
   player.hand.push(next);
   s.lastDraw = { seat, tile: next, fromKong };
+  // 回放/审计：摸牌也入动作账（不属于客户端动作，但缺了它回放无法重演手牌）。
+  s.actionLog = [
+    ...s.actionLog,
+    { version: s.version, seat, action: { type: 'draw', tile: next, fromKong } },
+  ];
   nextTurn(s, seat);
   // 最后 4 张能胡必胡：自摸自动胡。
   if (s.rules.lastFourForcedHu && s.wallCount <= 4) {
@@ -249,6 +255,64 @@ function applySelfDrawHu(s: MahjongSession, seat: number, score: ScoreResult): v
   drawFor(s, next, false);
 }
 
+/**
+ * 杠上炮：把**指定杠事件**已收的杠分转给胡牌者（`gangTransfer`）。
+ *
+ * - `toEachWinner`：每个赢家各收**全额**杠分（一炮多响时杠家分别付；差额由后续截断兜底）；
+ * - `split`：杠分均分给赢家，余数按座位升序；
+ * - `none`：退回原付款人（reason=`shootAfterGang`）。
+ * 同一笔杠分只生成一组转移/退回（`gangShootSeq` 每个弃牌窗口只指向一次杠）。
+ */
+function applyGangShoot(s: MahjongSession, seq: number, winners: readonly number[]): void {
+  const gang = s.scoreEvents.find(
+    (e): e is Extract<MahjongScoreEvent, { kind: 'gang' }> => e.kind === 'gang' && e.seq === seq,
+  );
+  if (!gang) throw new ProtocolError(`杠上炮引用的杠事件不存在：${seq}`);
+  const total = gang.payers.reduce((acc, p) => acc + p.amount, 0);
+  const sorted = [...winners].sort((a, b) => a - b);
+  if (s.rules.gangTransfer === 'none') {
+    s.scoreEvents.push({
+      kind: 'refund',
+      seq: nextSeq(s),
+      ref: seq,
+      fromSeat: gang.seat,
+      toSeats: gang.payers.map((p) => ({ seat: p.seat, amount: p.amount })),
+      reason: 'shootAfterGang',
+    });
+    return;
+  }
+  if (s.rules.gangTransfer === 'toEachWinner') {
+    for (const seat of sorted) {
+      s.scoreEvents.push({
+        kind: 'transfer',
+        seq: nextSeq(s),
+        ref: seq,
+        fromSeat: gang.seat,
+        toSeat: seat,
+        amount: total,
+        reason: 'gangShoot',
+      });
+    }
+    return;
+  }
+  // split：均分，余数按座位升序（与文档 §5 逐字）。
+  const base = Math.floor(total / sorted.length);
+  const remainder = total - base * sorted.length;
+  sorted.forEach((seat, index) => {
+    const amount = base + (index < remainder ? 1 : 0);
+    if (amount <= 0) return;
+    s.scoreEvents.push({
+      kind: 'transfer',
+      seq: nextSeq(s),
+      ref: seq,
+      fromSeat: gang.seat,
+      toSeat: seat,
+      amount,
+      reason: 'gangShoot',
+    });
+  });
+}
+
 function resolveClaims(s: MahjongSession): void {
   const pc = s.pendingClaims;
   if (!pc) return;
@@ -261,6 +325,10 @@ function resolveClaims(s: MahjongSession): void {
   }
 
   if (huSeats.length > 0) {
+    // 杠上炮：先转移/退回杠分，再记胡事件（事件顺序 = 文档 §4.6 的 2→5）。
+    if (pc.kind === 'claim' && pc.gangShootSeq !== undefined) {
+      applyGangShoot(s, pc.gangShootSeq, huSeats);
+    }
     for (const seat of huSeats) {
       const check = checkHu(s, seat, pc.discard, false, pc.kind === 'rob');
       markHu(s, seat, pc.fromSeat, pc.discard, check.score!, pc.kind === 'rob');
@@ -383,6 +451,11 @@ export function applyMahjongAction(
       if (!canDiscard(player.hand, lack, action.tile)) {
         throw new ProtocolError(hasLackTiles(player.hand, lack) ? '必须先打完缺门牌' : '牌不在手牌中');
       }
+      // 杠上炮判定：本张弃牌来自杠后补牌 ⇒ 记下那一次杠事件，胡牌时生成呼叫转移/退回。
+      const gangShootSeq =
+        s.lastDraw?.fromKong === true
+          ? [...s.scoreEvents].reverse().find((e) => e.kind === 'gang' && e.seat === seat)?.seq
+          : undefined;
       player.hand = removeTile(player.hand, action.tile);
       player.discards.push(action.tile);
       s.lastDiscard = { seat, tile: action.tile };
@@ -394,13 +467,20 @@ export function applyMahjongAction(
         candidates: [] as number[],
       };
       // 临时窗口用于候选计算（claimCandidates 读 pendingClaims）。
-      s.pendingClaims = { ...pc, responses: [], fanBySeat: {} };
+      s.pendingClaims = {
+        ...pc,
+        responses: [],
+        fanBySeat: {},
+        ...(gangShootSeq === undefined ? {} : { gangShootSeq }),
+      };
       const candidates = claimCandidates(s);
       if (candidates.length === 0) {
         s.pendingClaims = null;
         advanceAfterDiscard(s, seat);
       } else {
         openClaimWindow(s, 'claim', action.tile, seat, candidates);
+        // 杠上炮标记必须挂在**正式窗口**上（临时窗口会被 openClaimWindow 覆盖）。
+        if (gangShootSeq !== undefined) s.pendingClaims.gangShootSeq = gangShootSeq;
       }
       break;
     }

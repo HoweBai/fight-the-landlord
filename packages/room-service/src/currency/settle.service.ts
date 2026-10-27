@@ -11,6 +11,8 @@ import {
   type CurrencyBurn,
   type CurrencyEntryIn,
   type GameType,
+  type MahjongScoreEvent,
+  type MahjongSettlementResult,
   type SettlementResult,
 } from '@fight-the-landlord/protocol';
 import { incGame } from '@fight-the-landlord/shared';
@@ -233,6 +235,186 @@ export function settlementShapeProblem(
 }
 
 /**
+ * 麻将资金结算：**逐事件余额截断**（spec §4.6）。
+ *
+ * 与 ddz/pdk 的「净额 pool + 最大余数」不同：麻将每一步都是明确的 payer → payee
+ * 转移，必须按 `seq` 逐笔扣款 —— 某个 payer 付不起时只影响**这一笔**的收款人，
+ * 不能把缺口摊给其他赢家（固定 writeOff，不转嫁）。
+ *
+ * 顺序：事件按 `seq` 升序；`huazhu burn48` 不产生 payee（只走 `burn` 罚分），
+ * 在事件之后按剩余余额截断；抽水对**事件后的正收益**计。
+ * `deltas` 是最终钱包变动（含抽水与 burn），`entries` 与之一一对应。
+ */
+export function computeMahjongSettlement(input: {
+  roomCode: string;
+  version: number;
+  round: 1 | 2;
+  result: MahjongSettlementResult;
+  seats: readonly SettleSeatRef[];
+  balances: ReadonlyMap<string, number>;
+  rakePercent: number;
+}): SettleComputation {
+  const { roomCode, version, round, result, balances, rakePercent } = input;
+  const ordered = [...input.seats].sort((a, b) => a.seat - b.seat);
+  const shapeProblem = settlementShapeProblem(
+    result,
+    'mahjong',
+    ordered.map((s) => s.seat),
+  );
+  if (shapeProblem) throw new Error(`settlement result shape mismatch (room=mahjong): ${shapeProblem}`);
+
+  const balanceLeft = new Map<number, number>();
+  const deltaBySeat = new Map<number, number>();
+  for (const s of ordered) {
+    const balance = balances.get(s.ownerId) ?? 0;
+    if (!Number.isSafeInteger(balance)) {
+      throw new Error(`mahjong settlement balance invalid: seat ${s.seat} = ${balance}`);
+    }
+    balanceLeft.set(s.seat, Math.max(0, balance));
+    deltaBySeat.set(s.seat, 0);
+  }
+  const addDelta = (seat: number, delta: number): void => {
+    deltaBySeat.set(seat, (deltaBySeat.get(seat) ?? 0) + delta);
+  };
+  const pay = (from: number, to: number, amount: number): void => {
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new Error(`mahjong settlement amount invalid: ${amount}`);
+    }
+    if (amount === 0 || from === to) return;
+    const available = balanceLeft.get(from);
+    if (available === undefined) throw new Error(`mahjong settlement seat ${from} missing`);
+    const actual = Math.min(amount, available);
+    if (actual === 0) return;
+    balanceLeft.set(from, available - actual);
+    balanceLeft.set(to, (balanceLeft.get(to) ?? 0) + actual);
+    addDelta(from, -actual);
+    addDelta(to, actual);
+  };
+  const apply = (event: MahjongScoreEvent): void => {
+    switch (event.kind) {
+      case 'gang':
+      case 'hu':
+        for (const p of event.payers) pay(p.seat, event.seat, p.amount);
+        return;
+      case 'transfer':
+        pay(event.fromSeat, event.toSeat, event.amount);
+        return;
+      case 'refund':
+        for (const p of event.toSeats) pay(event.fromSeat, p.seat, p.amount);
+        return;
+      case 'chajiao':
+        pay(event.fromSeat, event.toSeat, event.amount);
+        return;
+      case 'huazhu':
+        if (event.mode === 'payEach') {
+          for (const p of event.payees) pay(event.seat, p.seat, p.amount);
+        }
+        // burn48：不产生 payer→payee，罚分在 burn 列表里单独截断。
+        return;
+      default:
+        return;
+    }
+  };
+
+  // 审阅前置：事件账必须与规则净额一致（两者都来自 game-service，不同则 fail closed）。
+  const raw = new Map<number, number>(ordered.map((s) => [s.seat, 0]));
+  for (const event of [...result.events].sort((a, b) => a.seq - b.seq)) {
+    switch (event.kind) {
+      case 'gang':
+      case 'hu':
+        for (const p of event.payers) {
+          raw.set(p.seat, (raw.get(p.seat) ?? 0) - p.amount);
+          raw.set(event.seat, (raw.get(event.seat) ?? 0) + p.amount);
+        }
+        break;
+      case 'transfer':
+        raw.set(event.fromSeat, (raw.get(event.fromSeat) ?? 0) - event.amount);
+        raw.set(event.toSeat, (raw.get(event.toSeat) ?? 0) + event.amount);
+        break;
+      case 'refund':
+        for (const p of event.toSeats) {
+          raw.set(event.fromSeat, (raw.get(event.fromSeat) ?? 0) - p.amount);
+          raw.set(p.seat, (raw.get(p.seat) ?? 0) + p.amount);
+        }
+        break;
+      case 'chajiao':
+        raw.set(event.fromSeat, (raw.get(event.fromSeat) ?? 0) - event.amount);
+        raw.set(event.toSeat, (raw.get(event.toSeat) ?? 0) + event.amount);
+        break;
+      case 'huazhu':
+        if (event.mode === 'payEach') {
+          for (const p of event.payees) {
+            raw.set(event.seat, (raw.get(event.seat) ?? 0) - p.amount);
+            raw.set(p.seat, (raw.get(p.seat) ?? 0) + p.amount);
+          }
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  for (const change of result.scoreChanges) {
+    const expected = raw.get(change.seat) ?? 0;
+    if (change.delta !== expected) {
+      throw new Error(
+        `mahjong settlement event/score mismatch at seat ${change.seat}: events=${expected}, scoreChanges=${change.delta}`,
+      );
+    }
+  }
+  const rawSum = [...raw.values()].reduce((a, b) => a + b, 0);
+  if (rawSum !== 0) throw new Error(`mahjong settlement events non-zero-sum: ${rawSum}`);
+
+  for (const event of [...result.events].sort((a, b) => a.seq - b.seq)) apply(event);
+
+  // 抽水：只对事件后的正收益计；抽走的钱进 burn.rake（不重新分配）。
+  let rakeTotal = 0;
+  for (const s of ordered) {
+    const delta = deltaBySeat.get(s.seat) ?? 0;
+    if (delta <= 0) continue;
+    const rake = Math.floor((delta * rakePercent) / 100);
+    if (rake <= 0) continue;
+    deltaBySeat.set(s.seat, delta - rake);
+    balanceLeft.set(s.seat, Math.max(0, (balanceLeft.get(s.seat) ?? 0) - rake));
+    rakeTotal += rake;
+  }
+
+  // 花猪 burn：只烧剩余余额；差额 writeOff（不产生负余额）。
+  let burnPenalty = 0;
+  for (const b of result.burn) {
+    if (!ordered.some((s) => s.seat === b.seat)) {
+      throw new Error(`mahjong burn seat ${b.seat} missing`);
+    }
+    if (!Number.isSafeInteger(b.amount) || b.amount < 0) {
+      throw new Error(`mahjong burn amount invalid: ${b.amount}`);
+    }
+    const available = balanceLeft.get(b.seat) ?? 0;
+    const actual = Math.min(b.amount, available);
+    if (actual <= 0) continue;
+    balanceLeft.set(b.seat, available - actual);
+    addDelta(b.seat, -actual);
+    burnPenalty += actual;
+  }
+
+  const deltas = ordered.map((s) => ({ seat: s.seat, delta: deltaBySeat.get(s.seat) ?? 0 }));
+  const sum = deltas.reduce((a, b) => a + b.delta, 0);
+  if (sum + rakeTotal + burnPenalty !== 0) {
+    throw new Error(
+      `mahjong settlement invariant broken: Σdelta=${sum}, rake=${rakeTotal}, burn=${burnPenalty}`,
+    );
+  }
+  const entries: CurrencyEntryIn[] = ordered
+    .map((s) => ({
+      ownerId: s.ownerId,
+      ownerType: s.ownerType,
+      delta: deltaBySeat.get(s.seat) ?? 0,
+    }))
+    .filter((entry) => entry.delta !== 0);
+  const actionId =
+    round === 2 ? `settle:${roomCode}:${version}:r2` : `settle:${roomCode}:${version}`;
+  return { actionId, entries, deltas, residue: 0, rakeTotal, burnPenalty };
+}
+
+/**
  * 结算算法（spec 2026-10-26 起为**最大余数法**；纯函数 —— 单测矩阵直接打它）。
  *
  * ```
@@ -273,20 +455,26 @@ export function computeSettlement(input: {
   if (shapeProblem) {
     throw new Error(`settlement result shape mismatch (room=${gameType}): ${shapeProblem}`);
   }
+  if (gameType === 'mahjong') {
+    if (!isMahjongSettlementResult(result)) {
+      throw new Error('settlement result shape mismatch (room=mahjong): expected mahjong settlement');
+    }
+    // 麻将走**事件账逐笔截断**（§4.6），不参与 ddz/pdk 的净额 pool。
+    return computeMahjongSettlement({
+      roomCode,
+      version,
+      round,
+      result,
+      seats: input.seats,
+      balances,
+      rakePercent,
+    });
+  }
   const pdkBySeat =
     gameType === 'paodekuai' && isPdkSettlementResult(result)
       ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
       : null;
-  const mahjongBySeat =
-    gameType === 'mahjong' && isMahjongSettlementResult(result)
-      ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
-      : null;
   const rawOf = (seat: SettleSeatRef): number => {
-    if (gameType === 'mahjong') {
-      const raw = mahjongBySeat?.get(seat.seat);
-      if (raw === undefined) throw new Error(`mahjong scoreChanges missing seat ${seat.seat}`);
-      return raw;
-    }
     if (gameType === 'paodekuai') {
       const raw = pdkBySeat?.get(seat.seat);
       if (raw === undefined) {
@@ -369,24 +557,11 @@ export function computeSettlement(input: {
       delta: deltaBySeat.get(s.seat) ?? 0,
     }))
     .filter((entry) => entry.delta !== 0);
-  let burnPenalty = 0;
-  if (isMahjongSettlementResult(result)) {
-    for (const b of result.burn) {
-      const ref = ordered.find((x) => x.seat === b.seat);
-      if (!ref) throw new Error(`mahjong burn seat ${b.seat} missing`);
-      const transfer = deltaBySeat.get(b.seat) ?? 0;
-      const available = Math.max(0, (balances.get(ref.ownerId) ?? 0) + Math.min(0, transfer));
-      const actual = Math.min(b.amount, available);
-      if (actual > 0) {
-        burnPenalty += actual;
-        entries.push({ ownerId: ref.ownerId, ownerType: ref.ownerType, delta: -actual });
-      }
-    }
-  }
 
   const actionId =
     round === 2 ? `settle:${roomCode}:${version}:r2` : `settle:${roomCode}:${version}`;
-  return { actionId, entries, deltas, residue, rakeTotal, burnPenalty };
+  /** 非麻将玩法没有花猪 burn；字段保持存在（下游统一读取）。 */
+  return { actionId, entries, deltas, residue, rakeTotal, burnPenalty: 0 };
 }
 
 /** `matched` 齐 playerCount 座（规格 §3；多玩法 Task 2.5：0..playerCount-1）。 */

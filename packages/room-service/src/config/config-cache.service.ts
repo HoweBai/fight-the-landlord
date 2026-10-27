@@ -404,6 +404,14 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return parseMahjongRules(value);
   }
 
+  /**
+   * 金币场是否允许 `sbr` 预设的 **48×底 burn**（spec §3.2 的资损闸）。
+   * 缺失/非 true ⇒ false（fail-closed：说不清就不放行）。
+   */
+  mahjongSbrGoldEnabled(): boolean {
+    return this.snapshot?.['game.mahjong.sbrGoldEnabled']?.value === true;
+  }
+
   /** 玩法档位键：斗地主新键（旧键仅作缺失回退）；跑得快既有新键。 */
   private levelsKeyOf(
     gameType: GameType,

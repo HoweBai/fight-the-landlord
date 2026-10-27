@@ -156,6 +156,7 @@ export interface MahjongRecordEnvelope {
   }>;
   gameType: 'mahjong';
   playerCount: 4;
+  dealerSeat: number;
 }
 
 export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope | MahjongRecordEnvelope;
@@ -1361,6 +1362,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       baseScore: room.baseScore,
       // 多玩法：pdk/麻将显式带 gameType/playerCount；斗地主**省略**以保持旧请求形状（缺省 = ddz/3）。
       ...(isPdk || isMahjong ? { gameType, playerCount } : {}),
+      ...(isMahjong ? { dealerSeat: (record as MahjongRecordEnvelope).dealerSeat } : {}),
       result,
       seats: [...envelopeSeats]
         .sort((a, b) => a.seat - b.seat)
