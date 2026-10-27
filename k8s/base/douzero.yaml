@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: douzero
+  namespace: ftl
+  labels: { app: douzero }
+spec:
+  selector: { app: douzero }
+  ports:
+    - { name: http, port: 2021, targetPort: 2021 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: douzero
+  namespace: ftl
+  labels: { app: douzero }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: douzero }
+  template:
+    metadata:
+      labels: { app: douzero }
+    spec:
+      nodeSelector: { ftl-role: compute }
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: douzero
+          image: ghcr.io/howebai/fight-the-landlord-douzero:IMAGE_TAG_PLACEHOLDER
+          ports:
+            - { name: http, containerPort: 2021 }
+          env:
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "2", memory: 4Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: 2021 }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /health, port: 2021 }
+            initialDelaySeconds: 60
+            periodSeconds: 30

@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-service
+  namespace: ftl
+  labels: { app: game-service }
+spec:
+  clusterIP: None
+  selector: { app: game-service }
+  ports:
+    - { name: http, port: 3003, targetPort: 3003 }
+    - { name: rpc, port: 3103, targetPort: 3103 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: game-service
+  namespace: ftl
+  labels: { app: game-service }
+spec:
+  serviceName: game-service
+  replicas: 1
+  selector:
+    matchLabels: { app: game-service }
+  template:
+    metadata:
+      labels: { app: game-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9003"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector: { ftl-role: data }
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: game-service
+          image: ghcr.io/howebai/fight-the-landlord-game-service:IMAGE_TAG_PLACEHOLDER
+          ports:
+            - { name: http, containerPort: 3003 }
+            - { name: rpc, containerPort: 3103 }
+            - { name: metrics, containerPort: 9003 }
+          env:
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: RPC_PORT, value: "3103" }
+            - { name: ROBOT_SERVICE_RPC_HOST, value: robot-service }
+            - { name: ROBOT_SERVICE_RPC_PORT, value: "3105" }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: ftl-secrets, key: INTERNAL_SERVICE_TOKEN } }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: 2, memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3003 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3003 }
+            initialDelaySeconds: 30
+            periodSeconds: 20

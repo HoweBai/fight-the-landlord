@@ -8,3 +8,12 @@ resources:
   - redis.yaml
   - edge.yaml
   - api-gateway.yaml
+  - room-service.yaml
+  - game-service.yaml
+  - robot-service.yaml
+  - user-service.yaml
+  - config-service.yaml
+  - currency-service.yaml
+  - payment-service.yaml
+  - douzero.yaml
+  - migrate-jobs.yaml
