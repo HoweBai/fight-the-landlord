@@ -1,8 +1,8 @@
-# 四川麻将（血战到底）接入 · 设计 v0.2
+# 四川麻将（血战到底）接入 · 设计 v0.3
 
 > **定位**：在 `majiang` 分支为平台增加第 3 个玩法「四川麻将·血战到底」。
-> **状态**：设计草案 v0.2，已按第 1 轮独立对抗审查修订（4 阻断 / 13 高 / 5 中低）；
-> 审查结论与逐条处置见 §14。
+> **状态**：设计 v0.3；第 1 轮审查（4 阻断 / 13 高 / 5 中低）与第 2 轮实现审查（2 高危 / 4 中危 / 4 低危）
+> 均已处置；逐条见 §14。
 > **规则唯一来源**：实现时新建 `docs/games/mahjong.md`（玩家可读完整规则 + 配置键口径）；
 > 本 spec 是设计裁决记录，与规则文档冲突时以规则文档为准，并由 doc-sync 测试锁住。
 > **接触面**：`packages/protocol` · `packages/shared` · `packages/game-service` ·
@@ -952,6 +952,23 @@ interface MahjongSettlementResult extends SettlementVector {
 | M21 | 客户端规则文案第二真源；已胡亮牌无法表达 | **已修**：§4.9 `rule-summary.ts` doc-sync；`revealedHands` |
 | M22 | §6.2 `rules.version` 进幂等可能重引 12012 | **已修**：§6.3 首快照权威；version 只进记录/outbox |
 | L23 | §1 两处引用错位；单副本前提未声明 | **已修**：§1 第 3/8 条订正；§4.4/§10 单副本前提 |
+
+### 14.4 第 2 轮实现对抗审查（2026-10-28，T11/T12 后）
+
+> 审查对象：`0fbc9db7..098569cc`（含结算截断/呼叫转移/客户端/admin/历史/风控分桶）。分级：高危/中危/低危。全部**已修**。
+
+| # | 发现 | 处置 |
+|---|---|---|
+| R2-H1 | 抢杠一炮多响：第二个赢家 `removeTile` 抛错，机器/托管/强胡时 0ms 定时器自旋 | 物理杠牌只从杠者手牌移除一次；后续赢家按复制入牌 |
+| R2-H2 | 缺门牌可暗杠（收真钱 + 逃花猪 + 之后可胡） | `concealedGang` 拒绝缺门；`claimsForMe` 不过滤同条；花猪判定加副露缺门 |
+| R2-M3 | 杠上炮 +1 番从不生效（`lastDraw` 已清） | `pendingClaims` 显式传 `shootAfterKong` 给 `checkHu` |
+| R2-M4 | 抢杠窗口沿用杠后补牌 `lastDraw` ⇒ 杠上炮+抢杠重复加番 | `openClaimWindow('rob')` 清 `lastDraw`；`robbingKong` 时不叠加 |
+| R2-M5 | 荒庄退税 seq 排在查叫/花猪之后，截断优先级与 §4.6 相反 | 退税事件先生成再生成查叫/花猪 |
+| R2-M6 | 麻将 `game.finished` 被出站校验器拒绝（网关丢帧） | `validateOutbound` 加 mahjong 分支（winnerSeats 可空/endReason/huazhuSeats） |
+| R2-L7 | `huazhuPayees='nonFlowerPig'` 静默失效 | `payEach` 赔所有非花猪（含已胡） |
+| R2-L8 | 最后四张自摸判定读滞后 `wallCount`（差一张） | 改用真实 `wall.length` |
+| R2-L9 | 换三张选择被他人提交清空 | 客户端 watch 只看手牌内容 |
+| R2-L10 | draw 入 actionLog 但无落库消费方、顺序倒置 | 移除该条（回放留待独立片） |
 
 ### 14.4 缺失项（10）落点
 
