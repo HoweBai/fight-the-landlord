@@ -11,6 +11,7 @@
  */
 
 import { isValidDouZeroCard } from './codec';
+import { GAME_TYPES } from './game-types';
 import {
   CLIENT_MESSAGE_TYPES,
   SERVER_MESSAGE_TYPES,
@@ -82,9 +83,10 @@ function assertInt(v: unknown, path: string, min: number, max: number): asserts 
 
 /**
  * 多玩法可选字段：**只有 undefined 算缺省**；空串/未知 id 报错（K3）。
- * 这里用本地常量而不是 import `isGameType`，避免 game.ts ↔ validate.ts 的运行时环。
+ * 审查 P2-5：复用叶子模块的 `GAME_TYPES`（零 import，不会与 game.ts 成环）；
+ * 新增玩法时这里自动跟随，不再需要手工同步第二份元组。
  */
-const KNOWN_GAME_TYPES = ['doudizhu', 'paodekuai'] as const;
+const KNOWN_GAME_TYPES = GAME_TYPES;
 
 function assertOptionalGameType(v: unknown, path: string): void {
   if (v === undefined) return;
