@@ -110,6 +110,21 @@ jobs:
             docker inspect "$c" --format 'RestartCount={{.RestartCount}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} StartedAt={{.State.StartedAt}} Status={{.State.Status}}' || true
             docker logs "$c" --tail 15 2>&1 || true
           done
+          # 2026-10-28：四个**判定链关键服务**的 warn/error 与关键字行（近 60 分钟 = 整轮）。
+          #
+          # 为什么要加：上面的 `--tail 15` 是在**整轮结束时**采样的 —— 失败发生在中途时
+          # （如实测 slice-05 在 14:39 等 game.deal、诊断却在 15:17 才跑），真正的报错行
+          # （`Failed to start game for room …` / `Bot fill failed for …` / 网关的下游断线）
+          # 早已被后续日志挤出尾部 ⇒ 红因无从对证。warn/error 量小且有界（tail 兜底），
+          # 关键字行补上 info 级的开局/撮合轨迹；两者都远小于整份日志，不会把 job 日志撑爆。
+          for c in ftl-room-service ftl-api-gateway ftl-game-service ftl-robot-service; do
+            echo "=== $c warn/error（近 60 分钟，末 400 行）==="
+            docker logs "$c" --since 60m 2>&1 | grep -E '"level":"(warn|error)"' | tail -400 || true
+            echo "=== $c 判定链关键字（近 60 分钟，末 400 行）==="
+            docker logs "$c" --since 60m 2>&1 \
+              | grep -E 'game\.start|game\.started|Failed to start|Bot fill|utostart|room\.matched|startRoom|startAndAnnounce|disconnected for client' \
+              | tail -400 || true
+          done
           echo "=== 近 40 分钟容器事件（die/kill/oom/restart）==="
           docker events --since 40m --until 0m \
             --filter type=container --filter event=die --filter event=kill --filter event=oom --filter event=restart 2>/dev/null | tail -50 || true
