@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   ErrCode,
@@ -15,6 +16,7 @@ import { GameModule } from '../src/game/game.module';
 import { GameRegistry } from '../src/games/registry';
 import { DdzRuntime } from '../src/games/ddz/runtime';
 import { PdkRuntime } from '../src/games/pdk/runtime';
+import { buildPdkPlayerView } from '../src/games/pdk/view';
 import { classifyRuleError } from '../src/games/pdk/rule-error.mapping';
 import { card, fullGameDeck } from './fixtures/pdk-fixtures';
 
@@ -131,6 +133,28 @@ describe('Task 4.1：PdkRuntime.create', () => {
     });
     expect(four.players.map((p) => p.hand.length)).toEqual([12, 12, 12, 12]);
     expect(four.unusedCards).toBeUndefined();
+  });
+
+  it('4 人视图：recentActions 窗口 = 3（A 出 + B/C 过仍保留目标）', () => {
+    const runtime = new PdkRuntime();
+    const session = runtime.create({
+      roomCode: 'PDK04W',
+      gameType: 'paodekuai',
+      playerCount: 4,
+      baseScore: 15,
+      players: [0, 1, 2, 3].map((seat) => ({ id: `p${seat}`, seat, isRobot: false })),
+      random: () => 0.5,
+    });
+    const lead = session.players[0]!.hand[0]!;
+    (session as unknown as { actionLog: unknown[] }).actionLog = [
+      { seat: 0, kind: 'play', cards: [lead] },
+      { seat: 1, kind: 'pass', cards: [] },
+      { seat: 2, kind: 'pass', cards: [] },
+    ];
+
+    const view = buildPdkPlayerView(session, 3);
+    expect(view.recentActions).toHaveLength(3);
+    expect(view.recentActions[0]!.cards).toEqual([lead]);
   });
 
   it('非法 rules ⇒ ProtocolError（不静默用默认值）', () => {
@@ -333,6 +357,22 @@ describe('Task 4.1：动作、错误映射与超时', () => {
       cards: session.players[0]!.hand.slice(0, 12),
     }).session;
     expect(runtime.autoAction(straightLead, 1)).toEqual({ kind: 'pass' });
+  });
+
+  it('单一决策源：runtime 与 timeout 都委托 decidePdkAutoAction（源码闸）', () => {
+    const runtimeSrc = readFileSync(
+      new URL('../src/games/pdk/runtime.ts', import.meta.url),
+      'utf8',
+    );
+    const playSrc = readFileSync(
+      new URL('../../shared/src/pdk/play.ts', import.meta.url),
+      'utf8',
+    );
+    expect(runtimeSrc).toContain('decidePdkAutoAction(');
+    expect(playSrc).toContain('decidePdkAutoAction(');
+    // 旧的两条策略只允许留在 autoplay 内部，不得再被两个入口各自调用
+    expect(runtimeSrc).not.toContain('findSmallestBeatingPdk');
+    expect(playSrc).not.toContain('findSmallestBeatingPdk');
   });
 });
 

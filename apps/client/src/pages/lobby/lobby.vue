@@ -722,6 +722,96 @@ function openMenuItem(item: (typeof PLAYER_MENU)[number]) {
   uni.navigateTo({ url: item.url });
 }
 
+/* ------------------------------------------------------------------ *
+ * 玩法规则介绍弹层（信息入口）
+ *
+ * 形态 = 玩家菜单 / 救助弹层同款：全屏遮罩 + 居中可滚动面板。
+ * 入口是玩法卡内的 info 图标按钮（仅 `m.description` 存在时才渲染）。
+ * 数据单一 Modal + key 切换（经验：避免为每条规则独立弹层造成 DOM 膨胀）。
+ * ------------------------------------------------------------------ */
+
+const ruleOpen = ref(false);
+const ruleModeId = ref<string | null>(null);
+
+/** 当前弹层要展示的玩法 —— 从 GAME_MODES 查，找不到 ⇒ null（防边界）。 */
+const currentRuleMode = computed(() =>
+  ruleModeId.value !== null
+    ? GAME_MODES.find((m) => m.id === ruleModeId.value)
+    : undefined,
+);
+
+/**
+ * 把 description 纯字符串解析成结构化段数组（方案 A：运行时解析、不改数据模型）。
+ *
+ * 输入格式（gameModes.ts 的字符串约定）：
+ *   【段标题】\n
+ *   正文行…\n
+ *   · 列表项…\n
+ *   \n
+ *   【下一段标题】\n
+ *   …
+ *
+ * 输出：Section[] —— 每段有 title（去括号后）和 lines 数组。
+ * lines 的 type:
+ *   'bullet' — 以 `· ` 开头的行（去掉前缀）
+ *   'text'   — 普通正文行
+ *
+ * ⚠️ 不改 GameMode 接口 —— 两个玩法的 description 字符串保持原样。
+ */
+interface RuleLine {
+  readonly type: 'text' | 'bullet';
+  readonly content: string;
+}
+interface RuleSection {
+  readonly title: string;
+  readonly lines: RuleLine[];
+}
+const ruleSections = computed<readonly RuleSection[]>(() => {
+  const desc = currentRuleMode.value?.description;
+  if (!desc) return [];
+
+  const sections: RuleSection[] = [];
+  // 按 \n\n 分段 —— gameModes.ts 里段之间都用双换行隔开
+  const rawSections = desc.split(/\n\n+/);
+
+  for (const raw of rawSections) {
+    const lines = raw.split('\n').map((l) => l.trimEnd());
+    if (lines.length === 0) continue;
+
+    // 首行是【xxx】段标题，正则去括号
+    const titleMatch = lines[0]?.match(/^【(.+?)】$/);
+    if (!titleMatch) continue;
+
+    const title = titleMatch[1]!;
+    const bodyLines: RuleLine[] = [];
+    for (const l of lines.slice(1)) {
+      const trimmed = l.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith('·')) {
+        bodyLines.push({
+          type: 'bullet',
+          content: trimmed.replace(/^·\s*/, ''),
+        });
+      } else {
+        bodyLines.push({ type: 'text', content: trimmed });
+      }
+    }
+    sections.push({ title, lines: bodyLines });
+  }
+  return sections;
+});
+
+function openRule(modeId: string) {
+  ruleModeId.value = modeId;
+  ruleOpen.value = true;
+}
+
+function closeRule() {
+  ruleOpen.value = false;
+  // 关闭后清空 id —— 再打开别的玩法时确保重新渲染（单 Modal + key 切换）。
+  ruleModeId.value = null;
+}
+
 /**
  * 支付片 T14：**钱包入口**（规格 §4：「大厅钱包区（`lobby.vue` 金币显示处）点击 ⇒ 跳钱包页」）。
  *
@@ -866,31 +956,52 @@ onUnmounted(() => stopBgm());
         <view class="lobby__modes">
           <text class="lobby__modes-title">选择玩法</text>
           <view class="lobby__mode-list">
-            <button
+            <!--
+              外层 `.lobby__mode-wrap` 是**纯定位容器**（position: relative）—— 不接收 click，
+              只负责给 info 图标提供绝对定位基准。这样 info 图标与玩法卡 button 是**兄弟元素**，
+              零嵌套事件冲突（uni-app H5 的 button 组件有自己的事件拦截层，内层 view 点击会被吞）。
+            -->
+            <view
               v-for="m in visibleModes"
               :key="m.id"
-              type="button"
-              class="lobby__mode"
-              :class="{ 'lobby__mode--active': m.id === store.activeMode }"
-              @click="selectMode(m.id)"
+              class="lobby__mode-wrap"
             >
-              <!-- 图标位（R747）：给了文件名就渲染图，没给就走下面的 CSS 兜底 -->
-              <image
-                v-if="m.icon"
-                class="lobby__mode-icon"
-                :src="`/static/ui/${m.icon}`"
-                mode="aspectFit"
-              />
-              <view v-else class="lobby__mode-icon lobby__mode-icon--fallback">
-                <text class="lobby__mode-icon-char">{{
-                  m.name.slice(0, 1)
-                }}</text>
+              <button
+                type="button"
+                class="lobby__mode"
+                :class="{ 'lobby__mode--active': m.id === store.activeMode }"
+                @click="selectMode(m.id)"
+              >
+                <!-- 图标位（R747）：给了文件名就渲染图，没给就走下面的 CSS 兜底 -->
+                <image
+                  v-if="m.icon"
+                  class="lobby__mode-icon"
+                  :src="`/static/ui/${m.icon}`"
+                  mode="aspectFit"
+                />
+                <view v-else class="lobby__mode-icon lobby__mode-icon--fallback">
+                  <text class="lobby__mode-icon-char">{{
+                    m.name.slice(0, 1)
+                  }}</text>
+                </view>
+                <view class="lobby__mode-text">
+                  <text class="lobby__mode-name">{{ m.name }}</text>
+                  <text class="lobby__mode-tagline">{{ m.tagline }}</text>
+                </view>
+              </button>
+              <!--
+                info 图标（规则介绍入口）：**只在有 description 时才渲染**。
+                绝对定位在卡片右上角（z-index 1 确保盖在 button 之上）。
+                ⚠️ 在 button 外面，所以**不需要** @click.stop —— 事件不会再冒泡到 button。
+              -->
+              <view
+                v-if="m.description"
+                class="lobby__mode-info"
+                @click="openRule(m.id)"
+              >
+                <text class="lobby__mode-info-char">i</text>
               </view>
-              <view class="lobby__mode-text">
-                <text class="lobby__mode-name">{{ m.name }}</text>
-                <text class="lobby__mode-tagline">{{ m.tagline }}</text>
-              </view>
-            </button>
+            </view>
           </view>
           <text v-if="visibleModes.length === 0" class="lobby__modes-empty"
             >暂无开放的玩法，请稍后再试</text
@@ -1062,6 +1173,56 @@ onUnmounted(() => stopBgm());
           </view>
         </view>
       </view>
+
+      <!--
+        玩法规则介绍弹层（信息入口）：与玩家菜单 / 救助弹层**同一条**遮罩+面板语言。
+        面板内正文区 `overflow-y: auto` —— 斗地主规则 ≈ 300–500 字，超出面板高时自然滚动。
+        ⚠️ 遮罩关闭 = 裸 click + 面板 `@click.stop`，**不得**用 `.self`（MoreMenu.vue 记过根因）。
+      -->
+      <view
+        v-if="ruleOpen && currentRuleMode"
+        class="lobby__rule-dialog"
+        @click="closeRule"
+      >
+        <view class="lobby__rule-panel" @click.stop>
+          <view class="lobby__rule-head">
+            <text class="lobby__rule-title">{{ currentRuleMode.name }} 玩法介绍</text>
+            <button
+              type="button"
+              class="btn btn--small lobby__rule-close"
+              @click="closeRule"
+            >
+              关闭
+            </button>
+          </view>
+          <!--
+            正文区：结构化渲染（运行时解析 description → section 列表）。
+            保留 .lobby__rule-body class（测试断言依赖 text() 包含「王炸」）。
+            overflow-y: auto 让长内容可滚；max-height 限死面板高度不溢出屏幕。
+          -->
+          <view class="lobby__rule-body">
+            <view
+              v-for="(section, si) in ruleSections"
+              :key="si"
+              class="lobby__rule-section"
+            >
+              <view class="lobby__rule-section-title">
+                {{ section.title }}
+              </view>
+              <template v-for="(line, li) in section.lines" :key="li">
+                <text
+                  v-if="line.type === 'text'"
+                  class="lobby__rule-line"
+                >{{ line.content }}</text>
+                <view v-else class="lobby__rule-bullet">
+                  <text class="lobby__rule-bullet-dot">·</text>
+                  <text class="lobby__rule-bullet-text">{{ line.content }}</text>
+                </view>
+              </template>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
 
     <!-- 提示浮层（Task 8）：本地项 + 会话提示 + 连接死态都在这里，不占大厅文档流。 -->
@@ -1217,7 +1378,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__menu-head {
   display: flex;
@@ -1288,7 +1449,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__relief-head {
   display: flex;
@@ -1334,11 +1495,125 @@ onUnmounted(() => stopBgm());
   color: $ftl-color-on-primary;
 }
 /**
+ * 玩法规则介绍弹层：与玩家菜单 / 救助弹层**同一条**遮罩+面板语言（遮罩
+ * `rgba(night-deep,.62)` / 面板 `rgba(night,.62)` + 发丝描边 + radius-lg —— §5.2.1）。
+ * 面板正文区可滚（规则 ≈ 300–500 字，max-height 限死不溢出屏幕）。
+ */
+.lobby__rule-dialog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($ftl-color-night-deep, 0.62);
+}
+.lobby__rule-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-5;
+  width: 640px;
+  max-width: 90%;
+  max-height: 80%;
+  padding: $ftl-space-6;
+  border: $ftl-hairline solid $ftl-color-night-deep;
+  border-radius: $ftl-radius-lg;
+  background: rgba($ftl-color-night, 0.85);
+}
+.lobby__rule-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: $ftl-space-5;
+}
+.lobby__rule-title {
+  color: $ftl-color-on-primary;
+  font-size: $ftl-font-lg;
+  font-weight: 700;
+  line-height: 1.2;
+}
+/**
+ * 规则正文区（结构化渲染，2026-10-27 UI 层次优化）。
+ * 不再是一段 white-space: pre-wrap 的纯文本 —— 而是多个 section（段）
+ * 组成的 flex 列，每段有标题 + 正文/列表。
+ */
+.lobby__rule-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-6;
+  overflow-y: auto;
+  padding-right: $ftl-space-2;
+}
+/**
+ * 单个段（section）：段之间有 gap（由 body 提供），段内有自己的间距。
+ */
+.lobby__rule-section {
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-3;
+}
+/**
+ * 段标题：左色条（gold 4px 宽）+ 字重 700 + 稍大字号 + 金色。
+ * 用 border-left 做色条，padding-left 出间距 —— 比 ::before 伪元素简单。
+ */
+.lobby__rule-section-title {
+  padding-left: $ftl-space-3;
+  border-left: 4px solid $ftl-color-gold;
+  color: $ftl-color-gold-light;
+  font-size: $ftl-font-md;
+  font-weight: 700;
+  line-height: 1.3;
+}
+/** 普通正文行：基础字号 + 0.9 透明度 + 1.7 行距（比原来 1.6 松一点）。 */
+.lobby__rule-line {
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
+  line-height: 1.7;
+}
+/** 列表行：flex 让圆点和文字对齐；圆点 0.7 透明度 + 缩进 8px。 */
+.lobby__rule-bullet {
+  display: flex;
+  gap: $ftl-space-2;
+  align-items: flex-start;
+}
+.lobby__rule-bullet-dot {
+  flex: 0 0 auto;
+  margin-top: 2px; /* 微调让圆点和文字基线对齐 */
+  color: rgba($ftl-color-gold, 0.8);
+  font-size: $ftl-font-md;
+  line-height: 1.7;
+}
+.lobby__rule-bullet-text {
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
+  line-height: 1.7;
+}
+/**
+ * 规则弹层里的按钮：次按钮语言（§5.2.1）——和菜单/救助弹层同款
+ * （透明底 + night-soft 描边 + 白字）。选择器带 `.lobby__rule-dialog` 前缀
+ * 的理由与菜单块/救助块逐字相同（`.btn` mixin 在文件末尾，同特指度后者胜）。
+ */
+.lobby__rule-dialog .lobby__rule-close {
+  flex: 0 0 auto;
+  margin: 0;
+  border-color: $ftl-color-night-soft;
+  background: transparent;
+  background-image: none;
+  color: $ftl-color-on-primary;
+}
+/**
  * 档位区三态状态位（Task 8）：失败 / 空表 / 加载中**同一条**中性标签字 —— 它们都只是
  * 「这块现在是什么状态」；具体原因与「重试」出口在浮层 `levels` 项。
  */
 .lobby__levels-empty {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1367,7 +1642,7 @@ onUnmounted(() => stopBgm());
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-sm;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   font-size: $ftl-font-md;
   line-height: 1.2;
@@ -1386,7 +1661,7 @@ onUnmounted(() => stopBgm());
 /** 双关空态（② §14）：没有可进入的场次 —— 其中性对等于「加载中」档，不是错误。 */
 .lobby__sessions-empty {
   flex: 0 0 auto;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1412,7 +1687,7 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .lobby__modes-title,
 .lobby__levels-title {
@@ -1429,6 +1704,14 @@ onUnmounted(() => stopBgm());
   gap: $ftl-space-4;
   min-height: 0;
   overflow-y: auto;
+}
+/**
+ * 玩法卡外层包装：**纯定位容器**（position: relative）。
+ * 作用 = 给 sibling 的 info 图标提供绝对定位基准；它自己不接收任何事件。
+ * ⚠️ gap 已经在 `.lobby__mode-list` 上，这里只负责 relative + 子元素高度跟随。
+ */
+.lobby__mode-wrap {
+  position: relative;
 }
 .lobby__modes-empty {
   color: $ftl-color-text-secondary;
@@ -1470,16 +1753,24 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-5 $ftl-space-6;
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-md;
-  background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  background: rgba($ftl-color-night-deep, 0.38);
+  color: rgba($ftl-color-on-primary, 0.9);
   font: inherit;
   cursor: pointer;
 }
+/**
+ * 玩法卡：等高兜底（与 `.lobby__level` 同款纪律）。
+ * tagline 可能 1 行也可能 2 行（斗地主「三人一局，比谁先出完手牌」在窄画布会换行），
+ * 缺行的卡片底部留白补齐，选中描边框等高。
+ * 取值全部由令牌算（无字面量）：上下 padding + 名称行 + 名称-tagline gap + tagline 两行。
+ */
 .lobby__mode {
   align-items: center;
   justify-content: flex-start;
   gap: $ftl-space-5;
   text-align: left;
+  min-height: $ftl-space-5 * 2 + $ftl-font-lg * 1.2 + $ftl-space-2 +
+    $ftl-font-sm * 1.4 * 2;
 }
 /**
  * 底分卡：竖排（场次名在上、底分在下），与参考图 1 的卡片同形。
@@ -1499,11 +1790,11 @@ onUnmounted(() => stopBgm());
   min-height: $ftl-space-5 * 2 + $ftl-font-lg * 1.2 + $ftl-space-3 * 3 +
     $ftl-font-md * 1.2 + $ftl-font-xs * 1.2 * 2;
 }
-/** **选中**语言（§5.2.1）：描边金 + 底 `rgba(gold,.18)` + 字 `$ftl-color-gold-light` + 700。 */
+/** **选中**语言（§5.2.1）：描边金 + 底 `rgba(gold,.25)` + 字 `$ftl-color-gold-light` + 700。 */
 .lobby__mode--active,
 .lobby__level--active {
   border-color: $ftl-color-gold;
-  background: rgba($ftl-color-gold, 0.18);
+  background: rgba($ftl-color-gold, 0.25);
   color: $ftl-color-gold-light;
   font-weight: 700;
 }
@@ -1539,11 +1830,45 @@ onUnmounted(() => stopBgm());
   white-space: nowrap;
 }
 /** 一句话说明：改浅色（面板内标签字，§5.2.1）—— 原来的 `$ftl-color-text-secondary`
-    是深底上的灰字，压在深蓝面板上读不清。 */
+    是深底上的灰字，压在深蓝面板上读不清。
+    最多两行 + ellipsis：与 `.lobby__mode` 的 min-height（预留两行）呼应，
+    将来加更长 tagline 时也不会撑破等高布局。 */
 .lobby__mode-tagline {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+/**
+ * info 图标（规则介绍入口）：圆形描边 + 小写 "i" 字符。
+ * ⚠️ 绝对定位 —— 与 `.lobby__mode` 是兄弟元素（在 `.lobby__mode-wrap` 内），
+ * 所以不会被 uni-app button 组件的事件拦截层吞掉。z-index 1 确保盖在 button 之上。
+ */
+.lobby__mode-info {
+  position: absolute;
+  top: $ftl-space-3;
+  right: $ftl-space-3;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: $ftl-hairline solid rgba($ftl-color-on-primary, 0.5);
+  border-radius: 50%;
+  background: rgba($ftl-color-night-deep, 0.4);
+  cursor: pointer;
+}
+.lobby__mode-info-char {
+  color: rgba($ftl-color-on-primary, 0.85);
+  font-size: $ftl-font-sm;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
 }
 /** 「底分 N」：与场次名同一族，弱一档（面板内标签字）。 */
 .lobby__level-base {
@@ -1554,14 +1879,14 @@ onUnmounted(() => stopBgm());
 }
 /** ② 金币门槛（`baseScore × entryMultiplier`）：卡内最弱一档的标签字。 */
 .lobby__level-need {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
   white-space: nowrap;
 }
 /* 台费「入场费」行：与门槛行同观感（同色同字号）——不引新令牌。 */
 .lobby__level-fee {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-xs;
   line-height: 1.2;
   white-space: nowrap;

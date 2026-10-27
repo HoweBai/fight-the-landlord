@@ -727,8 +727,8 @@ export async function runSlice21(): Promise<Checks> {
     const c1 = await getJson<Record<string, unknown>>('/api/config', uOrder.accessToken);
     checks.eq(
       Object.keys(c1.body?.data ?? {}).sort().join(','),
-      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      '① 客户端键集（排序后）恰 21 键（含九裸名 + cardCounterEnabled）',
+      'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      '① 客户端键集（排序后）恰 22 键（含九裸名 + cardCounterEnabled）',
     );
     const c1d = c1.body?.data ?? {};
     checks.that(

@@ -60,6 +60,10 @@ import { RoomsService } from '../src/rooms/rooms.service';
 import { RoomsAutostartTask } from '../src/rooms/rooms.autostart';
 import { RoomNicknamesService } from '../src/rooms/room-nicknames.service';
 import { StartModule } from '../src/rooms/start.module';
+// C1：WsGateway 第 14 个构造依赖 + 模块装配（单例身份判定对象）。
+import { RecordOutboxService } from '../src/gateway/record-outbox.service';
+import { RecordOutboxModule } from '../src/gateway/record-outbox.module';
+import { RedisProviderModule } from '../src/redis.provider.module';
 
 /** 假的**裸** `ClientProxy`（就是 `ClientsModule.register` 本该提供的东西）。 */
 const fakeProxy = (tag: string) => ({ tag, send: () => undefined });
@@ -218,7 +222,7 @@ describe('room-service 装配门禁：GAME_CLIENT / ROBOT_CLIENT（R216/R217 同
       designTypes,
       'design:paramtypes 读不到 —— 测试环境没有发出 DI 元数据（检查 vitest.config.ts 的插件与 setupFiles）',
     ).toBeDefined();
-    expect(designTypes).toHaveLength(13);
+    expect(designTypes).toHaveLength(14);
 
     // ②′ T4/T5 的三个新类 token：**身份**（不是「有个函数就行」）—— 与 design:paramtypes
     // 的机制自证同款（`@Inject` 参数两侧都有元数据；`import type` 写错会把这里变成 undefined）。
@@ -230,6 +234,9 @@ describe('room-service 装配门禁：GAME_CLIENT / ROBOT_CLIENT（R216/R217 同
     expect(designTypes?.[11], '第 12 个参数必须是 RiskClient（风控 T3 上报客户端）').toBe(RiskClient);
     expect(designTypes?.[12], '第 13 个参数必须是 RoomNicknamesService（昵称缓存）').toBe(
       RoomNicknamesService,
+    );
+    expect(designTypes?.[13], '第 14 个参数必须是 RecordOutboxService（C1 写前入箱）').toBe(
+      RecordOutboxService,
     );
 
     // ② `self:paramtypes` 里的每个 token 下标，在 `design:paramtypes` 里都有对应的**真实类引用**
@@ -448,6 +455,14 @@ describe('room-service 装配门禁：CurrencyModule + WsModule 的新依赖 imp
     // 而不是等到真容器装配 `WsGateway` 时说「Nest can't resolve dependencies」）。
     expect(mod.get(SettleService)).toBeInstanceOf(SettleService);
     expect(mod.get(SettleSweeper)).toBeInstanceOf(SettleSweeper);
+    // C1：RecordOutboxModule 的 exports 真被 CurrencyModule 看到；SettleSweeper 与
+    // CurrencyModule 的 mod.get 拿到**同一个**实例（防多 provide/少 export 的静默分裂）。
+    const recordOutbox = mod.get(RecordOutboxService);
+    expect(recordOutbox).toBeInstanceOf(RecordOutboxService);
+    expect(
+      (mod.get(SettleSweeper) as unknown as { recordOutbox: unknown }).recordOutbox,
+      'SettleSweeper 的第三依赖必须是 CurrencyModule 导出的同一个 RecordOutboxService',
+    ).toBe(recordOutbox);
 
     /**
      * ② T6：机器人资金面 provider 可解析，且 **T5 留的钩子 token 必须解析到同一个实例**
@@ -477,5 +492,20 @@ describe('room-service 装配门禁：CurrencyModule + WsModule 的新依赖 imp
     expect(imports, 'WsGateway 注入 CurrencyClient ⇒ WsModule 必须 import 它').toContain(
       CurrencyModule,
     );
+    expect(imports, 'WsGateway 注入 RecordOutboxService ⇒ WsModule 必须 import 它').toContain(
+      RecordOutboxModule,
+    );
+  });
+
+  it('C1：RecordOutboxModule 的 imports/providers/exports 齐全（防装配子集假绿）', () => {
+    const imports = (Reflect.getMetadata('imports', RecordOutboxModule) as unknown[] | undefined) ?? [];
+    const providers = (Reflect.getMetadata('providers', RecordOutboxModule) as unknown[] | undefined) ?? [];
+    const exportsMeta = (Reflect.getMetadata('exports', RecordOutboxModule) as unknown[] | undefined) ?? [];
+    expect(imports).toContain(RpcClientsModule);
+    expect(imports).toContain(RedisProviderModule);
+    expect(providers).toContain(RecordOutboxService);
+    expect(exportsMeta).toContain(RecordOutboxService);
+    const currencyImports = (Reflect.getMetadata('imports', CurrencyModule) as unknown[] | undefined) ?? [];
+    expect(currencyImports).toContain(RecordOutboxModule);
   });
 });

@@ -7,6 +7,7 @@ import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
 import { JwtMiddleware } from './auth/jwt.middleware';
 import { AdminAuthMiddleware } from './auth/admin.middleware';
+import { AgentAuthMiddleware } from './auth/agent.middleware';
 import { ClientGateMiddleware } from './auth/client-gate.middleware';
 import { ClientGateService } from './auth/client-gate.service';
 import { SessionGuard } from './auth/session.guard';
@@ -75,6 +76,6 @@ export class AppModule implements NestModule {
     //   - ⚠️ 迁移指南示例 `forRoutes('{*splat}')` 会展开成 `/api/{*splat}`（斜杠在组外）⇒
     //     **漏掉裸 `/api`**（实测 404 + mw=0）；`'{/*splat}'` 才能命中 —— 该行为由
     //     `test/no-route-outside-api.gate.test.ts` 判据 A′ 钉住。
-    consumer.apply(ClientGateMiddleware, JwtMiddleware, AdminAuthMiddleware, HttpRateLimitMiddleware).forRoutes('{/*splat}');
+    consumer.apply(ClientGateMiddleware, JwtMiddleware, AdminAuthMiddleware, AgentAuthMiddleware, HttpRateLimitMiddleware).forRoutes('{/*splat}');
   }
 }

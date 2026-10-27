@@ -162,6 +162,14 @@ async function simpleMetric(name: string): Promise<number> {
   return Number(m[1]);
 }
 
+/** A1：带标签指标读数（缺序列 ⇒ 0）。 */
+async function labeledMetricByGame(name: string, labels: Record<string, string>): Promise<number> {
+  const text = await metricsRegistry().metrics();
+  const hit = text.split('\n').find((line) => line.startsWith(`${name}{`) &&
+    Object.entries(labels).every(([k, v]) => line.includes(`${k}="${v}"`)));
+  return hit ? Number(hit.slice(hit.lastIndexOf(' ') + 1)) : 0;
+}
+
 describe('RecordsCleanupService（记录片 T7：保留期清理）', () => {
   let captured: ReturnType<typeof createCapturingSink>;
 
@@ -558,13 +566,13 @@ describe('RecordsCleanupService（记录片 T7：保留期清理）', () => {
       const { cache } = makeCache({ days: 365 });
       const svc = new RecordsCleanupService(db.dataSource as never, cache);
       vi.setSystemTime(T0); // 时钟注入贯穿「成功时间戳」的判据（== T0/1000，逐秒相等）
-      const before = await simpleMetric('records_rows_deleted_total');
+      const before = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' });
 
       const result = await svc.runCleanupOnce(T0);
 
       expect(result.recordsDeleted).toBe(2);
       expect(await simpleMetric('records_cleanup_last_success_timestamp_seconds')).toBe(T0 / 1000);
-      expect(await simpleMetric('records_rows_deleted_total')).toBe(before + 2);
+      expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(before + 2);
     });
 
     it('T6②：从未成功（onModuleInit 后未跑轮）⇒ last_success 置 0（C12 初值语义）', async () => {
@@ -615,7 +623,7 @@ describe('RecordsCleanupService（记录片 T7：保留期清理）', () => {
       const svc = new RecordsCleanupService(db.dataSource as never, cache);
       vi.setSystemTime(T0);
       recordsTableBytes.set(777); // 上一次采样值：本次采样失败不得擦（≈ carry-forward）
-      const beforeDeleted = await simpleMetric('records_rows_deleted_total');
+      const beforeDeleted = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' });
 
       const result = await svc.runCleanupOnce(T0);
 
@@ -624,7 +632,7 @@ describe('RecordsCleanupService（记录片 T7：保留期清理）', () => {
       expect(db.players).toHaveLength(0);
       expect(await simpleMetric('records_table_bytes'), '采样失败：保留旧值').toBe(777);
       expect(await simpleMetric('records_cleanup_last_success_timestamp_seconds')).toBe(T0 / 1000);
-      expect(await simpleMetric('records_rows_deleted_total')).toBe(beforeDeleted + 1);
+      expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(beforeDeleted + 1);
       const warns = captured.records.filter((r) => r.level === 'warn');
       expect(
         warns.some((r) => r.msg.includes('records table bytes sampling failed')),
@@ -651,5 +659,27 @@ describe('RecordsCleanupService（记录片 T7：保留期清理）', () => {
         'game_record_players_pdk',
       ]);
     });
+  });
+});
+
+describe('A1：记录清理按玩法计数', () => {
+  it('pdk 0 行也写序列', async () => {
+    const db = new FakeCleanupDb();
+    db.records.push({ ended_at: new Date(T0 - 400 * DAY_MS) });
+    db.records.push({ ended_at: new Date(T0 - 401 * DAY_MS) });
+    const { cache } = makeCache({ days: 365 });
+    const svc = new RecordsCleanupService(db.dataSource as never, cache);
+    const beforeDdz = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' });
+    const beforePdk = await labeledMetricByGame('records_rows_deleted_total', { game_type: 'paodekuai' });
+
+    await svc.runCleanupOnce(T0);
+
+    expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'doudizhu' })).toBe(beforeDdz + 2);
+    expect(await labeledMetricByGame('records_rows_deleted_total', { game_type: 'paodekuai' })).toBe(beforePdk);
+    const text = await metricsRegistry().metrics();
+    expect(
+      text,
+      'pdk 0 行也必须显式写出 0 序列（否则「分玩法可见」在无 pdk 清理时不成立）',
+    ).toContain('records_rows_deleted_total{game_type="paodekuai"} 0');
   });
 });

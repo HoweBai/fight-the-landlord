@@ -5,13 +5,24 @@
  *  - 规范 id 只有 `doudizhu` / `paodekuai`；`ddz` 仅作为机器人池旧键别名，不在此处。
  *  - 只有 `undefined` / `null`（字段缺失）才缺省斗地主；空串/未知/`ddz` 一律抛错。
  *  - `supportedPlayerCounts` 是协议/房间/匹配的共用能力表；生产是否暴露 2/4 由
- *    配置 `game.paodekuai.nonThreePlayerEnabled` 闸住，不在这里硬编码。
+ *    配置 `game.paodekuai.twoPlayerEnabled` / `game.paodekuai.nonThreePlayerEnabled`
+ *    分别闸住，不在这里硬编码。
  */
 import { ProtocolError } from './validate';
+import {
+  DEFAULT_GAME_TYPE,
+  GAME_TYPES,
+  isGameType,
+  type GameType,
+} from './game-types';
 
-export const GAME_TYPES = ['doudizhu', 'paodekuai'] as const;
-export type GameType = (typeof GAME_TYPES)[number];
-export const DEFAULT_GAME_TYPE: GameType = 'doudizhu';
+/**
+ * 审查 P2-5：玩法 id 的定义在**叶子** `game-types.ts`（零 import），
+ * `validate.ts` 也直接引用同一元组 —— 不再维护第二份 `KNOWN_GAME_TYPES`。
+ * 这里 re-export 保持既有 API/导入路径不变。
+ */
+export { DEFAULT_GAME_TYPE, GAME_TYPES, isGameType };
+export type { GameType };
 
 export interface GameCapabilities {
   /** 是否支持记牌器（斗地主专属付费能力）。 */
@@ -55,14 +66,10 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
       cardCounter: false,
       bots: true,
       goldRoom: true,
-      voiceAnnouncements: false,
+      voiceAnnouncements: true,
     },
   },
 };
-
-export function isGameType(value: unknown): value is GameType {
-  return typeof value === 'string' && (GAME_TYPES as readonly string[]).includes(value);
-}
 
 /**
  * 解析玩法 id。

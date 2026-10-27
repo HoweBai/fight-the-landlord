@@ -60,6 +60,7 @@ import {
 import { Checks, ConformanceError, fieldSetViolations, info, sleep, step } from '../lib/assert';
 import { adminGetConfig, adminLogin, adminPutConfig, getJson, registerUser, type HarnessUser } from '../lib/http';
 import { rpcCall, type RpcEndpoint } from '../lib/rpc';
+import { redisLines } from '../lib/redis';
 import { HarnessClient } from '../lib/client';
 import {
   MATCH_BASE_SCORE,
@@ -843,6 +844,10 @@ export async function runSlice15(): Promise<Checks> {
       `C9② 「Record write failed for room ${game1.room.roomCode}」出现在 room-service 日志（30s 内）`,
     );
     checks.eq(c9FailPoll.last[0]?.level, 'error', 'C9② 该行是 error 级（响亮不静默）');
+    checks.that(
+      String(c9FailPoll.last[0]?.msg).includes('queued for retry (record:outbox)'),
+      `C9② 该行含 queued for retry (record:outbox)（C1 写前入箱）—— 实际 ${String(c9FailPoll.last[0]?.msg)}`,
+    );
     checks.eq(recordsCount(game1.room.roomCode), 0, 'C9② 库中**没有**局 1 的记录行（写失败 ≠ 静默半写）');
     // R155：换房前先 close() 上一房的客户端并静置 —— §5.4 的**每 IP 并发 WS 上限 5**，
     // 局 1 的三个连接不收掉，局 2 的握手会撞上限（表面症状是「连不上」，根因在配额）。
@@ -873,6 +878,36 @@ export async function runSlice15(): Promise<Checks> {
     );
     checks.eq(recordsCount(room2), 1, 'C9③ 库中局 2 的记录恰 1 行');
     checks.eq(playersCount(room2), 3, 'C9③ 局 2 的玩家行恰 3 行');
+
+    step('C9③b：user-service 恢复后 sweeper 自动补投局 1 ⇒ 记录落库 + 出箱（C1）');
+    const c9Backfill = await pollUntil(
+      () => recordsCount(game1.room.roomCode),
+      (n) => n === 1,
+      60_000,
+    );
+    checks.that(c9Backfill.ok, `C9③b 局 1 记录在 60s 内补投落库（实际 ${c9Backfill.last}）`);
+    const c9PlayersBackfill = await pollUntil(
+      () => playersCount(game1.room.roomCode),
+      (n) => n === 3,
+      30_000,
+    );
+    checks.that(
+      c9PlayersBackfill.ok,
+      `C9③b 局 1 玩家行 = 3（实际 ${c9PlayersBackfill.last}）`,
+    );
+    const c9OutboxPoll = await pollUntil(
+      () =>
+        redisLines(['HKEYS', 'record:outbox']).filter((f) =>
+          f.startsWith(`${game1.room.roomCode}:`),
+        ),
+      (fields) => fields.length === 0,
+      30_000,
+    );
+    checks.that(
+      c9OutboxPoll.ok,
+      `C9③b 局 1 已出箱（HKEYS 无 <room>: 前缀；实际 ${JSON.stringify(c9OutboxPoll.last)}）`,
+    );
+    checks.eq(recordsCount(game1.room.roomCode), 1, 'C9③b 补投后局 1 记录仍恰 1 行（幂等）');
 
     // ── 收口读数（规格 §3 末）：打一局 → /api/records/mine 字段逐项对局内事实 ──
     const viewer = game2.room.clients[0]!;

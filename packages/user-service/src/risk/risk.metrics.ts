@@ -2,7 +2,7 @@
 import { createCounter, createGauge } from '@fight-the-landlord/shared';
 
 /**
- * 风控片 user-service 的**四个指标定义**（规格 §2.12 逐字；设计 Y4/§2.4bis —— 面板
+ * 风控片 user-service 的**风控指标定义**（规格 §2.12 + A1 hits + B SQL 失败；设计 Y4/§2.4bis —— 面板
  * 「风控 / Risk」与 `RiskScanStalled` 告警的读面）。
  *
  * 🔴 **写点在别的文件**（`scan.service.ts` / `reviews.service.ts` / `admin-risk.controller.ts`，
@@ -48,4 +48,21 @@ export const riskActionsTotal: ReturnType<typeof createCounter> = createCounter(
   'risk_actions_total',
   '风控处置动作计数（action=auto_throttle|throttle|unthrottle|ban|unban|dismiss|reopen）。',
   ['action'],
+);
+
+/** A1：风控胜率命中次数（按玩法；设备命中不纳入本指标）。 */
+export const riskScanHitsTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_scan_hits_total',
+  '风控胜率命中次数（按玩法；每用户每玩法命中 +1；设备命中不纳入本指标）。',
+  ['game_type'],
+);
+
+/**
+ * B 组：风控扫描 SQL 失败次数（scope=doudizhu|paodekuai|device）。
+ * 单玩法失败按玩法隔离；设备 SQL 失败仍整轮失败。
+ */
+export const riskScanSqlFailuresTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_scan_sql_failures_total',
+  '风控扫描 SQL 失败次数（scope=doudizhu|paodekuai|device；单玩法失败按玩法隔离，设备 SQL 失败仍整轮失败）。',
+  ['scope'],
 );

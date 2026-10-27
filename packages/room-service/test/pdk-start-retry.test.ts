@@ -6,7 +6,7 @@ import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
 import type { Redis } from 'ioredis';
-import { RPC_PATTERNS } from '@fight-the-landlord/protocol';
+import { ErrCode, RPC_PATTERNS } from '@fight-the-landlord/protocol';
 import {
   RoomStartService,
   START_ATTEMPTS_MAX,
@@ -21,6 +21,8 @@ import { botsKey } from '../src/rooms/rooms.bots';
 import { ROOM_TTL_SECONDS, startAttemptsKey } from '../src/rooms/rooms.seats';
 import { createFakeRedis, asRedis, type FakeRedis } from './helpers/fake-redis';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from './helpers/config-cache.stub';
+import { exactSeriesValue } from './helpers/metric-readout';
+import { gameStartFailuresTotal } from '../src/metrics/room.metrics';
 import { ReconnectService } from '../src/reconnect/reconnect.service';
 
 describe('pdk 开局重试预算（Task 2.4）', () => {
@@ -29,6 +31,7 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
   let configCache: ConfigCacheStub;
   let service: RoomStartService;
   let calls: Array<{ pattern: string; data: unknown }>;
+  let rpcSend: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     redis = createFakeRedis();
@@ -36,7 +39,7 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
     configCache.paodekuaiEnabled.mockReturnValue(true);
     rooms = new RoomsService(asRedis(redis), asConfigCache(configCache));
     calls = [];
-    const send = vi.fn((pattern: string, data: unknown) => {
+    rpcSend = vi.fn((pattern: string, data: unknown) => {
       calls.push({ pattern, data });
       if (pattern === RPC_PATTERNS.robotAcquire) {
         const seats = (data as { seats?: number[] }).seats ?? [1];
@@ -57,7 +60,7 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
       }
       return of({ ok: true, data: { released: 1 } });
     });
-    const proxy = { send } as never;
+    const proxy = { send: rpcSend } as never;
     service = new RoomStartService(
       asRedis(redis) as Redis,
       rooms,
@@ -114,6 +117,36 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
     expect(redis.hashes.has(botsKey('PDK001'))).toBe(false);
   });
 
+  it('重试恢复已入座机器人：acquire 透传 gameType=paodekuai，原绑定不被替换（审查 P0-3）', async () => {
+    await pdkRoom('PDK003');
+    configCache.pdkRules.mockImplementation(() => {
+      throw new Error('bad config');
+    });
+
+    // 第一次：正常补位（acquireBot 已正确传 gameType），机器人入座并落绑定
+    await service.startRoomOutcome('PDK003', { strict: false });
+    const firstAcquires = calls.filter((c) => c.pattern === RPC_PATTERNS.robotAcquire);
+    expect(firstAcquires).toHaveLength(2);
+    for (const call of firstAcquires) {
+      expect((call.data as { gameType?: string }).gameType).toBe('paodekuai');
+    }
+
+    // 第二次：房已满 ⇒ 走 recoverBotBindings 恢复分支（一次 acquire 覆盖所有缺座）
+    calls.length = 0;
+    await service.startRoomOutcome('PDK003', { strict: false });
+    const recovered = calls.filter((c) => c.pattern === RPC_PATTERNS.robotAcquire);
+    expect(recovered).toHaveLength(1);
+    expect((recovered[0]!.data as { seats: number[] }).seats).toEqual([1, 2]);
+    expect(
+      (recovered[0]!.data as { gameType?: string }).gameType,
+      '恢复分支漏传 gameType 会按 doudizhu 处理并换绑错池机器人',
+    ).toBe('paodekuai');
+
+    // 原绑定未被替换（stub 幂等返回同一 botId）
+    const bound = redis.hashes.get(botsKey('PDK003'))!;
+    expect(Object.values(bound).sort()).toEqual(['bot-1', 'bot-2']);
+  });
+
   it('retryable 不取消房/不归池（票与房都留待下一轮）', async () => {
     await pdkRoom('PDK002', ['u1', 'u2', 'u3']);
     configCache.pdkRules.mockImplementation(() => {
@@ -156,5 +189,75 @@ describe('pdk 开局重试预算（Task 2.4）', () => {
 
     await rooms.deleteRoom('PDK004');
     expect(redis.strings.has(startAttemptsKey('PDK004'))).toBe(false);
+  });
+
+  it('A1：rules 失败按 reason=rules 计数；第 5 次取消额外计 cancelled', async () => {
+    await pdkRoom('PDKM1');
+    configCache.pdkRules.mockImplementation(() => {
+      throw new Error('bad config');
+    });
+    const before = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'rules',
+    })) ?? 0;
+    const cancelledBefore = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'cancelled',
+    })) ?? 0;
+    for (let i = 0; i < START_ATTEMPTS_MAX; i += 1) {
+      await service.startRoomOutcome('PDKM1', { strict: false });
+    }
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'rules',
+    })).toBeGreaterThanOrEqual(before + START_ATTEMPTS_MAX);
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'cancelled',
+    })).toBe(cancelledBefore + 1);
+  });
+
+  it('A1：bot fill 失败计 reason=bot_fill（不出现 rules）', async () => {
+    const original = rpcSend.getMockImplementation()! as (
+      pattern: string,
+      data: unknown,
+    ) => unknown;
+    rpcSend.mockImplementation((pattern: string, data: unknown) =>
+      pattern === RPC_PATTERNS.robotAcquire
+        ? of({ ok: false, code: ErrCode.UPSTREAM_UNAVAILABLE, message: 'down' })
+        : original(pattern, data),
+    );
+    await pdkRoom('PDKM2');
+    const beforeBot = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'bot_fill',
+    })) ?? 0;
+    const beforeRules = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'rules',
+    })) ?? 0;
+
+    const outcome = await service.startRoomOutcome('PDKM2', { strict: false });
+
+    expect(outcome).toBe('retryable');
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'bot_fill',
+    })).toBe(beforeBot + 1);
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'rules',
+    })).toBe(beforeRules);
+  });
+
+  it('A1：pending_write 失败计 reason=pending_write', async () => {
+    await pdkRoom('PDKM3');
+    const originalHset = redis.hset;
+    redis.hset = (async (key: string, fieldOrObject: unknown, value?: string) => {
+      if (String(key).startsWith('match:pending:')) throw new Error('redis down');
+      return originalHset(key, fieldOrObject as never, value);
+    }) as never;
+    const before = (await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'pending_write',
+    })) ?? 0;
+
+    const outcome = await service.startRoomOutcome('PDKM3', { strict: false });
+
+    expect(outcome).toBe('retryable');
+    expect(await exactSeriesValue(gameStartFailuresTotal, {
+      game_type: 'paodekuai', reason: 'pending_write',
+    })).toBe(before + 1);
   });
 });

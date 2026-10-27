@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：九十二键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：一百零一键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -131,11 +131,13 @@ const ROLE_KEY = 'ftl-admin-role';
 const PAGE_LIMIT = 20;
 
 /**
- * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；跑得快 23 键中 13 键（22 个简单控件中 12 个）暂走控件标签 + 服务端校验（无备注条目时展示通用说明）。
+ * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
+ * **85 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
- *  - 语义 / 默认值 / 消费方 = `docs/design.md` §7.5；
+ *  - 语义 / 默认值 / 消费方 = `docs/design.md` §7.5；跑得快规则/计分键另以
+ *    `packages/shared/src/pdk/rules.ts`（默认值）+ 跑得快设计 spec §4.7.1 / §5.6 为准；
  *  - 运维措辞（≤60s 上界 / 好友房默认关 / 30s 无匹配文案）= `docs/ops/first-deploy.md`「怎么改配置」。
  *
  * ⚠️ 与 R4（「页面不含**配置值**」）的口径说明：本表只含**静态说明文案**（出厂默认值随文引用
@@ -149,10 +151,17 @@ const PAGE_LIMIT = 20;
  *    台费片 T8 加第 42 键（`currency.entryFeePercents`）后 **42 条对 42 键**；
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
- *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键后
- *    **63 条备注 / 76 个 active 键**（16 个旧键只读、无备注）。
+ *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
+ *    **85 条备注 / 85 个 active 键（全覆盖）**
+ *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
+  'agent.inviteEnabled': [
+    ['作用', '注册页是否显示可选的代理邀请码输入框；开 ⇒ 玩家填码后永久归属该代理，关 ⇒ 不显示、注册不带码。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
+    ['生效', '保存后客户端下次拉取配置即生效（通常 ≤60s；H5 可硬刷新立即生效）。'],
+    ['注意', '真正的计佣开关在代理设置（`agent_settings.enabled`，仅超级管理员）；本键只管客户端是否显示输入框。两个开关都开才会绑定。'],
+  ],
   'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}，各 ≥ 0，合计须 > 0；可写权重（如 15 / 35 / 50），保存时按合计归一化成占比。默认 0.15 / 0.35 / 0.5。'],
@@ -206,6 +215,12 @@ const CONFIG_NOTES = {
     ['取值', '非空数组，每项 {name, baseScore, entryFeePercent}：name 非空字符串、baseScore 正整数且 ≤ 8191（上限 = 金币金额列 int 的容量上界，超出会被拒绝）、档位值不得重复；entryFeePercent 为 0–100 的整数百分比（0 = 不收台费，100 = 入场费等于底分，缺省即 0）；省略底分时取表内最低档。默认 15 / 80 / 480 / 1200（台费全 0）。'],
     ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新表（已打开的页面刷新一次最快拿到）。'],
     ['注意', '**台费就在本表第三列**（旧「台费费率表」键已删除）；档位可自由增删（含 15）；省略底分时取表内最低档。改动只影响之后的新开局，已在途房间不受影响。'],
+  ],
+  'game.levels.paodekuai': [
+    ['作用', '跑得快底分档位表（大厅的跑得快底分卡）—— 可选底分与台费都出自这张表；与斗地主档位表相互独立。'],
+    ['取值', '非空数组，每项 {name, baseScore, entryFeePercent}：name 非空字符串、baseScore 正整数且 ≤ 8191、档位值不得重复；entryFeePercent 为 0–100 的整数百分比（0 = 不收台费，100 = 入场费等于底分，缺省即 0）；省略底分时取表内最低档。默认 15 / 80 / 480 / 1200（台费全 0）。'],
+    ['生效', '保存后服务端秒级生效（推送正常时）、最晚 ≤60s；玩家端进大厅时取新表（已打开的页面刷新一次最快拿到）。'],
+    ['注意', '跑得快**不回落**斗地主档位表（`game.levels.doudizhu` 改这里不受影响）；档位可自由增删；改动只影响之后的新开局，已在途房间不受影响。'],
   ],
   'game.doudizhu.cardCounterEnabled': [
     ['作用', '记牌器总开关（客户端）。开 ⇒ 牌桌左上角显示记牌器入口与横条；关 ⇒ 入口不渲染、记牌累积器不启动。'],
@@ -353,7 +368,7 @@ const CONFIG_NOTES = {
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
   // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
-  // 2026-10-25 跑得快风控两键后 63 条备注 / 76 个 active 键。
+  // 2026-10-26 跑得快按人数/自动限流 7 键后 85 条备注 / 85 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -484,6 +499,84 @@ const CONFIG_NOTES = {
     ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
     ['注意', '两个玩法都关闭时大厅没有可选玩法；关闭期间已入队的票保留，重新开放后继续匹配。'],
   ],
+  'game.paodekuai.bareTrioEnabled': [
+    ['作用', '裸三张（三张同点、不带牌）是否可作为合法牌型打出。关 ⇒ 三张同点只能带牌出（三带一；三带二另看开关）或拆开打。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '客户端「提示」与机器人使用同一份规则快照，关掉后不会再给出裸三张；四张 A 在跑得快牌堆里不存在（缺黑桃 A）⇒ 三张 A 只按本开关处理。'],
+  ],
+  'game.paodekuai.trioWithPairEnabled': [
+    ['作用', '三带二（三张同点 + 一对）是否合法。'],
+    ['取值', '严格 true / false。默认 false（关 —— 只允许三带一）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '三带一与三带二是不同牌型（长度不同），不能互相压；关掉后 3+2 只能拆成三张与对子分别处理。'],
+  ],
+  'game.paodekuai.bareAirplaneEnabled': [
+    ['作用', '裸飞机（≥2 个连续三张、不带翅膀）是否合法。'],
+    ['取值', '严格 true / false。默认 false（关 —— 飞机必须带翅膀）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '关裸飞机时，连续三张必须带翅膀（翅膀口径见「飞机翅膀」键）或拆开出；不能把相邻的第 4 个三张拆成翅膀来凑飞机。'],
+  ],
+  'game.paodekuai.fourWithTwoEnabled': [
+    ['作用', '四带二（四张同点 + 2 张带牌）是否合法。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '带牌默认必须是不同点单牌（能否带对子另看「四带二允许对子」键）；四张同点当炸弹还是四带二由玩家选择，只有**裸四张**计入炸弹数与炸弹翻倍。'],
+  ],
+  'game.paodekuai.fourWithTwoPairKickerAllowed': [
+    ['作用', '四带二的两张带牌是否允许同点成对。开 ⇒ 可带一对；关 ⇒ 必须两张不同点单牌。'],
+    ['取值', '严格 true / false。默认 false（只允许不同点单牌）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '仅在「四带二」开放时有意义；开「四带二」本身不等于开本键。'],
+  ],
+  'game.paodekuai.airplaneWings': [
+    ['作用', '飞机带翅膀的翅膀口径 —— 翅膀与主三张的搭配方式。'],
+    ['取值', "'pairs' = 恰 n 个对子（默认）；'singles' = 恰 n 张不同点单牌；'both' = 先按对子解析、失败再按单牌解析。逐字填写（区分大小写），其它值会被拒绝。"],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '翅膀不能与三张同点、翅膀之间点数互不相同；飞机带单与飞机带对是不同形状，不能互压；both 模式下按实际解析出的形状比较。'],
+  ],
+  'game.paodekuai.bombMultiplierEnabled': [
+    ['作用', '炸弹是否参与翻倍 —— 每打出一枚裸四张炸弹，结算倍数 ×2（多枚累乘）。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '只统计**裸四张**炸弹；四带二与三张同点不计；与关牌 / 春天叠乘后再由「倍数封顶」键夹住。'],
+  ],
+  'game.paodekuai.guanMultiplierEnabled': [
+    ['作用', '关牌是否 ×2 —— 结算时只要有输家一张牌都没出（playedCount = 0）即成立。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '春天成立时关牌必然成立 ⇒ 两项会叠乘（春天合计 ×4）；不想叠乘可关本键或春天键之一。'],
+  ],
+  'game.paodekuai.springMultiplierEnabled': [
+    ['作用', '春天是否 ×2 —— 3/4 人局里所有输家一张牌都没出。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '2 人局不适用；春天成立时关牌必然成立，两项叠乘（合计 ×4）。'],
+  ],
+  'game.paodekuai.multiplierCap': [
+    ['作用', '结算倍数封顶 —— 炸弹 × 关牌 × 春天叠乘后的总倍数上限。'],
+    ['取值', '整数 1 ≤ n ≤ 1024。默认 64。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '封顶只夹结算倍数，不影响能否出炸弹；调小可收紧爆分。'],
+  ],
+  'game.paodekuai.baobenEnabled': [
+    ['作用', '保本 —— 输家中「手牌只剩 1 张」的人本局付 0。'],
+    ['取值', '严格 true / false。默认 true（开）。'],
+    ['生效', '保存后 room-service 秒级生效（推送正常时）；最晚 ≤60s。规则在**开局时**写入本局快照 ⇒ 只影响之后的新开局，进行中的对局不受影响。'],
+    ['注意', '所有输家都保本时赢家本局所得为 0（对局记录照写）；与倍数无关（直接免单）。'],
+  ],
+  'game.paodekuai.twoPlayerEnabled': [
+    ['作用', '跑得快 2 人场开关 —— 关 ⇒ 2 人匹配 / 新建房被拒（12012）；进行中的对局不受影响。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。玩家端的人数选项来自 /api/config。'],
+    ['注意', '与 4 人闸（game.paodekuai.nonThreePlayerEnabled）各自独立；3 人场恒开。关闸时在队的 2 人票会被判失败（12007），不会静默留队。'],
+  ],
+  'game.paodekuai.nonThreePlayerEnabled': [
+    ['作用', '跑得快 4 人场开关（键名为历史命名，2026-10-25 起只影响 4 人）—— 关 ⇒ 4 人匹配 / 新建房被拒（12012）。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。'],
+    ['注意', '2 人场用 game.paodekuai.twoPlayerEnabled；3 人场恒开。客户端已支持 4 人牌桌。'],
+  ],
   'game.paodekuai.freeRoomEnabled': [
     ['作用', '跑得快免费场开关。开 ⇒ 大厅的跑得快玩法显示「免费场」、可匹配；关 ⇒ 该场次隐藏、匹配被拒（12010）。'],
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 true（保守灰度：先开放免费场）。'],
@@ -527,16 +620,58 @@ const CONFIG_NOTES = {
     ['注意', '同时影响跑得快机器人水位（该玩法最高档 × 本值）；与斗地主门槛独立。'],
   ],
   'game.paodekuai.risk.winRateThreshold': [
-    ['作用', '跑得快胜率阈值 —— 跑得快对局局数超过「扫描最少局数」且胜率严格高于本值的账号进 / 更新风控审核队列。'],
+    ['作用', '跑得快胜率阈值（回退键）—— 仅当对应人数键 `player2/3/4.winRateThreshold` 缺失时生效；新键优先。'],
     ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数（如 0.8）。默认 0.8。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。当前一轮扫描按旧值跑完，下一轮起用新值。'],
-    ['注意', '与斗地主阈值各自独立；两个玩法同时命中只记一项胜率分（25），不叠加；跑得快没有对局记录时不参与判定。自动限流仍看 50 分（胜率一项 + 设备一项才到 50）。2/4 人局胜率期望与 3 人不同，可按实际调整。'],
+    ['注意', '与斗地主阈值各自独立；两个玩法同时命中只记一项胜率分（25），不叠加；跑得快没有对局记录时不参与判定。'],
   ],
   'game.paodekuai.risk.minGames': [
-    ['作用', '跑得快扫描最少局数 —— 跑得快对局局数必须「大于」本值才参与胜率命中判定（防小样本误判）。'],
+    ['作用', '跑得快扫描最少局数（回退键）—— 仅当对应人数键 `player2/3/4.minGames` 缺失时生效；新键优先。'],
     ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
     ['生效', '保存后 user-service 秒级生效（推送正常时）；最晚 ≤60s。下一轮扫描起用新值。'],
-    ['注意', '判定是严格「大于」（恰 100 局不算）；与跑得快胜率阈值同属一条命中项，两个条件同时满足才记分；与斗地主最少局数独立。'],
+    ['注意', '判定是严格「大于」（恰 100 局不算）；与跑得快胜率阈值同属一条命中项，两个条件同时满足才记分。'],
+  ],
+  'game.paodekuai.risk.player2.winRateThreshold': [
+    ['作用', '2 人跑得快胜率阈值：2 人桶对局数超过「2 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '2 人基准胜率约 50%，0.8 对 2 人偏松/偏严需按实际人口调；样本按人数独立，不与 3/4 人混算。'],
+  ],
+  'game.paodekuai.risk.player2.minGames': [
+    ['作用', '2 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 2 人、不含机器人座的整局；与 3/4 人桶独立。'],
+  ],
+  'game.paodekuai.risk.player3.winRateThreshold': [
+    ['作用', '3 人跑得快胜率阈值：3 人桶对局数超过「3 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '3 人基准胜率约 33%；样本按人数独立；含机器人座的整局不计入。'],
+  ],
+  'game.paodekuai.risk.player3.minGames': [
+    ['作用', '3 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 3 人、不含机器人座的整局；与 2/4 人桶独立。'],
+  ],
+  'game.paodekuai.risk.player4.winRateThreshold': [
+    ['作用', '4 人跑得快胜率阈值：4 人桶对局数超过「4 人扫描最少局数」且胜率严格高于本值的账号进审核队列。'],
+    ['取值', '数字，0.5 ≤ n ≤ 1.0，最多两位小数。默认 0.8。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '4 人基准胜率约 25%，0.8 对 4 人很严/需按实际下调；样本按人数独立；含机器人座的整局不计入。'],
+  ],
+  'game.paodekuai.risk.player4.minGames': [
+    ['作用', '4 人桶扫描最少局数（严格「大于」才参与判定）。'],
+    ['取值', '整数，1 ≤ n ≤ 100000。默认 100。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效（最晚 ≤60s）。'],
+    ['注意', '只统计 4 人、不含机器人座的整局；与 2/3 人桶独立。'],
+  ],
+  'game.paodekuai.risk.autoThrottleScore': [
+    ['作用', 'PDK 单玩法自动限流阈值：25 = PDK 胜率单命中（25 分）即自动限流；26–49 与 50 同效（PDK 单命中不自动限流，PDK+设备 50 分仍限流）。'],
+    ['取值', '整数，25 ≤ n ≤ 50。默认 50。'],
+    ['生效', '保存后 user-service 下一轮扫描起生效；已有 auto 旗的续期/解除不受此键阻止。'],
+    ['注意', '只影响“PDK 胜率命中”的自动限流线；设备/platform 行仍走账号级 50。dismissed 同分不复活。'],
   ],
   'currency.reliefThresholdCoins': [
     ['作用', '每日广告救助的平台级绝对门槛：余额低于该金币数才能领取。'],
@@ -553,7 +688,7 @@ const CONFIG_NOTES = {
  * 归属原则：跟「怎么组局/打什么牌/对手是谁」绑定的归玩法；跟「钱/安全/留存/商业化」
  * 绑定的归通用设置。2026-10-24 配置平行化后，场次/好友房/补位/金币经济/风控胜率
  * 均已按玩法分域（斗地主、跑得快各读各的键）；旧平台键只读、不出现在本表。
- * 2026-10-25：跑得快风控两键（`game.paodekuai.risk.*`）进入 pdk 域「风控检测」页签。
+ * 2026-10-26：跑得快按人数/自动限流 7 键进入 pdk 域「风控检测」页签（共 9 键；旧两键为回退）。
  * `record.retentionDays` / `cleanupIntervalMs` 同时作用于两玩法记录表，保留在通用设置。
  * 快照中存在但本表未收录的键 ⇒ 自动落入「未分组」桶（见 ungroupedKeys）。
  */
@@ -660,7 +795,10 @@ const CONFIG_IA = [
           {
             id: 'switches',
             name: '开关',
-            keys: ['game.paodekuai.nonThreePlayerEnabled'],
+            keys: [
+              'game.paodekuai.twoPlayerEnabled',
+              'game.paodekuai.nonThreePlayerEnabled',
+            ],
           },
           {
             id: 'rooms',
@@ -682,6 +820,13 @@ const CONFIG_IA = [
             id: 'risk',
             name: '风控检测',
             keys: [
+              'game.paodekuai.risk.player2.winRateThreshold',
+              'game.paodekuai.risk.player2.minGames',
+              'game.paodekuai.risk.player3.winRateThreshold',
+              'game.paodekuai.risk.player3.minGames',
+              'game.paodekuai.risk.player4.winRateThreshold',
+              'game.paodekuai.risk.player4.minGames',
+              'game.paodekuai.risk.autoThrottleScore',
               'game.paodekuai.risk.winRateThreshold',
               'game.paodekuai.risk.minGames',
             ],
@@ -773,6 +918,17 @@ const CONFIG_IA = [
         ],
       },
       {
+        id: 'agent',
+        name: '代理',
+        tabs: [
+          {
+            id: 'switches',
+            name: '开关',
+            keys: ['agent.inviteEnabled'],
+          },
+        ],
+      },
+      {
         id: 'dataAds',
         name: '广告',
         tabs: [
@@ -850,7 +1006,7 @@ const IA_KEY_SET = new Set(
 );
 /** 快照表外键的虚拟域（计数 0 时不渲染）。 */
 const UNGROUPED_DOMAIN_ID = '__ungrouped';
-const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '' });
+const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDomainId: null });
 
 /**
  * 左树配置叶 id ⇄ IA 域 id（HTML 静态树用固定叶 id；IA 表保留源生域 id）。
@@ -868,7 +1024,7 @@ const CFG_NAV = [
 ];
 
 /**
- * v2.1 简单键控件定稿表（71 键；其余 5 键由结构化编辑器承接，见 STRUCT_KEYS）。
+ * v2.1 简单键控件定稿表（72 键；其余 5 键由结构化编辑器承接，见 STRUCT_KEYS）。
  * type：'bool' 开关 | 'number' 数字行 | 'text' 文本行；suffix 仅当 CONFIG_NOTES
  * 「取值」原文有量词时出现（无量词不给后缀，范围由详情行展示，勿臆造）。
  * label = 行卡片中文短名（效果图评审基线，改名须同步改方案与探针）。
@@ -888,7 +1044,7 @@ const CONFIG_CONTROLS = {
   'game.doudizhu.cardCounterPricePerHourCoins': { label: '记牌器包时价', type: 'number', suffix: '金币/小时' },
   'game.doudizhu.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
   'game.doudizhu.risk.minGames': { label: '扫描最少局数', type: 'number' },
-  // 跑得快（22 简单键；档位表是结构化键）
+  // 跑得快（23 简单键；档位表是结构化键）
   'game.paodekuai.freeRoomEnabled': { label: '免费场', type: 'bool' },
   'game.paodekuai.goldRoomEnabled': { label: '金币场', type: 'bool' },
   'game.paodekuai.friendRoomEnabled': { label: '好友房', type: 'bool' },
@@ -896,10 +1052,18 @@ const CONFIG_CONTROLS = {
   'game.paodekuai.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
   'game.paodekuai.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
   'game.paodekuai.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
-  'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值', type: 'number', step: 0.01 },
-  'game.paodekuai.risk.minGames': { label: '扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.winRateThreshold': { label: '胜率阈值（回退）', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.minGames': { label: '扫描最少局数（回退）', type: 'number' },
+  'game.paodekuai.risk.player2.winRateThreshold': { label: '2 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player2.minGames': { label: '2 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.player3.winRateThreshold': { label: '3 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player3.minGames': { label: '3 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.player4.winRateThreshold': { label: '4 人胜率阈值', type: 'number', step: 0.01 },
+  'game.paodekuai.risk.player4.minGames': { label: '4 人扫描最少局数', type: 'number' },
+  'game.paodekuai.risk.autoThrottleScore': { label: 'PDK 自动限流阈值', type: 'number', suffix: '分' },
   'game.paodekuai.enabled': { label: '跑得快总开关', type: 'bool' },
-  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 2/4 人', type: 'bool' },
+  'game.paodekuai.twoPlayerEnabled': { label: '开放 2 人', type: 'bool' },
+  'game.paodekuai.nonThreePlayerEnabled': { label: '开放 4 人', type: 'bool' },
   'game.paodekuai.bareTrioEnabled': { label: '裸三张', type: 'bool' },
   'game.paodekuai.trioWithPairEnabled': { label: '三带二', type: 'bool' },
   'game.paodekuai.bareAirplaneEnabled': { label: '裸飞机', type: 'bool' },
@@ -922,6 +1086,7 @@ const CONFIG_CONTROLS = {
   'currency.reliefEnabled': { label: '每日救助开关', type: 'bool' },
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
   'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
+  'agent.inviteEnabled': { label: '注册邀请码入口', type: 'bool' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },
@@ -1038,13 +1203,15 @@ const VIEWS = {
     roles: ['super_admin', 'finance', 'operator', 'viewer'],
   },
   accounts: { el: 'accounts-view', nav: 'nav-accounts-btn', roles: ['super_admin'] },
+  /** 代理分润（2026-10-26）：读面 super_admin|finance（网关 P-ag1）；写控件另以 canAgentWrite 门面。 */
+  agents: { el: 'agents-view', nav: 'nav-agents-btn', roles: ['super_admin', 'finance'] },
 };
-const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet', 'finance', 'payOrders', 'payRefunds', 'payWithdrawals', 'risk', 'audit', 'accounts'];
+const VIEW_ORDER = ['config', 'payChannel', 'notifyChannel', 'players', 'wallet', 'finance', 'payOrders', 'payRefunds', 'payWithdrawals', 'risk', 'audit', 'accounts', 'agents'];
 
 /** 财务视图状态（③ T10）。 */
 const fin = {
   /** 已生效的过滤（epoch ms 边界缺省 = 不传该参数）。 */
-  filter: { source: '', actor: '', ownerId: '', from: undefined, to: undefined },
+  filter: { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined },
   /** 已累计的流水行（新 → 旧；keyset 追加）。 */
   rows: [],
   nextCursor: null,
@@ -1079,13 +1246,94 @@ const playersState = {
   balances: new Map(), recharges: new Map(), loading: false, loaded: false,
 };
 
+/**
+ * 代理管理页状态（2026-10-26 代理分润）：列表/树/设置/结算/调账/对账/审计。
+ * - `page` 是 UI 1-based；调服务端时 -1（admin 代理 API 的 page 为 0-based 偏移）。
+ * - `byId` = 扁平化树（上级名称回显 + 上级下拉）。
+ * - 结算/调账/审计与列表同页不同区块，各自懒加载、互不阻塞。
+ */
+const agentsState = {
+  filter: { q: '', status: '' },
+  page: 1,
+  pageSize: 20,
+  rows: [],
+  total: 0,
+  tree: [],
+  byId: new Map(),
+  settings: null,
+  detailId: null,
+  detail: null,
+  bindings: [],
+  settlements: {
+    // 默认只看待处理（r3 I1：积压时「全部」会把 pending 挤出前 50 条）；
+    // 分页保证任何一条都可到达。
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  },
+  adjustments: { status: '', page: 0, pageSize: 20, rows: [], loading: false, loaded: false, done: true },
+  recon: { loading: false, summary: null, armed: false },
+  audit: { page: 0, rows: [], loading: false, loaded: false },
+  /** 页签状态（2026-10-26 代理工作台）：默认列表；epoch 登出递增，用于丢弃迟到响应。 */
+  tab: 'list',
+  epoch: 0,
+  roleApplied: false,
+  list: { loaded: false, loading: false },
+  treeReq: { loaded: false, loading: false },
+  settingsReq: { loaded: false, loading: false },
+};
+
+/** 代理工作台页签（左→右；id 同时用于状态与静态闸断言）。 */
+const AGENT_TABS = [
+  { id: 'list', btn: 'agent-tab-list', panel: 'agent-panel-list' },
+  { id: 'settlements', btn: 'agent-tab-settlements', panel: 'agent-panel-settlements' },
+  { id: 'adjustments', btn: 'agent-tab-adjustments', panel: 'agent-panel-adjustments' },
+  { id: 'recon', btn: 'agent-tab-recon', panel: 'agent-panel-recon' },
+  { id: 'audit', btn: 'agent-tab-audit', panel: 'agent-panel-audit' },
+  { id: 'settings', btn: 'agent-tab-settings', panel: 'agent-panel-settings' },
+];
+
+/** 页签 UI（active + 面板显隐）；数据加载归 loadAgents。 */
+function applyAgentTabUI(tab) {
+  for (const t of AGENT_TABS) {
+    const btn = $(t.btn);
+    const panel = $(t.panel);
+    if (btn) btn.classList.toggle('active', t.id === tab);
+    if (panel) panel.hidden = t.id !== tab;
+  }
+}
+
+/** 切页签：只切 UI；设置页签每次激活重建邀请码行（表单不回填，防丢未保存编辑）。 */
+function switchAgentTab(tab) {
+  agentsState.tab = tab;
+  applyAgentTabUI(tab);
+  if (tab === 'settings') renderAgentInviteRow();
+}
+
 const riskState = {
-  filter: { status: '' },
+  filter: { status: '', gameType: '' },
   rows: [],
   nextCursor: null,
   loading: false,
   loaded: false,
 };
+
+/** 审核行玩法标签（wire 原值 → 中文；未知值原样显示）。 */
+const RISK_GAME_TYPE_LABELS = {
+  doudizhu: '斗地主',
+  paodekuai: '跑得快',
+  mixed: '混合',
+  platform: '平台',
+};
+function riskGameTypeLabel(value) {
+  return RISK_GAME_TYPE_LABELS[value] ?? value ?? '—';
+}
 
 /** 风控处置动作的中文名（按钮 / 提示文案共用；键 = wire 原值，5 值 = 管理面合法集）。 */
 const RISK_ACTION_LABELS = {
@@ -1163,6 +1411,13 @@ const canView = (view) => VIEWS[view]?.roles.includes(roleOf()) ?? false;
 const canWalletWrite = () => roleOf() === 'super_admin' || roleOf() === 'finance';
 /** 支付写面门面：super_admin | finance（policy P-p5..P-p7；退款审 / 提现审 / 登记打款）。 */
 const canPayWrite = () => roleOf() === 'super_admin' || roleOf() === 'finance';
+/** 代理写面门面：super_admin（网关 P-ag2..P-ag4；建代理/改比例/改绑/设置/调账发起与复核）。 */
+const canAgentWrite = () => roleOf() === 'super_admin';
+/** 代理结算动作门面：super_admin | finance（P-ag3；打款/驳回）。 */
+const canAgentSettle = () => roleOf() === 'super_admin' || roleOf() === 'finance';
+/** 配置键写面门面：super_admin 全量；operator 除 agent.*（网关 P-ag0 字面路由）外可写。 */
+const canWriteConfigKey = (key) =>
+  roleOf() === 'super_admin' || (roleOf() === 'operator' && !key.startsWith('agent.'));
 
 /** 顶栏状态条（登录错误 / 保存反馈共用）。kind ∈ info|ok|warn|err。 */
 function showMsg(text, kind = 'info') {
@@ -1248,10 +1503,13 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量九十二键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量一百零一键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
+  const epoch = agentsState.epoch;
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
+  // 登出后迟到的 200 不得回填快照（epoch 变化或会话已失效 ⇒ 丢弃）。
+  if (!sessionStorage.getItem(TOKEN_KEY) || !agentsResponseFresh(epoch)) return;
   if (status === 0) return showMsg('无法连接服务端', 'err');
   if (status !== 200 || !body?.data?.config) {
     return showMsg(`加载失败（HTTP ${status}）`, 'err');
@@ -1259,6 +1517,7 @@ async function loadAll() {
   currentConfig = body.data.config;
   updateCfgNav();
   if (activeView === 'config') renderConfigRows({ preserve: true });
+  if (activeView === 'agents' && agentsState.tab === 'settings') renderAgentInviteRow();
 }
 
 /* ── v2.1 配置中心：左树计数/域切换 + 整页内联设置行（无中列、无独立编辑器）──── */
@@ -1330,10 +1589,16 @@ function normalizeCfgDomain() {
       domainSnapshotCount(IA_DOMAINS.find((d) => d.id === m.domain)) > 0,
   );
   cfgUI.domainId = first ? first.domain : UNGROUPED_DOMAIN_ID;
+  cfgUI.tabId = null;
+  cfgUI.tabDomainId = null;
 }
 
 /** 点左树配置叶：切域（已在 config 视图只重渲染，避免重复懒加载与状态复位）。 */
 function openCfgDomain(domainId) {
+  if (domainId !== cfgUI.domainId) {
+    cfgUI.tabId = null;
+    cfgUI.tabDomainId = null;
+  }
   cfgUI.domainId = domainId;
   cfgUI.query = '';
   $('settings-search').value = '';
@@ -1360,7 +1625,7 @@ function renderSettings(view = activeView) {
   else $('ad-channel-view').hidden = true;
 }
 
-/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则按当前域 tabs 顺序出分区标题。 */
+/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则当前域（多页签域出页签条 + 常驻面板）。 */
 function renderConfigRows({ preserve = false } = {}) {
   const host = $('settings-rows');
   const scrollEl = $('settings-host');
@@ -1371,47 +1636,33 @@ function renderConfigRows({ preserve = false } = {}) {
 
   host.textContent = '';
   const q = cfgUI.query.trim().toLowerCase();
-  let sections;
-  let headerDomain = null;
+  let rendered = 0;
+  let multiTab = false;
   if (q) {
     const keys = snapshotKeys().filter(
       (k) =>
         !LEGACY_KEY_SET.has(k) &&
         (k.toLowerCase().includes(q) || notesHaystack(k).includes(q)),
     );
-    sections = [{ name: `搜索结果（${keys.length}）`, keys }];
+    if (keys.length > 0) {
+      const title = document.createElement('h3');
+      title.className = 'settings-section';
+      title.textContent = `搜索结果（${keys.length}）`;
+      host.append(title);
+      for (const key of keys) {
+        host.append(buildKeyCard(key));
+        rendered += 1;
+      }
+    }
   } else {
     normalizeCfgDomain();
     const domain = domainById(cfgUI.domainId);
-    headerDomain = domain;
-    sections = domain
-      ? domain.tabs
-          .map((t) => ({
-            name: t.name,
-            keys: t.keys.filter((k) => k in currentConfig),
-          }))
-          .filter((s) => s.keys.length > 0)
-      : [];
-  }
-
-  let rendered = 0;
-  // 玩法域顶部开关卡（搜索态不渲染；搜索态里该键作为普通布尔行走 buildKeyCard）。
-  for (const key of headerDomain?.headerKeys ?? []) {
-    host.append(buildGameHeader(headerDomain, key));
-    rendered += 1;
-  }
-  for (const sec of sections) {
-    if (sec.keys.length === 0) continue;
-    const title = document.createElement('h3');
-    title.className = 'settings-section';
-    title.textContent = sec.name;
-    host.append(title);
-    for (const key of sec.keys) {
-      host.append(buildKeyCard(key));
-      rendered += 1;
+    if (domain) {
+      multiTab = (domain.tabs ?? []).length > 1;
+      rendered = renderCfgDomain(host, domain);
     }
   }
-  if (rendered === 0) {
+  if (rendered === 0 && !multiTab) {
     const empty = document.createElement('p');
     empty.className = 'settings-empty';
     empty.textContent = q ? '没有匹配的配置键' : '（暂无可展示的配置键）';
@@ -1425,6 +1676,91 @@ function renderConfigRows({ preserve = false } = {}) {
     const card = host.querySelector(`[data-key="${cssEscape(focusedKey)}"]`);
     card?.querySelector('input, textarea, select')?.focus();
   }
+}
+
+/** 非搜索域渲染：header 开关键卡 →（多页签）页签条 + 全部面板 /（单页签）分区标题 + 键。 */
+function renderCfgDomain(host, domain) {
+  let rendered = 0;
+  // 玩法域顶部开关卡：域级开关，永远在页签条之前。
+  for (const key of domain.headerKeys ?? []) {
+    host.append(buildGameHeader(domain, key));
+    rendered += 1;
+  }
+  const tabs = domain.tabs ?? [];
+  if (tabs.length > 1) {
+    const active = resolveCfgTab(domain, tabs);
+    host.append(buildConfigTabStrip(tabs));
+    for (const t of tabs) {
+      const keys = t.keys.filter((k) => k in currentConfig);
+      const panel = el('div', 'cfg-tab-panel');
+      panel.dataset.tab = t.id;
+      panel.hidden = t.id !== active?.id;
+      if (keys.length === 0) {
+        panel.append(el('p', 'settings-empty cfg-tab-empty', '本页签暂无可展示的键'));
+      } else {
+        for (const key of keys) panel.append(buildKeyCard(key));
+      }
+      host.append(panel);
+    }
+    // 多页签域不做全局空态（每个面板自判）；rendered 只含 header 键，调用方在 multiTab 下忽略。
+    return rendered;
+  }
+  for (const t of tabs) {
+    const keys = t.keys.filter((k) => k in currentConfig);
+    if (keys.length === 0) continue;
+    host.append(el('h3', 'settings-section', t.name));
+    for (const key of keys) {
+      host.append(buildKeyCard(key));
+      rendered += 1;
+    }
+  }
+  return rendered;
+}
+
+/** 当前页签解析：tabId 必须与 tabDomainId 配对（ddz/pdk 有同名页签）。 */
+function resolveCfgTab(domain, tabs) {
+  const stored =
+    cfgUI.tabDomainId === domain.id ? tabs.find((t) => t.id === cfgUI.tabId) : null;
+  const active =
+    stored ??
+    tabs.find((t) => t.keys.some((k) => k in currentConfig)) ??
+    tabs[0] ??
+    null;
+  cfgUI.tabId = active?.id ?? null;
+  cfgUI.tabDomainId = active ? domain.id : null;
+  return active;
+}
+
+/** 页签条：点击只切 UI（DOM 保留），不重建设置行。 */
+function buildConfigTabStrip(tabs) {
+  const strip = el('div', 'tabs cfg-tabs');
+  for (const t of tabs) {
+    const on = t.id === cfgUI.tabId;
+    const b = btn(t.name, `tab-btn${on ? ' active' : ''}`);
+    b.dataset.tab = t.id;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      if (t.id === cfgUI.tabId) return;
+      applyCfgTabUI(t.id);
+      $('settings-host').scrollTop = 0;
+    });
+    strip.append(b);
+  }
+  return strip;
+}
+
+/** 页签切换：active 高亮 + 面板显隐（全部面板常驻 DOM）。 */
+function applyCfgTabUI(tabId) {
+  const host = $('settings-rows');
+  for (const b of host.querySelectorAll('.cfg-tabs .tab-btn')) {
+    const on = b.dataset.tab === tabId;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  for (const p of host.querySelectorAll('.cfg-tab-panel')) {
+    p.hidden = p.dataset.tab !== tabId;
+  }
+  cfgUI.tabId = tabId;
 }
 
 /**
@@ -1475,7 +1811,7 @@ function buildEffectAndDetail(card, key) {
   const detail = el('div', 'row-detail');
   const notes = Object.hasOwn(CONFIG_NOTES, key) ? CONFIG_NOTES[key] : null;
   if (!notes) {
-    effect.textContent = '（IA 表未收录的键：按快照原值进行 JSON 编辑；合法性由服务端校验。）';
+    effect.textContent = '（暂无该键的说明文案：按快照原值以 JSON 编辑，保存时由服务端校验合法性。）';
     return { effect, detail };
   }
   effect.textContent = `${notes[0][1]} `;
@@ -1568,6 +1904,7 @@ function buildGameHeader(domain, key) {
 /** 47 简单键行：标题/作用在左、控件在右、脏状态出保存/还原；草稿跨重渲染保留。 */
 function buildSimpleRow(key) {
   const ctrl = CONFIG_CONTROLS[key];
+  const writable = canWriteConfigKey(key);
   const snap = currentConfig[key]?.value;
   const card = el('div', 'row-card');
   card.dataset.key = key;
@@ -1602,6 +1939,7 @@ function buildSimpleRow(key) {
       val.textContent = input.checked ? '已启用（true）' : '已停用（false）';
     };
     input.checked = Boolean(drafts.has(key) ? drafts.get(key) : snap);
+    input.disabled = !writable;
     sync();
     input.addEventListener('change', () => onInput(input.checked));
     label.append(input, track, val);
@@ -1618,6 +1956,7 @@ function buildSimpleRow(key) {
     input.className = 'num-input';
     input.step = ctrl.step ?? 1;
     input.value = String(drafts.has(key) ? drafts.get(key) : snap ?? '');
+    input.disabled = !writable;
     wrap.append(input);
     if (ctrl.suffix) wrap.append(el('span', 'num-suffix', ctrl.suffix));
     input.addEventListener('input', () => onInput(Number(input.value)));
@@ -1636,6 +1975,7 @@ function buildSimpleRow(key) {
     input.className = 'text-input';
     input.spellcheck = false;
     input.value = String(drafts.has(key) ? drafts.get(key) : snap ?? '');
+    input.disabled = !writable;
     input.addEventListener('input', () => onInput(input.value));
     ctl.append(input);
     read = () => input.value;
@@ -1665,6 +2005,7 @@ function buildSimpleRow(key) {
   });
   saveBtn.addEventListener('click', () => saveRow(key, card, read));
 
+  if (!writable) actions.hidden = true;
   card.append(main, ctl, actions);
   return card;
 }
@@ -2154,6 +2495,7 @@ function showLoginView() {
   resetRisk();
   resetAudit();
   resetAccounts();
+  resetAgents();
   closeModal(null);
   activeView = 'config';
   $('login-username').value = '';
@@ -2218,6 +2560,11 @@ function switchView(view) {
   if (view === 'risk' && !riskState.loaded) loadRiskQueue(true);
   if (view === 'audit') loadAuditTab(audit.tab);
   if (view === 'accounts' && !accState.loaded) loadAccounts();
+  if (view === 'agents') {
+    applyAgentRole();
+    switchAgentTab(agentsState.tab);
+    loadAgents();
+  }
 }
 
 // ─── 时间范围预设与过滤（③ T10；财务视图与审计「资金操作」页签共用）──────────────
@@ -2307,6 +2654,7 @@ async function showOwnerIdentity(userId, elId) {
 function opsQuery(filter, cursor, limit) {
   const p = new URLSearchParams();
   if (filter.source) p.set('source', filter.source);
+  if (filter.gameType) p.set('gameType', filter.gameType);
   if (filter.actor) p.set('actor', filter.actor);
   if (filter.ownerId) p.set('ownerId', filter.ownerId);
   if (filter.from !== undefined) p.set('from', String(filter.from));
@@ -2527,6 +2875,7 @@ async function financeSearch() {
   const bounds = rangeBounds($('fin-range').value, $('fin-from'), $('fin-to'));
   fin.filter = {
     source: $('fin-source').value,
+    gameType: $('fin-game-type').value,
     actor: $('fin-actor').value.trim(),
     ownerId: owner ?? '',
     from: bounds.from,
@@ -2540,6 +2889,7 @@ async function financeSearch() {
 /** 过滤控件复位（不含数据面；登出与「重置」共用）。 */
 function resetFinControls() {
   $('fin-source').value = '';
+  $('fin-game-type').value = '';
   $('fin-actor').value = '';
   $('fin-owner').value = '';
   $('fin-owner-info').textContent = '';
@@ -2590,13 +2940,21 @@ function textCell(value, { num = false } = {}) {
   return td;
 }
 
-/** 流水行（财务视图：11 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
+/** A2：玩法中文标签（null/undefined = 未标注/非游戏流水）。 */
+function gameLabelText(gameType) {
+  if (gameType === 'doudizhu') return '斗地主';
+  if (gameType === 'paodekuai') return '跑得快';
+  return '—';
+}
+
+/** 流水行（财务视图：12 列，末列 = 操作）行内「冲正」仅 admin_adjust 且未冲正且角色可写时显示。 */
 function buildFinFlowRow(row) {
   const tr = document.createElement('tr');
   tr.append(
     textCell(row.flowId),
     timeCell(row.createdAt),
     textCell(row.source),
+    textCell(gameLabelText(row.gameType)),
     textCell(row.actor),
     textCell(row.ownerId),
     textCell(row.nickname),
@@ -2640,7 +2998,7 @@ async function toggleFinDetail(tr, row) {
   const detail = document.createElement('tr');
   detail.className = 'detail-row';
   const td = document.createElement('td');
-  td.colSpan = 11;
+  td.colSpan = 12;
   td.textContent = '详情加载中…';
   detail.append(td);
   tr.after(detail);
@@ -2669,8 +3027,8 @@ function renderFinDetail(td, rows) {
   const info = document.createElement('p');
   info.className = 'hint';
   info.textContent =
-    `op #${first.opId} · actionId=${first.actionId} · refId=${first.refId ?? '—'} · ` +
-    `traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
+    `op #${first.opId} · actionId=${first.actionId} · 玩法=${gameLabelText(first.gameType)} · ` +
+    `refId=${first.refId ?? '—'} · traceId=${first.traceId ?? '—'} · 原因=${first.reason ?? '—'}`;
   td.append(info);
   if (
     first.burnedResidue !== null &&
@@ -2772,8 +3130,8 @@ function renderFinSummary(data) {
   const hr = document.createElement('tr');
   const labels =
     fin.summaryGroupBy === 'day'
-      ? ['日期（北京）', '金额合计', '流水笔数']
-      : ['来源', '金额合计', '流水笔数'];
+      ? ['日期（北京）', '玩法', '金额合计', '流水笔数']
+      : ['来源', '玩法', '金额合计', '流水笔数'];
   for (const label of labels) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -2784,14 +3142,19 @@ function renderFinSummary(data) {
   if (rows.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 3;
+    td.colSpan = 4;
     td.textContent = '（无数据）';
     tr.append(td);
     body.append(tr);
   } else {
     for (const row of rows) {
       const tr = document.createElement('tr');
-      tr.append(textCell(row.k), textCell(row.delta, { num: true }), textCell(row.flowCount, { num: true }));
+      tr.append(
+        textCell(row.k),
+        textCell(gameLabelText(row.gameType)),
+        textCell(row.delta, { num: true }),
+        textCell(row.flowCount, { num: true }),
+      );
       body.append(tr);
     }
   }
@@ -2803,7 +3166,13 @@ function renderFinSummary(data) {
     burnLine.textContent = '';
   } else {
     const note = burn.unrecordedOps > 0 ? `（含 ${burn.unrecordedOps} 条历史未记录）` : '';
-    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}`;
+    const byGame = Array.isArray(data?.burnByGame) ? data.burnByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((b) => `${gameLabelText(b.gameType)} 残差 ${b.residue}/抽水 ${b.rake}`)
+          .join(' · ')}`
+      : '';
+    burnLine.textContent = `销毁：残差 ${burn.residue} · 抽水 ${burn.rake}${note}${detail}`;
   }
   const skips =
     data && typeof data.entryFeeSkips === 'object' && data.entryFeeSkips !== null ? data.entryFeeSkips : null;
@@ -2812,7 +3181,13 @@ function renderFinSummary(data) {
     skipLine.textContent = '';
   } else {
     // 恒显（照 burn 行先例；0/0/0 也是有效读数——「本周零漏收」是运维要看的信息）。
-    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}`;
+    const byGame = Array.isArray(data?.entryFeeSkipsByGame) ? data.entryFeeSkipsByGame : [];
+    const detail = byGame.length
+      ? `｜按玩法：${byGame
+          .map((s) => `${gameLabelText(s.gameType)} 笔数 ${s.cnt}/人数 ${s.players}/金额 ${s.amount}`)
+          .join(' · ')}`
+      : '';
+    skipLine.textContent = `台费漏收：笔数 ${skips.cnt} · 人数 ${skips.players} · 金额 ${skips.amount}${detail}`;
   }
   // 记牌器收费片：购买（收入；正）/ 使用（含 none = 未开通局次）。
   const purchases = Array.isArray(data?.cardCounterPurchases) ? data.cardCounterPurchases : null;
@@ -2860,19 +3235,40 @@ async function loadFinReconcile() {
   if (status === 0) return showMsg('无法连接服务端', 'err');
   if (status !== 200 || !body?.data) return showMsg(`加载对账状态失败（HTTP ${status}）`, 'err');
   const d = body.data;
+  // C2：`records` 是加性字段（旧服务没有 ⇒ 全部 '—'，不崩）。
+  const records = d.records;
   $('rec-last-attempt').textContent = fmtTime(d.lastAttemptAt);
   $('rec-last-success').textContent = fmtTime(d.lastSuccessAt);
-  $('rec-last-result').textContent = d.lastResult ? formatReconcileResult(d.lastResult) : '—';
+  $('rec-last-result').textContent = d.lastResult
+    ? formatReconcileResult(d.lastResult, records)
+    : records?.lastResult
+      ? `记录对账 ${formatRecordsReconcileResult(records.lastResult)}`
+      : '—';
   $('rec-last-error').textContent = d.lastError ?? '—';
+  $('rec-records-last-attempt').textContent = fmtTime(records?.lastAttemptAt);
+  $('rec-records-last-success').textContent = fmtTime(records?.lastSuccessAt);
+  $('rec-records-last-error').textContent = records?.lastError ?? '—';
   $('rec-running').hidden = !d.running;
   $('rec-run-btn').disabled = Boolean(d.running) || !canWalletWrite();
 }
 
 /** 一轮读数 → 单行文本（字段名 = `CurrencyReconcileRoundResult`）。 */
-function formatReconcileResult(r) {
-  return (
+function formatReconcileResult(r, records) {
+  const base =
     `账实不符 ${r.driftAccounts} · 缓存清理 ${r.cacheDriftDeleted} · 孤儿赠送 ${r.orphanSignupGrants}` +
-    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`
+    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`;
+  // C2：可选链 —— `records`（或其中的 lastResult）缺失 ⇒ 保持旧文本，旧服务不崩。
+  const recordsResult = records?.lastResult;
+  return recordsResult ? `${base} · 记录对账 ${formatRecordsReconcileResult(recordsResult)}` : base;
+}
+
+/** C2 记录对账一轮读数 → 单行文本；字段缺失按 0（`?? 0`，与后端全量 set 口径一致）。 */
+function formatRecordsReconcileResult(r) {
+  return (
+    `孤儿 ${r?.orphanOps ?? 0} · 缺失 ${r?.missingOps ?? 0} · 全NULL ${r?.nullNoOp ?? 0}` +
+    ` · 金额 ${r?.amountMismatch ?? 0} · 待定 ${r?.pending ?? 0} · 疑似NULL ${r?.nullMoneyDelta ?? 0}` +
+    ` · 台费疑似 ${r?.entryFeeSuspect ?? 0} · 台费未知 ${r?.entryFeeUnknown ?? 0}` +
+    ` · 台费孤儿 ${r?.entryFeeOrphanOps ?? 0} · truncated ${r?.truncated ? 1 : 0}`
   );
 }
 
@@ -2900,7 +3296,7 @@ function resetFinance() {
   fin.nextCursor = null;
   fin.loading = false;
   fin.loaded = false;
-  fin.filter = { source: '', actor: '', ownerId: '', from: undefined, to: undefined };
+  fin.filter = { source: '', gameType: '', actor: '', ownerId: '', from: undefined, to: undefined };
   fin.summaryGroupBy = 'source';
   resetFinControls();
   $('fin-flows-body').textContent = '';
@@ -2918,6 +3314,10 @@ function resetFinance() {
   $('rec-last-success').textContent = '—';
   $('rec-last-result').textContent = '—';
   $('rec-last-error').textContent = '—';
+  // C2：记录对账状态（加性字段）同款复位。
+  $('rec-records-last-attempt').textContent = '—';
+  $('rec-records-last-success').textContent = '—';
+  $('rec-records-last-error').textContent = '—';
   $('rec-running').hidden = true;
   $('rec-run-btn').disabled = false;
 }
@@ -3961,6 +4361,7 @@ function resetAdChannel() {
 function riskQuery(filter, cursor, limit) {
   const p = new URLSearchParams();
   if (filter.status) p.set('status', filter.status);
+  if (filter.gameType) p.set('gameType', filter.gameType);
   if (cursor !== null && cursor !== undefined) p.set('cursor', String(cursor));
   if (limit !== null && limit !== undefined) p.set('limit', String(limit));
   const qs = p.toString();
@@ -3978,7 +4379,16 @@ async function loadRiskQueue(reset) {
   riskState.loading = false;
   if (handleAuth(status)) return;
   if (status === 0) return showMsg('无法连接服务端', 'err');
-  if (status === 400) return showMsg(`查询失败：${body?.message ?? ''}`, 'err');
+  if (status === 400) {
+    const msg = body?.message ?? '';
+    if (riskState.filter.gameType) {
+      return showMsg(
+        `查询失败：${msg}（服务端可能尚未支持玩法筛选，请先升级 user-service）`,
+        'err',
+      );
+    }
+    return showMsg(`查询失败：${msg}`, 'err');
+  }
   if (status !== 200 || !Array.isArray(body?.data?.items)) {
     return showMsg(`加载审核队列失败（HTTP ${status}）`, 'err');
   }
@@ -3996,7 +4406,7 @@ async function loadRiskQueue(reset) {
   $('rk-empty').textContent = riskState.rows.length === 0 ? '（无条目）' : '';
 }
 
-/** 队列行（9 列；末列「详情 / 处置」展开行内面板 —— 规格 §2.10 行内「详情/动作」的合并形态）。 */
+/** 队列行（10 列；末列「详情 / 处置」展开行内面板 —— 规格 §2.10 行内「详情/动作」的合并形态）。 */
 function buildRiskRow(row) {
   const tr = document.createElement('tr');
   tr.append(
@@ -4004,6 +4414,7 @@ function buildRiskRow(row) {
     textCell(row.userId),
     textCell(row.score, { num: true }),
     textCell(row.status),
+    textCell(riskGameTypeLabel(row.gameType)),
     textCell(jsonText(row.reasons)),
     timeCell(row.createdAt),
     timeCell(row.updatedAt),
@@ -4030,7 +4441,7 @@ async function toggleRiskDetail(tr, row) {
   const detail = document.createElement('tr');
   detail.className = 'detail-row';
   const td = document.createElement('td');
-  td.colSpan = 9;
+  td.colSpan = 10;
   td.textContent = '详情加载中…';
   detail.append(td);
   tr.after(detail);
@@ -4089,6 +4500,22 @@ function renderRiskDetail(td, row, d) {
     `分玩法：斗地主 ${ddzGames} 局 / ${ddzWins} 胜 · 胜率 ${ddzRate}；` +
     `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}`;
   td.append(byGame);
+
+  // 跑得快分人数（2026-10-26）：旧 user-service 无 byPlayerCount 时按 0/— 渲染。
+  const pdkByCount = d.stats?.byGame?.paodekuai?.byPlayerCount;
+  const countPart = (n) => {
+    const g = pdkByCount?.[n]?.games ?? 0;
+    const w = pdkByCount?.[n]?.wins ?? 0;
+    const r =
+      typeof pdkByCount?.[n]?.winRate === 'number' && g > 0
+        ? pdkByCount[n].winRate.toFixed(3)
+        : '—';
+    return `${n} 人 ${g} 局 / ${w} 胜 · 胜率 ${r}`;
+  };
+  const byPlayerCount = document.createElement('p');
+  byPlayerCount.className = 'hint';
+  byPlayerCount.textContent = `跑得快分人数：${[2, 3, 4].map(countPart).join('；')}`;
+  td.append(byPlayerCount);
 
   const hits = document.createElement('p');
   hits.className = 'hint';
@@ -4374,8 +4801,9 @@ function resetRisk() {
   riskState.nextCursor = null;
   riskState.loading = false;
   riskState.loaded = false;
-  riskState.filter = { status: '' };
+  riskState.filter = { status: '', gameType: '' };
   $('rk-status').value = '';
+  $('rk-game-type').value = '';
   $('rk-body').textContent = '';
   $('rk-empty').textContent = '';
   $('rk-more-btn').hidden = true;
@@ -5013,6 +5441,7 @@ function wire() {
   $('nav-risk-btn').addEventListener('click', () => switchView('risk'));
   $('nav-audit-btn').addEventListener('click', () => switchView('audit'));
   $('nav-accounts-btn').addEventListener('click', () => switchView('accounts'));
+  $('nav-agents-btn').addEventListener('click', () => switchView('agents'));
 
   // 钱包调整：查询（① + ②；空输入不发请求 —— 与登录表单的 `if (!pw) return` 同式）。
   $('wallet-lookup-form').addEventListener('submit', (e) => {
@@ -5119,12 +5548,16 @@ function wire() {
 
   // ── 风控视图 ──
   $('rk-search-btn').addEventListener('click', () => {
-    riskState.filter = { status: $('rk-status').value };
+    riskState.filter = {
+      status: $('rk-status').value,
+      gameType: $('rk-game-type').value,
+    };
     loadRiskQueue(true);
   });
   $('rk-reset-btn').addEventListener('click', () => {
     $('rk-status').value = '';
-    riskState.filter = { status: '' };
+    $('rk-game-type').value = '';
+    riskState.filter = { status: '', gameType: '' };
     loadRiskQueue(true);
   });
   $('rk-more-btn').addEventListener('click', () => loadRiskQueue(false));
@@ -5238,6 +5671,9 @@ function wire() {
 
   // 玩家管理页
   wirePlayers();
+
+  // 代理管理页
+  wireAgents();
 
   // ── 通用弹窗 ──
   $('modal-form').addEventListener('submit', (e) => {
@@ -5393,8 +5829,16 @@ async function showPlayerDetail(row) {
 
   section('最近对局');
   box.append(simpleTable(
-    ['模式', '底分', '身份', '结果', '积分变化', '时间'],
-    gameRows.map((g) => [g.mode, g.baseScore, g.role, g.won ? '胜' : '负', g.scoreChange, fmtTime(g.endedAt)]),
+    ['玩法', '模式', '底分', '身份', '结果', '积分变化', '时间'],
+    gameRows.map((g) => [
+      gameLabelText(g.gameType),
+      g.mode,
+      g.baseScore,
+      g.role ?? '—',
+      g.won ? '胜' : '负',
+      g.scoreChange,
+      fmtTime(g.endedAt),
+    ]),
     '（无对局记录）',
   ));
 
@@ -5577,6 +6021,1343 @@ function wirePlayers() {
   $('pl-back-btn').addEventListener('click', () => {
     $('pl-detail').hidden = true;
   });
+}
+
+// ─── 代理管理页（2026-10-26 代理分润）──────────────────────────────────────
+//
+// 读面 super_admin|finance（网关 P-ag1）；写面 super_admin（P-ag2..P-ag4）；
+// 结算打款/驳回 finance 也可（P-ag3）。UI 只做门面 —— 真闸在网关 policy。
+// 全部 createElement/textContent（禁 HTML 串赋值）；page 在 UI 是 1-based，调服务端 -1。
+
+/** 比例（bp）→ UI 百分比文本。 */
+function ratePercentText(rateBp) {
+  const n = Number(rateBp);
+  return Number.isFinite(n) ? String(n / 100) : '—';
+}
+
+/** UI 百分比 → bp；非法返回 NaN（调用方提示）。 */
+function percentToBp(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+}
+
+/** micro → 金币文本（4 位小数去尾零；仅展示，不参与计算）。 */
+function microToCoinsText(micro) {
+  const n = Number(micro);
+  if (!Number.isFinite(n)) return '—';
+  const coins = n / 10000;
+  return Number.isInteger(coins) ? String(coins) : coins.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/** datetime-local 值（本机时区 YYYY-MM-DDTHH:mm）。 */
+function localDateTimeValue(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 代理树扁平化（父在前；去掉 children，附加 depth）。 */
+function flattenAgentTree(nodes, depth = 0, out = []) {
+  for (const node of nodes) {
+    const children = Array.isArray(node.children) ? node.children : [];
+    const copy = { ...node, depth };
+    delete copy.children;
+    out.push(copy);
+    flattenAgentTree(children, depth + 1, out);
+  }
+  return out;
+}
+
+/** 代理接口的统一错误提示（401 统一回登录）。 */
+function agentApiError(res, prefix) {
+  if (handleAuth(res.status)) return;
+  if (res.status === 0) return showMsg('无法连接服务端', 'err');
+  if (res.status === 403) return showMsg(`${prefix}：当前角色无权操作`, 'err');
+  if (res.status === 400 || res.status === 409) {
+    return showMsg(`${prefix}：${res.body?.message ?? ''}`, 'err');
+  }
+  return showMsg(`${prefix}（HTTP ${res.status}）`, 'err');
+}
+
+/** 写面门面：设置/新建/调账输入对 finance 只读隐藏（真闸在服务端）。 */
+function applyAgentRole() {
+  if (agentsState.roleApplied) return;
+  const write = canAgentWrite();
+  for (const id of [
+    'ag-settings-enabled',
+    'ag-settings-default-rate',
+    'ag-settings-min-yuan',
+    'ag-settings-coin-per-yuan',
+    'ag-settings-hold-days',
+    'ag-settings-admin-limit',
+    'ag-settings-adjust-op',
+    'ag-settings-adjust-day',
+  ]) {
+    $(id).disabled = !write;
+  }
+  $('ag-settings-save-btn').hidden = !write;
+  $('ag-create-btn').hidden = !write;
+  $('ag-create-panel').hidden = true;
+  for (const id of ['ag-adjust-agent', 'ag-adjust-delta', 'ag-adjust-reason']) $(id).disabled = !write;
+  $('ag-adjust-create-btn').hidden = !write;
+  agentsState.roleApplied = true;
+}
+
+/** 迟到响应守卫：epoch 变化或会话已失效 ⇒ 丢弃（不置 loaded、不渲染）。 */
+function agentsResponseFresh(epoch) {
+  return agentsState.epoch === epoch && Boolean(sessionStorage.getItem(TOKEN_KEY));
+}
+
+async function ensureAgentList() {
+  const flags = agentsState.list;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentList()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+async function ensureAgentTree() {
+  const flags = agentsState.treeReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentTree()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+async function ensureAgentSettings() {
+  const flags = agentsState.settingsReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentSettings()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+/** 配置快照请求去重（同 epoch 并发激活只发一次；跨会话不串）。 */
+let configSnapshotReq = null;
+
+/** 配置快照（邀请码行需要）：已载即用；否则 loadAll 后按是否真到手判定。 */
+async function ensureConfigSnapshot() {
+  if (Object.keys(currentConfig).length > 0) return true;
+  const epoch = agentsState.epoch;
+  if (configSnapshotReq && configSnapshotReq.epoch === epoch) return configSnapshotReq.promise;
+  const promise = (async () => {
+    await loadAll();
+    return agentsResponseFresh(epoch) && Object.keys(currentConfig).length > 0;
+  })();
+  configSnapshotReq = { epoch, promise };
+  try {
+    return await promise;
+  } finally {
+    if (configSnapshotReq?.promise === promise) configSnapshotReq = null;
+  }
+}
+
+/** 对账首次激活：种默认区间并跑一次（armed 只置一次）。 */
+function armAgentRecon() {
+  if (agentsState.recon.armed) return;
+  agentsState.recon.armed = true;
+  const now = Date.now();
+  $('ag-recon-from').value = localDateTimeValue(now - 7 * DAY_MS);
+  $('ag-recon-to').value = localDateTimeValue(now);
+  loadAgentReconciliation();
+}
+
+/** 进页/切页签：只拉当前页签的数据；各区块自行去重（loading/loaded）。 */
+async function loadAgents() {
+  const tab = agentsState.tab;
+  if (tab === 'list') {
+    await Promise.all([ensureAgentList(), ensureAgentTree()]);
+  } else if (tab === 'settings') {
+    await Promise.all([ensureAgentSettings(), ensureConfigSnapshot()]);
+    if (activeView === 'agents' && agentsState.tab === 'settings') renderAgentInviteRow();
+  } else if (tab === 'settlements') {
+    if (!agentsState.settlements.loaded && !agentsState.settlements.loading) {
+      await loadAgentSettlements();
+    }
+  } else if (tab === 'adjustments') {
+    if (!agentsState.adjustments.loaded && !agentsState.adjustments.loading) {
+      await loadAgentAdjustments();
+    }
+  } else if (tab === 'recon') {
+    armAgentRecon();
+  } else if (tab === 'audit') {
+    if (!agentsState.audit.loaded && !agentsState.audit.loading) await loadAgentAudit();
+  }
+}
+
+async function loadAgentList() {
+  const epoch = agentsState.epoch;
+  const p = new URLSearchParams();
+  if (agentsState.filter.q) p.set('q', agentsState.filter.q);
+  if (agentsState.filter.status) p.set('status', agentsState.filter.status);
+  p.set('page', String(agentsState.page - 1));
+  p.set('pageSize', String(agentsState.pageSize));
+  const { status, body } = await api(`/api/admin/agents?${p.toString()}`);
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
+  if (status === 0) {
+    showMsg('无法连接服务端', 'err');
+    return false;
+  }
+  if (status === 403) {
+    showMsg('当前角色无权查看代理', 'err');
+    return false;
+  }
+  if (status !== 200 || !Array.isArray(body?.data?.rows)) {
+    showMsg(`加载代理失败（HTTP ${status}）`, 'err');
+    return false;
+  }
+  agentsState.rows = body.data.rows;
+  agentsState.total = Number(body.data.total ?? 0);
+  const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+  if (agentsState.page > pages) {
+    agentsState.page = pages;
+    return loadAgentList();
+  }
+  renderAgents();
+  return true;
+}
+
+async function loadAgentTree() {
+  const epoch = agentsState.epoch;
+  const { status, body } = await api('/api/admin/agents/tree');
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    showMsg(`加载代理树失败（HTTP ${status}）`, 'err');
+    return false;
+  }
+  agentsState.tree = flattenAgentTree(body.data);
+  agentsState.byId = new Map(agentsState.tree.map((a) => [a.id, a]));
+  fillAgentCreateParent();
+  renderAgents();
+  return true;
+}
+
+function fillAgentCreateParent() {
+  const select = $('ag-create-parent');
+  const prev = select.value;
+  select.textContent = '';
+  const none = el('option', '', '（无上级）');
+  none.value = '';
+  select.append(none);
+  for (const agent of agentsState.tree) {
+    if (agent.status !== 'active') continue;
+    const opt = el('option', '', `${agent.depth ? '　'.repeat(agent.depth) : ''}${agent.name}（${agent.phone}）`);
+    opt.value = agent.id;
+    select.append(opt);
+  }
+  select.value = prev;
+}
+
+function renderAgents() {
+  const body = $('ag-body');
+  body.textContent = '';
+  for (const row of agentsState.rows) body.append(buildAgentRow(row));
+  $('ag-empty').textContent = agentsState.rows.length === 0 ? '（没有匹配的代理）' : '';
+  const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+  $('ag-page-info').textContent = `第 ${agentsState.page} / ${pages} 页 · 共 ${agentsState.total} 个代理`;
+  $('ag-prev-btn').disabled = agentsState.page <= 1;
+  $('ag-next-btn').disabled = agentsState.page >= pages;
+}
+
+function buildAgentRow(row) {
+  const tr = document.createElement('tr');
+  const parent = row.parentId ? agentsState.byId.get(row.parentId) : null;
+  const ops = document.createElement('td');
+  const detailBtn = btn('详情', 'btn mini');
+  detailBtn.addEventListener('click', () => openAgentDetail(row.id));
+  ops.append(detailBtn);
+  if (canAgentWrite()) {
+    const toggle = btn(row.status === 'active' ? '冻结' : '解冻', 'btn mini');
+    toggle.addEventListener('click', () =>
+      setAgentStatus(row, row.status === 'active' ? 'frozen' : 'active'),
+    );
+    ops.append(toggle);
+  }
+  tr.append(
+    textCell(row.name),
+    textCell(row.phone),
+    textCell(parent ? parent.name : '—'),
+    textCell(`${ratePercentText(row.rateBp)}%`, { num: true }),
+    textCell(row.region ?? '—'),
+    textCell(row.status === 'active' ? 'active' : `frozen${row.mustChangePassword ? '（首登未改密）' : ''}`),
+    timeCell(row.createdAt),
+    ops,
+  );
+  return tr;
+}
+
+/* ── 设置 ─────────────────────────────────────────────────────── */
+
+async function loadAgentSettings() {
+  const epoch = agentsState.epoch;
+  const { status, body } = await api('/api/admin/agents/settings');
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
+  if (status !== 200 || !body?.data) {
+    showMsg(`加载代理设置失败（HTTP ${status}）`, 'err');
+    return false;
+  }
+  agentsState.settings = body.data;
+  renderAgentSettings();
+  return true;
+}
+
+/** 邀请码开关行（配置中心同款 row）：每次激活重建；无快照时给占位。 */
+function renderAgentInviteRow() {
+  const host = $('ag-invite-row');
+  if (!host) return;
+  host.textContent = '';
+  if (Object.keys(currentConfig).length === 0) {
+    const loading = agentsState.settingsReq.loading || Boolean(configSnapshotReq);
+    host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
+    return;
+  }
+  host.append(buildSimpleRow('agent.inviteEnabled'));
+}
+
+function renderAgentSettings() {
+  const s = agentsState.settings;
+  if (!s) return;
+  $('ag-settings-enabled').checked = s.enabled === true;
+  $('ag-settings-default-rate').value = String(Number(s.defaultRateBp ?? 0) / 100);
+  $('ag-settings-min-yuan').value = String(s.minSettlementYuan ?? '');
+  $('ag-settings-coin-per-yuan').value = String(s.coinPerYuan ?? '');
+  $('ag-settings-hold-days').value = String(s.quotaHoldDays ?? 0);
+  $('ag-settings-admin-limit').value = String(s.quotaAdminAdjustDailyLimitCoins ?? 0);
+  $('ag-settings-adjust-op').value = String(s.adjustMaxYuanPerOp ?? 0);
+  $('ag-settings-adjust-day').value = String(s.adjustMaxYuanPerDay ?? 0);
+  $('ag-settings-state').textContent = s.enabled
+    ? `已启用 · 生效时刻：${fmtTime(s.effectiveFrom)}（关闭再开不重置，永不回溯）`
+    : '未启用（暗上线）：不绑定、不计额度、不计佣。开启时写入生效时刻。';
+}
+
+async function saveAgentSettings(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理设置', 'err');
+  const enabled = $('ag-settings-enabled').checked;
+  if (enabled && agentsState.settings?.enabled !== true) {
+    if (
+      !confirm(
+        '开启代理分润总开关？\n首次开启会写入生效时刻（effective_from），之后不再回溯；关闭再开不重置。',
+      )
+    ) {
+      renderAgentSettings();
+      return;
+    }
+  }
+  if (!enabled && agentsState.settings?.enabled === true) {
+    if (!confirm('关闭代理分润总开关？\n关闭后不再新增额度/佣金；存量佣金仍可结算。')) {
+      renderAgentSettings();
+      return;
+    }
+  }
+  const payload = {
+    enabled,
+    defaultRateBp: percentToBp($('ag-settings-default-rate').value),
+    minSettlementYuan: Number($('ag-settings-min-yuan').value),
+    coinPerYuan: Number($('ag-settings-coin-per-yuan').value),
+    quotaHoldDays: Number($('ag-settings-hold-days').value),
+    quotaAdminAdjustDailyLimitCoins: Number($('ag-settings-admin-limit').value),
+    adjustMaxYuanPerOp: Number($('ag-settings-adjust-op').value),
+    adjustMaxYuanPerDay: Number($('ag-settings-adjust-day').value),
+  };
+  if (
+    !Number.isSafeInteger(payload.defaultRateBp) ||
+    payload.defaultRateBp < 0 ||
+    payload.defaultRateBp > 10000
+  ) {
+    return showMsg('默认比例必须是 0–100 的百分比', 'err');
+  }
+  for (const key of [
+    'minSettlementYuan',
+    'coinPerYuan',
+    'quotaHoldDays',
+    'quotaAdminAdjustDailyLimitCoins',
+    'adjustMaxYuanPerOp',
+    'adjustMaxYuanPerDay',
+  ]) {
+    if (!Number.isSafeInteger(payload[key]) || payload[key] < 0) {
+      return showMsg('数值参数必须是非负整数', 'err');
+    }
+  }
+  if (payload.coinPerYuan < 1) return showMsg('结算汇率必须 ≥ 1 金币/元', 'err');
+  const saveBtn = $('ag-settings-save-btn');
+  saveBtn.disabled = true;
+  const res = await api('/api/admin/agents/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  saveBtn.disabled = false;
+  if (res.status !== 200) return agentApiError(res, '保存代理设置失败');
+  agentsState.settings = res.body?.data ?? agentsState.settings;
+  renderAgentSettings();
+  showMsg('代理设置已保存', 'ok');
+}
+
+/* ── 新建 ─────────────────────────────────────────────────────── */
+
+async function createAgent(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权创建代理', 'err');
+  const name = $('ag-create-name').value.trim();
+  const phone = $('ag-create-phone').value.trim();
+  if (!name || !phone) return showMsg('请填写名称与手机号', 'err');
+  const payload = {
+    name,
+    phone,
+    parentId: $('ag-create-parent').value || null,
+    region: $('ag-create-region').value.trim() || null,
+    contactName: $('ag-create-contact').value.trim() || null,
+    payoutName: $('ag-create-payout-name').value.trim() || null,
+    payoutAccount: $('ag-create-payout-account').value.trim() || null,
+    payoutBank: $('ag-create-payout-bank').value.trim() || null,
+  };
+  const rateRaw = $('ag-create-rate').value.trim();
+  if (rateRaw !== '') {
+    const rateBp = percentToBp(rateRaw);
+    if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) {
+      return showMsg('比例必须是 0–100 的百分比', 'err');
+    }
+    payload.rateBp = rateBp;
+  }
+  const submitBtn = $('ag-create-submit');
+  submitBtn.disabled = true;
+  const res = await api('/api/admin/agents', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  submitBtn.disabled = false;
+  if (res.status !== 200 || !res.body?.data?.account) {
+    return agentApiError(res, '创建代理失败');
+  }
+  const data = res.body.data;
+  const result = $('ag-create-result');
+  result.textContent = '';
+  result.append(
+    el(
+      'p',
+      'agents-secret',
+      `初始密码（仅显示一次）：${data.initialPassword ?? '（未返回；请用重置密码获取）'}`,
+    ),
+    el('p', 'agents-secret', `邀请码（可随时轮换）：${data.inviteCode ?? '—'}`),
+    el('p', 'hint', '请立即转交代理；关闭/刷新后不再显示初始密码。代理首次登录须修改密码。'),
+  );
+  $('ag-create-form').reset();
+  showMsg(`已创建代理「${data.account.name}」`, 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+}
+
+/* ── 详情 ─────────────────────────────────────────────────────── */
+
+async function openAgentDetail(id) {
+  agentsState.detailId = id;
+  agentsState.detail = null;
+  agentsState.bindings = [];
+  $('ag-detail').hidden = false;
+  $('ag-detail-body').textContent = '加载中…';
+  const encoded = encodeURIComponent(id);
+  const [detail, bindings] = await Promise.all([
+    api(`/api/admin/agents/${encoded}`),
+    api(`/api/admin/agents/${encoded}/bindings?page=0&pageSize=50`),
+  ]);
+  if (handleAuth(detail.status)) return;
+  // r3 Critical #2：两次 await 期间用户可能已点了另一个代理；旧响应不得覆盖新面板
+  //（否则「保存资料」会把 A 的资料/收款写进 B）。
+  if (agentsState.detailId !== id) return;
+  if (detail.status !== 200 || !detail.body?.data?.account) {
+    $('ag-detail-body').textContent =
+      detail.status === 0 ? '无法连接服务端' : `加载代理详情失败（HTTP ${detail.status}）`;
+    return;
+  }
+  agentsState.detail = detail.body.data;
+  agentsState.bindings = Array.isArray(bindings.body?.data) ? bindings.body.data : [];
+  renderAgentDetail();
+}
+
+function renderAgentDetail() {
+  const box = $('ag-detail-body');
+  box.textContent = '';
+  const d = agentsState.detail;
+  if (!d?.account) return;
+  const a = d.account;
+  const parent = a.parentId ? agentsState.byId.get(a.parentId) : null;
+
+  box.append(el('h3', 'panel-title sub', `代理：${a.name}`));
+  box.append(el('p', 'hint', `ID：${a.id}　手机号：${a.phone}　状态：${a.status}`));
+  box.append(
+    el(
+      'p',
+      'hint',
+      `上级：${parent ? parent.name : '—'}　比例：${ratePercentText(a.rateBp)}%　片区：${a.region ?? '—'}　联系人：${a.contactName ?? '—'}`,
+    ),
+  );
+  box.append(el('p', 'hint', `下级：${d.children}　直接玩家：${d.bindings}　创建：${fmtTime(a.createdAt)}`));
+
+  const secret = el('div', 'agents-secret');
+  secret.id = 'ag-secret';
+  box.append(secret);
+
+  // 资料编辑（含三收款字段；updatePayout 省略字段即置 NULL ⇒ 同笔提交三字段）。
+  const form = document.createElement('form');
+  form.className = 'filter-bar';
+  const field = (id, label, type, value) => {
+    const wrap = el('label', 'field');
+    wrap.htmlFor = id;
+    wrap.append(el('span', 'field-label', label));
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = type;
+    input.value = value ?? '';
+    input.autocomplete = 'off';
+    if (type === 'number') {
+      input.min = '0';
+      // 比例按 bp 存储：12.5% = 1250bp —— step=1 会让预填值 "12.5" 触发原生校验、
+      // 整张「保存资料」表单连提交事件都到不了（r3 M7）。
+      input.step = id === 'ag-e-rate' ? '0.01' : '1';
+    }
+    wrap.append(input);
+    return wrap;
+  };
+  const parentWrap = el('label', 'field');
+  parentWrap.htmlFor = 'ag-e-parent';
+  parentWrap.append(el('span', 'field-label', '上级'));
+  const parentSel = document.createElement('select');
+  parentSel.id = 'ag-e-parent';
+  const none = el('option', '', '（无上级）');
+  none.value = '';
+  parentSel.append(none);
+  for (const candidate of agentsState.tree) {
+    if (candidate.id === a.id) continue;
+    // 只列 active；当前上级即使已冻结也保留（否则下拉无法回显现状）。
+    if (candidate.status !== 'active' && candidate.id !== a.parentId) continue;
+    const opt = el(
+      'option',
+      '',
+      `${candidate.depth ? '　'.repeat(candidate.depth) : ''}${candidate.name}（${candidate.phone}）${candidate.status === 'active' ? '' : '（已冻结）'}`,
+    );
+    opt.value = candidate.id;
+    parentSel.append(opt);
+  }
+  parentSel.value = a.parentId ?? '';
+  parentWrap.append(parentSel);
+  const saveBtn = btn('保存资料', 'btn primary');
+  saveBtn.id = 'ag-e-save';
+  saveBtn.type = 'submit';
+  const actions = el('div', 'filter-actions');
+  actions.append(saveBtn);
+  form.append(
+    field('ag-e-name', '名称', 'text', a.name),
+    parentWrap,
+    field('ag-e-rate', '比例（%）', 'number', ratePercentText(a.rateBp)),
+    field('ag-e-region', '片区', 'text', a.region),
+    field('ag-e-contact', '联系人', 'text', a.contactName),
+    field('ag-e-payout-name', '收款户名', 'text', a.payoutName),
+    field('ag-e-payout-account', '收款账号', 'text', a.payoutAccount),
+    field('ag-e-payout-bank', '开户行', 'text', a.payoutBank),
+    actions,
+  );
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    saveAgentDetail();
+  });
+  if (!canAgentWrite()) {
+    for (const input of form.querySelectorAll('input, select, button')) input.disabled = true;
+    saveBtn.hidden = true;
+  }
+  box.append(form);
+
+  const bar = el('div', 'agents-actions');
+  if (canAgentWrite()) {
+    const resetBtn = btn('重置密码', 'btn');
+    resetBtn.addEventListener('click', () => resetAgentPassword(a));
+    const rotateBtn = btn('轮换邀请码', 'btn');
+    rotateBtn.addEventListener('click', () => rotateAgentInvite(a));
+    const toggleBtn = btn(a.status === 'active' ? '冻结代理' : '解冻代理', 'btn');
+    toggleBtn.addEventListener('click', () =>
+      setAgentStatus(a, a.status === 'active' ? 'frozen' : 'active'),
+    );
+    bar.append(resetBtn, rotateBtn, toggleBtn);
+  } else if (canAgentSettle()) {
+    bar.append(el('span', 'hint', '只读视角：写操作仅超级管理员可用。'));
+  }
+  if (bar.childNodes.length > 0) box.append(bar);
+
+  box.append(buildAgentBindSection(a));
+}
+
+async function saveAgentDetail() {
+  // 以**当前渲染的面板**为准（不是点击顺序的 detailId）：两者不同时绝不能写。
+  const id = agentsState.detail?.account?.id;
+  if (!id) return;
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理', 'err');
+  const rateBp = percentToBp($('ag-e-rate').value);
+  if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) {
+    return showMsg('比例必须是 0–100 的百分比', 'err');
+  }
+  const name = $('ag-e-name').value.trim();
+  if (!name) return showMsg('名称不能为空', 'err');
+  const payload = {
+    name,
+    rateBp,
+    region: $('ag-e-region').value.trim() || null,
+    contactName: $('ag-e-contact').value.trim() || null,
+  };
+  // 树未加载成功时（下拉只剩「无上级」）**不得提交 parentId**：否则会把上级静默清空。
+  // 树已加载但当前上级不在下拉里（旧快照/刚被别人改挂）同样不提交，避免误摘上级（r3 M8）。
+  if (agentsState.tree.length > 0) {
+    const parentSel = $('ag-e-parent');
+    const currentParent = agentsState.detail?.account?.parentId ?? '';
+    const currentPresent = [...parentSel.options].some((o) => o.value === currentParent);
+    if (currentParent === '' || currentPresent) {
+      payload.parentId = parentSel.value || null;
+    }
+  }
+  // updatePayout 的 PATCH 省略字段会置 NULL ⇒ 三收款字段必须同笔提交（空串 ⇒ null）。
+  const payout = {
+    payoutName: $('ag-e-payout-name').value.trim() || null,
+    payoutAccount: $('ag-e-payout-account').value.trim() || null,
+    payoutBank: $('ag-e-payout-bank').value.trim() || null,
+  };
+  const saveBtn = $('ag-e-save');
+  saveBtn.disabled = true;
+  const profileRes = await api(`/api/admin/agents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  if (profileRes.status !== 200) {
+    saveBtn.disabled = false;
+    return agentApiError(profileRes, '保存代理资料失败');
+  }
+  const payoutRes = await api(`/api/admin/agents/${encodeURIComponent(id)}/payout`, {
+    method: 'PATCH',
+    body: JSON.stringify(payout),
+  });
+  saveBtn.disabled = false;
+  if (payoutRes.status !== 200) return agentApiError(payoutRes, '保存收款信息失败');
+  showMsg('代理资料已保存', 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+  await openAgentDetail(id);
+}
+
+async function resetAgentPassword(agent) {
+  if (!canAgentWrite()) return showMsg('当前角色无权重置密码', 'err');
+  if (
+    !confirm(
+      `重置「${agent.name}」的密码？\n旧登录状态会立即失效；代理需用新初始密码登录并改密。`,
+    )
+  ) {
+    return;
+  }
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/reset-password`, {
+    method: 'POST',
+  });
+  if (res.status !== 200) return agentApiError(res, '重置密码失败');
+  const secret = $('ag-secret');
+  if (secret) {
+    secret.textContent = '';
+    secret.append(
+      el('p', '', `初始密码（仅显示一次）：${res.body?.data?.password ?? '—'}`),
+      el('p', 'hint', '请立即转交代理；代理首次登录须修改密码。'),
+    );
+  }
+  showMsg('已重置密码（旧登录状态已失效）', 'ok');
+}
+
+async function rotateAgentInvite(agent) {
+  if (!canAgentWrite()) return showMsg('当前角色无权轮换邀请码', 'err');
+  if (!confirm(`轮换「${agent.name}」的邀请码？\n旧码立即失效；既有绑定不受影响。`)) return;
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/invite-code/rotate`, {
+    method: 'POST',
+  });
+  if (res.status !== 200) return agentApiError(res, '轮换邀请码失败');
+  const secret = $('ag-secret');
+  if (secret) {
+    secret.textContent = '';
+    secret.append(el('p', '', `新邀请码：${res.body?.data?.code ?? '—'}`), el('p', 'hint', '可随时再次轮换；既有绑定不受影响。'));
+  }
+  showMsg('已轮换邀请码', 'ok');
+}
+
+async function setAgentStatus(agent, next) {
+  if (!canAgentWrite()) return showMsg('当前角色无权修改代理状态', 'err');
+  const text = await modalPrompt({
+    title: next === 'frozen' ? '冻结代理' : '解冻代理',
+    desc:
+      next === 'frozen'
+        ? '冻结后：不再新增该代理佣金、不可成为新绑定目标；仍可登录/只读/发起存量结算。'
+        : '解冻后：恢复新增佣金与新绑定。',
+    placeholder: '原因（1–200 字）',
+    confirmLabel: next === 'frozen' ? '确认冻结' : '确认解冻',
+    maxlength: 200,
+  });
+  if (text === null) return;
+  const reason = text.trim();
+  if (!reason) return showMsg('请填写原因', 'err');
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agent.id)}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: next, reason }),
+  });
+  if (res.status !== 200) {
+    return agentApiError(res, next === 'frozen' ? '冻结失败' : '解冻失败');
+  }
+  showMsg(next === 'frozen' ? '已冻结代理' : '已解冻代理', 'ok');
+  await Promise.all([loadAgentList(), loadAgentTree()]);
+  if (agentsState.detailId === agent.id) await openAgentDetail(agent.id);
+}
+
+/* ── 绑定管理 ──────────────────────────────────────────────────── */
+
+function buildAgentBindSection(agent) {
+  const wrap = el('div', 'agents-bind');
+  wrap.append(el('h3', 'panel-title sub', '玩家绑定（前 50）'));
+  wrap.append(
+    simpleTable(
+      ['玩家ID', '脱敏手机号', '绑定时间', '来源'],
+      agentsState.bindings.map((b) => [b.ownerId, b.phoneMasked, fmtTime(b.boundAt), b.source]),
+      '（暂无绑定玩家）',
+    ),
+  );
+  if (!canAgentWrite()) return wrap;
+
+  const form = document.createElement('form');
+  form.className = 'filter-bar';
+  const owner = document.createElement('input');
+  owner.id = 'ag-bind-owner';
+  owner.type = 'text';
+  owner.placeholder = '玩家用户ID';
+  owner.autocomplete = 'off';
+  const ownerField = el('label', 'field');
+  ownerField.htmlFor = 'ag-bind-owner';
+  ownerField.append(el('span', 'field-label', '玩家ID'), owner);
+  const reason = document.createElement('input');
+  reason.id = 'ag-bind-reason';
+  reason.type = 'text';
+  reason.maxLength = 200;
+  reason.placeholder = '原因（写审计）';
+  reason.autocomplete = 'off';
+  const reasonField = el('label', 'field');
+  reasonField.htmlFor = 'ag-bind-reason';
+  reasonField.append(el('span', 'field-label', '原因'), reason);
+  const bindBtn = btn('改绑到本代理', 'btn primary');
+  bindBtn.type = 'submit';
+  const unbindBtn = btn('解绑', 'btn');
+  unbindBtn.addEventListener('click', () =>
+    unbindAgentPlayer(agent.id, owner.value.trim(), reason.value.trim()),
+  );
+  const actions = el('div', 'filter-actions');
+  actions.append(bindBtn, unbindBtn);
+  form.append(ownerField, reasonField, actions);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    bindAgentPlayer(agent.id, owner.value.trim(), reason.value.trim());
+  });
+  wrap.append(form);
+
+  const bulk = el('div', 'filter-bar');
+  const targetWrap = el('label', 'field');
+  targetWrap.htmlFor = 'ag-bulk-target';
+  targetWrap.append(el('span', 'field-label', '批量改绑到'));
+  const target = document.createElement('select');
+  target.id = 'ag-bulk-target';
+  for (const candidate of agentsState.tree) {
+    if (candidate.id === agent.id || candidate.status !== 'active') continue;
+    const opt = el('option', '', `${candidate.name}（${candidate.phone}）`);
+    opt.value = candidate.id;
+    target.append(opt);
+  }
+  targetWrap.append(target);
+  const dry = document.createElement('input');
+  dry.id = 'ag-bulk-dry';
+  dry.type = 'checkbox';
+  dry.checked = true;
+  const dryWrap = el('label', 'field');
+  dryWrap.append(el('span', 'field-label', '仅预览（dry-run）'), dry);
+  const bulkBtn = btn('批量改绑（≤5000）', 'btn');
+  bulkBtn.addEventListener('click', () => bulkRebindAgent(agent.id, target.value, dry.checked));
+  const bulkActions = el('div', 'filter-actions');
+  bulkActions.append(bulkBtn);
+  bulk.append(targetWrap, dryWrap, bulkActions);
+  wrap.append(bulk);
+  return wrap;
+}
+
+async function bindAgentPlayer(agentId, ownerId, reason) {
+  if (!canAgentWrite()) return showMsg('当前角色无权改绑', 'err');
+  if (!ownerId) return showMsg('请填写玩家ID', 'err');
+  const res = await api('/api/admin/agents/bind', {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, agentId, reason: reason || 'admin' }),
+  });
+  if (res.status !== 200) return agentApiError(res, '改绑失败');
+  showMsg('已改绑（只影响之后产生的佣金）', 'ok');
+  await openAgentDetail(agentId);
+}
+
+async function unbindAgentPlayer(agentId, ownerId, reason) {
+  if (!canAgentWrite()) return showMsg('当前角色无权解绑', 'err');
+  if (!ownerId) return showMsg('请填写玩家ID', 'err');
+  const res = await api('/api/admin/agents/unbind', {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, reason: reason || 'admin' }),
+  });
+  if (res.status !== 200) return agentApiError(res, '解绑失败');
+  showMsg('已解绑（只影响之后产生的佣金）', 'ok');
+  await openAgentDetail(agentId);
+}
+
+async function bulkRebindAgent(fromAgentId, toAgentId, dryRun) {
+  if (!canAgentWrite()) return showMsg('当前角色无权批量改绑', 'err');
+  if (!toAgentId) return showMsg('请选择目标代理', 'err');
+  if (!dryRun && !confirm('确认批量改绑？\n每批 500、单次上限 5000；只影响之后产生的佣金。')) return;
+  const res = await api(
+    `/api/admin/agents/${encodeURIComponent(fromAgentId)}/bindings/bulk`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ toAgentId, dryRun }),
+    },
+  );
+  if (res.status !== 200) return agentApiError(res, '批量改绑失败');
+  showMsg(
+    dryRun
+      ? `预览：将改绑 ${res.body?.data?.moved ?? 0} 人`
+      : `已改绑 ${res.body?.data?.moved ?? 0} 人`,
+    'ok',
+  );
+  if (!dryRun) await openAgentDetail(fromAgentId);
+}
+
+/* ── 结算队列 ──────────────────────────────────────────────────── */
+
+async function loadAgentSettlements(page = agentsState.settlements.page) {
+  if (agentsState.settlements.loading) return;
+  const epoch = agentsState.epoch;
+  agentsState.settlements.loading = true;
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.settlements.pageSize),
+  });
+  if (agentsState.settlements.status) p.set('status', agentsState.settlements.status);
+  const { status, body } = await api(`/api/admin/agent-settlements?${p.toString()}`);
+  agentsState.settlements.loading = false;
+  if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载结算队列失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.settlements.page = page;
+  agentsState.settlements.rows = body.data;
+  agentsState.settlements.done = body.data.length < agentsState.settlements.pageSize;
+  agentsState.settlements.loaded = true;
+  renderAgentSettlements();
+}
+
+function renderAgentSettlements() {
+  const body = $('ag-settle-body');
+  body.textContent = '';
+  for (const row of agentsState.settlements.rows) {
+    const tr = document.createElement('tr');
+    const ops = document.createElement('td');
+    const detailBtn = btn('详情', 'btn mini');
+    detailBtn.addEventListener('click', () => openAgentSettlement(row.id));
+    ops.append(detailBtn);
+    tr.append(
+      textCell(row.settlementNo),
+      textCell(row.agentId),
+      textCell(row.totalCoins, { num: true }),
+      textCell(row.totalMicro, { num: true }),
+      textCell(row.status),
+      timeCell(row.requestedAt),
+      ops,
+    );
+    body.append(tr);
+  }
+  $('ag-settle-empty').textContent =
+    agentsState.settlements.rows.length === 0 ? '（没有结算单）' : '';
+  const sp = agentsState.settlements.page;
+  $('ag-settle-page-info').textContent = `第 ${sp + 1} 页`;
+  $('ag-settle-prev-btn').disabled = sp <= 0;
+  $('ag-settle-next-btn').disabled = agentsState.settlements.done;
+}
+
+async function openAgentSettlement(id) {
+  $('ag-settle-detail').hidden = false;
+  $('ag-settle-detail-body').textContent = '加载中…';
+  const { status, body } = await api(`/api/admin/agent-settlements/${encodeURIComponent(id)}`);
+  if (handleAuth(status)) return;
+  if (status !== 200 || !body?.data?.settlement) {
+    $('ag-settle-detail-body').textContent = `加载失败（HTTP ${status}）`;
+    return;
+  }
+  const { settlement, lines } = body.data;
+  const box = $('ag-settle-detail-body');
+  box.textContent = '';
+  const line = (text) => box.append(el('p', 'hint', text));
+  line(`单号：${settlement.settlementNo}　状态：${settlement.status}　代理：${settlement.agentId}`);
+  line(
+    `金额：${settlement.totalCoins} 金币（${settlement.totalMicro} micro）　条目：${settlement.itemsCount}　carry：${settlement.carryBefore} → ${settlement.carryAfter}`,
+  );
+  line(
+    `汇率：${settlement.coinPerYuan} 金币/元　最低：${settlement.minYuan} 元　items_hash：${settlement.itemsHash}`,
+  );
+  line(`收款快照：${JSON.stringify(settlement.payout ?? null)}`);
+  line(
+    `申请：${fmtTime(settlement.requestedAt)}　决定：${fmtTime(settlement.decidedAt)}　打款：${fmtTime(settlement.paidAt)}（${settlement.paidBy ?? '—'}）　凭证：${settlement.voucherNo ?? '—'}　驳回原因：${settlement.rejectReason ?? '—'}`,
+  );
+  box.append(
+    simpleTable(
+      ['层级', '玩家ID', '条数', 'micro'],
+      (lines ?? []).map((l) => [l.level, l.ownerId ?? '—', l.count, l.micro]),
+      '（无条目）',
+    ),
+  );
+  if (settlement.status === 'pending' && canAgentSettle()) {
+    const actions = el('div', 'agents-actions');
+    const payBtn = btn('确认打款', 'btn primary');
+    payBtn.addEventListener('click', () => payAgentSettlement(settlement));
+    const rejectBtn = btn('驳回', 'btn');
+    rejectBtn.addEventListener('click', () => rejectAgentSettlement(settlement));
+    actions.append(payBtn, rejectBtn);
+    box.append(actions);
+  }
+}
+
+async function payAgentSettlement(settlement) {
+  if (!canAgentSettle()) return showMsg('当前角色无权打款', 'err');
+  const voucherNo = await modalPrompt({
+    title: `打款确认 · ${settlement.settlementNo}`,
+    desc: `金额 ${settlement.totalCoins} 金币；线下打款后回填凭证号。打款后水位推进，不可改单。`,
+    placeholder: '凭证号（必填）',
+    confirmLabel: '确认打款',
+    maxlength: 100,
+  });
+  if (voucherNo === null) return;
+  if (!voucherNo.trim()) return showMsg('凭证号不能为空', 'err');
+  const res = await api(`/api/admin/agent-settlements/${settlement.id}/pay`, {
+    method: 'POST',
+    body: JSON.stringify({ voucherNo: voucherNo.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '打款失败');
+  showMsg('已登记打款', 'ok');
+  await loadAgentSettlements();
+  await openAgentSettlement(settlement.id);
+}
+
+async function rejectAgentSettlement(settlement) {
+  if (!canAgentSettle()) return showMsg('当前角色无权驳回', 'err');
+  const reason = await modalPrompt({
+    title: `驳回结算单 · ${settlement.settlementNo}`,
+    desc: '驳回只清 pending，不推进水位；代理可重新申请。',
+    placeholder: '驳回原因（必填）',
+    confirmLabel: '确认驳回',
+    maxlength: 200,
+  });
+  if (reason === null) return;
+  if (!reason.trim()) return showMsg('驳回原因不能为空', 'err');
+  const res = await api(`/api/admin/agent-settlements/${settlement.id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '驳回失败');
+  showMsg('已驳回结算单', 'ok');
+  await loadAgentSettlements();
+  await openAgentSettlement(settlement.id);
+}
+
+/* ── 人工调账 ──────────────────────────────────────────────────── */
+
+async function loadAgentAdjustments(page = agentsState.adjustments.page) {
+  const epoch = agentsState.epoch;
+  if (agentsState.adjustments.loading) return;
+  agentsState.adjustments.loading = true;
+  const p = new URLSearchParams({
+    page: String(page),
+    pageSize: String(agentsState.adjustments.pageSize),
+  });
+  if (agentsState.adjustments.status) p.set('status', agentsState.adjustments.status);
+  const { status, body } = await api(`/api/admin/agent-adjustments?${p.toString()}`);
+  agentsState.adjustments.loading = false;
+  if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载调账失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.adjustments.page = page;
+  agentsState.adjustments.rows = body.data;
+  agentsState.adjustments.done = body.data.length < agentsState.adjustments.pageSize;
+  agentsState.adjustments.loaded = true;
+  renderAgentAdjustments();
+}
+
+function renderAgentAdjustments() {
+  const body = $('ag-adjust-body');
+  body.textContent = '';
+  for (const row of agentsState.adjustments.rows) {
+    const tr = document.createElement('tr');
+    const ops = document.createElement('td');
+    if (row.status === 'pending' && canAgentWrite()) {
+      const approveBtn = btn('复核通过', 'btn mini');
+      approveBtn.addEventListener('click', () => approveAgentAdjustment(row));
+      const rejectBtn = btn('驳回', 'btn mini');
+      rejectBtn.addEventListener('click', () => rejectAgentAdjustment(row));
+      ops.append(approveBtn, rejectBtn);
+    }
+    tr.append(
+      timeCell(row.createdAt),
+      textCell(row.agentId),
+      textCell(microToCoinsText(row.deltaMicro), { num: true }),
+      textCell(row.reason),
+      textCell(row.status),
+      textCell(row.requestedBy),
+      textCell(row.approvedBy ?? '—'),
+      ops,
+    );
+    body.append(tr);
+  }
+  $('ag-adjust-empty').textContent =
+    agentsState.adjustments.rows.length === 0 ? '（没有调账记录）' : '';
+  const ap = agentsState.adjustments.page;
+  $('ag-adjust-page-info').textContent = `第 ${ap + 1} 页`;
+  $('ag-adjust-prev-btn').disabled = ap <= 0;
+  $('ag-adjust-next-btn').disabled = agentsState.adjustments.done;
+}
+
+async function createAgentAdjustment(ev) {
+  ev.preventDefault();
+  if (!canAgentWrite()) return showMsg('当前角色无权发起调账', 'err');
+  const agentId = $('ag-adjust-agent').value.trim();
+  const deltaCoins = Number($('ag-adjust-delta').value);
+  const reason = $('ag-adjust-reason').value.trim();
+  if (!agentId) return showMsg('请填写代理ID', 'err');
+  if (!Number.isSafeInteger(deltaCoins) || deltaCoins === 0) {
+    return showMsg('金额必须是非零整数（金币）', 'err');
+  }
+  if (!reason) return showMsg('请填写调账原因', 'err');
+  const res = await api(`/api/admin/agents/${encodeURIComponent(agentId)}/adjustments`, {
+    method: 'POST',
+    body: JSON.stringify({ deltaCoins, reason }),
+  });
+  if (res.status !== 200) return agentApiError(res, '发起调账失败');
+  showMsg('调账已发起，待另一名超级管理员复核', 'ok');
+  $('ag-adjust-delta').value = '';
+  $('ag-adjust-reason').value = '';
+  await loadAgentAdjustments();
+}
+
+async function approveAgentAdjustment(row) {
+  if (!canAgentWrite()) return showMsg('当前角色无权复核调账', 'err');
+  if (
+    !confirm(
+      `复核通过代理 ${row.agentId} 的调账 ${microToCoinsText(row.deltaMicro)} 金币？\n通过后写入未结佣金（进入下一单结算）。`,
+    )
+  ) {
+    return;
+  }
+  const res = await api(`/api/admin/agent-adjustments/${row.id}/approve`, {
+    method: 'POST',
+    body: '{}',
+  });
+  if (res.status !== 200) return agentApiError(res, '复核失败');
+  showMsg('调账已复核通过', 'ok');
+  await loadAgentAdjustments();
+}
+
+async function rejectAgentAdjustment(row) {
+  if (!canAgentWrite()) return showMsg('当前角色无权驳回调账', 'err');
+  const reason = await modalPrompt({
+    title: '驳回调账',
+    desc: `代理 ${row.agentId} · ${microToCoinsText(row.deltaMicro)} 金币`,
+    placeholder: '驳回原因（必填）',
+    confirmLabel: '确认驳回',
+    maxlength: 200,
+  });
+  if (reason === null) return;
+  if (!reason.trim()) return showMsg('驳回原因不能为空', 'err');
+  const res = await api(`/api/admin/agent-adjustments/${row.id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  if (res.status !== 200) return agentApiError(res, '驳回失败');
+  showMsg('已驳回调账', 'ok');
+  await loadAgentAdjustments();
+}
+
+/* ── 对账 / 审计 ───────────────────────────────────────────────── */
+
+async function loadAgentReconciliation() {
+  if (agentsState.recon.loading) return;
+  const epoch = agentsState.epoch;
+  const fromRaw = $('ag-recon-from').value;
+  const toRaw = $('ag-recon-to').value;
+  const from = fromRaw ? new Date(fromRaw) : new Date(Date.now() - 7 * DAY_MS);
+  const to = toRaw ? new Date(toRaw) : new Date();
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return showMsg('时间格式非法', 'err');
+  }
+  if (from >= to) return showMsg('开始时间必须早于结束时间', 'err');
+  agentsState.recon.loading = true;
+  const p = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+  const { status, body } = await api(`/api/admin/agent-reconciliation?${p.toString()}`);
+  agentsState.recon.loading = false;
+  if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
+  if (status !== 200 || !body?.data) return showMsg(`对账失败（HTTP ${status}）`, 'err');
+  agentsState.recon.summary = body.data;
+  renderAgentReconciliation();
+}
+
+function renderAgentReconciliation() {
+  const box = $('ag-recon-body');
+  box.textContent = '';
+  const s = agentsState.recon.summary;
+  if (!s) return;
+  box.append(el('p', 'hint', `区间：${fmtTime(s.from)} → ${fmtTime(s.to)}`));
+  box.append(
+    simpleTable(
+      ['指标', '值'],
+      [
+        ['台费毛利（coins）', s.entryFeeTotal],
+        ['已绑定玩家台费', s.boundFeeTotal],
+        ['未归属台费', s.unboundFeeTotal],
+        ['计佣基数', s.baseTotal],
+        ['佣金 entry micro', s.commissionMicroTotal],
+        ['理论上限 micro', s.expectedMaxMicroTotal],
+        ['已付金币', s.paidCoins],
+        ['钩子缺口（gap）', s.gapCount],
+        ['缺 revenue event', s.missingEventCount],
+      ],
+      '（无数据）',
+    ),
+  );
+}
+
+async function loadAgentAudit() {
+  if (agentsState.audit.loading) return;
+  const epoch = agentsState.epoch;
+  agentsState.audit.loading = true;
+  const p = new URLSearchParams({
+    page: String(agentsState.audit.page),
+    pageSize: '50',
+  });
+  const { status, body } = await api(`/api/admin/agent-audit?${p.toString()}`);
+  agentsState.audit.loading = false;
+  if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    return showMsg(`加载审计失败（HTTP ${status}）`, 'err');
+  }
+  agentsState.audit.rows = body.data;
+  agentsState.audit.loaded = true;
+  renderAgentAudit();
+}
+
+function renderAgentAudit() {
+  const body = $('ag-audit-body');
+  body.textContent = '';
+  for (const row of agentsState.audit.rows) {
+    const tr = document.createElement('tr');
+    tr.append(
+      timeCell(row.createdAt),
+      textCell(row.actor),
+      textCell(row.action),
+      textCell(`${row.targetType}:${row.targetId}`),
+      textCell(row.reason ?? '—'),
+    );
+    body.append(tr);
+  }
+  $('ag-audit-empty').textContent = agentsState.audit.rows.length === 0 ? '（暂无审计记录）' : '';
+  $('ag-audit-page-info').textContent = `第 ${agentsState.audit.page + 1} 页`;
+  $('ag-audit-prev-btn').disabled = agentsState.audit.page <= 0;
+  $('ag-audit-next-btn').disabled = agentsState.audit.rows.length < 50;
+}
+
+/** 登出/退出时清代理页的数据面与控件（showLoginView 单一处置点）。 */
+function resetAgents() {
+  agentsState.filter = { q: '', status: '' };
+  agentsState.page = 1;
+  agentsState.pageSize = 20;
+  agentsState.rows = [];
+  agentsState.total = 0;
+  agentsState.tree = [];
+  agentsState.byId = new Map();
+  agentsState.settings = null;
+  agentsState.detailId = null;
+  agentsState.detail = null;
+  agentsState.bindings = [];
+  agentsState.settlements = {
+    status: 'pending',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+    detailId: null,
+    detail: null,
+  };
+  agentsState.adjustments = {
+    status: '',
+    page: 0,
+    pageSize: 20,
+    rows: [],
+    loading: false,
+    loaded: false,
+    done: true,
+  };
+  agentsState.recon = { loading: false, summary: null, armed: false };
+  agentsState.audit = { page: 0, rows: [], loading: false, loaded: false };
+  agentsState.tab = 'list';
+  agentsState.epoch += 1;
+  agentsState.roleApplied = false;
+  agentsState.list = { loaded: false, loading: false };
+  agentsState.treeReq = { loaded: false, loading: false };
+  agentsState.settingsReq = { loaded: false, loading: false };
+  const inviteRow = $('ag-invite-row');
+  if (inviteRow) inviteRow.textContent = '';
+  applyAgentTabUI('list');
+  $('ag-q').value = '';
+  $('ag-status').value = '';
+  $('ag-body').textContent = '';
+  $('ag-empty').textContent = '';
+  $('ag-page-info').textContent = '';
+  $('ag-page-size').value = '20';
+  $('ag-detail').hidden = true;
+  $('ag-detail-body').textContent = '';
+  $('ag-create-panel').hidden = true;
+  $('ag-create-form').reset();
+  $('ag-create-result').textContent = '';
+  $('ag-settings-form').reset();
+  $('ag-settings-state').textContent = '';
+  $('ag-settle-status').value = 'pending';
+  $('ag-settle-body').textContent = '';
+  $('ag-settle-empty').textContent = '';
+  $('ag-settle-page-info').textContent = '';
+  $('ag-settle-detail').hidden = true;
+  $('ag-settle-detail-body').textContent = '';
+  $('ag-adjust-form').reset();
+  $('ag-adjust-body').textContent = '';
+  $('ag-adjust-empty').textContent = '';
+  $('ag-adjust-page-info').textContent = '';
+  $('ag-recon-from').value = '';
+  $('ag-recon-to').value = '';
+  $('ag-recon-body').textContent = '';
+  $('ag-audit-body').textContent = '';
+  $('ag-audit-empty').textContent = '';
+  $('ag-audit-page-info').textContent = '';
+}
+
+/** 代理页控件接线（wire() 调用）。 */
+function wireAgents() {
+  $('ag-settings-form').addEventListener('submit', saveAgentSettings);
+  $('ag-search-btn').addEventListener('click', () => {
+    agentsState.filter = { q: $('ag-q').value.trim(), status: $('ag-status').value };
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('ag-search-btn').click();
+    }
+  });
+  $('ag-reset-btn').addEventListener('click', () => {
+    $('ag-q').value = '';
+    $('ag-status').value = '';
+    agentsState.filter = { q: '', status: '' };
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-prev-btn').addEventListener('click', () => {
+    if (agentsState.page > 1) {
+      agentsState.page -= 1;
+      loadAgentList();
+    }
+  });
+  $('ag-next-btn').addEventListener('click', () => {
+    const pages = Math.max(1, Math.ceil(agentsState.total / agentsState.pageSize));
+    if (agentsState.page < pages) {
+      agentsState.page += 1;
+      loadAgentList();
+    }
+  });
+  $('ag-page-size').addEventListener('change', () => {
+    agentsState.pageSize = Number($('ag-page-size').value);
+    agentsState.page = 1;
+    loadAgentList();
+  });
+  $('ag-create-btn').addEventListener('click', () => {
+    const panel = $('ag-create-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      fillAgentCreateParent();
+      $('ag-create-name').focus();
+    }
+  });
+  $('ag-create-form').addEventListener('submit', createAgent);
+  $('ag-create-cancel').addEventListener('click', () => {
+    $('ag-create-panel').hidden = true;
+  });
+  $('ag-detail-close-btn').addEventListener('click', () => {
+    $('ag-detail').hidden = true;
+    agentsState.detailId = null;
+  });
+  $('ag-settle-status').addEventListener('change', () => {
+    agentsState.settlements.status = $('ag-settle-status').value;
+    loadAgentSettlements(0);
+  });
+  $('ag-settle-refresh-btn').addEventListener('click', () =>
+    loadAgentSettlements(agentsState.settlements.page),
+  );
+  $('ag-settle-prev-btn').addEventListener('click', () => {
+    if (agentsState.settlements.page > 0) loadAgentSettlements(agentsState.settlements.page - 1);
+  });
+  $('ag-settle-next-btn').addEventListener('click', () => {
+    if (!agentsState.settlements.done) loadAgentSettlements(agentsState.settlements.page + 1);
+  });
+  $('ag-adjust-form').addEventListener('submit', createAgentAdjustment);
+  $('ag-adjust-status').addEventListener('change', () => {
+    agentsState.adjustments.status = $('ag-adjust-status').value;
+    loadAgentAdjustments(0);
+  });
+  $('ag-adjust-refresh-btn').addEventListener('click', () =>
+    loadAgentAdjustments(agentsState.adjustments.page),
+  );
+  $('ag-adjust-prev-btn').addEventListener('click', () => {
+    if (agentsState.adjustments.page > 0) loadAgentAdjustments(agentsState.adjustments.page - 1);
+  });
+  $('ag-adjust-next-btn').addEventListener('click', () => {
+    if (!agentsState.adjustments.done) loadAgentAdjustments(agentsState.adjustments.page + 1);
+  });
+  $('ag-recon-run-btn').addEventListener('click', () => loadAgentReconciliation());
+  $('ag-audit-refresh-btn').addEventListener('click', () => loadAgentAudit());
+  $('ag-audit-prev-btn').addEventListener('click', () => {
+    if (agentsState.audit.page > 0) {
+      agentsState.audit.page -= 1;
+      loadAgentAudit();
+    }
+  });
+  $('ag-audit-next-btn').addEventListener('click', () => {
+    if (agentsState.audit.rows.length >= 50) {
+      agentsState.audit.page += 1;
+      loadAgentAudit();
+    }
+  });
+  for (const t of AGENT_TABS) {
+    $(t.btn).addEventListener('click', () => {
+      switchAgentTab(t.id);
+      loadAgents();
+    });
+  }
 }
 
 /** 启动：有完整会话（token + username + role）⇒ 主视图（各视图懒加载）；否则登录视图。 */

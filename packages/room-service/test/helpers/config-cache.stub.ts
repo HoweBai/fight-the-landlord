@@ -55,15 +55,17 @@ export interface ConfigCacheStub {
   matchNoBotMaxWaitMs: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：跑得快总开关（种子 false = 暗上线）。 */
   paodekuaiEnabled: ReturnType<typeof vi.fn>;
-  /** 多玩法（Task 2.2）：跑得快 2/4 人闸（种子 false）。 */
+  /** 多玩法（Task 2.2）：跑得快 2/4 人闸（种子 false；键名 nonThree 为历史命名，现只关 4 人）。 */
   paodekuaiNonThreePlayerEnabled: ReturnType<typeof vi.fn>;
+  /** 跑得快 2 人闸（2026-10-25）。 */
+  paodekuaiTwoPlayerEnabled: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：本局跑得快规则快照。 */
   pdkRules: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：玩法是否开放（2026-10-24 起两个玩法都读开关）。 */
   gameEnabled: ReturnType<typeof vi.fn>;
   /** 玩法开放开关（2026-10-24）：斗地主总开关（缺省 true）。 */
   doudizhuEnabled: ReturnType<typeof vi.fn>;
-  /** 多玩法（Task 2.2）：房间人数是否可开（含 nonThree 收窄）。 */
+  /** 多玩法（Task 2.2）：房间人数是否可开（2/4 分别读两闸）。 */
   supportsRoomPlayerCount: ReturnType<typeof vi.fn>;
   baseScoreLevels: ReturnType<typeof vi.fn>;
   cycleMs: ReturnType<typeof vi.fn>;
@@ -85,6 +87,7 @@ export function makeConfigCache(
   // `supportsRoomPlayerCount` 才能跟随用例对两个开关的 mockReturnValue。
   const paodekuaiEnabled = vi.fn(() => false);
   const paodekuaiNonThreePlayerEnabled = vi.fn(() => false);
+  const paodekuaiTwoPlayerEnabled = vi.fn(() => false);
   const doudizhuEnabled = vi.fn(() => true);
   return {
     // 测试桩默认「好友房开着」：大多数用例不是在测好友房闸；闸的正反例显式 mockReturnValue。
@@ -110,6 +113,7 @@ export function makeConfigCache(
     // 多玩法（Task 2.2）：缺省 = 种子（pdk 暗上线、2/4 人闸关）。
     paodekuaiEnabled,
     paodekuaiNonThreePlayerEnabled,
+    paodekuaiTwoPlayerEnabled,
     pdkRules: vi.fn(() => ({ ...DEFAULT_PDK_RULES })),
     doudizhuEnabled,
     gameEnabled: vi.fn((gameType: GameType) => {
@@ -124,7 +128,10 @@ export function makeConfigCache(
     }),
     supportsRoomPlayerCount: vi.fn((gameType: GameType, playerCount: number) => {
       if (!supportsPlayerCount(gameType, playerCount)) return false;
-      return gameType !== 'paodekuai' || playerCount === 3 || paodekuaiNonThreePlayerEnabled();
+      if (gameType !== 'paodekuai' || playerCount === 3) return true;
+      if (playerCount === 2) return paodekuaiTwoPlayerEnabled();
+      if (playerCount === 4) return paodekuaiNonThreePlayerEnabled();
+      return false;
     }),
     baseScoreLevels: vi.fn(async (_gameType?: GameType) =>
       _gameType === undefined || _gameType === 'doudizhu'

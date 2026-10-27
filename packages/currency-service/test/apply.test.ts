@@ -177,6 +177,79 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     expect(redis.store.get('currency:balance:u-1')).toBe('250');
   });
 
+  it('A2：gameType 落库（游戏来源缺席=doudizhu / 显式=pdk；非游戏来源=NULL）', async () => {
+    const settleDefault = mkReq({
+      actionId: 'settle:s-a:1',
+      source: 'game_settle',
+      actor: undefined,
+      reason: undefined,
+      refId: 's-a:1',
+      entries: [{ ownerId: 'gt-a', delta: 10 }],
+    });
+    expectOk(await service.apply(settleDefault));
+    expect(db.ops[0]!.gameType).toBe('doudizhu');
+
+    const settlePdk = mkReq({
+      actionId: 'settle:s-b:1',
+      source: 'game_settle',
+      gameType: 'paodekuai',
+      actor: undefined,
+      reason: undefined,
+      refId: 's-b:1',
+      entries: [{ ownerId: 'gt-b', delta: 10 }],
+    });
+    expectOk(await service.apply(settlePdk));
+    expect(db.ops[1]!.gameType).toBe('paodekuai');
+
+    const admin = mkReq({ actionId: 'admin:gt-c', entries: [{ ownerId: 'gt-c', delta: 10 }] });
+    expectOk(await service.apply(admin));
+    expect(db.ops[2]!.gameType).toBeNull();
+
+    const signup = mkReq({
+      actionId: 'signup:gt-d',
+      source: 'signup_grant',
+      actor: undefined,
+      reason: undefined,
+      refId: 'gt-d',
+      entries: [{ ownerId: 'gt-d', delta: 10 }],
+    });
+    expectOk(await service.apply(signup));
+    expect(db.ops[3]!.gameType).toBeNull();
+
+    // card_counter 能力仅斗地主：room 不传 gameType ⇒ 来源归一 ddz（不是 NULL）
+    db.seedAccount('gt-e', 'user', 10);
+    const cardCounter = mkReq({
+      actionId: 'cc:gt-e',
+      source: 'card_counter',
+      actor: undefined,
+      reason: undefined,
+      entries: [{ ownerId: 'gt-e', delta: -1 }],
+    });
+    expectOk(await service.apply(cardCounter));
+    expect(db.ops[4]!.gameType).toBe('doudizhu');
+  });
+
+  it('A2：同 actionId 异 gameType ⇒ 重放（gameType 不入指纹），库内玩法取首写值', async () => {
+    const first = mkReq({
+      actionId: 'settle:gt-replay:1',
+      source: 'game_settle',
+      gameType: 'paodekuai',
+      actor: undefined,
+      reason: undefined,
+      refId: 'gt-replay:1',
+      entries: [{ ownerId: 'gt-r', delta: 10 }],
+    });
+    expectOk(await service.apply(first));
+    expect(db.ops[0]!.gameType).toBe('paodekuai');
+
+    const second = await service.apply({ ...first, gameType: 'doudizhu' });
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new Error('expected replay');
+    expect(second.data.replayed).toBe(true);
+    expect(db.ops).toHaveLength(1);
+    expect(db.ops[0]!.gameType).toBe('paodekuai'); // 重放不更新归因
+  });
+
   it('扣账：既有行条件更新一次命中；meta.traceId 落 ops.trace_id；余额 100 → 70', async () => {
     db.seedAccount('u-b', 'user', 100);
     const req = mkReq({
@@ -225,7 +298,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     expect(redis.calls.filter((call) => call.op === 'set')).toHaveLength(setCallsAfterFirst);
     // 三桶：这次是 replay（不是 ok）
     expect(await counterValue(currencyApplyTotal, { source: 'admin_adjust', result: 'replay' })).toBeGreaterThan(0);
-    expect(logSpy.mock.calls.some((args) => String(args[0]).includes('replay'))).toBe(true);
+    expect(logSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('replay'))).toBe(true);
   });
 
   it('⚙️13 重放重建排序：混合大小写 ownerId 下，重放响应仍按 hash/执行序（JS code-unit 升序）而非 DB collation 序', async () => {
@@ -275,7 +348,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮（level=error，含 actionId 与错误码 14002）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('14002') && String(args[0]).includes('admin:c1'),
+        (args: unknown[]) => String(args[0]).includes('14002') && String(args[0]).includes('admin:c1'),
       ),
     ).toBe(true);
     expect(await counterValue(currencyApplyTotal, { source: 'admin_adjust', result: 'reject' })).toBe(rejectBefore + 2);
@@ -313,7 +386,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
       'ownerType.select',
       'balance.update',
     ]);
-    expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('14001'))).toBe(true);
+    expect(warnSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('14001'))).toBe(true);
     // 失败不写缓存
     expect(redis.calls.filter((call) => call.op === 'set')).toHaveLength(0);
   });
@@ -359,7 +432,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 「爽亮」error 级（§2.12：owner_type_mismatch 响亮）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('10001') && String(args[0]).includes('ownerId=bot-1'),
+        (args: unknown[]) => String(args[0]).includes('10001') && String(args[0]).includes('ownerId=bot-1'),
       ),
     ).toBe(true);
   });
@@ -411,7 +484,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮（§2.12：owner_type_mismatch 是 error 级）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('10001') && String(args[0]).includes('u-pos'),
+        (args: unknown[]) => String(args[0]).includes('10001') && String(args[0]).includes('u-pos'),
       ),
     ).toBe(true);
     // 失败整批 ⇒ 不写缓存
@@ -461,7 +534,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // 响亮：error 日志（含 internal error 与读数）；不写缓存（系统级抛穿，不走信封）
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('internal error') && String(args[0]).includes('affectedRows=2'),
+        (args: unknown[]) => String(args[0]).includes('internal error') && String(args[0]).includes('affectedRows=2'),
       ),
     ).toBe(true);
     expect(redis.calls).toHaveLength(0);
@@ -556,7 +629,7 @@ describe('§2.3 apply 写路径内核（规格逐字）', () => {
     // warn + 单一计数器（§2.11：写穿失败与对账删除同一计数器）
     expect(
       warnSpy.mock.calls.some(
-        (args) => String(args[0]).includes('cache_write_failed') && String(args[0]).includes('u-a'),
+        (args: unknown[]) => String(args[0]).includes('cache_write_failed') && String(args[0]).includes('u-a'),
       ),
     ).toBe(true);
     expect(await counterValue(currencyReconcileCacheDriftTotal)).toBe(driftBefore + 1);

@@ -44,6 +44,12 @@ import { runSlice26 } from './slices/slice-26-client-gate';
 import { runSlice27 } from './slices/slice-27-idle-trustee';
 import { runSlice28 } from './slices/slice-28-card-counter';
 import { runSlice29 } from './slices/slice-29-paodekuai';
+import { runSlice30 } from './slices/slice-30-pdk-metrics';
+import { runSlice31 } from './slices/slice-31-pdk-gold';
+import { runSlice32 } from './slices/slice-32-agent';
+import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
+import { runSlice34 } from './slices/slice-34-record-outbox';
+import { runSlice35 } from './slices/slice-35-records-reconcile';
 
 interface Case {
   title: string;
@@ -119,6 +125,22 @@ const CASES: Record<string, Case> = {
   // 多玩法片（S7.3）：追加在末尾（顺序即 CI 切片循环与 full 回填顺序）。
   // 本片经管理面开启跑得快（收尾还原），用独立 oracle 打完整一局并核对结算/记录。
   'slice-29-paodekuai': { title: '跑得快（真栈：匹配/开局/出牌过牌/结算/记录/房间过滤/风控扫描）', run: runSlice29 },
+  // 多玩法 A1：PDK 指标标签真栈（只打一局，断言 started/ended 的 game_type）。
+  'slice-30-pdk-metrics': { title: '跑得快指标（真栈：按玩法 started/ended）', run: runSlice30 },
+  // 多玩法 A2/A3：PDK 金币场账本玩法维度 + 管理玩家统计（本机无 Docker，待权威轮）。
+  'slice-31-pdk-gold': { title: '跑得快金币场（真栈：台费/结算/记录/管理统计玩法维度）', run: runSlice31 },
+  // 代理分润片（2026-10-26，任务 15）：追加在末尾（原计划 slice-30 与 PDK 指标片撞号，
+  // 合并后顺延为 32）。真库证明 SAVEPOINT/额度首建并发/水位结算 SUM+hash 复核/关闭期对账；
+  // 收尾恢复两开关/表名/冻结态。
+  'slice-32-agent': { title: '代理分润（真栈：绑定/计佣链/自玩冻结/并发/SAVEPOINT/结算/调账/对账/鉴权）', run: runSlice32 },
+  // B 组：PDK gold 2/4 + 风控 2/3/4 + 机器人局剔除 + 自动限流。
+  // ⚠️ 2026-10-26 与代理分润片合并时撞号（dev 已占 slice-32）⇒ 本片顺延为 slice-33；
+  //    spec/plan 的历史文本仍写 slice-32，代码与基线以本键为准。
+  'slice-33-pdk-risk-gold': { title: '跑得快 B 组（真栈：gold 2/4/截断/风控人数/机器人剔除/自动限流）', run: runSlice33 },
+  // C1：记录 outbox 五态（sweeper 真栈；不依赖停服）。
+  'slice-34-record-outbox': { title: '记录 outbox（真栈：ok/replayed/corrupt/abandoned/rejected）', run: runSlice34 },
+  // C2：资金↔记录对账（三轮：基线/注入/pdk 清零；分页 sentinel + 零写 + GET/gauge 一致）。
+  'slice-35-records-reconcile': { title: '记录对账（真栈：GET/gauge/分页/跨界/台费/零写）', run: runSlice35 },
 };
 
 function printUsage(): void {

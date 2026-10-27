@@ -31,7 +31,7 @@ function mysqlConnectionOptions() {
     /** 迁移脚本（编译产物）。⚠️ 与 `data-source.ts` 共用 `migrationsGlob()`。 */
     migrations: [migrationsGlob()],
     /** 启动时自动跑迁移（新库靠它建表；已存在的库首跑只写迁移表）。 */
-    migrationsRun: true,
+    migrationsRun: process.env.DB_MIGRATIONS_RUN !== 'false',
     /** 片⑦：与 user-service 共库 ⇒ 迁移表**必须**独立（否则互相把对方的记录当「未知已执行」）。 */
     migrationsTableName: 'migrations_config',
   };

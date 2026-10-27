@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ftl-config
+  namespace: ftl
+data:
+  # 部署脚本在远端临时副本里把占位符替换成 node-a 的内网 IP。
+  # 这是网关唯一可信代理（edge 以 hostNetwork 运行在 node-a）。
+  TRUST_PROXY: NODE_A_IP_PLACEHOLDER

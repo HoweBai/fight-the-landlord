@@ -13,6 +13,9 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Vitest 4 默认会把 `dist/*.test.js` 收进测试集合；构建产物是 CJS，
+    // `vitest` 不能 require() ⇒ 显式排除（Vitest 2 的默认 exclude 含 dist）。
+    exclude: ['dist/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       /**

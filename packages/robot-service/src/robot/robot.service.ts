@@ -16,6 +16,7 @@ import { BotPlayer } from './bot.player';
 import { RobotPool } from './robot.pool';
 // 监控片 T5：决策收口计数（定义与值域见 robot.metrics.ts）。
 import { robotDecisionsTotal } from './robot.metrics';
+import { incGame } from '@fight-the-landlord/shared';
 // ⚠️ **值导入**（不是 `import type`）：`emitDecoratorMetadata` 会把构造参数的类型写进
 // DI 元数据 —— 类型导入会被编译掉 ⇒ Nest 拿到 `Object` 当 provider 记号 ⇒ **容器启动即崩**
 // （单测与 tsc 都看不见，见本仓 DI 陷阱的踩坑记录）。
@@ -68,10 +69,14 @@ export class RobotService {
     // 监控片 T5（规格 §2.2）：**决策收口恰一次** —— `decision.source` 即 `result` 值域
     // `{douzero,rule}`；叫抢期恒 rule 是协议约定（Y4，不是失败信号——失败读
     // `robot_decision_errors_total`，写点在 BotPlayer 的两条回落路径）。
-    robotDecisionsTotal.inc({ result: decision.source, skill: req.skillLevel });
+    incGame(robotDecisionsTotal, req.view.gameType, 1, {
+      result: decision.source,
+      skill: req.skillLevel,
+    });
     // 片② D10/规格 A2b：日志钉死 `model=<sl|douzero_WP|douzero_ADP>` —— 回退到规则引擎时，
     // `model` 记的是「本该用的那个模型」（否则回退占比不可归因）；`source=` 已有，不重复加。
-    const model = this.configCache.modelBySkill()[req.skillLevel];
+    // A1：PDK 走规则 bot，不打印 ddz 模型名（`-`）。
+    const model = req.view.gameType === 'paodekuai' ? '-' : this.configCache.modelBySkill()[req.skillLevel];
     this.logger.log(
       `Bot ${req.botId} decided ${decision.kind} (source=${decision.source}, model=${model}, cards=${decision.cards?.length ?? 0})`,
     );

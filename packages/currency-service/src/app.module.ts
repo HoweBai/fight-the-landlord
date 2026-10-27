@@ -12,8 +12,11 @@ import { AdminFinanceController } from './admin/admin-finance.controller';
 import { FinanceQueryService } from './admin/finance-query.service';
 import { ReverseService } from './admin/reverse.service';
 import { ReconcileService } from './reconcile/reconcile.service';
+// C2：资金↔记录对账（只读自调度循环；**值导入** —— DI 需要运行期身份）。
+import { RecordsReconcileService } from './reconcile/records-reconcile.service';
 import { WithdrawableService } from './currency/withdrawable.service';
 import { WithdrawableRpcController } from './rpc/withdrawable.rpc.controller';
+import { AgentModule } from './agent/agent.module';
 // 广告片 T11：回调入口 + 限流桶（**值导入** —— DI 需要类的运行期身份；`import type` 会容器崩）。
 import { AdRateLimiter } from './ads/ad-rate-limiter';
 import { AdsController } from './ads/ads.controller';
@@ -80,6 +83,10 @@ import { currencyDatabaseOptions } from './database.config';
     // ② 金币场 T8：配置缓存模块（`config.snapshot` 一条出站边的 `ClientsModule` 装配 +
     // 单例 `ConfigCacheService`）—— `WalletController.relief` 经本导入消费它。
     ConfigModule,
+    // 代理分润（2026-10-26）：域模块（settings/quota/ledger；由 RpcModule 复用以供
+    // ApplyService 注入 AgentLedgerService）。本处直接 imports 让未来的 agent 控制器/
+    // 自调度服务在 AppModule 图内可见（Nest 同模块去重，不产生第二份实例）。
+    AgentModule,
     // 广告片 T14：**第二条出站边**（第四键空间拉取通道 `config.adChannel.get`）的
     // ClientsModule 装配——`AdChannelConfigService` 经 `AD_CHANNEL_RPC_PROXY` 直发
     // （与该边在 ConfigModule 的快照代理**各自一条 TCP 连接**：两条边 timeout 语义不同，
@@ -118,6 +125,9 @@ import { currencyDatabaseOptions } from './database.config';
   providers: [
     HealthService,
     ReconcileService,
+    // C2：记录对账（未注册 = `onModuleInit` 永不执行 ⇒ 对账循环不存在、指标全缺，
+    // 而单测传替身仍全绿 —— T6 教训同款）。
+    RecordsReconcileService,
     FinanceQueryService,
     ReverseService,
     WithdrawableService,

@@ -6,11 +6,11 @@ import {
   type RobotDecideRequest,
   type RobotDecideResponse,
 } from '@fight-the-landlord/protocol';
-import { HandType, findSmallestBeatingCards } from '@fight-the-landlord/shared';
+import { HandType, findSmallestBeatingCards, incGame } from '@fight-the-landlord/shared';
 import { DouZeroClient, type DouZeroContext } from './douzero.client';
 import { decidePdkBot, type PdkRobotDecideRequest } from './bots/pdk';
 // 监控片 T5：失败计数（**失败路径恰一次**；reason 的有界值域与分类依据见该文件注释）。
-import { classifyDouZeroFailure, robotDecisionErrorsTotal } from './robot.metrics';
+import { classifyDouZeroFailure, robotDecisionErrorsTotal, robotRuleErrorsTotal } from './robot.metrics';
 // ⚠️ **值导入**（DI 陷阱纪律）：容器要按类型解析构造参数。
 import { ConfigCacheService } from '../config/config-cache.service';
 
@@ -69,14 +69,20 @@ export class BotPlayer {
   async decide(req: RobotDecideRequest): Promise<RobotDecideResponse> {
     const view = req.view;
     if (view.gameType === 'paodekuai') {
-      // 多玩法（Task 3.6）：pdk 走规则 bot（不调用 DouZero）。特征必须是 pdk 形状——
-      // 旧服务/畸形载荷不得静默套用斗地主特征。
-      if (req.features.gameType !== 'paodekuai' || !('pdkRules' in req.features)) {
-        throw new Error(
-          `paodekuai decide requires PdkRobotFeatures (bot ${req.botId})`,
-        );
+      try {
+        // 多玩法（Task 3.6）：pdk 走规则 bot（不调用 DouZero）。特征必须是 pdk 形状——
+        // 旧服务/畸形载荷不得静默套用斗地主特征。
+        if (req.features.gameType !== 'paodekuai' || !('pdkRules' in req.features)) {
+          throw new Error(
+            `paodekuai decide requires PdkRobotFeatures (bot ${req.botId})`,
+          );
+        }
+        return decidePdkBot({ ...req, view, features: req.features } as PdkRobotDecideRequest);
+      } catch (err) {
+        incGame(robotRuleErrorsTotal, 'paodekuai', 1, { reason: 'decision_error' });
+        this.logger.error(`PDK rule bot decision failed for bot ${req.botId}: ${String(err)}`);
+        throw err;
       }
-      return decidePdkBot({ ...req, view, features: req.features } as PdkRobotDecideRequest);
     }
     // 片① R3：机器人在叫抢阶段**既不叫也不抢**（规格 §1-3）。
     // 叫抢没有 AI 模型可用（上游 kwai/DouZero 树里没有叫抢模型），
@@ -115,14 +121,14 @@ export class BotPlayer {
         return { kind: 'play', cards, source: 'douzero' };
       }
       // 监控片 T5：调用成功但返回不在手里的牌 = 一次失败的决策（回落规则引擎同已发生）。
-      robotDecisionErrorsTotal.inc({ reason: 'douzero_invalid_cards' });
+      incGame(robotDecisionErrorsTotal, req.view.gameType, 1, { reason: 'douzero_invalid_cards' });
       this.logger.warn(
         `DouZero returned cards not in hand for bot ${req.botId}; falling back to rule engine`,
       );
     } catch (error) {
       // 监控片 T5：失败路径**恰一次** inc（reason 分档 = classifyDouZeroFailure）。
       // 超时（`DouZeroClient` 的 5s AbortSignal）/ HTTP 错 / 解析错：**一律回退规则引擎**
-      robotDecisionErrorsTotal.inc({ reason: classifyDouZeroFailure(error) });
+      incGame(robotDecisionErrorsTotal, req.view.gameType, 1, { reason: classifyDouZeroFailure(error) });
       this.logger.warn(
         `DouZero failed for bot ${req.botId}; falling back to rule engine: ${(error as Error).message}`,
       );

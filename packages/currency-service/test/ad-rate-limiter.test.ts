@@ -65,7 +65,7 @@ describe('AdRateLimiter：INCR+EXPIRE 单桶与 fail-open（克隆 pay NotifyRat
     let observed = false;
     try {
       expect(await limiter.exceeded()).toBe(false);
-      observed = warn.mock.calls.some((args) => String(args[0]).includes('fail-open'));
+      observed = warn.mock.calls.some((args: unknown[]) => String(args[0]).includes('fail-open'));
     } finally {
       warn.mockRestore();
     }

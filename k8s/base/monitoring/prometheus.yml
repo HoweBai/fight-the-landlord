@@ -1,0 +1,71 @@
+# k3s 形态的 Prometheus 抓取配置（挂载覆盖镜像内同名文件）。
+# compose 形态仍用 deploy/monitoring/prometheus/prometheus.yml（static targets）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager.ftl-monitoring.svc:9093"]
+scrape_configs:
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [ftl]
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secret/internal_token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+  - job_name: douzero
+    static_configs:
+      - targets: ["douzero.ftl.svc:2021"]
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter.ftl-monitoring.svc:9100"]
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["cadvisor.ftl-monitoring.svc:8080"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|start_time_seconds|last_seen)|machine_memory_bytes"
+        action: keep
+  - job_name: kube-state-metrics
+    static_configs:
+      - targets: ["kube-state-metrics.ftl-monitoring.svc:8080"]
+  - job_name: pushgateway
+    static_configs:
+      - targets: ["pushgateway.ftl-monitoring.svc:9091"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager.ftl-monitoring.svc:9093"]
+  - job_name: grafana
+    metrics_path: /grafana/metrics
+    static_configs:
+      - targets: ["grafana.ftl-monitoring.svc:3010"]
+  - job_name: alert-relay
+    static_configs:
+      - targets: ["alert-relay.ftl-monitoring.svc:8090"]
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secret/internal_token

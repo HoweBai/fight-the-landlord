@@ -58,6 +58,7 @@ describe('docs/games/paodekuai.md 对账（Task 3.2）', () => {
   it('玩法开关/人数闸/档位表在文档中列出（默认值与种子一致）', () => {
     for (const [key, value] of [
       ['game.paodekuai.enabled', '`false`'],
+      ['game.paodekuai.twoPlayerEnabled', '`false`'],
       ['game.paodekuai.nonThreePlayerEnabled', '`false`'],
     ] as const) {
       const matching = lines.filter((line) => line.includes(key));

@@ -30,6 +30,10 @@ export enum ErrCode {
   USER_NOT_FOUND = 11004,
   /** 账号已绑定其他设备（设备绑定安全功能：登录/WS 握手与已绑定设备不一致；403）。 */
   DEVICE_MISMATCH = 11005,
+  /** 代理分润：邀请码无效 / 停用 / 代理冻结 / 关闭期（400）。 */
+  AGENT_INVITE_INVALID = 11006,
+  /** 代理分润：冻结代理被禁止的动作（403；预留）。 */
+  AGENT_FROZEN = 11007,
 
   // 12xxx 房间 / 匹配
   ROOM_NOT_FOUND = 12001,
@@ -73,6 +77,14 @@ export enum ErrCode {
   E_CARD_COUNTER_PRICE_CHANGED = 14009,
   /** 记牌器收费片：同一 requestId 被不同 kind/hours 复用（换新请求号）。 */
   E_CARD_COUNTER_REQUEST_CONFLICT = 14010,
+  /** 代理分润：未达最低结算额 / 可结 ≤ 0（409）。 */
+  AGENT_SETTLEMENT_MIN = 14011,
+  /** 代理分润：已有待处理结算单（409）。 */
+  AGENT_SETTLEMENT_PENDING = 14012,
+  /** 代理分润：结算状态机非法转移 / 金额或 hash 复核失败（409）。 */
+  AGENT_SETTLEMENT_STATE = 14013,
+  /** 代理分润：比例/树不变量违反（400）。 */
+  AGENT_RATE_INVALID = 14014,
 
   // 15xxx 支付（支付片 T1 启用 15001–15009；设计 §8 + 规格 ⚙️9）
   /** 渠道调用失败（下单/查询不可用；可重试提示）。 */
@@ -127,6 +139,8 @@ export const CLIENT_ACTION: Record<ErrCode, ClientAction> = {
   [ErrCode.USER_BANNED]: ClientAction.BACK_TO_LOBBY,
   [ErrCode.USER_NOT_FOUND]: ClientAction.BACK_TO_LOBBY,
   [ErrCode.DEVICE_MISMATCH]: ClientAction.TOAST,
+  [ErrCode.AGENT_INVITE_INVALID]: ClientAction.TOAST,
+  [ErrCode.AGENT_FROZEN]: ClientAction.TOAST,
   [ErrCode.ROOM_NOT_FOUND]: ClientAction.BACK_TO_LOBBY,
   [ErrCode.ROOM_FULL]: ClientAction.BACK_TO_LOBBY,
   [ErrCode.NOT_YOUR_TURN]: ClientAction.IGNORE,
@@ -157,6 +171,10 @@ export const CLIENT_ACTION: Record<ErrCode, ClientAction> = {
   [ErrCode.E_CARD_COUNTER_UNAVAILABLE]: ClientAction.TOAST,
   [ErrCode.E_CARD_COUNTER_PRICE_CHANGED]: ClientAction.TOAST,
   [ErrCode.E_CARD_COUNTER_REQUEST_CONFLICT]: ClientAction.TOAST,
+  [ErrCode.AGENT_SETTLEMENT_MIN]: ClientAction.TOAST,
+  [ErrCode.AGENT_SETTLEMENT_PENDING]: ClientAction.TOAST,
+  [ErrCode.AGENT_SETTLEMENT_STATE]: ClientAction.TOAST,
+  [ErrCode.AGENT_RATE_INVALID]: ClientAction.TOAST,
   /** 支付片（⚙️9）：15001–15006、15008、15009 → 既有 TOAST（文案走 `message`）；**15007 → IGNORE**（服务端内部面，且入 `RESERVED_CODES`）。 */
   [ErrCode.PAY_CHANNEL_ERROR]: ClientAction.TOAST,
   [ErrCode.PAY_ORDER_NOT_FOUND]: ClientAction.TOAST,

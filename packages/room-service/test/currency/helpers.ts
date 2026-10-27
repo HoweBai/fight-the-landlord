@@ -20,7 +20,6 @@ import type { ConfigCacheService } from '../../src/config/config-cache.service';
 import { asConfigCache, makeConfigCache, type ConfigCacheStub } from '../helpers/config-cache.stub';
 import { asRedis, createFakeRedis, type FakeRedis } from '../helpers/fake-redis';
 import { currencySettleResultTotal } from '../../src/metrics/room.metrics';
-import { labeledValue } from '../helpers/metric-readout';
 
 export const ROOM_CODE = 'ROOM01';
 export const VERSION = 7;
@@ -100,6 +99,8 @@ export interface SettleHarness {
   redis: FakeRedis;
   currency: { get: ReturnType<typeof vi.fn>; apply: ReturnType<typeof vi.fn> };
   record: { moneyDelta: ReturnType<typeof vi.fn> };
+  /** C1：record 阶段替身（默认 sweep 成功；测试可覆写挂起/抛错）。 */
+  recordOutbox: { sweep: ReturnType<typeof vi.fn> };
   robotHook: { afterSettle: ReturnType<typeof vi.fn> } & SettleRobotHook;
   configCache: ConfigCacheStub;
   /** `bindBroadcast` 收到的每一次调用（顺序即播放顺序；多玩法时带 gameType/playerCount）。 */
@@ -116,6 +117,7 @@ export function makeHarness(): SettleHarness {
   const redis = createFakeRedis();
   const currency = { get: vi.fn(), apply: vi.fn() };
   const record = { moneyDelta: vi.fn().mockResolvedValue({ matched: [0, 1, 2] }) };
+  const recordOutbox = { sweep: vi.fn().mockResolvedValue(undefined) };
   const robotHook = { afterSettle: vi.fn().mockResolvedValue(undefined) };
   const configCache = makeConfigCache();
   const svc = new SettleService(
@@ -134,12 +136,17 @@ export function makeHarness(): SettleHarness {
       ...(meta === undefined ? {} : { gameType: meta.gameType, playerCount: meta.playerCount }),
     }),
   );
-  return { svc, redis, currency, record, robotHook, configCache, broadcasts };
+  return { svc, redis, currency, record, recordOutbox, robotHook, configCache, broadcasts };
 }
 
-/** 读 `currency_settle_result_total{result}` 的当前值（无序列 ⇒ 0）。 */
+/** 读 `currency_settle_result_total{result}` 的当前值（跨玩法求和；无序列 ⇒ 0）。 */
 export async function resultCount(result: string): Promise<number> {
-  return (await labeledValue(currencySettleResultTotal, { result })) ?? 0;
+  const { values } = (await currencySettleResultTotal.get()) as {
+    values: Array<{ labels: Record<string, string>; value: number }>;
+  };
+  return values
+    .filter((v) => v.labels.result === result)
+    .reduce((acc, v) => acc + v.value, 0);
 }
 
 /** 装捕获 sink（照各既有测试的 M4 纪律：用后必须还原 Logger —— 见 afterEach）。 */

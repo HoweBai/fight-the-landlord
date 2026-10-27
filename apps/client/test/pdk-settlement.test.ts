@@ -59,6 +59,37 @@ describe('S6.2：PdkSettlement', () => {
     wrapper.unmount();
   });
 
+  it('4 人：四行表格 + 名次 1–4', () => {
+    const store = useGameStore();
+    store.mySeat = 2;
+    const wrapper = mount(PdkSettlement, {
+      props: {
+        settlement: result({
+          playerCount: 4,
+          winnerSeats: [0],
+          scoreChanges: [
+            { seat: 0, delta: 120 },
+            { seat: 1, delta: -60 },
+            { seat: 2, delta: -40 },
+            { seat: 3, delta: -20 },
+          ],
+          remaining: [0, 5, 3, 1],
+        }),
+      },
+    });
+
+    expect(wrapper.findAll('.pdk-settlement__row')).toHaveLength(4);
+    expect(wrapper.findAll('.pdk-settlement__row-name').map((n) => n.text())).toEqual([
+      '玩家0',
+      '玩家1',
+      '我',
+      '玩家3',
+    ]);
+    expect(wrapper.text()).toContain('第 4 名');
+
+    wrapper.unmount();
+  });
+
   it('三行表格 + 我的行高亮 + 胜者名金色', () => {
     const store = useGameStore();
     store.mySeat = 1;

@@ -1,0 +1,13 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata: { name: ftl-data-critical }
+value: 1000000
+globalDefault: false
+description: '数据层与入口（MySQL/Redis/edge/game-service/config-service）：节点压力时优先保留。'
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata: { name: ftl-monitoring }
+value: 100000
+globalDefault: false
+description: '监控栈：低于数据层、高于普通业务。'

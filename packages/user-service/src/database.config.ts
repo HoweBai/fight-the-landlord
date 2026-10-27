@@ -39,7 +39,7 @@ function mysqlConnectionOptions() {
      * R248（用户裁决）：**启动时自动跑迁移**。新库（docker volume 被清掉时）靠它建表，
      * 已存在的库首跑只会写 `migrations` 表（迁移里是 `CREATE TABLE IF NOT EXISTS`）。
      */
-    migrationsRun: true,
+    migrationsRun: process.env.DB_MIGRATIONS_RUN !== 'false',
   };
 }
 

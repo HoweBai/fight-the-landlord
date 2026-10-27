@@ -7,6 +7,7 @@ import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
 import { RecordRpcController } from './rpc/record.rpc.controller';
 import { UserNicknamesRpcController } from './rpc/user-nicknames.rpc.controller';
+import { UserAgentProfileRpcController } from './rpc/user-agent-profile.rpc.controller';
 import { RecordsController } from './records/records.controller';
 import { RecordsService } from './records/records.service';
 import { RecordsCleanupService } from './records/records-cleanup.service';
@@ -65,6 +66,7 @@ import { userDatabaseOptions } from './database.config';
     HealthController,
     RecordRpcController,
     UserNicknamesRpcController,
+    UserAgentProfileRpcController,
     RecordsController,
     DeviceReportRpcController,
     AdminRiskController,

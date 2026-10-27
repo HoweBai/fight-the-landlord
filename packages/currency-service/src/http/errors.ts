@@ -32,6 +32,13 @@ export const HTTP_STATUS: Partial<Record<ErrCode, number>> = {
   [ErrCode.E_CARD_COUNTER_UNAVAILABLE]: 409,
   [ErrCode.E_CARD_COUNTER_PRICE_CHANGED]: 409,
   [ErrCode.E_CARD_COUNTER_REQUEST_CONFLICT]: 409,
+  // 代理分润（2026-10-26）：邀请码/比例 400；结算三态 409；冻结 403。
+  [ErrCode.AGENT_INVITE_INVALID]: 400,
+  [ErrCode.AGENT_FROZEN]: 403,
+  [ErrCode.AGENT_SETTLEMENT_MIN]: 409,
+  [ErrCode.AGENT_SETTLEMENT_PENDING]: 409,
+  [ErrCode.AGENT_SETTLEMENT_STATE]: 409,
+  [ErrCode.AGENT_RATE_INVALID]: 400,
 };
 
 /** 统一响应形态（§11.1）：`{ code, message, data }`。 */

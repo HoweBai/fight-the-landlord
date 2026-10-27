@@ -33,7 +33,10 @@ describe('AuthService（§5.1 / §7.2）', () => {
     deviceBindingEnabled: ReturnType<typeof vi.fn>;
   };
   /** 货币客户端假件（货币片 T6：`currency.apply` 的发送点）。 */
-  let currency: { apply: ReturnType<typeof vi.fn> };
+  let currency: {
+    apply: ReturnType<typeof vi.fn>;
+    agentBind: ReturnType<typeof vi.fn>;
+  };
   /** 设备绑定服务假件（设备绑定片：`checkOrBind` 的调用点；11005 由它抛）。 */
   let deviceBindings: { checkOrBind: ReturnType<typeof vi.fn> };
 
@@ -54,6 +57,7 @@ describe('AuthService（§5.1 / §7.2）', () => {
     };
     currency = {
       apply: vi.fn(async () => ({ opId: 1, actionId: 'x', entries: [], replayed: false })),
+      agentBind: vi.fn(async () => ({ status: 'bound' })),
     };
     deviceBindings = { checkOrBind: vi.fn(async () => undefined) };
     service = new AuthService(
@@ -110,6 +114,67 @@ describe('AuthService（§5.1 / §7.2）', () => {
     await service.logout(access.jti, res.refreshToken);
     expect(await tokens.isActive(access.jti)).toBe(false);
     expect(await tokens.isActive(refresh.jti)).toBe(false);
+  });
+
+  describe('代理邀请码绑定（2026-10-26）', () => {
+    it('带码注册：agent.bind 先于落库；code 归一大写；ownerId = 新 userId', async () => {
+      const res = await service.register({
+        phone: '13800000050',
+        password: 'passw0rd',
+        nickname: '阿豆',
+        inviteCode: ' abcd2345 ',
+      } as any);
+      expect(currency.agentBind).toHaveBeenCalledWith({
+        ownerId: res.user.id,
+        code: 'ABCD2345',
+        phone: '13800000050',
+        source: 'signup',
+      });
+      const bindOrder = currency.agentBind.mock.invocationCallOrder[0]!;
+      const createOrder = repo.create.mock.invocationCallOrder[0]!;
+      expect(bindOrder).toBeLessThan(createOrder);
+    });
+
+    it('不带码/空码 ⇒ 不调 agent.bind', async () => {
+      await service.register({ phone: '13800000051', password: 'passw0rd', nickname: '阿豆' } as any);
+      await service.register({ phone: '13800000052', password: 'passw0rd', nickname: '阿豆', inviteCode: '   ' } as any);
+      expect(currency.agentBind).not.toHaveBeenCalled();
+    });
+
+    it('无效码 ⇒ 11006，且不落库/不发赠币', async () => {
+      currency.agentBind.mockRejectedValueOnce(
+        new CurrencyServiceError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效'),
+      );
+      configCache.signupGrant.mockReturnValueOnce(100);
+      await expect(
+        service.register({ phone: '13800000053', password: 'passw0rd', nickname: '阿豆', inviteCode: 'BAD' } as any),
+      ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID });
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(currency.apply).not.toHaveBeenCalled();
+    });
+
+    it('绑定传输/其它业务失败 ⇒ 10007 fail-closed', async () => {
+      currency.agentBind.mockRejectedValueOnce(
+        new CurrencyServiceError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE),
+      );
+      await expect(
+        service.register({ phone: '13800000054', password: 'passw0rd', nickname: '阿豆', inviteCode: 'ABCD2345' } as any),
+      ).rejects.toMatchObject({ code: ErrCode.UPSTREAM_UNAVAILABLE });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('ignored / already_bound 均视为成功（注册照常）', async () => {
+      for (const status of ['ignored', 'already_bound'] as const) {
+        currency.agentBind.mockResolvedValueOnce({ status });
+        const res = await service.register({
+          phone: status === 'ignored' ? '13800000055' : '13800000056',
+          password: 'passw0rd',
+          nickname: '阿豆',
+          inviteCode: 'ABCD2345',
+        } as any);
+        expect(res.accessToken).toBeTruthy();
+      }
+    });
   });
 
   // ─── 注册赠送链路（货币片 T6 / 规格 §2.7 + ⚙️8；§6.1 user-service 行全列）─────────

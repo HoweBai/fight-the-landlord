@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { encodeCards, encodeHand } from '@fight-the-landlord/protocol';
 import type { GameSession } from '@fight-the-landlord/shared';
 import { GameService, GAME_EVENTS_CHANNEL } from '../src/game/game.service';
+import { gameSettleFailuresTotal } from '../src/metrics/game.metrics';
 import type { Redis } from 'ioredis';
 import { redisDouble, resetRedisDouble, type RedisDouble } from './helpers-ioredis';
 
@@ -163,5 +164,55 @@ describe('GameService Redis publish', () => {
       // game.ended 照常发布（不因记录面缺失而吞事件）——result 仍在
       expect(ended.result?.winner).toBe('landlord');
     });
+  });
+});
+
+describe('A1：publishEnded 失败计数', () => {
+  async function exactGauge(metric: { get(): Promise<unknown> }, labels: Record<string, string>): Promise<number | undefined> {
+    const { values } = (await metric.get()) as {
+      values: Array<{ labels: Record<string, string>; value: number }>;
+    };
+    return values.find((v) =>
+      Object.keys(v.labels).sort().join('|') === Object.keys(labels).sort().join('|') &&
+      Object.entries(labels).every(([k, val]) => String(v.labels[k]) === val),
+    )?.value;
+  }
+
+  it('settle 抛错 ⇒ phase=settle 计数 + 仍抛出；publish 抛错 ⇒ phase=publish', async () => {
+    const redis = {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => 'OK'),
+      publish: vi.fn().mockResolvedValue(1),
+      quit: vi.fn(async () => undefined),
+    };
+    const svc = new GameService(redis as unknown as Redis);
+    const session = { gameType: 'doudizhu', playerCount: 3, version: 1 } as never;
+    const fakeRuntime = {
+      settle: vi.fn(() => { throw new Error('boom'); }),
+      buildRecord: vi.fn(() => undefined),
+    };
+    (svc as unknown as { runtimeFor: (s: unknown) => unknown }).runtimeFor = () => fakeRuntime;
+
+    const beforeSettle = (await exactGauge(gameSettleFailuresTotal, {
+      game_type: 'doudizhu', phase: 'settle',
+    })) ?? 0;
+    await expect(
+      (svc as unknown as { publishEnded: (r: string, s: unknown) => Promise<void> }).publishEnded('R1', session),
+    ).rejects.toThrow('boom');
+    expect(await exactGauge(gameSettleFailuresTotal, {
+      game_type: 'doudizhu', phase: 'settle',
+    })).toBe(beforeSettle + 1);
+
+    fakeRuntime.settle.mockReturnValue({ winner: 'landlord' } as never);
+    redis.publish.mockRejectedValueOnce(new Error('pub'));
+    const beforePublish = (await exactGauge(gameSettleFailuresTotal, {
+      game_type: 'doudizhu', phase: 'publish',
+    })) ?? 0;
+    await expect(
+      (svc as unknown as { publishEnded: (r: string, s: unknown) => Promise<void> }).publishEnded('R1', session),
+    ).rejects.toThrow('pub');
+    expect(await exactGauge(gameSettleFailuresTotal, {
+      game_type: 'doudizhu', phase: 'publish',
+    })).toBe(beforePublish + 1);
   });
 });

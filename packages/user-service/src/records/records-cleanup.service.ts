@@ -8,7 +8,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { incGame, runWithTrace } from '@fight-the-landlord/shared';
 import {
   ConfigCacheService,
   RECORDS_CLEANUP_DEFAULT_INTERVAL_MS,
@@ -194,12 +194,12 @@ export class RecordsCleanupService implements OnModuleInit, OnApplicationShutdow
     const startedAtMs = Date.now();
 
     // 先玩家、后父行（两组各自成对；pdk 表的 `ended_at` 是 BIGINT 毫秒，直接传 number）。
-    const playersDeleted =
-      (await this.deleteBatches('game_record_players', cutoff)) +
-      (await this.deleteBatches('game_record_players_pdk', cutoff.getTime()));
-    const recordsDeleted =
-      (await this.deleteBatches('game_records', cutoff)) +
-      (await this.deleteBatches('game_records_pdk', cutoff.getTime()));
+    const ddzPlayers = await this.deleteBatches('game_record_players', cutoff);
+    const pdkPlayers = await this.deleteBatches('game_record_players_pdk', cutoff.getTime());
+    const ddzRecords = await this.deleteBatches('game_records', cutoff);
+    const pdkRecords = await this.deleteBatches('game_records_pdk', cutoff.getTime());
+    const playersDeleted = ddzPlayers + pdkPlayers;
+    const recordsDeleted = ddzRecords + pdkRecords;
 
     const durationMs = Date.now() - startedAtMs;
     this.logger.log(
@@ -208,7 +208,8 @@ export class RecordsCleanupService implements OnModuleInit, OnApplicationShutdow
     );
     // 监控片 T6：成功分支（时间戳先行 —— 它的可达性不依赖后面的采样）。
     recordsCleanupLastSuccessTimestampSeconds.set(Date.now() / 1000);
-    recordsRowsDeletedTotal.inc(recordsDeleted);
+    incGame(recordsRowsDeletedTotal, 'doudizhu', ddzRecords);
+    incGame(recordsRowsDeletedTotal, 'paodekuai', pdkRecords);
     await this.sampleTableBytes();
     return { recordsDeleted, playersDeleted };
   }

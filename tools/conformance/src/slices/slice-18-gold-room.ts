@@ -5,7 +5,7 @@
  *  ⓪ 起手自证 + 清源：五个容器 healthy（room/user/currency/gateway/config）+ **金币队列清源**
  *     （`match:queue:gold:*` 与 gold 票的 `match:meta:*`——E 组的补位谓词是「队里恰好这两个
  *     真人」，任何上一轮崩溃留下的陈旧票都会把第三个座位吃掉）；
- *  A 配置：`/api/config` 恰 21 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
+ *  A 配置：`/api/config` 恰 22 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
  *  B 开关：gold 关 ⇒ 12010、开 ⇒ 不再 12010；free 关 ⇒ random 12010、恢复；
  *  C 门槛：0 余额 ⇒ 14003（含所需金额）→ 管理面补足 ⇒ 入队成功；
  *  D 取消排队（C21）：入队 → 探针（ZSCORE/meta 指纹，`slice-12:438-473` 先例）→ unmatch →
@@ -22,8 +22,8 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 27 条
- *     （13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助）；
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 38 条
+ *     （含 C1 三条记录 outbox + C2 三条记录对账；分类计数以断言处为准）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
  *     **与两个 robot gauge 的新鲜值**（默认 1h 间隔下启动轮早于 E 的池注资 ⇒ H 只断言序列
@@ -133,7 +133,7 @@ const adSecret = (): string => (cachedAdSecret ??= loadAdCallbackSecret());
  *  阶段 2 已删除派生字段 `entryFeePercents`；
  *  `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间，UTF-16 `'A'<'E'`）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 
 /** §12.1 A 组：内部键零泄漏的**显式名单**（+ 全量 `currency.` 前缀扫描兜底）。 */
 const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'] as const;
@@ -150,6 +150,12 @@ const NEW_KEYS = [
 
 /** §11.2 的三条新告警规则名（H 组；总数 18（风控 T11 同步）+ 全名单由 slice-16 承接）。 */
 const NEW_ALERT_RULES = ['CurrencySettleOutboxStuck', 'CurrencyReconcileDrift', 'CurrencyRobotPoolLow'] as const;
+/** C2（2026-10-26）：资金↔记录对账三条规则（总数 35→38；全名单由 slice-16 承接）。 */
+const C2_ALERT_RULES = [
+  'RecordsReconcileMismatch',
+  'RecordsReconcileOrphanOps',
+  'RecordsReconcileStalled',
+] as const;
 
 /** E/F 的两真人预充（规格 §12.1：5,000,000 = 5 笔 ×1e6；admin 单笔上限 1e6）。 */
 const PRE_CHARGE_TOTAL = 5_000_000;
@@ -363,6 +369,12 @@ function sumMetric(text: string, name: string): number {
 }
 
 /** 某指标**恰好匹配这些标签**的序列值（缺席返回 `null` —— 与「值是 0」分开）。 */
+function sumMetricWhere(text: string, name: string, labels: Record<string, string>): number {
+  return parseProm(text)
+    .filter((s) => s.name === name && Object.entries(labels).every(([k, v]) => s.labels[k] === v))
+    .reduce((acc, s) => acc + (Number.isFinite(s.value) ? s.value : 0), 0);
+}
+
 function seriesValue(text: string, name: string, want: Record<string, string>): number | null {
   for (const s of parseProm(text)) {
     if (s.name !== name) continue;
@@ -609,23 +621,24 @@ interface SettleRecount {
   expected: number[];
   /** 输光截断前的应付池 `P`。 */
   pool: number;
-  /** `P − Σg`（∈ [0, 赢家数)）。 */
+  /** `P − Σ最终 g`（复算自证：复算自身分发后相减；新口径期望恒 0）。 */
   residue: number;
-  /** 赢家数（residue 的上界用）。 */
+  /** 赢家数（诊断用）。 */
   winners: number;
   rakeTotal: number;
 }
 
 /**
- * 期望 delta 复算（规格 §4 公式**逐字**）：
+ * 期望 delta 复算（规格 2026-10-26 最大余数法）：
  * ```
  * raw[i]   = seat i 是 landlord ? landlordScoreChange : farmerScoreChange
  * 输家:  pay = min(−raw, 结算前余额);  delta = −pay;  P += pay
- * 赢家:  g = floor(raw × P / Σraw[赢家]);  rake = floor(g × rakePercent / 100);  delta = g − rake
- * residue = P − Σg
+ * 赢家:  g = floor(raw × P / Σraw[赢家]);  frac = raw × P − g × Σraw
+ *        R = P − Σg ⇒ 按 frac 降序、座位升序前 R 名各 +1
+ *        rake = floor(最终 g × rakePercent / 100);  delta = 最终 g − rake
+ * residue = P − Σ最终 g（恒 0）
  * ```
- * **不直断「和 = 0」**（炸弹局会因机器人侧截断产生残差）：族内恒等式是
- * `Σdelta = −(residue + rakeTotal)`。
+ * **不直断「和 = 0」**（有抽水时恒等式是 `Σdelta = −(residue + rakeTotal)`）。
  */
 function recountSettlement(
   s: SettlementWire,
@@ -647,12 +660,26 @@ function recountSettlement(
   const rawWinSum = winnerIdx.reduce((acc, i) => acc + raw[i]!, 0);
   let gainedSum = 0;
   let rakeTotal = 0;
-  for (const i of winnerIdx) {
-    const gain = Math.floor((raw[i]! * pool) / rawWinSum);
-    const rake = Math.floor((gain * rakePercent) / 100);
-    expected[i] = gain - rake;
-    gainedSum += gain;
-    rakeTotal += rake;
+  if (winnerIdx.length > 0 && rawWinSum > 0) {
+    // 最大余数法（2026-10-26 spec D1/D2/D4）：零头分给赢家；抽水基数 = 最终所得。
+    const bigS = BigInt(rawWinSum);
+    const bigPool = BigInt(pool);
+    const rows = winnerIdx.map((i) => {
+      const num = BigInt(raw[i]!) * bigPool;
+      return { i, gain: num / bigS, frac: num % bigS };
+    });
+    const remainder = pool - rows.reduce((acc, r) => acc + Number(r.gain), 0);
+    const byFraction = [...rows].sort((a, b) =>
+      a.frac === b.frac ? a.i - b.i : a.frac > b.frac ? -1 : 1,
+    );
+    for (let k = 0; k < remainder; k += 1) byFraction[k]!.gain += 1n;
+    for (const r of rows) {
+      const gain = Number(r.gain);
+      const rake = Math.floor((gain * rakePercent) / 100);
+      expected[r.i] = gain - rake;
+      gainedSum += gain;
+      rakeTotal += rake;
+    }
   }
   return { expected, pool, residue: pool - gainedSum, winners: winnerIdx.length, rakeTotal };
 }
@@ -778,9 +805,10 @@ async function assertGoldGame(
 ): Promise<SettleRecount> {
   const recount = recountSettlement(ev.settlement, ev.preBalances, expectedRakePercent);
   checks.that(
-    recount.residue >= 0 && recount.residue < recount.winners,
-    `${what}：残差落在 [0, 赢家数)（residue=${recount.residue}，赢家 ${recount.winners}）—— 复算口径：` +
-      `P=${recount.pool} − Σg；炸弹局的机器人侧截断会在机器人赢时产生残差`,
+    recount.residue === 0,
+    `${what}：新口径残留应恒 0（residue=${recount.residue}，赢家 ${recount.winners}）—— 口径：` +
+      `P=${recount.pool} − Σ最终 g（最大余数法，零头已分给赢家）；` +
+      `本式是复算自证，实现侧判别力见逐座比对与 op 两列`,
   );
   const expectedSum = recount.expected.reduce((a, b) => a + b, 0);
   // 本式 = 复算**自检**（抓复算笔误），非产品判据；产品判别力由同函数逐座（game.balances 差）/
@@ -987,12 +1015,12 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // A 配置
     // ══════════════════════════════════════════════════════════════════════
-    step('A：/api/config 恰 21 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
+    step('A：/api/config 恰 22 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
     const uCfg = await registerUser(2);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     checks.eq(cfgA.body?.code, ErrCode.OK, 'A /api/config code 0');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 21 键');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 22 键');
     checks.that(
       Array.isArray((cfgA.body?.data as any)?.baseScoreLevels) &&
         ((cfgA.body!.data as any).baseScoreLevels as unknown[]).length > 0,
@@ -1299,7 +1327,7 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // F 抽水
     // ══════════════════════════════════════════════════════════════════════
-    step('F：rakePercent=10 → 再打一局（同 E 口径）→ 赢家实收 = g − floor(g×10/100)、entries 和 = −(抽水+残差) → 复原 0');
+    step('F：rakePercent=10 → 再打一局（同 E 口径）→ 赢家实收 = finalGain − floor(finalGain×10/100)（finalGain 含分得的零头）、entries 和 = −(抽水+残差) → 复原 0');
     // ③ T5（写桶扩边：X-Admin 且非 GET ⇒ POST adjust 也计数）之后，本片的令牌写预算
     // 在快速机器上会贴边 30/5 分钟（机制复现：第 31 笔 ⇒ 429）⇒ F/G 两段换新令牌续跑。
     // ⚠️ 这不是放宽判据：换令牌后每段写量（≈12）仍受**同一条桶规则**约束。
@@ -1310,7 +1338,20 @@ export async function runSlice18(): Promise<Checks> {
       `F PUT rakePercent=10 ⇒ 200 且 room-service 快照生效（version=${putRake.expected} 计数 ${putRake.baseline}→${putRake.observed}）`,
     );
     // 同 E：房间已在 runGoldGame 内「创建即 push」入 openRooms（R156）。
+    const gamesEndedBefore = seriesValue(readRoomMetrics(), 'games_ended_total', { game_type: 'doudizhu' }) ?? 0;
     const evF = await runGoldGame(checks, admin, 'F 抽水局', 'S18F', openRooms);
+    let endedNow: number | null = null;
+    const endedDeadline = Date.now() + 30_000;
+    for (;;) {
+      endedNow = seriesValue(readRoomMetrics(), 'games_ended_total', { game_type: 'doudizhu' });
+      if (endedNow !== null && endedNow >= gamesEndedBefore + 1) break;
+      if (Date.now() >= endedDeadline) break;
+      await sleep(1_000);
+    }
+    checks.that(
+      endedNow !== null && endedNow >= gamesEndedBefore + 1,
+      `F：games_ended_total{game_type="doudizhu"} ≥ 基线+1（${gamesEndedBefore} → ${endedNow}）`,
+    );
     checks.eq(evF.balancesVersion, evF.settlementVersion, 'F game.balances.version = game.settlement.version');
     const recountF = await assertGoldGame(checks, admin, evF, 10, 'F');
     checks.that(recountF.rakeTotal > 0, `F 抽水总额 > 0（实测 ${recountF.rakeTotal}；赢家实收已逐座 = g − floor(g×10/100) 口径）`);
@@ -1524,8 +1565,8 @@ export async function runSlice18(): Promise<Checks> {
       checks.that(roomMetrics.includes(name), `H room-service /metrics 含 ${name}`);
     }
     const terminalSettles =
-      (seriesValue(roomMetrics, 'currency_settle_result_total', { result: 'ok' }) ?? 0) +
-      (seriesValue(roomMetrics, 'currency_settle_result_total', { result: 'replayed' }) ?? 0);
+      sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'ok' }) +
+      sumMetricWhere(roomMetrics, 'currency_settle_result_total', { result: 'replayed' });
     checks.that(
       terminalSettles >= 1,
       `H 终态结算序列（ok|replayed）≥ 1（实测 ${terminalSettles}；E/F 两局必现）`,
@@ -1534,8 +1575,8 @@ export async function runSlice18(): Promise<Checks> {
       seriesValue(roomMetrics, 'currency_settle_residue_total', {}) !== null,
       'H 残差序列在场（零和局也 inc 0）',
     );
-    const outboxSize = seriesValue(roomMetrics, 'currency_settle_outbox_size', {});
-    const outboxOldest = seriesValue(roomMetrics, 'currency_settle_outbox_oldest_seconds', {});
+    const outboxSize = sumMetric(roomMetrics, 'currency_settle_outbox_size');
+    const outboxOldest = sumMetric(roomMetrics, 'currency_settle_outbox_oldest_seconds');
     checks.that(
       outboxSize === 0 && outboxOldest === 0,
       `H 补偿队列静默：outbox_size=${outboxSize}、oldest=${outboxOldest}（E/F 全成功 ⇒ 两箱空）`,
@@ -1572,9 +1613,11 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 27, 'H Prometheus /api/v1/rules 恰 27 条（13 既有 + 3 金币 + 2 风控 + 5 支付 + 2 通知 + 2 救助；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 同步）');
+    checks.eq(ruleNames.length, 38, 'H Prometheus /api/v1/rules 恰 38 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 / C2 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
+    const missingC2Rules = C2_ALERT_RULES.filter((n) => !ruleNames.includes(n));
+    checks.that(missingC2Rules.length === 0, `H 三条 C2 记录对账规则名逐个在场（缺 ${JSON.stringify(missingC2Rules)}）`);
 
     // ══════════════════════════════════════════════════════════════════════
     // I 对账

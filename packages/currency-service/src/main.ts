@@ -15,6 +15,23 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  // 代理分润（2026-10-26）：生产环境的两个密钥 fail-closed。
+  // - `AGENT_PHONE_HMAC_KEY` 缺失 ⇒ 自玩判定会退化成公开兜底 key（不可接受）；
+  // - `AGENT_JWT_SECRET` 与 `JWT_SECRET` 都缺失 ⇒ 代理令牌可用仓库公开默认值伪造。
+  // dev/test 允许回落（与 admin middleware 的密钥链同族；生产必须显式配置）。
+  if (process.env.NODE_ENV === 'production' && !process.env.AGENT_PHONE_HMAC_KEY) {
+    console.error('AGENT_PHONE_HMAC_KEY is required in production (agent self-play HMAC)');
+    process.exit(1);
+  }
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !process.env.AGENT_JWT_SECRET &&
+    !process.env.JWT_SECRET
+  ) {
+    console.error('AGENT_JWT_SECRET or JWT_SECRET is required in production (agent portal JWT)');
+    process.exit(1);
+  }
+
   // S7（R142）：**所有** Nest 日志经统一脱敏器出站（§5.5）。
   // 必须在 `NestFactory.create` **之前**安装 —— 否则启动早期的日志不脱敏。
   Logger.overrideLogger(
@@ -37,6 +54,13 @@ async function bootstrap() {
   // query、无 body，本件不再承载判据）；保留是规格明示——与 pay 同形（其余端点只见增益：
   // 原样解析行为不变）。POST 时代的 16KB 体积闸 / 415 内容类型闸随 GET 化退役（在控制器）。
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
+  app.enableShutdownHooks();
+  // k3s 迁移 Job 专用：启动迁移跑完即退出，不监听端口。
+  if (process.env.DB_MIGRATIONS_ONLY === 'true') {
+    await app.close();
+    process.exit(0);
+  }
   // Task 4（R1106/R1107）：trace 中间件**必须排在最前**（在 `createInternalTokenMiddleware()`
   // 之前）—— 否则更早的中间件（如 401 拒答）打的日志没有 trace 上下文。
   app.use(createTraceMiddleware());

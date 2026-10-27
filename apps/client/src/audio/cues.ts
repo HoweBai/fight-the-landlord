@@ -6,7 +6,7 @@
  * 以及 `composables/useTableSound.ts` 的视图 diff）。
  *
  * ⚠️ **牌型播报（50 条）已全量接入**（2026-10-22 用户裁决 U5-2）：
- * 选择逻辑在 `play-cues.ts`（`parseHand` → cue 名），本表只放文件名。
+ * 选择逻辑在 `play-cues.ts`（ddz `cueForPlay`）与 `pdk-play-cues.ts`（pdk `cueForPdkPlay`），本表只放文件名。
  * 牌型判定只用于**选哪条音效**，不用于合法性 / 胜负判断。
  *
  * 项 6（小程序分包）：除大厅 BGM（`MusicEx_Welcome`，主包 `/static/audio/`）外，

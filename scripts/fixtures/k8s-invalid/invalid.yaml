@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: game-service }
+spec:
+  strategy: { type: RollingUpdate }
+  template:
+    spec:
+      containers:
+        - name: game-service
+          image: ghcr.io/x/game-service:latest

@@ -14,6 +14,9 @@ import { RiskControl1790000000000 } from '../src/migrations/1790000000000-RiskCo
 import { DeviceBinding1790100000000 } from '../src/migrations/1790100000000-DeviceBinding';
 import { UsersCreatedAtIndex1796200000000 } from '../src/migrations/1796200000000-UsersCreatedAtIndex';
 import { PdkRecords1796300000000 } from '../src/migrations/1796300000000-PdkRecords';
+import { PdkRecordGameTypeDdl1797000000003 } from '../src/migrations/1797000000003-PdkRecordGameTypeDdl';
+import { PdkRecordPlayerBackfill1797000000004 } from '../src/migrations/1797000000004-PdkRecordPlayerBackfill';
+import { RiskReviewGameType1797000000005 } from '../src/migrations/1797000000005-RiskReviewGameType';
 
 /**
  * E7（§10.3：「`synchronize: true` **仅限开发环境**；MVP 上线前须改为显式迁移脚本」）。
@@ -801,5 +804,146 @@ describe('跑得快记录：PdkRecords 迁移建出 game_records_pdk / game_reco
     expect(migration.name).toBe('PdkRecords1796300000000');
     expect(typeof migration.up).toBe('function');
     expect(typeof migration.down).toBe('function');
+  });
+});
+
+describe('A2：PDK 记录玩法/逐座投影迁移（DDL 与回填分离）', () => {
+  it('类名/时间戳：两条新迁移晚于 PdkRecords 且不匹配既有 `startsWith(PdkRecords)` 选择器', () => {
+    expect(new PdkRecordGameTypeDdl1797000000003().name).toBe(
+      'PdkRecordGameTypeDdl1797000000003',
+    );
+    expect(new PdkRecordPlayerBackfill1797000000004().name).toBe(
+      'PdkRecordPlayerBackfill1797000000004',
+    );
+    expect('PdkRecordGameTypeDdl1797000000003'.startsWith('PdkRecords')).toBe(false);
+    expect('PdkRecordPlayerBackfill1797000000004'.startsWith('PdkRecords')).toBe(false);
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('PdkRecordGameTypeDdl1797000000003')).toBeGreaterThan(1796300000000);
+    expect(ts('PdkRecordPlayerBackfill1797000000004')).toBeGreaterThan(
+      ts('PdkRecordGameTypeDdl1797000000003'),
+    );
+  });
+
+  it('DDL up 恰两条 ALTER（父表 game_type；玩家行 score_change/won + 复合索引）；down 逆序两条', async () => {
+    const statements: string[] = [];
+    const runner = {
+      query: async (sql: string) => {
+        statements.push(sql);
+      },
+    } as unknown as QueryRunner;
+
+    await new PdkRecordGameTypeDdl1797000000003().up(runner);
+    expect(statements).toEqual([
+      'ALTER TABLE `game_records_pdk` ADD COLUMN `game_type` varchar(16) NOT NULL DEFAULT \'paodekuai\'',
+      'ALTER TABLE `game_record_players_pdk` ' +
+        'ADD COLUMN `score_change` int NOT NULL DEFAULT 0, ' +
+        'ADD COLUMN `won` tinyint(1) NOT NULL DEFAULT 0, ' +
+        'ADD KEY `idx_pdk_user_ended` (`user_id`, `ended_at`)',
+    ]);
+
+    const down: string[] = [];
+    const downRunner = {
+      query: async (sql: string) => {
+        down.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new PdkRecordGameTypeDdl1797000000003().down(downRunner);
+    expect(down).toEqual([
+      'ALTER TABLE `game_record_players_pdk` DROP KEY `idx_pdk_user_ended`, DROP COLUMN `won`, DROP COLUMN `score_change`',
+      'ALTER TABLE `game_records_pdk` DROP COLUMN `game_type`',
+    ]);
+  });
+
+  it('回填：string/object 双形态 + 畸形 JSON fallback 0；按 seat 逐行 UPDATE，可重入', async () => {
+    const rows = [
+      {
+        id: 1,
+        seat: 0,
+        winner_seat: 0,
+        score_changes: '[{"seat":0,"delta":30},{"seat":1,"delta":-15}]',
+      },
+      {
+        id: 2,
+        seat: 1,
+        winner_seat: 0,
+        score_changes: [{ seat: 0, delta: 30 }, { seat: 1, delta: -15 }],
+      },
+      { id: 3, seat: 2, winner_seat: 0, score_changes: 'not-json' },
+    ];
+    for (let run = 0; run < 2; run += 1) {
+      const updates: Array<{ sql: string; params: unknown[] }> = [];
+      const selects: unknown[] = [];
+      let batch = 0;
+      const runner = {
+        query: async (sql: string, params: unknown[] = []) => {
+          if (sql.startsWith('SELECT p.id, p.seat, r.winner_seat, r.score_changes')) {
+            selects.push(params[0]);
+            return batch++ === 0 ? rows : [];
+          }
+          updates.push({ sql, params: [...params] });
+          return undefined;
+        },
+      } as unknown as QueryRunner;
+
+      await new PdkRecordPlayerBackfill1797000000004().up(runner);
+      expect(selects, `第 ${run + 1} 次执行 keyset`).toEqual([0, 3]);
+      expect(updates, `第 ${run + 1} 次执行`).toEqual([
+        { sql: PdkRecordPlayerBackfill1797000000004.UPDATE_ROW, params: [30, 1, 1] },
+        { sql: PdkRecordPlayerBackfill1797000000004.UPDATE_ROW, params: [-15, 0, 2] },
+        { sql: PdkRecordPlayerBackfill1797000000004.UPDATE_ROW, params: [0, 0, 3] },
+      ]);
+    }
+  });
+
+  it('回填 down 为 no-op（列由 DDL down 删除）', async () => {
+    const statements: string[] = [];
+    const runner = {
+      query: async (sql: string) => {
+        statements.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new PdkRecordPlayerBackfill1797000000004().down(runner);
+    expect(statements).toEqual([]);
+  });
+});
+
+describe('B：risk_reviews.game_type 迁移（2026-10-26）', () => {
+  it('类名/时间戳：晚于 1797000000004 且全仓唯一', () => {
+    expect(new RiskReviewGameType1797000000005().name).toBe(
+      'RiskReviewGameType1797000000005',
+    );
+    const ts = (name: string): number => Number(/(\d{13})$/.exec(name)![1]);
+    expect(ts('RiskReviewGameType1797000000005')).toBeGreaterThan(1797000000004);
+
+    const names = walk(join(SRC_DIR, 'migrations')).flatMap((file) =>
+      [...readFileSync(file, 'utf-8').matchAll(/export class (\w+)/g)].map((m) => m[1]!),
+    );
+    expect(names.filter((n) => n.includes('1797000000005'))).toEqual([
+      'RiskReviewGameType1797000000005',
+    ]);
+  });
+
+  it('up/down 精确 SQL：加列 + (game_type,status,id) 索引；down 逆序', async () => {
+    const up: string[] = [];
+    const upRunner = {
+      query: async (sql: string) => {
+        up.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new RiskReviewGameType1797000000005().up(upRunner);
+    expect(up).toEqual([
+      "ALTER TABLE `risk_reviews` ADD COLUMN `game_type` varchar(16) NOT NULL DEFAULT 'doudizhu' AFTER `status`, ADD KEY `idx_game_status_id` (`game_type`, `status`, `id`)",
+    ]);
+
+    const down: string[] = [];
+    const downRunner = {
+      query: async (sql: string) => {
+        down.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new RiskReviewGameType1797000000005().down(downRunner);
+    expect(down).toEqual([
+      'ALTER TABLE `risk_reviews` DROP KEY `idx_game_status_id`, DROP COLUMN `game_type`',
+    ]);
   });
 });

@@ -16,8 +16,9 @@
   },
   "devDependencies": {
     "@fight-the-landlord/test-utils": "workspace:*",
-    "@vitest/coverage-v8": "^2.1.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.12",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.12"
   }
 }

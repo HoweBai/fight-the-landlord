@@ -907,7 +907,7 @@ describe('T14 回调业务链（账本先行 / 落序 / 计数六路径）', () 
         try {
           await expect(svc.get(), JSON.stringify(failure)).resolves.toEqual(VALUES);
           await expect(svc.get(), JSON.stringify(failure)).resolves.toEqual(VALUES); // 回落
-          const msgs = warn.mock.calls.map((args) => String(args[0]));
+          const msgs = warn.mock.calls.map((args: unknown[]) => String(args[0]));
           expect(msgs.filter((m) => m === FALLBACK_WARN), JSON.stringify(failure)).toHaveLength(1);
           expect(msgs.some((m) => m.includes('secret-a'))).toBe(false); // WARN 不含值
         } finally {

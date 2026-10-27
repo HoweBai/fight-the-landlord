@@ -32,8 +32,8 @@ import { asRedis, createFakeRedis } from './helpers/fake-redis';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
 import type { ConfigCacheService } from '../src/config/config-cache.service';
 import { seatsOf } from './helpers/room-fixture';
-import { metricValue } from './helpers/metric-readout';
-import { gamesEndedTotal, wsConnections } from '../src/metrics/room.metrics';
+import { exactSeriesValue, metricValue } from './helpers/metric-readout';
+import { gamesEndedTotal, recordWriteFailuresTotal, recordWriteSkipsTotal, wsConnections } from '../src/metrics/room.metrics';
 
 /**
  * WsGateway 的单元测试（§6.3 / §4.4 / §6.6.1）。
@@ -162,6 +162,11 @@ function makeGateway(
     risk?: { report: (userId: string, deviceId: string) => void };
     /** 昵称片：房间昵称缓存替身（第 13 个构造参数；缺省空映射）。 */
     nicknames?: { ensure: (...args: unknown[]) => Promise<Map<string, string>> };
+    /** C1：第 14 个构造参数（缺省 queued + ack 成功）。 */
+    recordOutbox?: {
+      enqueue: ReturnType<typeof vi.fn>;
+      ack: ReturnType<typeof vi.fn>;
+    };
   } = {},
 ): {
   gateway: WsGateway;
@@ -175,6 +180,7 @@ function makeGateway(
   game: Record<string, ReturnType<typeof vi.fn>>;
   serverEmit: ReturnType<typeof vi.fn>;
   settle: { settle: ReturnType<typeof vi.fn>; bindBroadcast: ReturnType<typeof vi.fn> };
+  recordOutbox: { enqueue: ReturnType<typeof vi.fn>; ack: ReturnType<typeof vi.fn> };
 } {
   const match = {
     addToQueue: vi.fn().mockResolvedValue(undefined),
@@ -239,6 +245,11 @@ function makeGateway(
       settle: vi.fn().mockResolvedValue(undefined),
       bindBroadcast: vi.fn(),
     };
+  const recordOutbox =
+    over.recordOutbox ?? {
+      enqueue: vi.fn().mockResolvedValue({ status: 'queued' as const, raw: 'raw' }),
+      ack: vi.fn().mockResolvedValue(true),
+    };
   const gateway = new WsGateway(
     over.redis ?? mockRedis,
     match as unknown as MatchService,
@@ -265,6 +276,8 @@ function makeGateway(
     (over.risk ?? { report: vi.fn() }) as never,
     // 昵称片：第 13 个参数 —— 房间昵称缓存（缺省空映射 ⇒ 出站不带 nickname）。
     (over.nicknames ?? { ensure: vi.fn().mockResolvedValue(new Map()) }) as never,
+    // C1：第 14 个参数 —— record outbox（缺省 queued + ack 成功）。
+    recordOutbox as never,
   );
   const serverEmit = vi.fn();
   gateway.server = { to: vi.fn(() => ({ emit: serverEmit })) } as unknown as Server;
@@ -276,6 +289,7 @@ function makeGateway(
     game: game as unknown as Record<string, ReturnType<typeof vi.fn>>,
     serverEmit,
     settle,
+    recordOutbox,
   };
 }
 
@@ -1883,7 +1897,7 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
    * ⚠️ 座位 1/2 的 `Seat.userId` 是**对外 `displayId`**（`p_…`）—— 这正是
    * 「机器人座 userId 必须 NULL、绝不写 displayId」判据的被测形态。
    */
-  async function makeRecordFixtures() {
+  async function makeRecordFixtures(over: Parameters<typeof makeGateway>[0] = {}) {
     const redis = createFakeRedis();
     const rooms = new RoomsService(asRedis(redis), asConfigCache(makeConfigCache()));
     await rooms.create({ mode: 'random', roomCode: 'ROOM1' });
@@ -1899,8 +1913,8 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     });
     const robot = { release: vi.fn().mockResolvedValue(2) };
     const recordClient = { write: vi.fn().mockResolvedValue(true) };
-    const ctx = makeGateway({ redis: asRedis(redis), rooms, robot, record: recordClient });
-    return { redis, rooms, robot, recordClient, ctx };
+    const ctx = makeGateway({ redis: asRedis(redis), rooms, robot, record: recordClient, ...over });
+    return { redis, rooms, robot, recordClient, ctx, recordOutbox: ctx.recordOutbox, settle: ctx.settle };
   }
 
   const SKIP_PREFIX = 'Record write skipped';
@@ -1944,6 +1958,51 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
     expect(request.endedAt).toBeLessThanOrEqual(after);
     // 🔴 「绝不写 displayId」：机器人对外 id（信封 playerId / Seat.userId）不得出现在请求里
     expect(JSON.stringify(request)).not.toContain('p_bot');
+  });
+
+  it('审查 P2-4：finalizeRoomEnd 正常路径只读一次房间（结算与记录复用）', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const findOne = vi.spyOn(rooms, 'findOne');
+    const event = {
+      event: 'game.ended' as const,
+      roomCode: 'ROOM1',
+      version: 47,
+      result: RESULT,
+      record: envelope(),
+    };
+
+    await (
+      ctx.gateway as unknown as {
+        finalizeRoomEnd(e: typeof event, r: typeof RESULT): Promise<void>;
+      }
+    ).finalizeRoomEnd(event, RESULT);
+
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(findOne, '结算读一次、记录复用同一次').toHaveBeenCalledTimes(1);
+  });
+
+  it('审查 P2-4：首读为 null 时记录链兜底重读（settle 跳过、记录照写）', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const realRoom = await rooms.findOne('ROOM1');
+    const findOne = vi.spyOn(rooms, 'findOne');
+    findOne.mockReset();
+    findOne.mockResolvedValueOnce(null).mockResolvedValue(realRoom);
+    const event = {
+      event: 'game.ended' as const,
+      roomCode: 'ROOM1',
+      version: 48,
+      result: RESULT,
+      record: envelope(),
+    };
+
+    await (
+      ctx.gateway as unknown as {
+        finalizeRoomEnd(e: typeof event, r: typeof RESULT): Promise<void>;
+      }
+    ).finalizeRoomEnd(event, RESULT);
+
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(findOne, '首读 null + 兜底重读 = 2').toHaveBeenCalledTimes(2);
   });
 
   it('机器人昵称读取失败 ⇒ 快照 null，记录仍写入（fail-open）', async () => {
@@ -2133,6 +2192,320 @@ describe('记录片 T5：game.ended 记录组装 + record.write 投递', () => {
       redis.del.mock.invocationCallOrder[delIdx]!,
     );
   });
+
+  it('A1：记录投递失败计 record；房间 TTL 跳过计 room_ttl；形状不符计 record_lost', async () => {
+    const { recordClient, rooms, ctx } = await makeRecordFixtures();
+    const realRoom = await rooms.findOne('ROOM1');
+    const findOne = vi.spyOn(rooms, 'findOne');
+
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    recordClient.write.mockRejectedValueOnce(new Error('down'));
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 30, result: RESULT, record: envelope() });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'doudizhu', kind: 'record',
+      })).toBe(beforeRecord + 1);
+    });
+
+    const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
+      game_type: 'doudizhu', reason: 'room_ttl',
+    })) ?? 0;
+    // 审查 P2-4：结算与记录共用同一次房间读取；房键过期时两边都跳过。
+    findOne.mockReset();
+    findOne.mockResolvedValue(null);
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'ROOM1', version: 31, result: RESULT, record: envelope() });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteSkipsTotal, {
+        game_type: 'doudizhu', reason: 'room_ttl',
+      })).toBe(beforeSkip + 1);
+    });
+
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'record_lost',
+    })) ?? 0;
+    findOne.mockReset();
+    findOne.mockResolvedValue({ ...realRoom, gameType: 'doudizhu' } as never);
+    ctx.gateway.onGameEvent({
+      event: 'game.ended', roomCode: 'ROOM1', version: 32,
+      result: { ...(RESULT as object), gameType: 'paodekuai' } as never,
+      record: { ...envelope(), gameType: 'paodekuai' } as never,
+    });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'paodekuai', kind: 'record_lost',
+      })).toBe(beforeLost + 1);
+    });
+  });
+
+  it('C1：写前入箱 —— enqueue resolve 之前不得调用 record.write', async () => {
+    let releaseEnqueue!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseEnqueue = resolve;
+    });
+    let enqueueResolved = false;
+    let writeSawEnqueueResolved: boolean | null = null;
+    const recordOutbox = {
+      enqueue: vi.fn(async () => {
+        await gate;
+        enqueueResolved = true;
+        return { status: 'queued' as const, raw: 'raw' };
+      }),
+      ack: vi.fn(async () => true),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    recordClient.write.mockImplementationOnce(async () => {
+      writeSawEnqueueResolved = enqueueResolved;
+      return true;
+    });
+
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 40,
+      result: RESULT,
+      record: envelope(),
+    });
+
+    await Promise.resolve();
+    expect(recordClient.write, 'enqueue 未 resolve 前不得直投').not.toHaveBeenCalled();
+    releaseEnqueue();
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(writeSawEnqueueResolved, 'record.write 必须在 enqueue resolve 之后才被调用').toBe(true);
+    expect(recordOutbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ roomCode: 'ROOM1', gameVersion: 40 }),
+    );
+    expect((recordOutbox.enqueue.mock.calls[0] as unknown[])[0]).toEqual(
+      (recordClient.write.mock.calls[0] as unknown[])[0],
+    );
+    await vi.waitFor(() => expect(recordOutbox.ack).toHaveBeenCalledTimes(1));
+  });
+
+  it('C1：settle 先派发，record 入箱在其后（不拿结算可用性换记录）', async () => {
+    const { settle, recordOutbox, ctx } = await makeRecordFixtures();
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 41,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordOutbox.enqueue).toHaveBeenCalledTimes(1));
+    expect(settle.settle.mock.invocationCallOrder[0]!).toBeLessThan(
+      recordOutbox.enqueue.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('C1：conflict ⇒ 不直投 + record_lost；unavailable+成功 ⇒ 无失败指标', async () => {
+    const records = installSink();
+    // conflict：旧 pending 保留，新请求不直投
+    const conflictOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'conflict', existingEndedAt: 123 }),
+      ack: vi.fn().mockResolvedValue(true),
+    };
+    const conflictFixtures = await makeRecordFixtures({ recordOutbox: conflictOutbox });
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    conflictFixtures.ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 42,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'doudizhu', kind: 'record_lost',
+      })).toBe(beforeLost + 1);
+    });
+    expect(conflictFixtures.recordClient.write).not.toHaveBeenCalled();
+    expect(conflictOutbox.ack).not.toHaveBeenCalled();
+    expect(records.some((r) => r.msg.includes('conflict'))).toBe(true);
+
+    // unavailable + 直投成功：记录已落库，但未 durable；不计失败
+    const unavailableOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'unavailable' }),
+      ack: vi.fn().mockResolvedValue(true),
+    };
+    const unavailableFixtures = await makeRecordFixtures({ recordOutbox: unavailableOutbox });
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost2 = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    unavailableFixtures.ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 43,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(unavailableFixtures.recordClient.write).toHaveBeenCalledTimes(1));
+    expect(unavailableOutbox.ack).not.toHaveBeenCalled();
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost2);
+  });
+
+  it('C1：write=false 视为成功；ack=false 不计失败', async () => {
+    const recordOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'queued' as const, raw: 'raw' }),
+      ack: vi.fn().mockResolvedValue(false),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    recordClient.write.mockResolvedValueOnce(false);
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 44,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordOutbox.ack).toHaveBeenCalledTimes(1));
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+  });
+
+  it('C1：unavailable + 直投失败 ⇒ record_lost', async () => {
+    const recordOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'unavailable' }),
+      ack: vi.fn().mockResolvedValue(true),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    recordClient.write.mockRejectedValueOnce(new Error('user-service down'));
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 45,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteFailuresTotal, {
+        game_type: 'doudizhu', kind: 'record_lost',
+      })).toBe(beforeLost + 1);
+    });
+  });
+
+  it('C1：room TTL/形状不符跳过 ⇒ enqueue 零调用', async () => {
+    const { rooms, recordOutbox, ctx } = await makeRecordFixtures();
+    const findOne = vi.spyOn(rooms, 'findOne');
+    const beforeSkip = (await exactSeriesValue(recordWriteSkipsTotal, {
+      game_type: 'doudizhu', reason: 'room_ttl',
+    })) ?? 0;
+    findOne.mockReset();
+    findOne.mockResolvedValue(null);
+    ctx.gateway.onGameEvent({
+      event: 'game.ended', roomCode: 'ROOM1', version: 46, result: RESULT, record: envelope(),
+    });
+    await vi.waitFor(async () => {
+      expect(await exactSeriesValue(recordWriteSkipsTotal, {
+        game_type: 'doudizhu', reason: 'room_ttl',
+      })).toBe(beforeSkip + 1);
+    });
+    expect(recordOutbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('C1：!record||!version ⇒ 零指标 + enqueue 零调用', async () => {
+    const { ctx, recordOutbox } = await makeRecordFixtures();
+    const records = installSink();
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: undefined as never,
+      result: RESULT,
+    });
+    await vi.waitFor(() =>
+      expect(records.some((r) => r.msg.startsWith('Record write skipped'))).toBe(true),
+    );
+    expect(recordOutbox.enqueue).not.toHaveBeenCalled();
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+  });
+
+  it('C1：enqueue 意外抛 ⇒ 仍直投、不计 record_lost', async () => {
+    const records = installSink();
+    const recordOutbox = {
+      enqueue: vi.fn().mockRejectedValueOnce(new Error('enqueue boom')),
+      ack: vi.fn().mockResolvedValue(true),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 47,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordClient.write).toHaveBeenCalledTimes(1));
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+    expect(records.some((r) => r.msg.includes('enqueue threw'))).toBe(true);
+  });
+
+  it('C1：ack 意外抛 ⇒ 已成功写入不计失败', async () => {
+    const recordOutbox = {
+      enqueue: vi.fn().mockResolvedValue({ status: 'queued' as const, raw: 'raw' }),
+      ack: vi.fn().mockRejectedValueOnce(new Error('ack boom')),
+    };
+    const { recordClient, ctx } = await makeRecordFixtures({ recordOutbox });
+    const beforeRecord = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })) ?? 0;
+    const beforeLost = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended',
+      roomCode: 'ROOM1',
+      version: 48,
+      result: RESULT,
+      record: envelope(),
+    });
+    await vi.waitFor(() => expect(recordOutbox.ack).toHaveBeenCalledTimes(1));
+    expect(recordClient.write).toHaveBeenCalledTimes(1);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record',
+    })).toBe(beforeRecord);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'doudizhu', kind: 'record_lost',
+    })).toBe(beforeLost);
+  });
 });
 
 /**
@@ -2225,13 +2598,37 @@ describe('监控片 T3：ws_connections 恰一次升降（C10）+ games_ended_to
 
   it('games_ended_total：收到 game.ended ⇒ +1；game.started 不计（反空测）', async () => {
     const ctx = makeGateway({ redis: asRedis(createFakeRedis()) });
-    const before = await metricValue(gamesEndedTotal);
+    const before = (await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })) ?? 0;
 
     ctx.gateway.onGameEvent({ event: 'game.started', roomCode: 'MTRM1', version: 1 });
-    await expect(metricValue(gamesEndedTotal), '开局事件不得进结算计数').resolves.toBe(before);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' }), '开局事件不得进结算计数').toBe(before);
 
     ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'MTRM1', version: 2 });
-    await expect(metricValue(gamesEndedTotal)).resolves.toBe(before + 1);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })).toBe(before + 1);
+  });
+
+  it('A1：game.ended 按 gameType 计结束；缺省归 ddz', async () => {
+    const ctx = makeGateway({ redis: asRedis(createFakeRedis()) });
+    const ddzResult = {
+      roomCode: 'R2', baseScore: 15, winner: 'landlord', landlordSeat: 0,
+      farmerSeats: [1, 2], multiplier: 2, spring: 'none',
+      landlordScoreChange: 60, farmerScoreChange: -30,
+    };
+    const pdk = {
+      roomCode: 'R1', gameType: 'paodekuai', playerCount: 3, baseScore: 15,
+      winnerSeats: [0],
+      scoreChanges: [{ seat: 0, delta: 30 }, { seat: 1, delta: -15 }, { seat: 2, delta: -15 }],
+      remaining: [0, 5, 5], multiplier: 1, bombCount: 0, guan: false, spring: false, baobenSeats: [],
+    };
+    const beforePdk = (await exactSeriesValue(gamesEndedTotal, { game_type: 'paodekuai' })) ?? 0;
+    ctx.gateway.onGameEvent({
+      event: 'game.ended', roomCode: 'R1', version: 1, gameType: 'paodekuai', result: pdk,
+    } as never);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'paodekuai' })).toBe(beforePdk + 1);
+
+    const beforeDdz = (await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })) ?? 0;
+    ctx.gateway.onGameEvent({ event: 'game.ended', roomCode: 'R2', version: 1, result: ddzResult } as never);
+    expect(await exactSeriesValue(gamesEndedTotal, { game_type: 'doudizhu' })).toBe(beforeDdz + 1);
   });
 });
 

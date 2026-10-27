@@ -321,6 +321,13 @@ services:
       # 硬门（同 room/robot：配置中心不健康不得拦消费服务启动，片⑦ D8-3/§5.2-9）。
       - CONFIG_SERVICE_RPC_HOST=config-service
       - CONFIG_SERVICE_RPC_PORT=3106
+      # 代理分润（2026-10-26）：currency → user 的昵称/手机号读边（批量 ≤50 / 单条 profile）。
+      - USER_SERVICE_RPC_HOST=user-service
+      - USER_SERVICE_RPC_PORT=3101
+      # 代理门户令牌的**签发侧**密钥（与 api-gateway 验签侧逐字同链；空串 = 未设 ⇒ 回落 JWT_SECRET）。
+      - AGENT_JWT_SECRET=${AGENT_JWT_SECRET:-}
+      # 自玩判定的手机号 HMAC 密钥（production 必填；dev 空串走代码兜底）。
+      - AGENT_PHONE_HMAC_KEY=${AGENT_PHONE_HMAC_KEY:-}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}        # 无默认值——fail-closed（照 config）
       # 广告片 §2.3：第四键空间拉取令牌（**两持有之一** —— 与 config-service 段同源同值；
       # 消费侧形态照 payment 段的 `PAY_CHANNEL_PULL_TOKEN` 先例）。空 ⇒ 回调链拉取被拒 ⇒
@@ -627,6 +634,9 @@ services:
       #    **管理令牌全 401**。空默认透传：宿主未设 ⇒ 两侧同拿 ''、同回落到同一 JWT_SECRET
       #    （判据：两侧单测的密钥链各例 + 渲染 grep + 真栈复烟 —— T9 报告修复轮）。
       - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
+      # 代理分润（2026-10-26）：代理门户令牌的**验签侧**密钥 —— 必须与 currency-service 的
+      # 签发侧逐字同链（`AGENT_JWT_SECRET || JWT_SECRET || dev 兜底`；空串 = 未设 ⇒ 回落）。
+      - AGENT_JWT_SECRET=${AGENT_JWT_SECRET:-}
       # §5.2：网关注入给下游的身份头之外，WS 代理用它连接 room-service
       # §5.2 规则 3 + R98：**没有默认值**。未配置 ⇒ 值为空 ⇒ R89/R92 的启动期
       # fail-closed 让服务拒绝启动（宁可起不来，也不要「用仓库里公开的常量」跑起来）。

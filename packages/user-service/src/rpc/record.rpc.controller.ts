@@ -529,14 +529,15 @@ export class RecordRpcController {
 
     const insertResult = (await manager.query(
       'INSERT INTO `game_records_pdk` (' +
-        '`room_code`, `game_version`, `mode`, `player_count`, `base_score`, `winner_seat`, `remaining`, ' +
+        '`room_code`, `game_version`, `mode`, `game_type`, `player_count`, `base_score`, `winner_seat`, `remaining`, ' +
         '`multiplier`, `bomb_count`, `guan`, `spring`, `baoben_seats`, `score_changes`, `unused_cards`, ' +
         '`started_at`, `ended_at`' +
-        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         req.roomCode,
         req.gameVersion,
         req.mode,
+        req.gameType ?? 'paodekuai',
         result.playerCount,
         req.baseScore,
         result.winnerSeats[0],
@@ -565,10 +566,12 @@ export class RecordRpcController {
         : seat.userId === null
           ? null
           : (nicknameById.get(seat.userId) ?? null);
+      const scoreChange = result.scoreChanges.find((c) => c.seat === seat.seat)?.delta ?? 0;
+      const won = seat.seat === result.winnerSeats[0] ? 1 : 0;
       await manager.query(
         'INSERT INTO `game_record_players_pdk` (' +
-          '`record_id`, `seat`, `user_id`, `is_robot`, `robot_id`, `nickname`, `hand`, `played_count`, `ended_at`' +
-          ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          '`record_id`, `seat`, `user_id`, `is_robot`, `robot_id`, `nickname`, `hand`, `played_count`, `score_change`, `won`, `ended_at`' +
+          ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           recordId,
           seat.seat,
@@ -578,6 +581,8 @@ export class RecordRpcController {
           nicknameSnapshot,
           seat.hand,
           seat.playedCount,
+          scoreChange,
+          won,
           req.endedAt,
         ],
       );
@@ -606,18 +611,29 @@ export class RecordRpcController {
   }
 
   /**
+   * 审查 P1-2：`ended_at` 的多种驱动形态 → epoch ms。
+   *
+   * pdk 表是 BIGINT，MySQL 驱动默认 `bigNumberStrings=true` ⇒ 回**数字字符串**；
+   * 直接 `new Date('1792...')` 得 Invalid Date → NaN → 每次重复投递都误报
+   * “疑似 room_code+game_version 复用”。数字串必须先按 epoch ms 解析
+   *（与 `records.service.ts:bigintMs` / `records-reconcile.toEpochMs` 同口径）。
+   */
+  private toEpochMs(value: Date | string | number): number {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'number') return value;
+    const text = value.trim();
+    if (/^-?\d+$/.test(text)) return Number(text);
+    return new Date(text).getTime();
+  }
+
+  /**
    * 幂等命中时的 `ended_at` 比对（设计 D2）：|差| 超阈值 ⇒ **error 级**日志
    * （响亮不静默——码复用静默吞的保险）；不超 ⇒ 什么都不做（重复投递是正常路径）。
    * ⚠️ 不抛：告警是**观测**，重复投递本身仍然返回 `written=false`。
    * ⚠️ pdk 表的 `ended_at` 是 BIGINT（epoch ms），ddz 是 datetime ⇒ 形参兼容 `Date | string | number`。
    */
   private flagEndedAtMismatch(req: RecordWriteRequest, storedEndedAt: Date | string | number): void {
-    const storedMs =
-      storedEndedAt instanceof Date
-        ? storedEndedAt.getTime()
-        : typeof storedEndedAt === 'number'
-          ? storedEndedAt
-          : new Date(storedEndedAt).getTime();
+    const storedMs = this.toEpochMs(storedEndedAt);
     const diff = Math.abs(storedMs - req.endedAt);
     if (Number.isFinite(diff) && diff <= ENDED_AT_MISMATCH_THRESHOLD_MS) return;
     this.logger.error(

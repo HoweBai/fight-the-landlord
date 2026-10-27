@@ -10,9 +10,9 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 76 个 active 键
- *     （71 简单 + 5 结构化）。
- *  3. 控件定稿表：71 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 85 个 active 键
+ *     （80 简单 + 5 结构化）。
+ *  3. 控件定稿表：80 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
  */
@@ -20,6 +20,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(resolve(REPO_ROOT, p), 'utf8');
@@ -74,6 +75,8 @@ const APP_NEEDLES = [
   '销毁：残差 ',
   'fin-entryfee-skip-line',
   '台费漏收：笔数 ',
+  'fin-game-type',
+  'gameLabelText',
 ];
 for (const needle of APP_NEEDLES) {
   ok(app.includes(needle), `app.js 含 G12 针脚 ${JSON.stringify(needle)}`);
@@ -102,6 +105,8 @@ for (const needle of [
   'fin-entryfee-skip-line',
   'fin-cardcounter-purchases-line',
   'fin-cardcounter-consumptions-line',
+  'fin-game-type',
+  '玩法',
 ]) {
   ok(html.includes(needle), `index.html 含 G12 针脚 ${JSON.stringify(needle)}`);
 }
@@ -209,9 +214,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 92, `protocol CONFIG_KEYS 恰 92 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 76, `active = CONFIG_KEYS − LEGACY 恰 76 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 76, `CONFIG_IA 覆盖 76 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 101, `protocol CONFIG_KEYS 恰 101 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 85, `active = CONFIG_KEYS − LEGACY 恰 85 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 85, `CONFIG_IA 覆盖 85 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -238,10 +243,29 @@ ok(
 );
 ok(
   pdkDomainBlock.includes("'game.paodekuai.risk.winRateThreshold'") &&
-    pdkDomainBlock.includes("'game.paodekuai.risk.minGames'"),
-  'pdk 风控两键位于 pdk 域内',
+    pdkDomainBlock.includes("'game.paodekuai.risk.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player2.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player2.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player3.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player3.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player4.winRateThreshold'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.player4.minGames'") &&
+    pdkDomainBlock.includes("'game.paodekuai.risk.autoThrottleScore'"),
+  'pdk 风控 9 键位于 pdk 域内',
 );
 ok(pdkDomainBlock.includes("'game.levels.paodekuai'"), 'pdk 档位表在 pdk 域');
+ok(
+  pdkDomainBlock.includes("'game.paodekuai.twoPlayerEnabled'") &&
+    pdkDomainBlock.includes("'game.paodekuai.nonThreePlayerEnabled'"),
+  'pdk 2/4 人两闸位于 pdk 域内',
+);
+const pdkSwitchesBlock =
+  /id: 'switches',\s*\n\s*name: '开关',\s*\n\s*keys: \[([\s\S]*?)\]/.exec(pdkDomainBlock)?.[1] ?? '';
+ok(
+  pdkSwitchesBlock.includes("'game.paodekuai.twoPlayerEnabled'") &&
+    pdkSwitchesBlock.includes("'game.paodekuai.nonThreePlayerEnabled'"),
+  'pdk 2/4 人两闸位于「开关」页签',
+);
 ok(iaBlock.includes("'game.levels.doudizhu'"), 'ddz 档位表用新键 game.levels.doudizhu');
 
 /* 玩法顶部开关（2026-10-24）：headerKeys 运行时键集/无重复/备注/默认值/渲染接线/纯函数行为。 */
@@ -254,16 +278,62 @@ ok(notesBlock.includes("'game.doudizhu.enabled'"), 'CONFIG_NOTES 含斗地主总
 ok(notesBlock.includes("'game.paodekuai.enabled'"), 'CONFIG_NOTES 含跑得快总开关');
 ok(
   /'game\.paodekuai\.risk\.winRateThreshold':\s*\[/.test(notesBlock) &&
-    /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock),
-  'CONFIG_NOTES 以条目形态含跑得快风控两键（防注释假绿）',
+    /'game\.paodekuai\.risk\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player2\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player2\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player3\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player3\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player4\.winRateThreshold':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.player4\.minGames':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.risk\.autoThrottleScore':\s*\[/.test(notesBlock),
+  'CONFIG_NOTES 以条目形态含跑得快风控 9 键（防注释假绿）',
+);
+const oldPdkRiskNoteBlock =
+  /'game\.paodekuai\.risk\.winRateThreshold':\s*\[([\s\S]*?)\n  \],/.exec(notesBlock)?.[1] ?? '';
+ok(oldPdkRiskNoteBlock.includes('回退'), '跑得快旧胜率阈值备注写明“回退键”');
+ok(
+  /'game\.paodekuai\.twoPlayerEnabled':\s*\[/.test(notesBlock) &&
+    /'game\.paodekuai\.nonThreePlayerEnabled':\s*\[/.test(notesBlock),
+  'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 63, `CONFIG_NOTES 恰 63 条（实测 ${noteKeys.length}）`);
+ok(noteKeys.length === 85, `CONFIG_NOTES 恰 85 条（实测 ${noteKeys.length}；代理分润 +1、B 组 +7）`);
+/* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
+const PDK_NOTE_KEYS = [
+  'game.levels.paodekuai',
+  'game.paodekuai.bareTrioEnabled',
+  'game.paodekuai.trioWithPairEnabled',
+  'game.paodekuai.bareAirplaneEnabled',
+  'game.paodekuai.fourWithTwoEnabled',
+  'game.paodekuai.fourWithTwoPairKickerAllowed',
+  'game.paodekuai.airplaneWings',
+  'game.paodekuai.bombMultiplierEnabled',
+  'game.paodekuai.guanMultiplierEnabled',
+  'game.paodekuai.springMultiplierEnabled',
+  'game.paodekuai.multiplierCap',
+  'game.paodekuai.baobenEnabled',
+  'game.paodekuai.twoPlayerEnabled',
+  'game.paodekuai.nonThreePlayerEnabled',
+  'game.paodekuai.risk.winRateThreshold',
+  'game.paodekuai.risk.minGames',
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.winRateThreshold',
+  'game.paodekuai.risk.player4.minGames',
+  'game.paodekuai.risk.autoThrottleScore',
+];
+const missingPdkNotes = PDK_NOTE_KEYS.filter((k) => !noteKeys.includes(k));
+ok(
+  missingPdkNotes.length === 0,
+  `CONFIG_NOTES 覆盖跑得快规则/计分/开关/人数闸 ${PDK_NOTE_KEYS.length} 键（缺：${missingPdkNotes.join(', ') || '无'}）`,
+);
 const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', '}');
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
 const renderRowsBlock = /function renderConfigRows\([\s\S]*?\n\}/.exec(app)?.[0] ?? '';
-ok(renderRowsBlock.includes('buildGameHeader('), 'renderConfigRows 调用 buildGameHeader');
+ok(renderRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
 const fnBody = balancedBlock(app, 'function lastEnabledGameWarning', '{', '}');
 ok(fnBody !== '', '找到 lastEnabledGameWarning');
 const lastWarn = new Function(
@@ -291,7 +361,7 @@ ok(
 );
 ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnabledGameWarning：缺键按默认值判定');
 
-/* ── 5. CONFIG_CONTROLS：71 简单键 + 5 结构化键 = 76；定稿表 ─── */
+/* ── 5. CONFIG_CONTROLS：80 简单键 + 5 结构化键 = 85；定稿表 ─── */
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
@@ -315,6 +385,7 @@ const BOOL_KEYS = [
   'pay.withdrawEnabled',
   'client.appEnabled',
   'client.h5Enabled',
+  'agent.inviteEnabled',
   'risk.withdrawReAuthEnabled',
   'game.doudizhu.cardCounterEnabled',
   // 跑得快 5 个场次/好友房/补位开关
@@ -323,8 +394,9 @@ const BOOL_KEYS = [
   'game.paodekuai.friendRoomEnabled',
   'game.paodekuai.freeBotFillEnabled',
   'game.paodekuai.goldBotFillEnabled',
-  // 多玩法（S7.1）：跑得快 11 个布尔键
+  // 多玩法（S7.1）：跑得快 12 个布尔键（2026-10-25 起 2/4 分键）
   'game.paodekuai.enabled',
+  'game.paodekuai.twoPlayerEnabled',
   'game.paodekuai.nonThreePlayerEnabled',
   'game.paodekuai.bareTrioEnabled',
   'game.paodekuai.trioWithPairEnabled',
@@ -371,6 +443,13 @@ const NUMBER_SUFFIX = {
   'game.doudizhu.risk.minGames': '',
   'game.paodekuai.risk.winRateThreshold': '',
   'game.paodekuai.risk.minGames': '',
+  'game.paodekuai.risk.player2.winRateThreshold': '',
+  'game.paodekuai.risk.player2.minGames': '',
+  'game.paodekuai.risk.player3.winRateThreshold': '',
+  'game.paodekuai.risk.player3.minGames': '',
+  'game.paodekuai.risk.player4.winRateThreshold': '',
+  'game.paodekuai.risk.player4.minGames': '',
+  'game.paodekuai.risk.autoThrottleScore': '分',
   'risk.deviceLimit': '',
   'game.doudizhu.cardCounterPricePerGameCoins': '金币/局',
   'game.doudizhu.cardCounterPricePerHourCoins': '金币/小时',
@@ -387,15 +466,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 71, `CONFIG_CONTROLS 恰 71 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 80, `CONFIG_CONTROLS 恰 80 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '76 键 = 71 简单 ∪ 5 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '34 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 34 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '34 布尔键 type=bool');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '85 键 = 80 简单 ∪ 5 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
+ok(BOOL_KEYS.length === 36 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '36 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 35, `数字键定论表 35 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 42, `数字键定论表 42 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);
@@ -409,15 +488,23 @@ ok(/step:\s*0\.01/.test(entries.get('game.doudizhu.risk.winRateThreshold') ?? ''
 ok(!/suffix/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值不带后缀');
 ok(/step:\s*0\.01/.test(entries.get('game.paodekuai.risk.winRateThreshold') ?? ''), '跑得快胜率阈值 step=0.01');
 ok(!/suffix/.test(entries.get('game.paodekuai.risk.minGames') ?? ''), '跑得快最少局数不带后缀');
+for (const n of [2, 3, 4]) {
+  const win = `game.paodekuai.risk.player${n}.winRateThreshold`;
+  const min = `game.paodekuai.risk.player${n}.minGames`;
+  ok(/step:\s*0\.01/.test(entries.get(win) ?? ''), `${win} step=0.01`);
+  ok(!/suffix/.test(entries.get(win) ?? ''), `${win} 不带后缀`);
+  ok(!/suffix/.test(entries.get(min) ?? ''), `${min} 不带后缀`);
+}
+ok(/suffix:\s*'分'/.test(entries.get('game.paodekuai.risk.autoThrottleScore') ?? ''), 'PDK 自动限流阈值后缀=分');
 // 每条目必须有非空中文 label。
 for (const [k, body] of entries) {
   const labelM = /label:\s*'([^']+)'/.exec(body);
   ok(!!labelM && labelM[1].trim() !== '', `${k} 有非空 label`);
 }
-// 简单/布尔/文本/数字分类合计 = 71（防清单漂移）。
+// 简单/布尔/文本/数字分类合计 = 80（防清单漂移）。
 ok(
-  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === 71,
-  `控件分类合计 34+2+35=71（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length}）`,
+  BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length === entries.size,
+  `控件分类合计 = entries.size（实测 ${BOOL_KEYS.length + TEXT_KEYS.length + numberKeys.length} / ${entries.size}）`,
 );
 
 /* ── 5b. 风控详情：总战绩 + 分玩法（块内断言，防备注假绿）────────── */
@@ -433,6 +520,47 @@ ok(
     /d\.stats\?\.byGame\?\.paodekuai\?\.games\s*\?\?/.test(renderRiskDetailBlock),
   '风控详情 byGame 用可选链（新 admin + 旧 user-service 窗口不崩）',
 );
+
+/* ── 5d. B 组：风控队列玩法筛选/10 列/分人数/400 升级提示 ───────── */
+ok(
+  renderRiskDetailBlock.includes('byPlayerCount') && renderRiskDetailBlock.includes('分人数'),
+  '风控详情渲染跑得快分人数（byPlayerCount/分人数）',
+);
+const riskQueryBody = functionBody(app, 'function riskQuery');
+ok(riskQueryBody !== '' && riskQueryBody.includes('gameType'), 'riskQuery 带 gameType');
+const buildRiskRowBody = functionBody(app, 'function buildRiskRow');
+ok(
+  buildRiskRowBody !== '' &&
+    buildRiskRowBody.includes('row.gameType') &&
+    buildRiskRowBody.includes('riskGameTypeLabel'),
+  'buildRiskRow 渲染玩法标签',
+);
+const toggleRiskDetailBody = functionBody(app, 'function toggleRiskDetail');
+ok(
+  toggleRiskDetailBody !== '' && toggleRiskDetailBody.includes('td.colSpan = 10'),
+  'toggleRiskDetail 详情行 colSpan=10（不是 buildRiskRow）',
+);
+const resetRiskBody = functionBody(app, 'function resetRisk');
+ok(resetRiskBody !== '' && resetRiskBody.includes('gameType'), 'resetRisk 不丢 gameType 筛选');
+ok(app.includes("$('rk-game-type')"), '搜索/重置读取 rk-game-type');
+const loadRiskQueueBody = functionBody(app, 'function loadRiskQueue');
+ok(
+  loadRiskQueueBody !== '' &&
+    loadRiskQueueBody.includes('status === 400') &&
+    loadRiskQueueBody.includes('filter.gameType') &&
+    loadRiskQueueBody.includes('请先升级 user-service'),
+  'loadRiskQueue 对旧服务 gameType 400 显示升级提示',
+);
+const riskStart = html.indexOf('id="risk-view"');
+const riskEnd = riskStart >= 0 ? html.indexOf('</main>', riskStart) : -1;
+const riskViewHtml =
+  riskStart >= 0 && riskEnd > riskStart ? html.slice(riskStart, riskEnd) : '';
+ok(riskViewHtml !== '', '找到 #risk-view 区块');
+ok((riskViewHtml.match(/<th>/g) ?? []).length === 10, `#risk-view 表头恰 10 个 <th>（实测 ${(riskViewHtml.match(/<th>/g) ?? []).length}）`);
+ok(riskViewHtml.includes('<th>玩法</th>'), '#risk-view 表头含「玩法」列');
+ok(html.includes('id="rk-game-type"'), 'index.html 含玩法筛选 #rk-game-type');
+// 判别力自证：全文件还有财务表的「玩法」表头；上面的断言必须按风险区块切片，不能用全局 includes。
+ok((html.match(/<th>玩法<\/th>/g) ?? []).length >= 2, '全文件存在多个「玩法」表头（证明风险区块切片是必要的）');
 
 /* ── 5c. 旧键只读：未分组/搜索都必须排除 LEGACY_KEY_SET ─────────── */
 const ungroupedFn = balancedBlock(app, 'function ungroupedKeys', '{', '}');
@@ -576,6 +704,69 @@ ok(renderSettingsBlock.includes('renderConfigRows()'), 'renderSettings 块完整
 ok(viewsBlock.includes('accounts:'), 'VIEWS 块完整（含 accounts）');
 ok(renderConfigRowsBlock.includes('scrollEl.scrollTop = scrollTop'), 'renderConfigRows 块完整（含滚动恢复）');
 
+/* ── 12b. 2026-10-27 配置中心重内容域页内页签 ─────────────────────
+ * 页签面板全部渲染、只切 hidden（保 struct/JSON 未保存编辑）；tabId 与 tabDomainId
+ * 成对校验（ddz/pdk 有同名页签 rules/rooms/risk）。 */
+const cfgUiBlock = balancedBlock(app, 'const DEFAULT_CFG_UI', '{', '}');
+ok(cfgUiBlock !== '', '找到 DEFAULT_CFG_UI 字面量');
+ok(cfgUiBlock.includes('tabId') && cfgUiBlock.includes('tabDomainId'), 'DEFAULT_CFG_UI 含 tabId/tabDomainId');
+for (const fn of ['function buildConfigTabStrip', 'function applyCfgTabUI', 'function renderCfgDomain']) {
+  ok(app.includes(fn), `app.js 含页签针脚 ${JSON.stringify(fn)}`);
+}
+const renderCfgDomainBlock = functionBody(app, 'function renderCfgDomain');
+ok(renderCfgDomainBlock !== '', '找到 renderCfgDomain 函数体');
+for (const needle of [
+  'buildConfigTabStrip(',
+  'tabs.length > 1',
+  'cfg-tab-panel',
+  'cfg-tab-empty',
+]) {
+  ok(renderCfgDomainBlock.includes(needle), `renderCfgDomain 含 ${JSON.stringify(needle)}`);
+}
+ok(renderCfgDomainBlock.includes('buildGameHeader('), 'renderCfgDomain 渲染玩法开关键卡');
+const resolveCfgTabBlock = functionBody(app, 'function resolveCfgTab');
+ok(
+  resolveCfgTabBlock !== '' && resolveCfgTabBlock.includes('tabDomainId === domain.id'),
+  'resolveCfgTab 按域配对 tabDomainId',
+);
+ok(renderConfigRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
+ok(openCfgDomainBlock.includes('tabDomainId = null'), 'openCfgDomain 复位 tabDomainId');
+const normalizeCfgDomainBlock = functionBody(app, 'function normalizeCfgDomain');
+ok(
+  normalizeCfgDomainBlock !== '' && normalizeCfgDomainBlock.includes('tabDomainId = null'),
+  'normalizeCfgDomain 复位 tabDomainId',
+);
+let iaDomainsForTabs = [];
+if (iaBlock !== '') {
+  try {
+    iaDomainsForTabs = vm.runInNewContext(`(${iaBlock})`);
+  } catch {
+    iaDomainsForTabs = [];
+  }
+}
+let headerTabOverlap = 0;
+let dupTabKeys = 0;
+for (const g of iaDomainsForTabs) {
+  for (const d of g.domains ?? []) {
+    const tabKeys = new Set((d.tabs ?? []).flatMap((t) => t.keys));
+    for (const hk of d.headerKeys ?? []) if (tabKeys.has(hk)) headerTabOverlap += 1;
+    const seen = new Set();
+    for (const t of d.tabs ?? []) {
+      for (const k of t.keys ?? []) {
+        if (seen.has(k)) dupTabKeys += 1;
+        else seen.add(k);
+      }
+    }
+  }
+}
+ok(iaDomainsForTabs.length > 0, 'CONFIG_IA 可被 vm 解析（页签交叉断言）');
+ok(headerTabOverlap === 0, `CONFIG_IA 的 headerKeys 与页签键无交集（实测 ${headerTabOverlap}）`);
+ok(dupTabKeys === 0, `CONFIG_IA 同域页签键无重复（实测 ${dupTabKeys}）`);
+ok(
+  /\.cfg-tabs\s*\{/.test(css) && /\.cfg-tab-panel\s*\{/.test(css),
+  'style.css 含 .cfg-tabs / .cfg-tab-panel 规则',
+);
+
 
 /* ── 11. 2026-10-22 玩家管理页 ────────────────────────────────────── */
 for (const id of ['nav-players-btn', 'players-view', 'pl-summary', 'pl-body', 'pl-detail', 'pl-back-btn', 'pl-page-size']) {
@@ -597,6 +788,227 @@ for (const needle of [
 }
 ok(/\.players-summary\s*\{/.test(css) && /\.players-card\s*\{/.test(css), 'style.css 含玩家页样式');
 ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（玩家页同纪律）');
+
+/* ── 12. 2026-10-26 代理分润：管理后台「代理」页 ─────────────────────
+ * 读面 super_admin|finance（网关 P-ag1）；写面 super_admin（P-ag2..P-ag4）；
+ * 结算打款/驳回 finance 也可。UI 只做门面，真闸在网关 policy。 */
+for (const id of [
+  'nav-agents-btn',
+  'agents-view',
+  'ag-settings-form',
+  'ag-settings-enabled',
+  'ag-settings-default-rate',
+  'ag-settings-min-yuan',
+  'ag-settings-coin-per-yuan',
+  'ag-settings-hold-days',
+  'ag-settings-admin-limit',
+  'ag-settings-adjust-op',
+  'ag-settings-adjust-day',
+  'ag-settings-save-btn',
+  'ag-q',
+  'ag-status',
+  'ag-search-btn',
+  'ag-reset-btn',
+  'ag-create-btn',
+  'ag-create-form',
+  'ag-create-result',
+  'ag-body',
+  'ag-empty',
+  'ag-page-info',
+  'ag-prev-btn',
+  'ag-next-btn',
+  'ag-page-size',
+  'ag-detail',
+  'ag-detail-body',
+  'ag-detail-close-btn',
+  'ag-settle-status',
+  'ag-settle-refresh-btn',
+  'ag-settle-body',
+  'ag-settle-empty',
+  'ag-settle-prev-btn',
+  'ag-settle-next-btn',
+  'ag-settle-page-info',
+  'ag-settle-detail',
+  'ag-settle-detail-body',
+  'ag-adjust-form',
+  'ag-adjust-agent',
+  'ag-adjust-delta',
+  'ag-adjust-reason',
+  'ag-adjust-create-btn',
+  'ag-adjust-status',
+  'ag-adjust-refresh-btn',
+  'ag-adjust-prev-btn',
+  'ag-adjust-next-btn',
+  'ag-adjust-page-info',
+  'ag-adjust-body',
+  'ag-adjust-empty',
+  'ag-recon-from',
+  'ag-recon-to',
+  'ag-recon-run-btn',
+  'ag-recon-body',
+  'ag-audit-refresh-btn',
+  'ag-audit-body',
+  'ag-audit-empty',
+  'ag-audit-prev-btn',
+  'ag-audit-next-btn',
+  'ag-audit-page-info',
+]) {
+  ok(html.includes(`id="${id}"`), `index.html 含代理页 id #${id}`);
+}
+ok(
+  app.includes("agents: { el: 'agents-view', nav: 'nav-agents-btn', roles: ['super_admin', 'finance'] }"),
+  'VIEWS.agents 角色精确（super_admin|finance）',
+);
+const viewOrderAgents = /const VIEW_ORDER = \[([^\]]*)\]/.exec(app)?.[1] ?? '';
+ok(viewOrderAgents.includes("'agents'"), 'VIEW_ORDER 含 agents');
+ok(viewOrderAgents.trim().endsWith("'agents'"), 'VIEW_ORDER 末尾为 agents（后加视图）');
+for (const needle of [
+  '/api/admin/agents',
+  '/api/admin/agents/tree',
+  '/api/admin/agents/settings',
+  '/api/admin/agent-settlements',
+  '/api/admin/agent-adjustments',
+  '/api/admin/agent-audit',
+  '/api/admin/agent-reconciliation',
+  'function loadAgents',
+  'function renderAgents',
+  'function wireAgents',
+  'function resetAgents',
+  'function loadAgentSettlements',
+  'function loadAgentAdjustments',
+  'function loadAgentReconciliation',
+  'function loadAgentAudit',
+  'const canAgentWrite',
+  'const canAgentSettle',
+  'function applyAgentRole',
+]) {
+  ok(app.includes(needle), `app.js 含代理页针脚 ${JSON.stringify(needle)}`);
+}
+ok(
+  /const canAgentWrite = \(\) => roleOf\(\) === 'super_admin';/.test(app),
+  'canAgentWrite 仅 super_admin（写面门面）',
+);
+ok(
+  /const canAgentSettle = \(\) => roleOf\(\) === 'super_admin' \|\| roleOf\(\) === 'finance';/.test(app),
+  'canAgentSettle = super_admin|finance（打款/驳回）',
+);
+const switchViewAgents = balancedBlock(app, 'function switchView', '{', '}');
+ok(
+  switchViewAgents.includes("view === 'agents'") && switchViewAgents.includes('loadAgents()'),
+  'switchView 首次激活懒加载代理页',
+);
+const loginViewAgents = balancedBlock(app, 'function showLoginView', '{', '}');
+ok(loginViewAgents.includes('resetAgents()'), 'showLoginView 清零代理页状态');
+const wireAgentsBlock = balancedBlock(app, 'function wire()', '{', '}');
+ok(wireAgentsBlock.includes('wireAgents()'), 'wire() 调用 wireAgents()');
+ok(
+  /\$\('nav-agents-btn'\)\.addEventListener\('click'/.test(wireAgentsBlock),
+  'wire() 绑定 nav-agents-btn',
+);
+const saveAgentBlock = functionBody(app, 'async function saveAgentDetail');
+ok(saveAgentBlock !== '', '找到 saveAgentDetail 函数体');
+ok(
+  ['payoutName', 'payoutAccount', 'payoutBank'].every((k) => saveAgentBlock.includes(k)),
+  'saveAgentDetail 三收款字段同笔提交（updatePayout 省略即置 NULL）',
+);
+ok(saveAgentBlock.includes('/payout'), 'saveAgentDetail 调用 payout PATCH');
+const setStatusBlock = functionBody(app, 'async function setAgentStatus');
+ok(setStatusBlock !== '' && setStatusBlock.includes('/status'), 'setAgentStatus 调 status 端点');
+ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（代理页同纪律）');
+ok(/\.agents-secret\s*\{/.test(css), 'style.css 含 .agents-secret 规则');
+ok(/\.agents-actions\s*\{/.test(css), 'style.css 含 .agents-actions 规则');
+
+/* ── 13. 2026-10-26 代理工作台：单入口 + 页内页签 ───────────────────
+ * 「通用设置 → 代理」叶并入「运营 → 代理」；CONFIG_IA 的 agent 域保留（85 键锚点），
+ * 只删左树叶。防回潮：旧叶/计数三件套零引用 + CFG_NAV↔HTML 双向一致。 */
+for (const gone of ['nav-cfg-agent-btn', 'nav-count-agent']) {
+  ok(!html.includes(gone), `index.html 已移除 ${gone}`);
+  ok(!app.includes(gone), `app.js 已无 ${gone} 引用`);
+}
+const cfgNavBlock = balancedBlock(app, 'const CFG_NAV');
+ok(cfgNavBlock !== '', '找到 CFG_NAV 字面量');
+const cfgNavLeaves = [...cfgNavBlock.matchAll(/leaf:\s*'([^']+)'/g)].map((m) => m[1]);
+const cfgNavCounts = [...cfgNavBlock.matchAll(/count:\s*'([^']+)'/g)].map((m) => m[1]);
+for (const id of [...cfgNavLeaves, ...cfgNavCounts]) {
+  ok(html.includes(`id="${id}"`), `CFG_NAV 的 #${id} 在 index.html 存在`);
+}
+const htmlCfgLeaves = [...html.matchAll(/id="(nav-cfg-[a-z-]+-btn)"/g)].map((m) => m[1]);
+for (const id of htmlCfgLeaves) {
+  ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
+}
+
+const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];
+for (const id of AGENT_TAB_IDS) {
+  ok(html.includes(`id="agent-tab-${id}"`), `index.html 含页签按钮 #agent-tab-${id}`);
+}
+const agentPanelTag = (id) =>
+  new RegExp(`<div\\b[^>]*\\bid="${id}"[^>]*>`).exec(html)?.[0] ?? '';
+for (const id of AGENT_TAB_IDS) {
+  const tag = agentPanelTag(`agent-panel-${id}`);
+  ok(tag !== '', `index.html 含页签面板 #agent-panel-${id}`);
+  if (id === 'list') ok(tag !== '' && !/\bhidden\b/.test(tag), '列表面板初始可见');
+  else ok(tag !== '' && /\bhidden\b/.test(tag), `#agent-panel-${id} 初始 hidden`);
+}
+ok(html.includes('id="ag-invite-row"'), 'index.html 含邀请码行容器 #ag-invite-row');
+
+const agentTabsBlock = balancedBlock(app, 'const AGENT_TABS');
+ok(agentTabsBlock !== '', '找到 AGENT_TABS 字面量');
+let agentTabs = [];
+if (agentTabsBlock !== '') {
+  try {
+    agentTabs = vm.runInNewContext(`(${agentTabsBlock})`);
+  } catch {
+    agentTabs = [];
+  }
+}
+ok(Array.isArray(agentTabs) && agentTabs.length === 6, `AGENT_TABS 恰 6 项（实测 ${agentTabs.length}）`);
+ok(
+  Array.isArray(agentTabs) &&
+    [...agentTabs.map((t) => t.id)].sort().join(',') === [...AGENT_TAB_IDS].sort().join(','),
+  'AGENT_TABS id 集合精确',
+);
+for (const t of agentTabs) {
+  ok(html.includes(`id="${t.btn}"`), `AGENT_TABS 的 #${t.btn} 在 HTML 存在`);
+  ok(html.includes(`id="${t.panel}"`), `AGENT_TABS 的 #${t.panel} 在 HTML 存在`);
+}
+for (const needle of [
+  'function applyAgentTabUI',
+  'function switchAgentTab',
+  'function renderAgentInviteRow',
+  'function ensureConfigSnapshot',
+  'const canWriteConfigKey',
+]) {
+  ok(app.includes(needle), `app.js 含页签针脚 ${JSON.stringify(needle)}`);
+}
+const wireAgentsTabsBlock = functionBody(app, 'function wireAgents');
+ok(wireAgentsTabsBlock.includes('AGENT_TABS'), 'wireAgents 按 AGENT_TABS 绑定页签');
+const resetAgentsBlock = functionBody(app, 'function resetAgents');
+ok(/tab\s*=\s*'list'/.test(resetAgentsBlock), "resetAgents 复位 tab = 'list'");
+ok(/epoch\s*\+=\s*1|epoch\+\+/.test(resetAgentsBlock), 'resetAgents 递增 epoch');
+ok(/roleApplied\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 roleApplied');
+ok(/armed:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
+ok(/list\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 list.loaded');
+ok(/treeReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 treeReq.loaded');
+ok(
+  /settingsReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock),
+  'resetAgents 复位 settingsReq.loaded',
+);
+const listTabTag = /<button\b[^>]*\bid="agent-tab-list"[^>]*>/.exec(html)?.[0] ?? "";
+ok(/\bactive\b/.test(listTabTag), "agent-tab-list 初始 active");
+const settingsFormEnd = html.indexOf('</form>', html.indexOf('id="ag-settings-form"'));
+ok(
+  settingsFormEnd >= 0 && html.indexOf('id="ag-invite-row"') > settingsFormEnd,
+  '#ag-invite-row 位于设置表单之外（避免 Enter 误提交）',
+);
+const applyAgentRoleBlock = functionBody(app, 'function applyAgentRole');
+ok(applyAgentRoleBlock.includes('roleApplied'), 'applyAgentRole 有 roleApplied 守卫');
+const loadAllBlock = functionBody(app, 'async function loadAll');
+ok(loadAllBlock.includes('renderAgentInviteRow()'), 'loadAll 保存后重建邀请码行');
+ok(loadAllBlock.includes('sessionStorage.getItem(TOKEN_KEY)'), 'loadAll 赋值前校验 token');
+const buildSimpleRowBlock = functionBody(app, 'function buildSimpleRow');
+ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色收权');
+ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
+ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {

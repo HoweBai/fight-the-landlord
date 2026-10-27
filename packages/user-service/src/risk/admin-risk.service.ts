@@ -20,7 +20,7 @@ import { DeviceBindingsService } from './device-bindings.service';
 
 /** 审核队列列表基句（keyset `id DESC`；`status` 过滤在 WHERE 拼）。 */
 export const REVIEWS_SELECT_BASE =
-  'SELECT id, user_id, score, reasons, status, created_at, updated_at, handled_by, handled_at FROM risk_reviews';
+  'SELECT id, user_id, score, reasons, game_type, status, created_at, updated_at, handled_by, handled_at FROM risk_reviews';
 
 /** 处置审计列表基句（过滤键 = userId/action/actor/from/to）。 */
 export const ACTIONS_SELECT_BASE =
@@ -41,7 +41,7 @@ export const RISK_STATS_SQL =
  * COUNT 恒回一行；COALESCE 兜 SUM。
  */
 export const RISK_STATS_PDK_SQL =
-  "SELECT COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0";
+  "SELECT r.player_count AS player_count, COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY r.player_count";
 
 /** 详情页 stats 的设备数（**窗口** = `now − risk.deviceWindowDays` 天；口径同扫描 SQL2 的单用户形）。 */
 export const RISK_DEVICE_COUNT_WINDOW_SQL =
@@ -73,6 +73,7 @@ export const MAX_PAGE_LIMIT = 100;
 
 export interface RiskReviewListFilter {
   status?: string;
+  gameType?: 'doudizhu' | 'paodekuai' | 'mixed' | 'platform';
 }
 
 /** 审计列表过滤（controller 已做长度/型别校验，服务侧只拼 SQL）。 */
@@ -96,6 +97,7 @@ export interface RiskReviewItem {
   score: number;
   reasons: unknown;
   status: string;
+  gameType: string;
   createdAt: number;
   updatedAt: number;
   handledBy: string | null;
@@ -131,7 +133,12 @@ export interface RiskUserDetail {
     /** 2026-10-25：分玩法战绩；顶层 games/wins/winRate = 两玩法合计。 */
     byGame: {
       doudizhu: { games: number; wins: number; winRate: number };
-      paodekuai: { games: number; wins: number; winRate: number };
+      paodekuai: {
+        games: number;
+        wins: number;
+        winRate: number;
+        byPlayerCount: Record<'2' | '3' | '4', { games: number; wins: number; winRate: number }>;
+      };
     };
   };
   devices: Array<{
@@ -209,6 +216,7 @@ interface RawReviewRow {
   score: unknown;
   reasons: unknown;
   status: unknown;
+  game_type: unknown;
   created_at: unknown;
   updated_at: unknown;
   handled_by: unknown;
@@ -222,6 +230,7 @@ function toReviewItem(row: RawReviewRow): RiskReviewItem {
     score: toSafeInt(row.score, 'risk_reviews.score'),
     reasons: row.reasons, // json 列：mysql2 回已解析值，原样透传
     status: String(row.status),
+    gameType: typeof row.game_type === 'string' ? row.game_type : 'doudizhu',
     createdAt: toEpochMs(row.created_at, 'risk_reviews.created_at'),
     updatedAt: toEpochMs(row.updated_at, 'risk_reviews.updated_at'),
     handledBy: row.handled_by === null || row.handled_by === undefined ? null : String(row.handled_by),
@@ -283,6 +292,14 @@ export class AdminRiskService {
     if (filter.status !== undefined) {
       conds.push('status = ?');
       params.push(filter.status);
+    }
+    if (filter.gameType === 'doudizhu' || filter.gameType === 'paodekuai') {
+      // “包含该玩法”：mixed 行在两个玩法筛选里都出现。
+      conds.push("game_type IN (?, 'mixed')");
+      params.push(filter.gameType);
+    } else if (filter.gameType !== undefined) {
+      conds.push('game_type = ?');
+      params.push(filter.gameType);
     }
     if (cursor !== null) {
       conds.push('id < ?');
@@ -361,13 +378,40 @@ export class AdminRiskService {
       wins?: unknown;
     }>;
     const pdkStatsRows = (await this.dataSource.query(RISK_STATS_PDK_SQL, [userId])) as Array<{
+      player_count?: unknown;
       games?: unknown;
       wins?: unknown;
     }>;
     const ddzGames = toCount(statsRows[0]?.games);
     const ddzWins = toCount(statsRows[0]?.wins);
-    const pdkGames = toCount(pdkStatsRows[0]?.games);
-    const pdkWins = toCount(pdkStatsRows[0]?.wins);
+    const byPlayerCount: Record<
+      '2' | '3' | '4',
+      { games: number; wins: number; winRate: number }
+    > = {
+      '2': { games: 0, wins: 0, winRate: 0 },
+      '3': { games: 0, wins: 0, winRate: 0 },
+      '4': { games: 0, wins: 0, winRate: 0 },
+    };
+    for (const row of pdkStatsRows) {
+      const playerCount = Number(row.player_count);
+      if (playerCount !== 2 && playerCount !== 3 && playerCount !== 4) {
+        this.logger.warn(
+          `risk detail: skipped PDK stats row with unknown player_count=${String(row.player_count)} (userId=${userId})`,
+        );
+        continue;
+      }
+      const games = toCount(row.games);
+      const wins = toCount(row.wins);
+      byPlayerCount[String(playerCount) as '2' | '3' | '4'] = {
+        games,
+        wins,
+        winRate: games > 0 ? wins / games : 0,
+      };
+    }
+    const pdkGames =
+      byPlayerCount['2'].games + byPlayerCount['3'].games + byPlayerCount['4'].games;
+    const pdkWins =
+      byPlayerCount['2'].wins + byPlayerCount['3'].wins + byPlayerCount['4'].wins;
     const games = ddzGames + pdkGames;
     const wins = ddzWins + pdkWins;
     const winRate = games > 0 ? wins / games : 0;
@@ -381,6 +425,7 @@ export class AdminRiskService {
         games: pdkGames,
         wins: pdkWins,
         winRate: pdkGames > 0 ? pdkWins / pdkGames : 0,
+        byPlayerCount,
       },
     };
     const cutoff = new Date(now - this.configCache.riskDeviceWindowDays() * DAY_MS);

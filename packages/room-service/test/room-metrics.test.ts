@@ -18,7 +18,7 @@ import {
 } from '../src/metrics/room-metrics.service';
 import { matchQueueLength, roomsActive } from '../src/metrics/room.metrics';
 import { asConfigCache, makeConfigCache } from './helpers/config-cache.stub';
-import { labeledValue, metricValue } from './helpers/metric-readout';
+import { exactSeriesValue, labeledValue } from './helpers/metric-readout';
 
 describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', () => {
   it('两条房间键 + 三条派生键 ⇒ gauge=2（派生键不得计入）', async () => {
@@ -27,11 +27,15 @@ describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', ()
         ? ['0', ['room:AAA', 'room:AAA:seats', 'room:AAA:cardcount', 'room:BBB', 'room:BBB:bots']]
         : ['0', []],
     );
-    const service = new RoomMetricsService({ scan } as unknown as Redis);
+    const pipeline = vi.fn(() => ({
+      hget: vi.fn().mockReturnThis(),
+      exec: async () => [[null, 'doudizhu'], [null, 'doudizhu']],
+    }));
+    const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
 
     await service.sampleOnce();
 
-    await expect(metricValue(roomsActive)).resolves.toBe(2);
+    expect(await exactSeriesValue(roomsActive, { game_type: 'doudizhu' })).toBe(2);
     expect(scan, 'SCAN 的 pattern 必须是 room:*（照 rooms.service.scanAllRooms 的同一跳）').toHaveBeenCalledWith(
       expect.anything(),
       'MATCH',
@@ -43,7 +47,8 @@ describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', ()
 
   it('15s 自重排；shutdown 后不再采样（关停闸 —— 迟到回执不得复活循环）', async () => {
     const scan = vi.fn(async () => ['0', []]);
-    const service = new RoomMetricsService({ scan } as unknown as Redis);
+    const pipeline = vi.fn(() => ({ hget: vi.fn().mockReturnThis(), exec: async () => [] }));
+    const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
     vi.useFakeTimers();
     try {
       service.onModuleInit();
@@ -174,5 +179,28 @@ describe('MatchService：match_queue_length 挂既有扫描环（ZCARD 聚合）
       await labeledValue(matchQueueLength, { mode: 'random', game_type: 'doudizhu', player_count: '3', base_score: '15' }),
       '读不到 ≠ 队列为空（不得写成假 0）',
     ).toBe(4);
+  });
+});
+
+describe('A1：rooms_active 按玩法采样', () => {
+  it('按 game_type 分组；pipeline 整条失败保留旧值', async () => {
+    const exec = vi.fn(async () => [[null, 'doudizhu'], [null, 'paodekuai']]);
+    const pipelineObj = { hget: vi.fn().mockReturnThis(), exec };
+    const pipeline = vi.fn(() => pipelineObj);
+    const scan = vi.fn(async (cursor: string) =>
+      cursor === '0' ? ['0', ['room:AAA', 'room:BBB']] : ['0', []],
+    );
+    const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
+
+    await service.sampleOnce();
+    const ddz = await exactSeriesValue(roomsActive, { game_type: 'doudizhu' });
+    const pdk = await exactSeriesValue(roomsActive, { game_type: 'paodekuai' });
+    expect(ddz).toBe(1);
+    expect(pdk).toBe(1);
+
+    exec.mockRejectedValueOnce(new Error('redis down'));
+    await expect(service.sampleOnce()).rejects.toThrow('redis down');
+    expect(await exactSeriesValue(roomsActive, { game_type: 'doudizhu' })).toBe(ddz);
+    expect(await exactSeriesValue(roomsActive, { game_type: 'paodekuai' })).toBe(pdk);
   });
 });

@@ -34,6 +34,7 @@ import { FinanceQueryService } from '../src/admin/finance-query.service';
 import { ReverseService } from '../src/admin/reverse.service';
 import { ApplyService } from '../src/apply/apply.service';
 import { ReconcileService } from '../src/reconcile/reconcile.service';
+import { RecordsReconcileService } from '../src/reconcile/records-reconcile.service';
 import { XAdminGuard } from '../src/http/x-admin.guard';
 import { FakeCurrencyDb, FakeRedis, type FakeOpRow } from './helpers/fake-currency-db';
 
@@ -49,7 +50,7 @@ const REVERSE_OP_SQL = 'SELECT `action_id`, `source` FROM `currency_ops` WHERE `
 const REVERSE_FLOWS_SQL = 'SELECT `owner_id`, `owner_type`, `delta` FROM `currency_flows` WHERE `op_id` = ?';
 /** T6 详情 SQL（`admin-finance.test.ts` 同文的独立副本；reversed 旗用例走真详情路由）。 */
 const T6_DETAIL_SQL =
-  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.actor, o.reason, ' +
+  'SELECT f.id AS flowId, f.op_id AS opId, o.action_id AS actionId, o.source, o.game_type AS gameType, o.actor, o.reason, ' +
   'o.ref_id AS refId, o.trace_id AS traceId, o.burned_residue AS burnedResidue, o.burned_rake AS burnedRake, f.owner_id AS ownerId, f.owner_type AS ownerType, ' +
   'f.delta, f.balance_after AS balanceAfter, f.created_at AS createdAt, ' +
   'u.phone, u.nickname, ' +
@@ -109,6 +110,7 @@ function makeReverseDs(
                 opId: f.opId,
                 actionId: op.actionId,
                 source: op.source,
+                gameType: op.gameType,
                 actor: op.actor,
                 reason: op.reason,
                 refId: op.refId,
@@ -161,6 +163,8 @@ async function startProbe(ds: DataSource, apply: ApplyService): Promise<ReverseP
       { provide: FinanceQueryService, useValue: new FinanceQueryService(ds) },
       // ③ T8：控制器构造再增 reconcile 两路由依赖（本文件不触对账面）——占位空对象仅供容器解析。
       { provide: ReconcileService, useValue: {} as ReconcileService },
+      // C2：控制器构造再增 records 对账状态依赖（本文件不触该面）——同款占位空对象。
+      { provide: RecordsReconcileService, useValue: {} as RecordsReconcileService },
     ],
   };
   const app: INestApplication = await NestFactory.create(module, { logger: false });

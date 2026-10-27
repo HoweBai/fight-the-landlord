@@ -271,6 +271,7 @@ describe('服务层：真实键透传（不得用解析值重建新键）', () =
     const { service, redis, configCache } = make();
     // 玩法开着（2026-10-24 起关闭玩法会在 processQueue 顶部暂停扫描）
     configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
     // 关补机器人：2 人队列停在等待提示路径，不触发（本任务尚未支持的）pdk 开局。
     configCache.freeBotFillEnabled.mockReturnValue(false);
     service.setClock(() => 1_700_000_000_000);
@@ -295,6 +296,7 @@ describe('服务层：真实键透传（不得用解析值重建新键）', () =
   it('failMatch 按**实际键** ZREM（跑得快队列超时 ⇒ 只清 5 段键）', async () => {
     const { service, redis, configCache } = make();
     configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
     configCache.freeBotFillEnabled.mockReturnValue(false);
     service.setClock(() => 1_700_000_000_000);
     await service.addToQueue('u1', 'random', 15, undefined, undefined, {

@@ -136,6 +136,23 @@ export function authorizeAdmin(opts: { method: string; normPath: string; role: s
     return allows('super_admin');
   }
 
+  // P-ag0（2026-10-26）：`PUT /api/admin/config/` 下的 **agent.* / 含 `%` 的编码变体** ⇒ super_admin。
+  // 必须**先于 P4**：P4 是「任意 config 键 ⇒ super_admin|operator」的前缀匹配；
+  // `agent%2EinviteEnabled` 经 P4 放行 operator，而 Express 的 `:key` 会解码成合法键 ⇒ 绕过。
+  // 三路 fail-closed：原值含 `%`（编码/双重编码变体）、解码后以 `agent.` 开头、或原值就是该键。
+  if (method === 'PUT' && p.startsWith(CONFIG_KEY_PREFIX) && !p.endsWith(CONFIG_CHANGES_SUFFIX)) {
+    const rawKey = p.slice(CONFIG_KEY_PREFIX.length);
+    let decoded = rawKey;
+    try {
+      decoded = decodeURIComponent(rawKey);
+    } catch {
+      // 畸形编码：保留原值，下面的 `%` 判定仍会 fail-closed。
+    }
+    if (rawKey.includes('%') || decoded.startsWith('agent.')) {
+      return allows('super_admin');
+    }
+  }
+
   // P4：PUT /api/admin/config/:key（**前缀** `/api/admin/config/` 且非 `…/changes`）⇒ super_admin | operator
   if (method === 'PUT' && p.startsWith(CONFIG_KEY_PREFIX) && !p.endsWith(CONFIG_CHANGES_SUFFIX)) {
     return allows('super_admin', 'operator');
@@ -234,8 +251,49 @@ export function authorizeAdmin(opts: { method: string; normPath: string; role: s
     return allows('super_admin', 'operator');
   }
 
+  // ─── 代理管理（2026-10-26）：读面带必须在 P8 之前；写面在 P9 之前 ──────────
+  // P-ag1：代理读面 ⇒ super_admin | finance（viewer/operator 403，不得落 P8）
+  if (
+    method === 'GET' &&
+    (p === '/api/admin/agents' ||
+      p.startsWith('/api/admin/agents/') ||
+      p === '/api/admin/agent-audit' ||
+      p === '/api/admin/agent-reconciliation' ||
+      p === '/api/admin/agent-settlements' ||
+      p.startsWith('/api/admin/agent-settlements/') ||
+      p === '/api/admin/agent-adjustments' ||
+      p.startsWith('/api/admin/agent-adjustments/'))
+  ) {
+    return allows('super_admin', 'finance');
+  }
+
   // P8：其余 **GET**（含 .csv、审计读口、`/api/admin/accounts/changes`）⇒ 已认证即放行（任意角色）
   if (method === 'GET') return true;
+
+  // P-ag2：代理写面（POST/PATCH/DELETE `/api/admin/agents*`，含 bind/unbind/status/reset/rotate/
+  // payout/bindings/bulk/adjustments）⇒ super_admin
+  if (
+    (method === 'POST' || method === 'PATCH' || method === 'DELETE') &&
+    (p === '/api/admin/agents' || p.startsWith('/api/admin/agents/'))
+  ) {
+    return allows('super_admin');
+  }
+
+  // P-ag3：结算打款/驳回 ⇒ finance | super_admin
+  if (
+    method === 'POST' &&
+    /^\/api\/admin\/agent-settlements\/[^/]+\/(pay|reject)$/.test(p)
+  ) {
+    return allows('finance', 'super_admin');
+  }
+
+  // P-ag4：人工调账复核/驳回 ⇒ super_admin（发起在 P-ag2）
+  if (
+    method === 'POST' &&
+    /^\/api\/admin\/agent-adjustments\/[^/]+\/(approve|reject)$/.test(p)
+  ) {
+    return allows('super_admin');
+  }
 
   // P12：POST /api/admin/wallet/accounts/batch（精确）⇒ super_admin | operator
   if (method === 'POST' && p === '/api/admin/wallet/accounts/batch') {

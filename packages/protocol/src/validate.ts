@@ -11,6 +11,7 @@
  */
 
 import { isValidDouZeroCard } from './codec';
+import { GAME_TYPES } from './game-types';
 import {
   CLIENT_MESSAGE_TYPES,
   SERVER_MESSAGE_TYPES,
@@ -22,6 +23,7 @@ import {
 import type { Card, GameView, PlayerView, RoomPlayer } from './views';
 import type { DdzSettlementResult } from './views';
 import type { PdkPlayerView, PdkSettlementResult } from './pdk/types';
+import { pdkRecentActionsWindow } from './pdk/window';
 import type { SettlementResult } from './settlement';
 
 export class ProtocolError extends Error {
@@ -81,9 +83,10 @@ function assertInt(v: unknown, path: string, min: number, max: number): asserts 
 
 /**
  * 多玩法可选字段：**只有 undefined 算缺省**；空串/未知 id 报错（K3）。
- * 这里用本地常量而不是 import `isGameType`，避免 game.ts ↔ validate.ts 的运行时环。
+ * 审查 P2-5：复用叶子模块的 `GAME_TYPES`（零 import，不会与 game.ts 成环）；
+ * 新增玩法时这里自动跟随，不再需要手工同步第二份元组。
  */
-const KNOWN_GAME_TYPES = ['doudizhu', 'paodekuai'] as const;
+const KNOWN_GAME_TYPES = GAME_TYPES;
 
 function assertOptionalGameType(v: unknown, path: string): void {
   if (v === undefined) return;
@@ -274,8 +277,13 @@ function assertPdkPlayerView(v: unknown, path: string): asserts v is PdkPlayerVi
   }
   assertNum(v.currentPlayer, `${path}.currentPlayer`);
   assertInt(v.currentPlayer, `${path}.currentPlayer`, 0, playerCount - 1);
-  if (!Array.isArray(v.recentActions) || v.recentActions.length > 2) {
-    throw new ProtocolError(`${path}.recentActions must be an array with at most 2 items`);
+  if (
+    !Array.isArray(v.recentActions) ||
+    v.recentActions.length > pdkRecentActionsWindow(playerCount)
+  ) {
+    throw new ProtocolError(
+      `${path}.recentActions must be an array with at most ${pdkRecentActionsWindow(playerCount)} items (playerCount ${playerCount})`,
+    );
   }
   v.recentActions.forEach((a, i) => {
     const p = `${path}.recentActions[${i}]`;

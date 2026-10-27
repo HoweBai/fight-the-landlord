@@ -941,3 +941,89 @@ describe('玩家管理页（2026-10-22）：P10–P13', () => {
     }
   });
 });
+
+describe('代理分润（2026-10-26）：P-ag0..P-ag4', () => {
+  const check = (method: string, path: string, role: string) =>
+    authorizeAdmin({ method, normPath: path, role });
+
+  it('读面：agents* / agent-audit / agent-reconciliation / agent-settlements* / agent-adjustments* ⇒ super_admin | finance', () => {
+    const paths = [
+      '/api/admin/agents',
+      '/api/admin/agents/tree',
+      '/api/admin/agents/settings',
+      '/api/admin/agents/ag_1',
+      '/api/admin/agents/ag_1/bindings',
+      '/api/admin/agent-audit',
+      '/api/admin/agent-reconciliation',
+      '/api/admin/agent-settlements',
+      '/api/admin/agent-settlements/1',
+      '/api/admin/agent-adjustments',
+    ];
+    for (const path of paths) {
+      expect(check('GET', path, 'super_admin'), path).toBe(true);
+      expect(check('GET', path, 'finance'), path).toBe(true);
+      expect(check('GET', path, 'operator'), path).toBe(false);
+      expect(check('GET', path, 'viewer'), path).toBe(false);
+    }
+  });
+
+  it('写面：POST/PATCH/DELETE /api/admin/agents* ⇒ 仅 super_admin', () => {
+    const cases: Array<[string, string]> = [
+      ['POST', '/api/admin/agents'],
+      ['PATCH', '/api/admin/agents/settings'],
+      ['PATCH', '/api/admin/agents/ag_1'],
+      ['PATCH', '/api/admin/agents/ag_1/payout'],
+      ['POST', '/api/admin/agents/ag_1/status'],
+      ['POST', '/api/admin/agents/ag_1/reset-password'],
+      ['POST', '/api/admin/agents/ag_1/invite-code/rotate'],
+      ['POST', '/api/admin/agents/bind'],
+      ['POST', '/api/admin/agents/unbind'],
+      ['POST', '/api/admin/agents/ag_1/bindings/bulk'],
+      ['POST', '/api/admin/agents/ag_1/adjustments'],
+      ['DELETE', '/api/admin/agents/ag_1'],
+    ];
+    for (const [method, path] of cases) {
+      expect(check(method, path, 'super_admin'), `${method} ${path}`).toBe(true);
+      for (const role of ['finance', 'operator', 'viewer']) {
+        expect(check(method, path, role), `${method} ${path} ${role}`).toBe(false);
+      }
+    }
+  });
+
+  it('结算打款/驳回 ⇒ finance | super_admin；调账复核/驳回 ⇒ 仅 super_admin', () => {
+    for (const path of [
+      '/api/admin/agent-settlements/1/pay',
+      '/api/admin/agent-settlements/1/reject',
+    ]) {
+      expect(check('POST', path, 'finance'), path).toBe(true);
+      expect(check('POST', path, 'super_admin'), path).toBe(true);
+      expect(check('POST', path, 'operator'), path).toBe(false);
+      expect(check('POST', path, 'viewer'), path).toBe(false);
+    }
+    for (const path of [
+      '/api/admin/agent-adjustments/1/approve',
+      '/api/admin/agent-adjustments/1/reject',
+    ]) {
+      expect(check('POST', path, 'super_admin'), path).toBe(true);
+      for (const role of ['finance', 'operator', 'viewer']) {
+        expect(check('POST', path, role), `${path} ${role}`).toBe(false);
+      }
+    }
+  });
+
+  it('P-ag0：agent.inviteEnabled 及 % 编码变体 ⇒ 仅 super_admin（先于 P4）', () => {
+    for (const key of [
+      'agent.inviteEnabled',
+      'agent%2EinviteEnabled',
+      'agent%252EinviteEnabled',
+      'AGENT.inviteEnabled',
+    ]) {
+      const path = `/api/admin/config/${key}`;
+      expect(check('PUT', path, 'super_admin'), key).toBe(true);
+      expect(check('PUT', path, 'operator'), key).toBe(false);
+      expect(check('PUT', path, 'finance'), key).toBe(false);
+    }
+    // 普通 config 键仍走 P4（operator 可写）—— 判别力：不是把所有 config 都收紧。
+    expect(check('PUT', '/api/admin/config/room.friendRoomEnabled', 'operator')).toBe(true);
+  });
+});

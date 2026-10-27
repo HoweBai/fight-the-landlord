@@ -81,6 +81,8 @@ const purchaseCalls = (calls: FetchCall[]) =>
 async function mountGame(over: {
   enabled?: boolean;
   mode?: 'random' | 'gold';
+  /** 选中的玩法（`store.activeMode`）；缺省斗地主（开始游戏页从大厅拿到的那一项）。 */
+  gameType?: 'doudizhu' | 'paodekuai';
   perGame?: number | null;
   perHour?: number | null;
   wallet?: number | null;
@@ -91,6 +93,7 @@ async function mountGame(over: {
   const auth = useAuthStore();
   auth.userId = 'u1';
   const store = useGameStore();
+  store.setActiveMode(over.gameType ?? 'doudizhu');
   store.cardCounterEnabled = over.enabled ?? true;
   store.roomMode = over.mode ?? 'gold';
   store.setRoomMode(over.mode ?? 'gold');
@@ -163,6 +166,15 @@ describe('开始游戏页：记牌器购买入口 + 弹层', () => {
     const disabled = await mountGame({ enabled: false });
     expect(disabled.wrapper.find('.game__bar .game__cardcounter-entry').exists()).toBe(false);
     disabled.wrapper.unmount();
+  });
+
+  it('跑得快（能力位 cardCounter=false）⇒ 金币场也不渲染入口、弹层不可达（D17）', async () => {
+    stubFetch();
+    const pdk = await mountGame({ gameType: 'paodekuai' });
+    expect(pdk.wrapper.find('.game__bar .game__cardcounter-entry').exists()).toBe(false);
+    // v-if 语义：弹层内容同样不得在 DOM（入口不在 ⇒ 无从打开）
+    expect(pdk.wrapper.find('.game__cardcounter').exists()).toBe(false);
+    pdk.wrapper.unmount();
   });
 
   it('免费态（两价皆 0）⇒「金币场免费」、无购买按钮；单键 0 ⇒ 只渲染另一商品', async () => {

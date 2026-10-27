@@ -16,6 +16,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
     "rootDir": ".",
     "module": "ESNext",
     "moduleResolution": "Bundler"

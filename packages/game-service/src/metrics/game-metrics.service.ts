@@ -6,7 +6,7 @@ import {
   type OnApplicationShutdown,
   type OnModuleInit,
 } from '@nestjs/common';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { runWithTrace, setGame } from '@fight-the-landlord/shared';
 import { GameService } from '../game/game.service';
 import { gamesActive } from './game.metrics';
 
@@ -66,7 +66,9 @@ export class GameMetricsService implements OnModuleInit, OnApplicationShutdown {
 
   /** 采样一次（测试与运维手动触发用，不等下一个周期）。 */
   sampleOnce(): void {
-    gamesActive.set(this.game.activeSessionCount());
+    for (const [gameType, n] of Object.entries(this.game.activeSessionCountByGameType())) {
+      setGame(gamesActive, gameType, n);
+    }
   }
 
   onApplicationShutdown(): void {

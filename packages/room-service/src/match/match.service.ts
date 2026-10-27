@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit, Optional, Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
+import { LeaderLease } from '../coordination/leader-lease.service';
 import {
   DEFAULT_GAME_TYPE,
   ErrCode,
@@ -9,7 +10,7 @@ import {
   supportsPlayerCount,
   type GameType,
 } from '@fight-the-landlord/protocol';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { incGame, runWithTrace } from '@fight-the-landlord/shared';
 import { CHANNELS } from '../channels';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { RobotClient } from '../gateway/robot.client';
@@ -323,6 +324,12 @@ type PairVerdict =
 @Injectable()
 export class MatchService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(MatchService.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /**
    * 扫描循环的定时器。片⑦ T7 起是 **`setTimeout` 自重排链**（不再是 `setInterval`；
    * 周期来自 `configCache.cycleMs('room.matchScanIntervalMs')` —— env 覆盖的
@@ -624,7 +631,8 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
    */
   private runOnce(): void {
     runWithTrace({ traceId: null, source: 'timer' }, () => {
-      void this.scanAndMatch()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.scanAndMatch() : undefined))
         .catch((err) => this.logger.error(`Match scan failed: ${String(err)}`))
         .finally(() => {
           // 🔴 关停闸：在途一轮的迟到回执不得在关停后再排定时器（T6 修复轮的同一纪律）。
@@ -943,6 +951,17 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
     if (alive.length === 0) return;
 
+    /**
+     * 人数闸在扫描轮关闭（2026-10-25）：**本桶全部失败**（12007），不留到 meta TTL 后被
+     * 静默孤儿化。为什么不走「暂停票保留」：人数闸是运营开关，关掉后该队列不再有出口；
+     * 而 `rooms.create` 的 12012 会穿透扫描轮（只有 `gameEnabled` 有早退），票会一直挂着。
+     * 玩法级 `gameEnabled=false` 的「暂停、票保留」语义**不动**（上面已早退）。
+     */
+    if (!this.configCache.supportsRoomPlayerCount(queue.gameType, queue.playerCount)) {
+      await this.failMatch(alive.map((q) => q.playerId), queue.key, '该玩法暂不支持该人数');
+      return;
+    }
+
     // ZRANGE 升序 + 逐个过滤 ⇒ `alive[0]` 是「仍在队列里」最久的那个（§8.1 先到先服务）。
     // ⚙️23：它取**原序数组** —— 洗牌只发生在其副本上（子集路径依赖这一点）。
     const oldest = alive[0]!;
@@ -967,7 +986,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
 
     // ② ≥ playerCount 人：洗牌副本 → 随机贪心取 playerCount（逐对过「记忆 ∩ 谓词」；失败即记账）
     if (alive.length >= playerCount) {
-      matchSelectionRoundsTotal.inc(); // §2.4-5：每轮桶内 alive ≥ playerCount
+      incGame(matchSelectionRoundsTotal, queue.gameType); // §2.4-5：每轮桶内 alive ≥ playerCount
       const selected = await this.randomGreedyPick(
         alive,
         tickets,
@@ -975,6 +994,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         now,
         bumped,
         playerCount,
+        queue.gameType,
       );
       if (selected.length === playerCount) {
         const started = await this.startGroup(selected, queue, bumped);
@@ -983,7 +1003,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         }
         return;
       }
-      matchNoLegalGroupTotal.inc(); // §2.4-5：≥ playerCount 且本轮贪心未成组（可观测定义）
+      incGame(matchNoLegalGroupTotal, queue.gameType); // §2.4-5：≥ playerCount 且本轮贪心未成组（可观测定义）
 
       // 凑不满 ⇒ 子集/兜底路径（⚙️14）：对**最长等待者**取贪心最大合法子集 S
       const subset = await this.maxLegalSubset(alive, tickets, predicates, now, playerCount);
@@ -1092,7 +1112,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     //    子集 < playerCount ⇒ 绝不开局，直接落到 ③ 的等待提示。
     const playerCount = queue.playerCount;
     if (alive.length >= playerCount) {
-      matchSelectionRoundsTotal.inc();
+      incGame(matchSelectionRoundsTotal, queue.gameType);
       const selected = await this.randomGreedyPick(
         alive,
         tickets,
@@ -1100,12 +1120,13 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         now,
         bumped,
         playerCount,
+        queue.gameType,
       );
       if (selected.length === playerCount) {
         await this.startGroup(selected, queue, bumped);
         return;
       }
-      matchNoLegalGroupTotal.inc();
+      incGame(matchNoLegalGroupTotal, queue.gameType);
       const subset = await this.maxLegalSubset(alive, tickets, predicates, now, playerCount);
       if (subset.length === playerCount) {
         await this.startGroup(subset, queue, bumped);
@@ -1301,6 +1322,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     now: number,
     bumped: Set<string>,
     playerCount: number,
+    gameType: GameType,
   ): Promise<string[]> {
     const shuffled = this.shuffle(entries);
     const selected: string[] = [];
@@ -1329,7 +1351,7 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
         selected.push(candidate.playerId);
         continue;
       }
-      await this.accountRejection(candidate.playerId, conflict!, rejection, now, bumped);
+      await this.accountRejection(candidate.playerId, conflict!, rejection, now, bumped, gameType);
     }
     return selected;
   }
@@ -1344,11 +1366,12 @@ export class MatchService implements OnModuleInit, OnApplicationShutdown {
     verdict: Extract<PairVerdict, { ok: false }>,
     now: number,
     bumped: Set<string>,
+    gameType: GameType,
   ): Promise<void> {
     if (!verdict.memory) {
       await this.redis.set(matchRejectedKey(aId, bId), String(now), 'PX', PICK_FAILURE_MARK_TTL_MS);
       for (const predicate of verdict.rejected) {
-        matchPredicateRejectionsTotal.inc({ predicate: predicate.name });
+        incGame(matchPredicateRejectionsTotal, gameType, 1, { predicate: predicate.name });
         await this.incrRiskHit(aId, predicate.name);
         await this.incrRiskHit(bId, predicate.name);
       }

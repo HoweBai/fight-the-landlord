@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import {
   DEFAULT_GAME_TYPE,
   ErrCode,
+  isGameType,
   isPdkSettlementResult,
   type CurrencyApplyData,
   type CurrencyBurn,
@@ -11,6 +12,7 @@ import {
   type GameType,
   type SettlementResult,
 } from '@fight-the-landlord/protocol';
+import { incGame } from '@fight-the-landlord/shared';
 import type { Room } from '../rooms/rooms.service';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { RecordClient } from '../gateway/record.client';
@@ -18,6 +20,7 @@ import { CurrencyClient, CurrencyServiceError } from './currency.client';
 import {
   currencySettleResidueTotal,
   currencySettleResultTotal,
+  recordWriteFailuresTotal,
 } from '../metrics/room.metrics';
 
 /**
@@ -29,7 +32,7 @@ import {
  *    早返**之前**调 `settle()`（fire-and-forget；结算**独立于**记录链）。
  *  - 读边 `currency.get`（结算前余额 → 截断/分摊的输入）；写边 `currency.apply`
  *    （唯一写点，`actionId=settle:<room>:<ver>` 幂等锚）；回写边 `record.moneyDelta`
- *    （三人向量含 0；`matched` 齐三座才算收敛）。
+ *    （人数向量含 0；`matched` 齐 playerCount 座才算收敛）。
  *  - 失败分级（规格 §5 表逐字）：**超时/传输/10007** ⇒ 同 id 同载荷重发 ≤2 次
  *    （退避 300ms/1s）⇒ 仍失败入 `settle:outbox`；**14001** ⇒ 重读余额重算、
  *    `actionId :r2` 至多一轮 ⇒ 仍 14001 入 `settle:outbox`；**10001/14002** ⇒ 终态
@@ -126,11 +129,11 @@ export interface SettleOutboxEntry {
   gameVersion: number;
   /** 1 = 首发；2 = 14001 后的 `:r2` 重算轮（至多一轮）。 */
   round: 1 | 2;
-  /** 本局销毁（本片）：残差——随 apply 载荷捎带；**旧条目可能缺失**（读侧按 `typeof === 'number'` 判）。 */
+  /** 本局销毁：残差（2026-10-26 起正常路径恒 0；旧条目可能非 0/缺失，读侧按 `typeof === 'number'` 判）。 */
   residue: number;
   /** 本局销毁（本片）：抽水。 */
   rakeTotal: number;
-  /** 收尾链（广播三座/机器人钩子）用的座位身份快照。 */
+  /** 收尾链（广播各座/机器人钩子）用的座位身份快照。 */
   seats: SettleSeatRef[];
   createdAt: number;
   /** 多玩法（Task 2.5 / N2）：本局玩法/人数。**旧条目可能缺失** ⇒ 斗地主/3。 */
@@ -156,42 +159,111 @@ export interface SettleComputation {
   entries: CurrencyEntryIn[];
   /** 三人语义向量（座位升序、**含 0**）—— `record.moneyDelta` 的原样载荷。 */
   deltas: Array<{ seat: number; delta: number }>;
-  /** `P − Σg[i]`（销毁；∈ [0, 赢家数)）。 */
+  /** 正常路径恒 0（零头已分给赢家）；防御路径（赢家空/Σraw≤0）= P。 */
   residue: number;
   /** `Σrake[i]`（销毁；随 residue 一并可核对）。 */
   rakeTotal: number;
 }
 
 /**
- * 结算算法（规格 §4 伪码**逐字**；纯函数 —— 单测矩阵直接打它）。
+ * 审查 P1-4：结算结果必须与**房间玩法**一致，且 pdk 向量必须覆盖每个座位。
+ *
+ * 返回 `null` 表示形状合法；否则返回可读原因（调用方 `dropWarn` / 纯函数抛错）。
+ * 绝不按“结果里有没有 gameType 键”猜玩法（旧的 `isPdkSettlementResult(result)` 分流
+ * 会让缺键的 pdk 向量落进 ddz 分支，静默零结算）。
+ */
+export function settlementShapeProblem(
+  result: SettlementResult,
+  gameType: GameType,
+  seatNumbers: readonly number[],
+): string | null {
+  if (gameType === 'paodekuai') {
+    if (!isPdkSettlementResult(result)) return 'expected paodekuai settlement vector';
+    if (result.playerCount !== seatNumbers.length) {
+      return `playerCount ${result.playerCount} != seats ${seatNumbers.length}`;
+    }
+    if (!Array.isArray(result.scoreChanges) || result.scoreChanges.length !== seatNumbers.length) {
+      return 'scoreChanges length does not match seats';
+    }
+    const seen = new Set<number>();
+    for (const change of result.scoreChanges) {
+      if (!seatNumbers.includes(change.seat) || seen.has(change.seat)) {
+        return `unknown or duplicate seat ${change.seat}`;
+      }
+      if (!Number.isSafeInteger(change.delta)) return `delta at seat ${change.seat} is not an integer`;
+      seen.add(change.seat);
+    }
+    return null;
+  }
+  if (isPdkSettlementResult(result)) return 'expected doudizhu settlement result';
+  if (!Number.isInteger(result.landlordSeat) || !seatNumbers.includes(result.landlordSeat)) {
+    return `landlordSeat ${String(result.landlordSeat)} invalid`;
+  }
+  if (
+    !Number.isSafeInteger(result.landlordScoreChange) ||
+    !Number.isSafeInteger(result.farmerScoreChange)
+  ) {
+    return 'landlord/farmer score change is not an integer';
+  }
+  return null;
+}
+
+/**
+ * 结算算法（spec 2026-10-26 起为**最大余数法**；纯函数 —— 单测矩阵直接打它）。
  *
  * ```
  * raw[i]   = seat i 是 landlord ? result.landlordScoreChange : result.farmerScoreChange
  * 输家 i:  pay[i] = min(−raw[i], balance[i])    // balance 缺失（exists=false）按 0
  *          delta[i] = −pay[i];  P += pay[i]
- * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // Σraw[赢家] = Σraw[输家]（玩法守恒）
- *          rake[i] = floor(g[i] × rakePercent / 100)
+ * 赢家 i:  g[i] = floor(raw[i] × P / Σraw[赢家])   // 基础分摊（BigInt 精确）
+ *          frac[i] = raw[i] × P − g[i] × Σraw     // 精确余数 ∈ [0, Σraw)
+ *          R = P − Σg[i]（∈ [0, 赢家数)）⇒ 按 frac 降序、座位升序前 R 名各 +1
+ *          rake[i] = floor(g[i] × rakePercent / 100)   // 基数 = 分发零头后的最终所得
  *          delta[i] = g[i] − rake[i]
- * residue  = P − Σg[i]     // ∈ [0, 赢家数)；销毁，计 currency_settle_residue_total
+ * residue  = P − Σg[i] ≡ 0（正常路径；赢家空/Σraw≤0 的防御路径 = P，仍销毁）
  * entries  = 非零 delta 的 {ownerId, ownerType, delta}
  * ```
  * 分差为 0 的座位（理论不发生）⇒ 不产生 entry，但 `deltas` 向量仍含 0（规格 §4 末行）。
+ *
+ * 玩法分流按**房间** `gameType`（审查 P1-4），不按结果形状猜；形状/座位覆盖由
+ * `settlementShapeProblem` 先校验，非法输入直接抛错。
  */
 export function computeSettlement(input: {
   roomCode: string;
   version: number;
   round: 1 | 2;
+  gameType: GameType;
   result: SettlementResult;
   seats: readonly SettleSeatRef[];
   /** ownerId → 结算前余额；**缺失按 0**（`exists=false` 口径 —— 读路径不建行）。 */
   balances: ReadonlyMap<string, number>;
   rakePercent: number;
 }): SettleComputation {
-  const { roomCode, version, round, result, balances, rakePercent } = input;
+  const { roomCode, version, round, gameType, result, balances, rakePercent } = input;
   const ordered = [...input.seats].sort((a, b) => a.seat - b.seat);
+  const shapeProblem = settlementShapeProblem(
+    result,
+    gameType,
+    ordered.map((s) => s.seat),
+  );
+  if (shapeProblem) {
+    throw new Error(`settlement result shape mismatch (room=${gameType}): ${shapeProblem}`);
+  }
+  const pdkBySeat =
+    gameType === 'paodekuai' && isPdkSettlementResult(result)
+      ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
+      : null;
   const rawOf = (seat: SettleSeatRef): number => {
+    if (gameType === 'paodekuai') {
+      const raw = pdkBySeat?.get(seat.seat);
+      if (raw === undefined) {
+        // 形状守卫已保证覆盖；这里再 fail-closed，绝不静默按 0 免付。
+        throw new Error(`settlement scoreChanges missing seat ${seat.seat}`);
+      }
+      return raw;
+    }
     if (isPdkSettlementResult(result)) {
-      return result.scoreChanges.find((c) => c.seat === seat.seat)?.delta ?? 0;
+      throw new Error('settlement result shape mismatch: pdk vector in doudizhu game');
     }
     return seat.seat === result.landlordSeat ? result.landlordScoreChange : result.farmerScoreChange;
   };
@@ -204,6 +276,9 @@ export function computeSettlement(input: {
   for (const s of losers) {
     // 输光截断（D3）：应付超过余额 ⇒ 只付余额，不欠账（也就不可能 14001）。
     const pay = Math.min(-rawOf(s), balances.get(s.ownerId) ?? 0);
+    if (!Number.isSafeInteger(pay) || pay < 0) {
+      throw new Error(`settlement allocation input invalid: pay(${s.seat})=${pay}`);
+    }
     // ⚠️ `-0` 归一：`-pay` 在 pay=0 时是 `-0`（Object.is 层面 ≠ 0，序列化/断言都会出怪相）。
     deltaBySeat.set(s.seat, pay === 0 ? 0 : -pay);
     pool += pay;
@@ -213,11 +288,38 @@ export function computeSettlement(input: {
   let gainedSum = 0;
   let rakeTotal = 0;
   if (winners.length > 0 && winnerRawSum > 0) {
-    for (const s of winners) {
-      const gain = Math.floor((rawOf(s) * pool) / winnerRawSum); // 截断后的 P 按原始分差分摊
-      const rake = Math.floor((gain * rakePercent) / 100);
-      deltaBySeat.set(s.seat, gain - rake);
-      gainedSum += gain;
+    // 最大余数法（spec 2026-10-26 D1/D4）：零头分给赢家，精确整数运算。
+    if (!Number.isSafeInteger(pool) || pool < 0 || !Number.isSafeInteger(winnerRawSum)) {
+      throw new Error(`settlement allocation input invalid: pool=${pool}, winnerRawSum=${winnerRawSum}`);
+    }
+    const bigS = BigInt(winnerRawSum);
+    const bigPool = BigInt(pool);
+    const rows = winners.map((s) => {
+      const raw = rawOf(s);
+      if (!Number.isSafeInteger(raw) || raw <= 0) {
+        throw new Error(`settlement allocation input invalid: raw(${s.seat})=${raw}`);
+      }
+      const num = BigInt(raw) * bigPool;
+      return { seat: s.seat, gain: num / bigS, frac: num % bigS };
+    });
+    const grantedBase = rows.reduce((acc, r) => acc + Number(r.gain), 0);
+    const remainder = pool - grantedBase; // 精确算术下 ∈ [0, 赢家数)
+    if (remainder < 0 || remainder >= winners.length) {
+      throw new Error(`settlement remainder out of range: R=${remainder} (winners=${winners.length}, P=${pool})`);
+    }
+    const byFraction = [...rows].sort((a, b) =>
+      a.frac === b.frac ? a.seat - b.seat : a.frac > b.frac ? -1 : 1,
+    );
+    for (let i = 0; i < remainder; i += 1) byFraction[i]!.gain += 1n;
+    for (const r of rows) {
+      const finalGain = Number(r.gain);
+      if (!Number.isSafeInteger(finalGain)) {
+        // D4 兜底：前置断言下结构上恒真；保留以防未来改动破坏前提。
+        throw new Error(`settlement allocation input invalid: gain(${r.seat})=${finalGain}`);
+      }
+      const rake = Math.floor((finalGain * rakePercent) / 100); // D2：基数 = 最终所得
+      deltaBySeat.set(r.seat, finalGain - rake);
+      gainedSum += finalGain;
       rakeTotal += rake;
     }
   }
@@ -253,7 +355,7 @@ function gameMetaOf(
   return gameType === 'paodekuai' || playerCount !== 3 ? { gameType, playerCount } : undefined;
 }
 
-/** 从 outbox 条目还原三人向量（entries 只含非零 ⇒ 其余座补 0）。 */
+/** 从 outbox 条目还原人数向量（entries 只含非零 ⇒ 其余座补 0）。 */
 function deltasFromEntry(entry: SettleOutboxEntry): Array<{ seat: number; delta: number }> {
   return [...entry.seats]
     .sort((a, b) => a.seat - b.seat)
@@ -302,7 +404,7 @@ export class SettleService {
    *
    * 守卫（缺任 ⇒ WARN + `dropped` 指标 + 不结算；mode 非 gold ⇒ 静默返回）：
    * 房间存在 ∧ `mode==='gold'` ∧ `result` 存在 ∧ `version` 非空（正整数）∧
-   * 三座位齐（恰 0/1/2）∧ 机器人座映射齐（`botBySeat`，C25）。
+   * 座位齐（恰 0..playerCount-1）∧ 机器人座映射齐（`botBySeat`，C25）。
    */
   async settle(input: SettleInput): Promise<void> {
     try {
@@ -310,7 +412,12 @@ export class SettleService {
     } catch (err) {
       // 顶层兜底：settle 的调用方是 `void …` ⇒ 任何逃逸的 rejection 都会把进程打成
       // crash-loop（Node 默认 --unhandled-rejections=throw）。宁可账面可见地响一声。
-      this.dropError(input.roomCode, input.version, 'unexpected error', err);
+      const topGameType =
+        input.room?.gameType ??
+        (input.result !== undefined && isPdkSettlementResult(input.result)
+          ? 'paodekuai'
+          : DEFAULT_GAME_TYPE);
+      this.dropError(input.roomCode, input.version, topGameType, 'unexpected error', err);
     }
   }
 
@@ -327,13 +434,14 @@ export class SettleService {
       return;
     }
     const room = input.room;
+    const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
 
     // ── 守卫②：mode==='gold'（免费场/好友房是**正常路径** ⇒ 静默返回，不 WARN 不指标）──
     if (room.mode !== 'gold') return;
 
     // ── 守卫③：result 存在 ─────────────────────────────────────────────
     if (!input.result) {
-      this.dropWarn(roomCode, input.version, 'game.ended carries no result');
+      this.dropWarn(roomCode, input.version, gameType, 'game.ended carries no result');
       return;
     }
     const result = input.result;
@@ -344,6 +452,7 @@ export class SettleService {
       this.dropWarn(
         roomCode,
         version,
+        gameType,
         'game.ended carries no version (settle:<room>:undefined would collide with 10001)',
       );
       return;
@@ -353,24 +462,37 @@ export class SettleService {
      * 多玩法（Task 2.5）：玩法/人数 = **房间元数据**（`RoomMeta.gameType`/`maxPlayers`）。
      * 结果与房间必须同玩法/同人数（pdk 的 `playerCount` 由结算向量自带）。
      */
-    const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
     const playerCount = room.maxPlayers;
     const resultIsPdk = isPdkSettlementResult(result);
     if (resultIsPdk !== (gameType === 'paodekuai')) {
-      this.dropWarn(roomCode, version, `settlement gameType mismatch (room=${gameType})`);
+      this.dropWarn(roomCode, version, gameType, `settlement gameType mismatch (room=${gameType})`);
       return;
     }
     if (resultIsPdk && result.playerCount !== playerCount) {
       this.dropWarn(
         roomCode,
         version,
+        gameType,
         `settlement playerCount mismatch (result=${result.playerCount}, room=${playerCount})`,
       );
       return;
     }
+    /**
+     * 审查 P1-4：形状与座位覆盖按**房间玩法**校验（不是按结果形状猜）。
+     * pdk 向量缺座 ⇒ 该座被 `?? 0` 静默免付；这里先降级为 dropped（不写钱、不进 outbox）。
+     */
+    const shapeProblem = settlementShapeProblem(
+      result,
+      gameType,
+      Array.from({ length: playerCount }, (_, seat) => seat),
+    );
+    if (shapeProblem) {
+      this.dropWarn(roomCode, version, gameType, `settlement result invalid: ${shapeProblem}`);
+      return;
+    }
 
     // ── 守卫⑤：座位齐（0..playerCount-1） + 机器人座映射齐（映射来自入参透传 —— 不得重读 bots 键）────
-    const seats = this.resolveSeats(room, input.botBySeat, version, playerCount);
+    const seats = this.resolveSeats(room, input.botBySeat, version, playerCount, gameType);
     if (!seats) return;
 
     const rakePercent = this.configCache.rakePercent(gameType);
@@ -378,9 +500,9 @@ export class SettleService {
     // ── 读边：结算前余额（截断/分摊的输入）──────────────────────────────
     let balances: ReadonlyMap<string, number>;
     try {
-      balances = await this.readBalances(seats.map((s) => s.ownerId));
+      balances = await this.readBalances(seats.map((s) => s.ownerId), gameType);
     } catch (err) {
-      this.dropError(roomCode, version, 'balance read failed', err);
+      this.dropError(roomCode, version, gameType, 'balance read failed', err);
       return;
     }
 
@@ -391,6 +513,7 @@ export class SettleService {
       roomCode,
       version,
       round,
+      gameType,
       result: input.result,
       seats,
       balances,
@@ -399,7 +522,7 @@ export class SettleService {
 
     if (computed.entries.length === 0) {
       // 全零（规格 §4/§5）：不调 apply；仍走「广播 + moneyDelta(全 0)」收尾（三态之二）。
-      currencySettleResultTotal.inc({ result: 'ok' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'ok' });
       this.logger.log(
         `Currency settle for room ${roomCode} (version ${version}): all deltas zero — no apply (broadcast + moneyDelta only)`,
       );
@@ -410,16 +533,16 @@ export class SettleService {
     let outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
       residue: computed.residue,
       rake: computed.rakeTotal,
-    });
+    }, gameType);
 
     if (outcome.kind === 'r2') {
       // ── 14001 ⇒ 重读余额、重算，`:r2` 重发**至多一轮**（规格 §5）────────────
-      currencySettleResultTotal.inc({ result: 'r2' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'r2' });
       let balances2: ReadonlyMap<string, number>;
       try {
-        balances2 = await this.readBalances(seats.map((s) => s.ownerId));
+        balances2 = await this.readBalances(seats.map((s) => s.ownerId), gameType);
       } catch (err) {
-        this.dropError(roomCode, version, 'balance re-read for :r2 failed', err);
+        this.dropError(roomCode, version, gameType, 'balance re-read for :r2 failed', err);
         return;
       }
       balancesUsed = balances2;
@@ -428,6 +551,7 @@ export class SettleService {
         roomCode,
         version,
         round,
+        gameType,
         result: input.result,
         seats,
         balances: balances2,
@@ -435,14 +559,14 @@ export class SettleService {
       });
       if (computed.entries.length === 0) {
         // 重算后全零（P 被新余额截到 0 —— 理论极罕见）：与全零局同处置。
-        currencySettleResultTotal.inc({ result: 'ok' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'ok' });
         await this.finalize({ roomCode, version, seats, computed, data: null, preBalances: balances2, gameType, playerCount });
         return;
       }
       outcome = await this.applyGraded(computed.actionId, computed.entries, roomCode, version, round, {
         residue: computed.residue,
         rake: computed.rakeTotal,
-      });
+      }, gameType);
       if (outcome.kind === 'r2') {
         // 仍 14001（规格 §5：至多一轮 ⇒ 入 outbox；不再重算）。
         outcome = { kind: 'outboxed', error: new Error('14001 persisted after :r2 recompute') };
@@ -479,19 +603,20 @@ export class SettleService {
         this.dropError(
           roomCode,
           version,
+          gameType,
           `settle outbox write failed (round ${round}) — entry NOT queued; manual reconciliation by actionId=${computed.actionId}`,
           err,
         );
         return;
       }
-      currencySettleResultTotal.inc({ result: 'outboxed' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'outboxed' });
       this.logger.error(
         `Currency settle outboxed for room ${roomCode} (version ${version}, round ${round}): apply failed after retries — sweeper will resend (actionId=${computed.actionId})`,
       );
       return;
     }
 
-    currencySettleResultTotal.inc({ result: outcome.kind });
+    incGame(currencySettleResultTotal, gameType, 1, { result: outcome.kind });
     await this.finalize({
       roomCode,
       version,
@@ -516,12 +641,13 @@ export class SettleService {
     version: number,
     round: 1 | 2,
     burn: CurrencyBurn,
+    gameType: GameType,
   ): Promise<ApplyOutcome> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= SETTLE_RETRY_BACKOFF_MS.length; attempt += 1) {
       if (attempt > 0) {
         await sleep(SETTLE_RETRY_BACKOFF_MS[attempt - 1]!);
-        currencySettleResultTotal.inc({ result: 'retried' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'retried' });
       }
       try {
         const data = await this.currency.apply({
@@ -530,6 +656,7 @@ export class SettleService {
           entries,
           refId: `${roomCode}:${version}`,
           burn,
+          gameType,
         });
         return data.replayed ? { kind: 'replayed', data } : { kind: 'ok', data };
       } catch (err) {
@@ -541,6 +668,7 @@ export class SettleService {
             this.dropError(
               roomCode,
               version,
+              gameType,
               `apply rejected as invalid (10001, round ${round}; deterministic — not retried, not outboxed)`,
               err,
             );
@@ -549,6 +677,7 @@ export class SettleService {
             this.dropError(
               roomCode,
               version,
+              gameType,
               `apply conflict (14002, round ${round}; another settlement won — money_delta stays NULL, reconcile via currency_flows)`,
               err,
             );
@@ -570,12 +699,12 @@ export class SettleService {
    *
    * `exists=false` 的账户契约上 `balance` 就是 0 ⇒ 直接采用（缺失条目按 0 兜底）。
    */
-  private async readBalances(ownerIds: string[]): Promise<Map<string, number>> {
+  private async readBalances(ownerIds: string[], gameType: GameType): Promise<Map<string, number>> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= SETTLE_RETRY_BACKOFF_MS.length; attempt += 1) {
       if (attempt > 0) {
         await sleep(SETTLE_RETRY_BACKOFF_MS[attempt - 1]!);
-        currencySettleResultTotal.inc({ result: 'retried' });
+        incGame(currencySettleResultTotal, gameType, 1, { result: 'retried' });
       }
       try {
         const { balances } = await this.currency.get({ ownerIds });
@@ -602,6 +731,7 @@ export class SettleService {
     botBySeat: ReadonlyMap<number, string>,
     version: number,
     playerCount: number,
+    gameType: GameType,
   ): SettleSeatRef[] | null {
     const players = room.players;
     const seatIndexes = Array.from({ length: playerCount }, (_, seat) => seat);
@@ -611,6 +741,7 @@ export class SettleService {
       this.dropWarn(
         room.code,
         version,
+        gameType,
         `room seats incomplete (expected ${playerCount}, players=[${players.map((p) => p.seat).join(',')}])`,
       );
       return null;
@@ -624,7 +755,7 @@ export class SettleService {
         return botId ? { seat: p.seat, ownerId: botId, ownerType: 'robot' as const } : null;
       });
     if (refs.some((ref) => ref === null)) {
-      this.dropWarn(room.code, version, 'robot seat mapping missing (botBySeat incomplete)');
+      this.dropWarn(room.code, version, gameType, 'robot seat mapping missing (botBySeat incomplete)');
       return null;
     }
     return refs as SettleSeatRef[];
@@ -647,11 +778,17 @@ export class SettleService {
   }): Promise<void> {
     const { roomCode, version, seats, computed, data, preBalances, gameType, playerCount } = args;
 
-    // 残差销毁记账（§4）：**零和局也 inc 0** —— 任何金币局之后该序列必然出现（H 组据此核对）。
-    currencySettleResidueTotal.inc(computed.residue);
-    if (computed.residue > 0 || computed.rakeTotal > 0) {
+    // 残差（回归哨兵，§4）：新口径正常路径恒 0；**零和局也 inc 0** —— 任何金币局之后该序列必然出现。
+    incGame(currencySettleResidueTotal, gameType, computed.residue);
+    if (computed.residue > 0) {
+      // 回归哨兵：新口径正常路径恒 0；非 0 = 防御路径（赢家空/Σraw≤0）或算法回归。
+      this.logger.error(
+        `Currency settle residue nonzero for room ${roomCode} (version ${version}): residue=${computed.residue} (expected 0 — defensive path or algorithm regression; cross-check via currency_ops)`,
+      );
+    }
+    if (computed.rakeTotal > 0) {
       this.logger.log(
-        `Currency settle residue for room ${roomCode} (version ${version}): residue=${computed.residue} rake=${computed.rakeTotal} (destroyed — cross-check via currency_flows)`,
+        `Currency settle rake for room ${roomCode} (version ${version}): rake=${computed.rakeTotal} (destroyed — cross-check via currency_flows)`,
       );
     }
 
@@ -678,6 +815,7 @@ export class SettleService {
     try {
       await this.pushMoneyDelta(roomCode, version, computed.deltas, gameType, playerCount);
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.error(
         `Currency moneyDelta queueing failed for room ${roomCode} (version ${version}): ${String(err)}`,
       );
@@ -703,7 +841,7 @@ export class SettleService {
   }
 
   /**
-   * 三座余额 → 广播载荷（座位升序、恰 3 条）。
+   * 各座余额 → 广播载荷（座位升序、恰 playerCount 条）。
    *
    * 有 entry 的座 ⇒ apply 响应的 `balanceAfter`；**零 delta 座**（无 entry）⇒ 结算前读数
    * （in-process 路径）或现读一次（outbox 重发路径 —— 那时「结算前读数」已不在手上）。
@@ -749,10 +887,12 @@ export class SettleService {
         );
         return;
       }
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `record.moneyDelta partial for room ${roomCode} (version ${version}): matched=[${matched.join(',')}] — queued for sweep`,
       );
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `record.moneyDelta failed for room ${roomCode} (version ${version}): ${String(err)} — queued for sweep`,
       );
@@ -779,9 +919,10 @@ export class SettleService {
    * 清除在后**（规格 §5 字面顺序；崩在两者之间只多一次幂等重放，不留永久缺失）。
    */
   async resendSettleOutboxEntry(field: string, entry: SettleOutboxEntry, now: number): Promise<void> {
+    const gameType = isGameType(entry.gameType) ? entry.gameType : DEFAULT_GAME_TYPE;
     if (now - entry.createdAt > SETTLE_OUTBOX_TTL_MS) {
       await this.redis.hdel(SETTLE_OUTBOX_KEY, field);
-      currencySettleResultTotal.inc({ result: 'dropped' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
       this.logger.error(
         `Currency settle outbox entry abandoned for room ${entry.roomCode} (version ${entry.gameVersion}, round ${entry.round}): age exceeded 1h — manual runbook (reconcile via currency_flows by actionId=${entry.actionId})`,
       );
@@ -800,8 +941,10 @@ export class SettleService {
         entries: entry.entries,
         refId: `${entry.roomCode}:${entry.gameVersion}`,
         ...burnPayload,
+        // A2：旧条目（无 gameType）不得凭空补 ddz；新条目原样带回。
+        ...(entry.gameType === undefined ? {} : { gameType: entry.gameType }),
       });
-      currencySettleResultTotal.inc({ result: data.replayed ? 'replayed' : 'ok' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: data.replayed ? 'replayed' : 'ok' });
       this.logger.log(
         `Currency settle outbox entry delivered for room ${entry.roomCode} (version ${entry.gameVersion}, round ${entry.round}, replayed=${String(data.replayed)})`,
       );
@@ -825,7 +968,7 @@ export class SettleService {
         data,
         preBalances: new Map(),
         // 多玩法（Task 2.5 / N2）：从**条目**取（旧条目缺字段 ⇒ 斗地主/3）。
-        gameType: entry.gameType ?? DEFAULT_GAME_TYPE,
+        gameType,
         playerCount: entry.playerCount ?? 3,
       });
       await this.redis.hdel(SETTLE_OUTBOX_KEY, field);
@@ -838,6 +981,7 @@ export class SettleService {
         this.dropError(
           entry.roomCode,
           entry.gameVersion,
+          gameType,
           `outbox resend terminal (code ${err.code}; money_delta stays NULL)`,
           err,
         );
@@ -850,15 +994,17 @@ export class SettleService {
     }
   }
 
-  /** 处置一条 `recordmoney:outbox`：超龄 ⇒ 放弃；否则重发，`matched` 齐三座 ⇒ 清除。 */
+  /** 处置一条 `recordmoney:outbox`：超龄 ⇒ 放弃；否则重发，`matched` 齐 playerCount 座 ⇒ 清除。 */
   async resendRecordMoneyOutboxEntry(
     field: string,
     entry: RecordMoneyOutboxEntry,
     now: number,
   ): Promise<void> {
+    const gameType = isGameType(entry.gameType) ? entry.gameType : DEFAULT_GAME_TYPE;
     if (now - entry.createdAt > SETTLE_OUTBOX_TTL_MS) {
       await this.redis.hdel(RECORD_MONEY_OUTBOX_KEY, field);
-      currencySettleResultTotal.inc({ result: 'dropped' });
+      incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.error(
         `recordmoney:outbox entry abandoned for room ${entry.roomCode} (version ${entry.gameVersion}): age exceeded 1h — money_delta stays NULL (manual runbook)`,
       );
@@ -866,7 +1012,6 @@ export class SettleService {
     }
     try {
       // 多玩法（Task 2.5 / H6）：从**条目**取（旧条目缺字段 ⇒ 斗地主/3）。
-      const gameType = entry.gameType ?? DEFAULT_GAME_TYPE;
       const playerCount = entry.playerCount ?? 3;
       const meta = gameMetaOf(gameType, playerCount);
       const { matched } = await this.record.moneyDelta({
@@ -882,10 +1027,12 @@ export class SettleService {
         );
         return;
       }
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `recordmoney:outbox resend still partial for room ${entry.roomCode} (version ${entry.gameVersion}): matched=[${matched.join(',')}] — kept for next sweep`,
       );
     } catch (err) {
+      incGame(recordWriteFailuresTotal, gameType, 1, { kind: 'money_delta' });
       this.logger.warn(
         `recordmoney:outbox resend failed for room ${entry.roomCode} (version ${entry.gameVersion}): ${String(err)} — kept for next sweep`,
       );
@@ -895,8 +1042,13 @@ export class SettleService {
   // ─── 日志 / 指标小工具 ─────────────────────────────────────────────
 
   /** 守卫不齐（金币局异常终局，人工核；理论不发生）⇒ WARN + `dropped` 指标、不结算。 */
-  private dropWarn(roomCode: string, version: number | undefined, reason: string): void {
-    currencySettleResultTotal.inc({ result: 'dropped' });
+  private dropWarn(
+    roomCode: string,
+    version: number | undefined,
+    gameType: GameType,
+    reason: string,
+  ): void {
+    incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
     this.logger.warn(
       `Currency settle skipped for room ${roomCode} (version ${String(version)}): ${reason}`,
     );
@@ -906,10 +1058,11 @@ export class SettleService {
   private dropError(
     roomCode: string,
     version: number | undefined,
+    gameType: GameType,
     reason: string,
     err?: unknown,
   ): void {
-    currencySettleResultTotal.inc({ result: 'dropped' });
+    incGame(currencySettleResultTotal, gameType, 1, { result: 'dropped' });
     this.logger.error(
       `Currency settle failed for room ${roomCode} (version ${String(version)}): ${reason}${err === undefined ? '' : ` — ${String(err)}`}`,
     );

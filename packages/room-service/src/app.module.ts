@@ -11,6 +11,7 @@ import { ConfigCacheModule } from './config/config-cache.module';
 // `WsModule` 是本片第一个消费方（`handleMatch` 门槛）；T5/T6 的结算/机器人资金面
 // 也从这个模块出口（providers 由 T5/T6 依次追加）。
 import { CurrencyModule } from './currency/currency.module';
+import { CoordinationModule } from './coordination/coordination.module';
 
 @Module({
   // 片⑦ T6：配置快照缓存（design D2）挂在这里 ⇒ 进程内**恰好一份**（启动即拉 + 订阅 +
@@ -19,6 +20,7 @@ import { CurrencyModule } from './currency/currency.module';
   imports: [
     RedisProviderModule,
     ConfigCacheModule,
+    CoordinationModule,
     RoomsModule,
     WsModule,
     MatchModule,

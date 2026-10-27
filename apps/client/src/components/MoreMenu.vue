@@ -242,7 +242,7 @@ function stepVolume(delta: number): void {
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .table__more-head {
   display: flex;

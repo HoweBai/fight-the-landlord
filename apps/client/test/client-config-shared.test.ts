@@ -10,6 +10,7 @@ import {
   FAILSAFE_CLIENT_CONFIG,
   normalizeClientConfig,
   refreshClientConfig,
+  refreshInviteBootConfig,
 } from '../src/composables/useClientConfig';
 import { useGameStore } from '../src/stores/game';
 
@@ -108,6 +109,32 @@ describe('useClientConfig（共享加载/归一化）', () => {
     expect(await refreshClientConfig()).toBe(true);
 
     expect(store.roomMode).toBe('gold');
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * 代理分润 r3 Critical #1：**未登录**的注册页必须能拿到邀请码开关。
+   * 门控 = 公开 `/api/config/boot`（无 Authorization），只落 `agentInviteEnabled`，
+   * 不得冒充全量配置（`clientConfigVersion` 保持 0）。
+   */
+  it('refreshInviteBootConfig：公开 /api/config/boot 只落开关，不带令牌', async () => {
+    const store = useGameStore();
+    store.setAgentInviteEnabled(false);
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({ code: 0, data: { version: 7, agentInviteEnabled: true } }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await refreshInviteBootConfig()).toBe(true);
+    expect(store.agentInviteEnabled).toBe(true);
+    expect(store.clientConfigVersion).toBe(0);
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(String(url)).toContain('/config/boot');
+    expect(init.headers.Authorization).toBeUndefined();
     vi.unstubAllGlobals();
   });
 

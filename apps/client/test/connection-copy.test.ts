@@ -25,7 +25,7 @@ describe('连接文案单一真源', () => {
 
   it('10006 使用同一网络口径，且与登录 10006 文案不同', () => {
     const copy = connectionDeadCopy({ ...base, deadReason: 'server_rejected', deadCode: ErrCode.RATE_LIMITED });
-    expect(copy.message).toBe('同一网络的连接数已达上限。请关闭其它窗口或设备后点「重新连接」再试。');
+    expect(copy.message).toBe('同一网络的连接数已达上限，请关闭其它窗口或设备。');
     expect(connectionKickMessage(ErrCode.RATE_LIMITED)).toBe(copy.message);
     expect(copy.canRetry).toBe(true);
     expect(copy.canRelogin, '服务端踢线一律给「重新登录」出口').toBe(true);

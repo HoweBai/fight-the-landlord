@@ -21,9 +21,8 @@ import {
 } from '@fight-the-landlord/protocol';
 import {
   buildPdkFeatures,
-  chooseLeadPdk,
   createPdkSession,
-  findSmallestBeatingPdk,
+  decidePdkAutoAction,
   finishPdk,
   handlePdkPass,
   handlePdkPlay,
@@ -190,19 +189,8 @@ export class PdkRuntime implements GameRuntime<PdkSession> {
   }
 
   autoAction(session: PdkSession, seat: number): GameAction {
-    const player = session.players.find((p) => p.seat === seat);
-    if (!player) throw new Error(`Player at seat ${seat} not found`);
-    // 首出（或自己就是最后出牌者）⇒ 必须出牌；跟牌 ⇒ 最小可压，无解则过。
-    const mustLead = session.lastPlayedHand === null || session.lastPlayerIdx === seat;
-    if (!mustLead) {
-      const beating = findSmallestBeatingPdk(player.hand, session.lastPlayedHand!, session.rules);
-      return beating !== null && beating.length > 0
-        ? { kind: 'play', cards: beating }
-        : { kind: 'pass' };
-    }
-    const lead = chooseLeadPdk(player.hand, session.rules);
-    if (lead.length === 0) throw new Error(`Player ${player.id} has no card to play`);
-    return { kind: 'play', cards: lead };
+    // 审查 P2-3：与超时/托管共用 `decidePdkAutoAction`，不再各自实现一套分支。
+    return decidePdkAutoAction(session, seat);
   }
 }
 

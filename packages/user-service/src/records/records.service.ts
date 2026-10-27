@@ -25,7 +25,7 @@ import { DomainError } from '../http/errors';
  *  - **epoch ms**：`ended_at`/`started_at` 是 `datetime(3)` ⇒ 出站前一律转毫秒整数
  *    （不接受 Date 对象直接进 JSON —— 那会变成 ISO 字符串，形状漂移）。
  *  - `mySeat`：**自 JOIN 命中行**（`mine.seat`）——我那一行的座位，不是「猜」出来的。
- *  - `players`：按 `seat` 升序恰 3 条（行由写入侧事务保证成套；这里只组装 + 排序）。
+ *  - `players`：按 `seat` 升序恰 playerCount 条（行由写入侧事务保证成套；这里只组装 + 排序）。
  *
  * ⚠️ `DataSource` 是**值导入**（DI 陷阱：`import type` 会让真容器解析不到 token，而
  * 单测与 tsc 都看不见）。
@@ -107,13 +107,16 @@ interface PdkPageRow {
   score_changes: unknown;
 }
 
-/** pdk 玩家行形态（`won` 由父行 winner_seat 派生，不落库）。 */
+/** pdk 玩家行形态（`score_change`/`won` 为 A2 落库列；父 JSON 只用于整局向量）。 */
 interface PdkPlayerRow {
   record_id: number | string;
   seat: number | string;
   nickname: string | null;
   hand: string;
   played_count: number | string;
+  /** A2：逐座投影列（迁移回填 + 写入维护）。 */
+  score_change: number | string | null;
+  won: number | string | null;
 }
 
 /** JSON 列驱动可能回对象或字符串 ⇒ 归一。 */
@@ -365,7 +368,7 @@ export class RecordsService {
     if (recordIds.length === 0) return byRecord;
     const placeholders = recordIds.map(() => '?').join(', ');
     const rows = (await this.dataSource.query(
-      'SELECT `record_id`, `seat`, `nickname`, `hand`, `played_count` ' +
+      'SELECT `record_id`, `seat`, `nickname`, `hand`, `played_count`, `score_change`, `won` ' +
         `FROM \`game_record_players_pdk\` WHERE \`record_id\` IN (${placeholders}) ` +
         'ORDER BY `record_id` ASC, `seat` ASC',
       recordIds,
@@ -379,13 +382,12 @@ export class RecordsService {
     return byRecord;
   }
 
-  /** 逐键构造 `PdkRecord`（不 spread 库行；`won` 由 winner_seat 派生）。 */
+  /** 逐键构造 `PdkRecord`（玩家分差/胜负读 `score_change`/`won` 列；父 JSON 仅用于整局向量）。 */
   private toPdkDto(row: PdkPageRow, players: PdkPlayerRow[]): PdkRecord {
     const playerCount = Number(row.player_count) as 2 | 3 | 4;
     const handSize = playerCount === 4 ? 12 : 16;
     const winnerSeat = Number(row.winner_seat);
     const scoreChanges = jsonOf<Array<{ seat: number; delta: number }>>(row.score_changes, []);
-    const deltaBySeat = new Map(scoreChanges.map((c) => [Number(c.seat), Number(c.delta)]));
     return {
       gameType: 'paodekuai',
       roomCode: String(row.room_code),
@@ -409,8 +411,9 @@ export class RecordsService {
         .map((p) => ({
           seat: Number(p.seat),
           nickname: p.nickname,
-          scoreChange: deltaBySeat.get(Number(p.seat)) ?? 0,
-          won: Number(p.seat) === winnerSeat,
+          scoreChange: Number(p.score_change ?? 0),
+          // tinyint 驱动可能回 number 或字符串 '0'/'1'；Boolean('0') 会错。
+          won: Number(p.won ?? 0) === 1,
           playedCount: Number(p.played_count),
           hand: decodeHand(String(p.hand), handSize),
         })),

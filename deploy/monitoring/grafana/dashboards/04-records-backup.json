@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,14 +9,40 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "records_table_bytes",
           "legendFormat": "records 两表字节（DATA+INDEX 近似值）",
           "refId": "A"
@@ -24,16 +52,42 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "id": 2,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-          "expr": "rate(records_rows_deleted_total[1h])",
-          "legendFormat": "删除速率（行/秒，1h 窗）",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
+          "expr": "sum by (game_type) (rate(records_rows_deleted_total[1h]))",
+          "legendFormat": "{{game_type}} 删除速率",
           "refId": "A"
         }
       ],
@@ -41,33 +95,56 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 7200 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 7200
+              }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
       "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "time() - records_cleanup_last_success_timestamp_seconds",
           "instant": true,
           "legendFormat": "距上次成功",
@@ -78,14 +155,38 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
       "id": 4,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "records_cleanup_failures_total",
           "legendFormat": "累计失败",
           "refId": "A"
@@ -95,21 +196,43 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "time() - backup_last_success_timestamp_seconds",
           "instant": true,
           "legendFormat": "距上次备份成功",
@@ -120,20 +243,49 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": { "unit": "dateTimeAsIso" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "id": 6,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "backup_last_success_timestamp_seconds * 1000",
           "legendFormat": "上次成功时刻",
           "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "backup_last_attempt_timestamp_seconds * 1000",
           "legendFormat": "上次尝试时刻",
           "refId": "B"
@@ -143,14 +295,38 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "id": 7,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "ftl-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ftl-prometheus"
+          },
           "expr": "backup_last_attempt_result",
           "legendFormat": "上次尝试结果：{{result}}",
           "refId": "A"
@@ -162,9 +338,17 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["ftl", "monitoring"],
-  "templating": { "list": [] },
-  "time": { "from": "now-24h", "to": "now" },
+  "tags": [
+    "ftl",
+    "monitoring"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "FTL 记录与备份",

@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import type { Redis } from 'ioredis';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import { ErrCode, type GameType } from '@fight-the-landlord/protocol';
 import { REDIS } from '../auth/token.service';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { DomainError } from '../http/errors';
@@ -19,7 +19,7 @@ import { riskActionsTotal } from './risk.metrics';
  * 跨实例由扫描锁（⚙️3）兜底、锁定读的间隙锁为第二防线（真库双会话形态见 progress 核销节）。
  */
 export const RISK_UPSERT_LOCK_SQL =
-  'SELECT id,status,score,handled_by,handled_at FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
+  'SELECT id,status,score,handled_by,handled_at,game_type,reasons FROM risk_reviews WHERE user_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE';
 
 /** `risk:limit` auto 旗的 TTL（规格 §2.3：auto=7d，每轮续期）。 */
 export const RISK_LIMIT_TTL_SECONDS = 604_800;
@@ -113,7 +113,7 @@ function isDeadlockError(err: unknown): boolean {
 
 /** 单命中项分值（规格 §2.5-2：`score = 命中项数 × 25` ∈ {25,50}）。 */
 const SINGLE_HIT_SCORE = 25;
-/** 自动限流线（规格 §2.5-3：score ≥ 50 且 `risk.autoThrottle` 才武装）。 */
+/** 账号级自动限流线（规格 §2.5-3：score ≥ 50 且 `risk.autoThrottle` 才武装）；PDK 命中可被 autoThrottleScore 下调至 25–50。 */
 const AUTO_THROTTLE_SCORE = 50;
 
 /** 自动解除的审计 reason（规格 §2.5-3 逐字；`<25 ⇒ dismissed` 分支的语义标签）。 */
@@ -131,6 +131,77 @@ export interface ScanReason {
   detail: Record<string, unknown>;
 }
 
+/** 审核行的当前玩法维度（B 组 U5/D15-D16）。 */
+export type ReviewGameType = 'doudizhu' | 'paodekuai' | 'mixed' | 'platform';
+
+/** 旧行/未知值按 doudizhu 解释（U5：旧行缺省 ddz）。 */
+function normalizeReviewGameType(value: unknown): ReviewGameType {
+  return value === 'paodekuai' || value === 'mixed' || value === 'platform'
+    ? value
+    : 'doudizhu';
+}
+
+/** 锁定读的 `reasons` 可能是 JSON 字符串/对象/数组；解析失败按空。 */
+function parseReasonsValue(value: unknown): ScanReason[] {
+  if (Array.isArray(value)) return value as ScanReason[];
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as ScanReason[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 由**本次** reasons 推导审核行的 game_type：
+ * winRate 的 gameType 集合（缺省/未知 ⇒ doudizhu）；两玩法 ⇒ mixed；
+ * 无 winRate 但有 devices ⇒ platform；无 reasons ⇒ null（调用方保留最新行值）。
+ */
+function deriveReviewGameType(reasons: readonly ScanReason[]): ReviewGameType | null {
+  const games = new Set<'doudizhu' | 'paodekuai'>();
+  let hasDevices = false;
+  for (const reason of reasons) {
+    if (reason.check === 'winRate') {
+      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+    } else if (reason.check === 'devices') {
+      hasDevices = true;
+    }
+  }
+  if (games.has('doudizhu') && games.has('paodekuai')) return 'mixed';
+  if (games.has('doudizhu')) return 'doudizhu';
+  if (games.has('paodekuai')) return 'paodekuai';
+  return hasDevices ? 'platform' : null;
+}
+
+/** 最新行“涉及”的玩法集合：game_type 列 + reasons 兜底（旧行缺省 ddz 也能识别 PDK）。 */
+function reviewInvolvedGames(latest: LatestReviewRow): Set<GameType> {
+  const games = new Set<GameType>();
+  const column = normalizeReviewGameType(latest.game_type);
+  if (column === 'doudizhu' || column === 'mixed') games.add('doudizhu');
+  if (column === 'paodekuai' || column === 'mixed') games.add('paodekuai');
+  for (const reason of parseReasonsValue(latest.reasons)) {
+    if (reason.check === 'winRate') {
+      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+    }
+  }
+  return games;
+}
+
+/**
+ * 有效自动限流线：PDK 胜率命中 ⇒ min(50, pdkAutoThrottleScore)；否则账号级 50。
+ * pdkScore=25 时 PDK-only 25 分即武装；26–49 与 50 同效（PDK+设备 50 仍武装）。
+ */
+function autoThrottleLine(
+  reasons: readonly ScanReason[],
+  pdkAutoThrottleScore: number,
+): number {
+  const pdkHit = reasons.some(
+    (reason) => reason.check === 'winRate' && reason.detail.gameType === 'paodekuai',
+  );
+  return pdkHit ? Math.min(AUTO_THROTTLE_SCORE, pdkAutoThrottleScore) : AUTO_THROTTLE_SCORE;
+}
+
 /** 本次调用落入 `risk_actions` 的系统动作（`null` = 没动作；仅用于指标写点）。 */
 export type RiskSystemAction = 'auto_throttle' | 'unthrottle' | 'reopen' | null;
 
@@ -141,13 +212,14 @@ export type RiskSystemAction = 'auto_throttle' | 'unthrottle' | 'reopen' | null;
  * 一并回滚（本轮不落库、旗不动），下一轮扫描重新定夺（收敛路径见类注）。
  */
 const REVIEW_INSERT_OPEN_SQL =
-  "INSERT INTO risk_reviews (user_id, score, reasons, status) VALUES (?, ?, ?, 'open')";
-const REVIEW_UPDATE_SCORE_SQL = 'UPDATE risk_reviews SET score = ?, reasons = ? WHERE id = ?';
+  "INSERT INTO risk_reviews (user_id, score, reasons, status, game_type) VALUES (?, ?, ?, 'open', ?)";
+const REVIEW_UPDATE_SCORE_SQL =
+  'UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ? WHERE id = ?';
 const REVIEW_UPDATE_TRANSITION_SQL =
-  "UPDATE risk_reviews SET score = ?, reasons = ?, status = ?, handled_by = 'system', handled_at = ? WHERE id = ?";
+  "UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ?, status = ?, handled_by = 'system', handled_at = ? WHERE id = ?";
 /** 终审 F1：manual 旗下 open⇒throttled 的迁移——**不写 handled_\***（处置者保持不动）。 */
 const REVIEW_UPDATE_THROTTLE_KEEP_HANDLER_SQL =
-  "UPDATE risk_reviews SET score = ?, reasons = ?, status = 'throttled' WHERE id = ?";
+  "UPDATE risk_reviews SET score = ?, reasons = ?, game_type = ?, status = 'throttled' WHERE id = ?";
 const ACTION_INSERT_SQL =
   'INSERT INTO risk_actions (user_id, action, actor, reason, review_id, detail) VALUES (?, ?, ?, ?, ?, ?)';
 
@@ -158,6 +230,8 @@ interface LatestReviewRow {
   score: number | string;
   handled_by: string | null;
   handled_at: Date | string | null;
+  game_type: string | null;
+  reasons: unknown;
 }
 
 /**
@@ -165,13 +239,14 @@ interface LatestReviewRow {
  *
  * ─── 状态机（规格 §2.5-3 全行；分支对象 = ⚙️10 锁定读的「最新一行（任意 status）」）──
  *  - **无行**：score ≥ 25 ⇒ INSERT open；< 25 ⇒ 无操作（并集里的低分用户只是回落通道）。
- *  - **open**：score ≥ 25 ⇒ UPDATE score/reasons；其中 score ≥ 50 且 `risk.autoThrottle`
+ *  - **open**：score ≥ 25 ⇒ UPDATE score/reasons；其中 score ≥ 有效自动限流线（账号 50；
+ *    PDK 命中可 25–50）且 `risk.autoThrottle`
  *    ⇒ **先读 `risk:limit` 现值**（终审 F1）：旗不存在/auto ⇒ 置旗 auto（7d）+ 迁
  *    `throttled`（handled_by='system'）+ `auto_throttle` 审计；**旗=manual ⇒ 仅迁条目
  *    （`handled_by`/`handled_at` **保持不动**）、旗**不动**、**无任何审计行**（无实际变更）
  *    ——防「人工旗被自动逻辑改写为 auto、再被下轮 release 静默删掉」的漂移链。
  *    ⚙️20：自动限流**只对已有 open 条目**发生 —— 本轮新建的行不武装（下一轮 open 分支才武装）。
- *  - **throttled(auto)**（`handled_by='system'` 判别）：score ≥ 50 ⇒ 旗**续期**（SET 重发
+ *  - **throttled(auto)**（`handled_by='system'` 判别）：score ≥ 有效自动限流线 ⇒ 旗**续期**（SET 重发
  *    EX 7d、**不刷审计**）；score < 50 ⇒ 删旗 + `unthrottle`(system) 审计 + 回迁
  *    （score ≥ 25 ⇒ open；< 25 ⇒ dismissed + reason「指标回落，自动解除」）。
  *  - **throttled(manual)**：一律**不动旗**（人工解除是唯一通道）；score ≥ 25 仅 UPDATE。
@@ -211,14 +286,32 @@ export class ReviewsService {
     score: number,
     reasons: readonly ScanReason[],
     now: number,
+    unavailableGames: readonly GameType[] = [],
   ): Promise<void> {
+    const pdkAutoThrottleScore = this.configCache.riskPaodekuaiAutoThrottleScore();
+    const throttleLine = autoThrottleLine(reasons, pdkAutoThrottleScore);
     const action = await this.dataSource.transaction(
       async (manager): Promise<RiskSystemAction> => {
         const rows = (await manager.query(RISK_UPSERT_LOCK_SQL, [userId])) as LatestReviewRow[];
         const latest = rows[0];
+        if (latest !== undefined && unavailableGames.length > 0) {
+          const autoThrottled =
+            latest.status === 'throttled' && latest.handled_by === 'system';
+          // ② 任一玩法失败 + throttled(auto)：不得解除；仅续 Redis 旗（零 DB 写/审计）。
+          if (autoThrottled) {
+            await this.armAutoThrottle(userId, now);
+            return null;
+          }
+          // ① 最新行涉及失败玩法：零 DB 写/零审计。
+          const involved = reviewInvolvedGames(latest);
+          if (unavailableGames.some((game) => involved.has(game))) return null;
+        }
+        const nextGameType =
+          deriveReviewGameType(reasons) ??
+          (latest === undefined ? 'platform' : normalizeReviewGameType(latest.game_type));
         if (latest === undefined) {
           if (score >= SINGLE_HIT_SCORE) {
-            await this.insertOpen(manager, userId, score, reasons);
+            await this.insertOpen(manager, userId, score, reasons, nextGameType);
           }
           return null;
         }
@@ -227,7 +320,7 @@ export class ReviewsService {
         switch (latest.status) {
           case 'open': {
             if (score < SINGLE_HIT_SCORE) return null;
-            if (score >= AUTO_THROTTLE_SCORE && this.configCache.riskAutoThrottle()) {
+            if (score >= throttleLine && this.configCache.riskAutoThrottle()) {
               // ⚠️ 终审 F1：**武装前读旗现值** —— 合法动作链（manual throttle → ban → unban
               // → 涨分 revive）后旗仍为 manual；无条件置 auto 会把人工旗改写成 auto，再被
               // 下轮 release 静默删掉（人工处置被解除 + limitSource 溯源漂移）。
@@ -237,6 +330,7 @@ export class ReviewsService {
                 await manager.query(REVIEW_UPDATE_THROTTLE_KEEP_HANDLER_SQL, [
                   score,
                   JSON.stringify(reasons),
+                  nextGameType,
                   reviewId,
                 ]);
                 return null;
@@ -245,6 +339,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_TRANSITION_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 'throttled',
                 new Date(now),
                 reviewId,
@@ -256,6 +351,7 @@ export class ReviewsService {
             await manager.query(REVIEW_UPDATE_SCORE_SQL, [
               score,
               JSON.stringify(reasons),
+              nextGameType,
               reviewId,
             ]);
             return null;
@@ -263,11 +359,12 @@ export class ReviewsService {
 
           case 'throttled': {
             if (latest.handled_by === 'system') {
-              if (score >= AUTO_THROTTLE_SCORE) {
+              if (score >= throttleLine) {
                 // 续期：刷新 score/reasons + SET 重发 EX 7d；**不刷审计**。
                 await manager.query(REVIEW_UPDATE_SCORE_SQL, [
                   score,
                   JSON.stringify(reasons),
+                  nextGameType,
                   reviewId,
                 ]);
                 await this.armAutoThrottle(userId, now);
@@ -278,6 +375,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_TRANSITION_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 nextStatus,
                 new Date(now),
                 reviewId,
@@ -299,6 +397,7 @@ export class ReviewsService {
               await manager.query(REVIEW_UPDATE_SCORE_SQL, [
                 score,
                 JSON.stringify(reasons),
+                nextGameType,
                 reviewId,
               ]);
             }
@@ -316,7 +415,13 @@ export class ReviewsService {
                   handledAt: latest.handled_at,
                 },
               };
-              const newId = await this.insertOpen(manager, userId, score, [...reasons, revived]);
+              const newId = await this.insertOpen(
+                manager,
+                userId,
+                score,
+                [...reasons, revived],
+                nextGameType,
+              );
               await this.insertAction(manager, userId, 'reopen', 'system', null, newId, null);
               return 'reopen';
             }
@@ -549,11 +654,13 @@ export class ReviewsService {
     userId: string,
     score: number,
     reasons: readonly ScanReason[],
+    gameType: ReviewGameType,
   ): Promise<number> {
     const res = (await manager.query(REVIEW_INSERT_OPEN_SQL, [
       userId,
       score,
       JSON.stringify(reasons),
+      gameType,
     ])) as { insertId?: number };
     const newId = res?.insertId;
     if (typeof newId !== 'number' || !Number.isFinite(newId)) {

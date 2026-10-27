@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ftl
+  labels:
+    name: ftl
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ftl-monitoring
+  labels:
+    name: ftl-monitoring

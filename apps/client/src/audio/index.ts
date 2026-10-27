@@ -450,7 +450,7 @@ export function cueForBid(kind: 'call' | 'rob', grab: boolean, seat: number): vo
   playCue((['Rob1', 'Rob2', 'Rob3'] as const)[seat] ?? 'Rob1');
 }
 
-/** 「过牌」→ cue 名（按座位取变体）。 */
+/** 「过牌」→ cue 名（按座位取变体；4 人局 seat 3 回退 `Buyao1`，素材只有 3 条）。 */
 export function cueForPass(seat: number): void {
   playCue((['Buyao1', 'Buyao2', 'Buyao3'] as const)[seat] ?? 'Buyao1');
 }

@@ -1,6 +1,7 @@
 // packages/game-service/src/game/game.service.ts
-import { Inject, Injectable, Logger, OnApplicationShutdown, Optional, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit, Optional, forwardRef } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { gameSettleFailuresTotal } from '../metrics/game.metrics';
 import {
   ErrCode,
   GAME_META,
@@ -8,10 +9,13 @@ import {
   parseGameType,
   supportsPlayerCount,
   type GameType,
+  type SettlementResult,
 } from '@fight-the-landlord/protocol';
 import {
   GameState,
+  incGame,
   isLegalTrusteeCombo,
+  normalizeGameType,
   onManualTrusteeOff,
   onTimeoutOccurred,
   onTrusteeOff,
@@ -82,7 +86,7 @@ const SESSION_TTL_SECONDS = 3600;
  * `GameSession` 是整体状态机，`version` 是乐观锁（§6.5 / §10.2）。
  */
 @Injectable()
-export class GameService implements OnApplicationShutdown {
+export class GameService implements OnApplicationShutdown, OnModuleInit {
   private readonly logger = new Logger(GameService.name);
   /**
    * 进程内**缓存**，不是真源。
@@ -263,6 +267,20 @@ export class GameService implements OnApplicationShutdown {
       }
       if (parsed.playerCount === undefined) parsed.playerCount = 3;
 
+      /**
+       * P0-1 / 审查 P0-2：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。
+       * `JSON.stringify` 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」
+       * ⇒ 不归一化的话，重载后**人类座位会被误判成机器人**（托管 toggle 被拒、
+       * `trustees` 恒 false、超时不计数）。
+       *
+       * ⚠️ **必须放在 pdk 早退之前**：本片之前只有 ddz 分支做了归一化，pdk 会话
+       * 重载后 `trustees` 恒 false（金币局无法取消托管）。`botIds` 是两玩法公共
+       * 基类字段，纯 map；坏形状仍由外层 catch fail-closed 成 null。
+       */
+      parsed.botIds = parsed.botIds?.map((id) =>
+        typeof id === 'string' && id.length > 0 ? id : undefined,
+      );
+
       // ── 跑得快会话：只做形状守卫；玩法字段交给 PdkRuntime（S4）──────────
       if (parsed.gameType === 'paodekuai') {
         const pdk = parsed as unknown as PdkSession;
@@ -320,16 +338,6 @@ export class GameService implements OnApplicationShutdown {
         timeoutCount: p.timeoutCount ?? 0,
         trustee: p.trustee ?? false,
       }));
-      /**
-       * P0-1：`botIds` 是**按座位的稀疏数组**（人类座位是空洞）。`JSON.stringify`
-       * 把空洞写成 `null`，而机器人判定按「该座位有没有 botId」⇒ 不归一化的话，
-       * 重载后**人类座位会被误判成机器人**（托管 toggle 被拒、`trustees` 恒 false、
-       * 超时不计数）。这里把非字符串/空串一律折回 `undefined`，与 `startGame`
-       * 写入的稀疏形态一致。缺 `botIds`（老会话/全人类）保持原样。
-       */
-      session.botIds = session.botIds?.map((id) =>
-        typeof id === 'string' && id.length > 0 ? id : undefined,
-      );
       return session as unknown as S;
     } catch {
       this.logger.error(`Corrupt session in Redis for room ${roomCode}`);
@@ -360,6 +368,15 @@ export class GameService implements OnApplicationShutdown {
     return this.cache.size;
   }
 
+  /** A1：按玩法统计活跃会话（per-instance cache）。 */
+  activeSessionCountByGameType(): Record<'doudizhu' | 'paodekuai', number> {
+    const out = { doudizhu: 0, paodekuai: 0 };
+    for (const session of this.cache.values()) {
+      out[normalizeGameType(session.gameType)] += 1;
+    }
+    return out;
+  }
+
   // ─── 对外契约（§4.2）────────────────────────────────────────────
 
   /**
@@ -375,13 +392,22 @@ export class GameService implements OnApplicationShutdown {
 
     const existing = await this.getSession(dto.roomCode);
     if (existing) {
-      // 幂等只对**同玩法/同人数/同规则快照**成立；不同玩法不得静默复用旧会话。
-      if (
-        existing.gameType !== gameType ||
-        existing.playerCount !== playerCount ||
-        JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)
-      ) {
-        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数/规则不一致');
+      /**
+       * 幂等只对**同玩法/同人数**成立；不同玩法不得静默复用旧会话。
+       *
+       * ⚠️ 审查 P1-3：**不得**把 rules 加入拒绝条件。room-service 每次重试都从
+       * 配置缓存重新组装 `pdkRules`；60s 热更新窗口内改任一键，重试载荷就会与
+       * 首次快照不同 ⇒ 误报 12012，strict 路径耗尽预算后房间被取消，而
+       * game-service 可能已有活会话（分叉）。局中改配置不影响在途局（设计 D19），
+       * **首次快照即真源**；差异只 WARN。
+       */
+      if (existing.gameType !== gameType || existing.playerCount !== playerCount) {
+        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数不一致');
+      }
+      if (JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)) {
+        this.logger.warn(
+          `Rules snapshot drift for room ${dto.roomCode}: keeping the first snapshot (config changed during start retry)`,
+        );
       }
       this.logger.log(`Reusing existing session for room ${dto.roomCode}`);
       return { roomCode: existing.roomCode, state: existing.state, version: existing.version };
@@ -825,21 +851,39 @@ export class GameService implements OnApplicationShutdown {
   private async publishEnded(roomCode: string, session: AnyGameSession): Promise<void> {
     const runtime = this.runtimeFor(session);
     // runtime.settle() 返回契约结算形状（ddz 9 键 / pdk 向量）⇒ **不得**再拼一次（R187）。
-    const result = runtime.settle(session);
+    let result: SettlementResult;
+    try {
+      result = runtime.settle(session);
+    } catch (err) {
+      incGame(gameSettleFailuresTotal, session.gameType, 1, { phase: 'settle' });
+      this.logger.error(
+        `Game settle failed for room ${roomCode} (gameType=${String(session.gameType)}, phase=settle): ${String(err)}`,
+      );
+      throw err;
+    }
     // 记录片 T3：附 `record` 信封；旧会话无快照 ⇒ 键不存在（runtime.buildRecord 的窗口守卫）。
     const record = runtime.buildRecord(session);
-    await this.redis.publish(
-      GAME_EVENTS_CHANNEL,
-      JSON.stringify({
-        event: 'game.ended',
-        roomCode,
-        gameType: session.gameType,
-        playerCount: session.playerCount,
-        version: session.version,
-        result,
-        ...(record ? { record } : {}),
-      }),
-    );
+    try {
+      await this.redis.publish(
+        GAME_EVENTS_CHANNEL,
+        JSON.stringify({
+          event: 'game.ended',
+          roomCode,
+          gameType: session.gameType,
+          playerCount: session.playerCount,
+          version: session.version,
+          startedAt: session.createdAt,
+          result,
+          ...(record ? { record } : {}),
+        }),
+      );
+    } catch (err) {
+      incGame(gameSettleFailuresTotal, session.gameType, 1, { phase: 'publish' });
+      this.logger.error(
+        `Game ended publish failed for room ${roomCode} (gameType=${String(session.gameType)}, phase=publish): ${String(err)}`,
+      );
+      throw err;
+    }
   }
 
   /** 显式发布 `game.ended`（结算由调用方给出）。Exposed for testing. */
@@ -854,6 +898,46 @@ export class GameService implements OnApplicationShutdown {
   }
 
   // ─── 定时器（玩法 §9.2）─────────────────────────────────────────
+
+  /**
+   * k3s 重启恢复（spec 2026-10-27 §4.10.3）：会话真源在 Redis，但回合定时器只在进程内。
+   * 启动时扫描活跃会话，按 `turnDeadlineAt` 重建定时器；扫描失败不阻止启动（fail-safe）。
+   */
+  async onModuleInit(): Promise<void> {
+    await this.recoverTurnTimers();
+  }
+
+  async recoverTurnTimers(): Promise<void> {
+    let cursor = '0';
+    try {
+      do {
+        const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'game:session:*', 'COUNT', 100);
+        cursor = next;
+        for (const key of keys) {
+          const roomCode = key.slice('game:session:'.length);
+          try {
+            // 必须走 getSession/loadSession：旧会话迁移与坏形状 fail-closed 的唯一实现。
+            const session = await this.getSession<AnyGameSession>(roomCode);
+            if (
+              !session ||
+              session.state === GameState.Ended ||
+              session.state === GameState.Init ||
+              typeof session.turnDeadlineAt !== 'number'
+            ) {
+              continue;
+            }
+            this.startTurnTimer(roomCode, session, {
+              overrideMs: Math.max(0, session.turnDeadlineAt - Date.now()),
+            });
+          } catch (err) {
+            this.logger.warn(`Failed to recover turn timer for ${roomCode}: ${String(err)}`);
+          }
+        }
+      } while (cursor !== '0');
+    } catch (err) {
+      this.logger.warn(`Turn timer recovery scan failed: ${String(err)}`);
+    }
+  }
 
   async onApplicationShutdown(): Promise<void> {
     for (const handle of this.timers.values()) {

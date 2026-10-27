@@ -5,8 +5,12 @@ import {
   Logger,
   type OnApplicationShutdown,
   type OnModuleInit,
+  Optional,
+  Inject,
 } from '@nestjs/common';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { LeaderLease } from '../coordination/leader-lease.service';
+import { runWithTrace, setGame } from '@fight-the-landlord/shared';
+import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { Redis } from 'ioredis';
 import { roomsActive } from './room.metrics';
 
@@ -34,6 +38,12 @@ export const ROOM_METRICS_SAMPLE_INTERVAL_MS = 15_000;
 @Injectable()
 export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(RoomMetricsService.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /** 自重排定时器（`setTimeout` 链；片⑦ 三处循环的同款形态）。 */
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** 关停闸（照 `ConfigCacheService` / `records-cleanup.service.ts` 的成例）。 */
@@ -58,7 +68,8 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
    */
   private runRound(): void {
     runWithTrace({ traceId: randomUUID(), source: 'timer' }, () => {
-      void this.sampleOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.sampleOnce() : undefined))
         .catch((err: unknown) => this.logger.error(`Room metrics sample failed: ${String(err)}`))
         .finally(() => {
           // 🔴 关停闸：在途一轮的迟到回执不得在关停后再排定时器。
@@ -67,20 +78,46 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
-  /** 采样一次（测试与运维手动触发用，不等下一个周期）。 */
+  /** 采样一次（测试与运维手动触发用，不等下一个周期）。先读后写；整条失败保留旧值。 */
   async sampleOnce(): Promise<void> {
+    const keys: string[] = [];
     let cursor = '0';
-    let count = 0;
     do {
-      const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'room:*', 'COUNT', 100);
+      const [next, batch] = await this.redis.scan(cursor, 'MATCH', 'room:*', 'COUNT', 100);
       cursor = next;
-      for (const key of keys) {
+      for (const key of batch) {
         // 排除 room:{code}:seats / :cardcount / :bots 这类派生键（与 rooms.service 同形）
         if (key.slice('room:'.length).includes(':')) continue;
-        count += 1;
+        keys.push(key);
       }
     } while (cursor !== '0');
-    roomsActive.set(count);
+
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) pipeline.hget(key, 'gameType');
+    const results = await pipeline.exec(); // 整条失败 ⇒ 抛给 runRound，gauge 保留旧值
+    if (results === null) throw new Error('rooms_active sample: pipeline aborted (null result)');
+
+    const counts = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    let bad = 0;
+    for (const [err, value] of results ?? []) {
+      if (err) {
+        bad += 1;
+        counts.set('doudizhu', (counts.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      if (value !== null && value !== undefined && !isGameType(value)) bad += 1;
+      const gameType = isGameType(value) ? value : 'doudizhu';
+      counts.set(gameType, (counts.get(gameType) ?? 0) + 1);
+    }
+    if (bad > 0) {
+      this.logger.warn(`rooms_active sample: ${bad} room(s) missing/invalid gameType — counted as doudizhu`);
+    }
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      setGame(roomsActive, gameType, counts.get(gameType) ?? 0);
+    }
   }
 
   onApplicationShutdown(): void {

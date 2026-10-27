@@ -21,7 +21,7 @@ import {
 } from './identity-headers';
 // ⚠️ R462：白名单与路径派生已提到**单一真源** `public-paths.ts`（限流中间件也要消费它）。
 // 本文件**不得**再抄一份字面量清单。片⑦ D6①：`isAdminPath` 同源同文件。
-import { isAdminPath, isPublicPath, requestPath } from './public-paths';
+import { isAdminPath, isAgentPath, isPublicPath, requestPath } from './public-paths';
 import { SessionGuard } from './session.guard';
 
 /** 401 + 契约信封：`UnauthorizedException` 传对象时，响应体就是该对象（§11.1）。 */
@@ -104,8 +104,9 @@ export class JwtMiddleware implements NestMiddleware {
     // 片⑦ D6①：管理面（`/api/admin/*`）**整段跳过玩家验签** —— 管理请求按定义没有玩家
     // Bearer（管理员不是玩家），也不该查玩家 session 白名单；管理令牌由紧随其后的
     // `AdminAuthMiddleware` 自证（app.module 的顺序即契约）。
+    // 代理分润（2026-10-26）：`/api/agent/*` 同族 —— 代理令牌由 `AgentAuthMiddleware` 自证。
     // ⚠️ 跳过的**只有验签段**：上面的 `X-User-Id`/`X-Token-Jti` 剥离照常执行（身份通道纪律）。
-    if (isPublicPath(path) || isAdminPath(path)) {
+    if (isPublicPath(path) || isAdminPath(path) || isAgentPath(path)) {
       next();
       return;
     }

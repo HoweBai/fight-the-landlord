@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RecordMoneyDeltaRequest, RecordWriteRequest } from '@fight-the-landlord/protocol';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { RecordRpcController } from '../src/rpc/record.rpc.controller';
@@ -131,7 +131,7 @@ class FakePdkDb {
     if (/FROM `game_records_pdk`/.test(sql)) {
       return state.records
         .filter((r) => r.room_code === params[0] && r.game_version === params[1])
-        .map((r) => ({ id: r.id, ended_at: r.ended_at }));
+        .map((r) => ({ id: r.id, ended_at: String(r.ended_at) }));
     }
     if (/INSERT INTO `game_records_pdk`/.test(sql)) {
       const id = state.nextId++;
@@ -139,7 +139,7 @@ class FakePdkDb {
         id,
         room_code: String(params[0]),
         game_version: Number(params[1]),
-        ended_at: Number(params[15]),
+        ended_at: Number(params[16]),
         params: [...params],
       });
       return { insertId: id };
@@ -205,13 +205,14 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
     expect(db.ddzQueries).toEqual([]);
 
     const parent = db.records[0]!;
-    // 列序：room_code, game_version, mode, player_count, base_score, winner_seat, remaining,
+    // 列序：room_code, game_version, mode, game_type, player_count, base_score, winner_seat, remaining,
     //       multiplier, bomb_count, guan, spring, baoben_seats, score_changes, unused_cards,
     //       started_at, ended_at
     expect(parent.params).toEqual([
       'PDK001',
       3,
       'gold',
+      'paodekuai',
       3,
       15,
       0,
@@ -231,12 +232,12 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
       T0 + 180_000,
     ]);
 
-    // 玩家行：seat 升序、played_count 来自请求；昵称快照人类查 users。
+    // 玩家行：seat 升序、played_count/score_change/won 来自结算；昵称快照人类查 users。
     const bySeat = new Map(db.players.map((p) => [p.seat, p]));
     expect([...bySeat.keys()].sort((a, b) => a - b)).toEqual([0, 1, 2]);
-    expect(bySeat.get(0)!.params).toEqual([1, 0, 'u-A', 0, null, '甲', HAND16, 16, T0 + 180_000]);
-    expect(bySeat.get(1)!.params).toEqual([1, 1, 'u-B', 0, null, '乙', HAND16, 12, T0 + 180_000]);
-    expect(bySeat.get(2)!.params).toEqual([1, 2, null, 1, 'bot-1', null, HAND16, 14, T0 + 180_000]);
+    expect(bySeat.get(0)!.params).toEqual([1, 0, 'u-A', 0, null, '甲', HAND16, 16, 90, 1, T0 + 180_000]);
+    expect(bySeat.get(1)!.params).toEqual([1, 1, 'u-B', 0, null, '乙', HAND16, 12, -60, 0, T0 + 180_000]);
+    expect(bySeat.get(2)!.params).toEqual([1, 2, null, 1, 'bot-1', null, HAND16, 14, -30, 0, T0 + 180_000]);
     expect(db.players.every((p) => p.money_delta === null)).toBe(true);
   });
 
@@ -248,6 +249,34 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
     expect(second).toEqual({ ok: true, data: { written: false } });
     expect(db.records).toHaveLength(1);
     expect(db.players).toHaveLength(3);
+  });
+
+  it('幂等：BIGINT ended_at 返回数字字符串（mysql2 bigNumberStrings）不误报不一致（审查 P1-2）', async () => {
+    const controller = makeController(db);
+    await controller.write(mkPdkReq());
+    // 假库 SELECT 已按真实驱动口径返回 String（见 route）
+    const errorSpy = vi
+      .spyOn((controller as unknown as { logger: { error: (...args: unknown[]) => void } }).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    const second = await controller.write(mkPdkReq());
+
+    expect(second).toEqual({ ok: true, data: { written: false } });
+    expect(errorSpy, '同值数字字符串不得被当成 unparsable').not.toHaveBeenCalled();
+  });
+
+  it('幂等：真实 ended_at 不一致仍告警一次', async () => {
+    const controller = makeController(db);
+    await controller.write(mkPdkReq());
+    db.records[0]!.ended_at = T0 + 180_000 + 120_000; // 超 60s 阈值
+    const errorSpy = vi
+      .spyOn((controller as unknown as { logger: { error: (...args: unknown[]) => void } }).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await controller.write(mkPdkReq());
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0]![0])).toContain('PDK001');
   });
 
   it('2 人局：16 张手牌（32 hex）+ unusedCards 32 hex 落 unused_cards', async () => {
@@ -280,8 +309,8 @@ describe('Task 4.0：record.write 的 pdk 分支（spec §4.9.2）', () => {
 
     const res = await makeController(db).write(req);
     expect(res.ok).toBe(true);
-    expect(db.records[0]!.params[13]).toBe(UNUSED32);
-    expect(db.records[0]!.params[3]).toBe(2);
+    expect(db.records[0]!.params[14]).toBe(UNUSED32);
+    expect(db.records[0]!.params[4]).toBe(2);
   });
 
   it('4 人局：12 张（24 hex）合法', async () => {

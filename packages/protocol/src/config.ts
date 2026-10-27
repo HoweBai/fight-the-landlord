@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （九十二键清单、校验函数、客户端子集）。
+ * （一百零一键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -115,7 +115,9 @@ export const CONFIG_KEYS = [
   'game.levels.paodekuai',
   /** 跑得快总开关（种子 false，暗上线）。客户端可见（裸名 `games.paodekuai.enabled`）。 */
   'game.paodekuai.enabled',
-  /** 跑得快 2/4 人是否对生产开放（种子 false；引擎/测试始终支持 2/4）。 */
+  /** 跑得快 2 人场开关（种子 false；2026-10-25 起与 4 人分键）。 */
+  'game.paodekuai.twoPlayerEnabled',
+  /** 跑得快 4 人场开关（种子 false；键名为历史命名，语义已收窄为只关 4 人）。 */
   'game.paodekuai.nonThreePlayerEnabled',
   /** 跑得快牌型/计分开关（12 键；默认值见 shared/src/pdk/rules.ts）。 */
   'game.paodekuai.bareTrioEnabled',
@@ -163,8 +165,18 @@ export const CONFIG_KEYS = [
   /** 跑得快风控两键（2026-10-25）：与斗地主阈值独立；有对局记录即纳入扫描，无 enabled 键。 */
   'game.paodekuai.risk.winRateThreshold',
   'game.paodekuai.risk.minGames',
+  /** 跑得快风控按人数 + 自动限流（2026-10-26）：旧两键为对应人数键缺失时的回退。 */
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.winRateThreshold',
+  'game.paodekuai.risk.player4.minGames',
+  'game.paodekuai.risk.autoThrottleScore',
   /** 平台级每日救助绝对门槛（int 1..1,000,000；不随玩法变化）。 */
   'currency.reliefThresholdCoins',
+  /** 代理分润（2026-10-26）：客户端注册邀请码输入框开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteEnabled`）。 */
+  'agent.inviteEnabled',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
@@ -227,6 +239,8 @@ export const CLIENT_CONFIG_KEYS = [
   /** 多玩法配置平行化：平台级救助绝对门槛（合法值或 null）。 */
   'reliefThresholdCoins',
   'version',
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  'agentInviteEnabled',
 ] as const;
 
 export interface BaseScoreLevel {
@@ -297,6 +311,8 @@ export interface ClientConfig {
   games?: Partial<Record<GameType, ClientGameConfig>>;
   /** 平行化：平台级救助绝对门槛；旧服务端缺失 / 新服务端坏值 ⇒ null（客户端回退旧算法）。 */
   reliefThresholdCoins?: number | null;
+  /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
+  agentInviteEnabled: boolean;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -349,6 +365,7 @@ const PAY_MINUTES_KEYS: readonly ConfigKey[] = [
 /** 多玩法片：跑得快 boolean 键（严格 boolean）。 */
 const PDK_BOOLEAN_KEYS: readonly ConfigKey[] = [
   'game.paodekuai.enabled',
+  'game.paodekuai.twoPlayerEnabled',
   'game.paodekuai.nonThreePlayerEnabled',
   'game.paodekuai.bareTrioEnabled',
   'game.paodekuai.trioWithPairEnabled',
@@ -393,10 +410,16 @@ const GAME_CARD_COUNTER_PRICE_KEYS: readonly ConfigKey[] = [
 const GAME_RISK_WIN_RATE_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.risk.winRateThreshold',
   'game.paodekuai.risk.winRateThreshold',
+  'game.paodekuai.risk.player2.winRateThreshold',
+  'game.paodekuai.risk.player3.winRateThreshold',
+  'game.paodekuai.risk.player4.winRateThreshold',
 ];
 const GAME_RISK_MIN_GAMES_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.risk.minGames',
   'game.paodekuai.risk.minGames',
+  'game.paodekuai.risk.player2.minGames',
+  'game.paodekuai.risk.player3.minGames',
+  'game.paodekuai.risk.player4.minGames',
 ];
 
 /**
@@ -441,6 +464,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'ad.reliefAdpid') return parseReliefAdpid(value);
   if (key === 'client.appEnabled') return parseStrictBoolean(key, value);
   if (key === 'client.h5Enabled') return parseStrictBoolean(key, value);
+  if (key === 'agent.inviteEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.freeBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.goldBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.matchNoBotMaxWaitMs') return parseNoBotMaxWaitMs(value);
@@ -465,6 +489,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'game.doudizhu.robot.modelBySkill') return parseModelBySkill(value, key);
   if (GAME_RISK_WIN_RATE_KEYS.includes(key)) return parseWinRateThreshold(value, key);
   if (GAME_RISK_MIN_GAMES_KEYS.includes(key)) return parseMinGames(value, key);
+  if (key === 'game.paodekuai.risk.autoThrottleScore') return parseAutoThrottleScore(value);
   if (key === 'currency.reliefThresholdCoins') return parseReliefThresholdCoins(value);
   throw new ProtocolError(`未知配置键：${String(key)}`);
 }
@@ -657,6 +682,18 @@ function parseMinGames(value: unknown, key = 'risk.minGames'): number {
   }
   if (value < 1 || value > 100_000) {
     throw new ProtocolError(`${key} 必须在 1 ≤ n ≤ 100000 范围内`);
+  }
+  return value;
+}
+
+/** PDK 单玩法自动限流阈值（2026-10-26）：int 25–50（25=单命中即限流；26–49 与 50 同效）。 */
+function parseAutoThrottleScore(value: unknown): number {
+  const key = 'game.paodekuai.risk.autoThrottleScore';
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new ProtocolError(`${key} 必须是整数`);
+  }
+  if (value < 25 || value > 50) {
+    throw new ProtocolError(`${key} 必须在 25 ≤ n ≤ 50 范围内`);
   }
   return value;
 }

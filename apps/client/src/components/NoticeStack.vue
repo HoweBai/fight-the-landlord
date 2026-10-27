@@ -251,6 +251,7 @@ function dismissible(item: NoticeItem): boolean {
   pointer-events: auto;
 }
 .notice__text {
+  flex: 0 1 auto;
   min-width: 0;
   text-align: center;
   overflow-wrap: anywhere;
@@ -271,6 +272,7 @@ function dismissible(item: NoticeItem): boolean {
   color: $ftl-color-danger-on-dark;
 }
 .notice__actions {
+  flex: 0 0 auto;
   display: flex;
   gap: $ftl-space-3;
 }

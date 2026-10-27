@@ -9,7 +9,8 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { Redis } from 'ioredis';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { incGame, runWithTrace } from '@fight-the-landlord/shared';
+import type { GameType } from '@fight-the-landlord/protocol';
 import { REDIS } from '../auth/token.service';
 import {
   ConfigCacheService,
@@ -25,8 +26,10 @@ import {
 } from './reviews.service';
 import {
   riskReviewsOpen,
+  riskScanHitsTotal,
   riskScanLastSuccessTimestampSeconds,
   riskScanRunsTotal,
+  riskScanSqlFailuresTotal,
 } from './risk.metrics';
 
 /**
@@ -60,7 +63,7 @@ export const RISK_WIN_RATE_SQL =
  * 行形状与 `RISK_WIN_RATE_SQL` 相同：`{ user_id, games, wins }`。
  */
 export const RISK_WIN_RATE_PDK_SQL =
-  "SELECT p.user_id, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 GROUP BY p.user_id";
+  "SELECT p.user_id, r.player_count AS player_count, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id, r.player_count";
 
 /**
  * 设备数统计（规格 §2.5-2 **SQL2 逐字**；`? = now − risk.deviceWindowDays 天`）。
@@ -90,9 +93,14 @@ interface GameWinStat {
   wins: number;
 }
 
-/** 并集内一个用户的统计：按玩法分开，设备数平台级。 */
+/** PDK 单人数桶（SQL1b 按 player_count 分组后的行）。 */
+interface PdkWinStat extends GameWinStat {
+  playerCount: 2 | 3 | 4;
+}
+
+/** 并集内一个用户的统计：按玩法分开（PDK 再按人数），设备数平台级。 */
 interface MergedRiskStat {
-  byGame: { doudizhu?: GameWinStat; paodekuai?: GameWinStat };
+  byGame: { doudizhu?: GameWinStat; paodekuai?: PdkWinStat[] };
   devices: number;
 }
 
@@ -292,30 +300,67 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
   private async runScanWork(now: number): Promise<RiskScanRoundResult> {
     const startedAtMs = Date.now();
     // 阈值/窗口每轮现读（热生效：改配置 ⇒ 下一轮生效；当前一轮按旧值跑完）。
-    // 跑得快两键缺失时 getter 内部回退斗地主（新键 → 旧键 → 默认）。
+    // 跑得快按人数键缺失时 getter 内部回退旧 PDK → 斗地主 → 默认。
     const minGames = this.configCache.riskMinGames();
     const winRateThreshold = this.configCache.riskWinRateThreshold();
-    const pdkMinGames = this.configCache.riskPaodekuaiMinGames();
-    const pdkWinRateThreshold = this.configCache.riskPaodekuaiWinRateThreshold();
+    const pdkMinGamesByCount: Record<2 | 3 | 4, number> = {
+      2: this.configCache.riskPaodekuaiPlayerMinGames(2),
+      3: this.configCache.riskPaodekuaiPlayerMinGames(3),
+      4: this.configCache.riskPaodekuaiPlayerMinGames(4),
+    };
+    const pdkWinRateByCount: Record<2 | 3 | 4, number> = {
+      2: this.configCache.riskPaodekuaiPlayerWinRateThreshold(2),
+      3: this.configCache.riskPaodekuaiPlayerWinRateThreshold(3),
+      4: this.configCache.riskPaodekuaiPlayerWinRateThreshold(4),
+    };
     const deviceLimit = this.configCache.riskDeviceLimit();
     const deviceWindowDays = this.configCache.riskDeviceWindowDays();
 
     // ── 统计（SQL1 + SQL1b + SQL2；驱动对 COUNT/SUM 可能回字符串 ⇒ Number() 归一）────
-    const winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as Array<{
+    type DdzWinRow = { user_id: string; games: number | string; wins: number | string };
+    type PdkWinRow = {
       user_id: string;
+      player_count: number | string;
       games: number | string;
       wins: number | string;
-    }>;
-    const pdkWinRows = (await this.dataSource.query(RISK_WIN_RATE_PDK_SQL)) as Array<{
-      user_id: string;
-      games: number | string;
-      wins: number | string;
-    }>;
-    const deviceRows = (await this.dataSource.query(RISK_DEVICE_COUNT_SQL, [
-      new Date(now - deviceWindowDays * DAY_MS),
-    ])) as Array<{ user_id: string; devices: number | string }>;
+    };
+    let winRows: DdzWinRow[] | null = null;
+    let pdkWinRows: PdkWinRow[] | null = null;
+    const degradedGames: GameType[] = [];
+    try {
+      winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as DdzWinRow[];
+    } catch (err) {
+      degradedGames.push('doudizhu');
+      riskScanSqlFailuresTotal.inc({ scope: 'doudizhu' });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `risk scan: doudizhu win-rate SQL failed (round continues with paodekuai/device): ${reason}`,
+      );
+    }
+    try {
+      pdkWinRows = (await this.dataSource.query(RISK_WIN_RATE_PDK_SQL)) as PdkWinRow[];
+    } catch (err) {
+      degradedGames.push('paodekuai');
+      riskScanSqlFailuresTotal.inc({ scope: 'paodekuai' });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `risk scan: paodekuai win-rate SQL failed (round continues with doudizhu/device): ${reason}`,
+      );
+    }
+    if (winRows === null && pdkWinRows === null) {
+      throw new Error('risk scan: both game win-rate queries failed');
+    }
+    let deviceRows: Array<{ user_id: string; devices: number | string }>;
+    try {
+      deviceRows = (await this.dataSource.query(RISK_DEVICE_COUNT_SQL, [
+        new Date(now - deviceWindowDays * DAY_MS),
+      ])) as Array<{ user_id: string; devices: number | string }>;
+    } catch (err) {
+      riskScanSqlFailuresTotal.inc({ scope: 'device' });
+      throw err;
+    }
 
-    // ── 并集合并：设备-only ⇒ 两玩法均无、hit1=false；玩法间不合并样本 ─────────────
+    // ── 并集合并：设备-only ⇒ 两玩法均无、hit1=false；玩法间/人数间不合并样本 ─────
     const merged = new Map<string, MergedRiskStat>();
     const ensure = (userId: string): MergedRiskStat => {
       const existing = merged.get(userId);
@@ -324,17 +369,36 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       merged.set(userId, created);
       return created;
     };
-    for (const row of winRows) {
+    for (const row of winRows ?? []) {
       ensure(String(row.user_id)).byGame.doudizhu = {
         games: Number(row.games),
         wins: Number(row.wins),
       };
     }
-    for (const row of pdkWinRows) {
-      ensure(String(row.user_id)).byGame.paodekuai = {
+    const unknownPlayerCountRows: Array<{ userId: string; playerCount: unknown }> = [];
+    for (const row of pdkWinRows ?? []) {
+      const playerCount = Number(row.player_count);
+      if (playerCount !== 2 && playerCount !== 3 && playerCount !== 4) {
+        unknownPlayerCountRows.push({
+          userId: String(row.user_id),
+          playerCount: row.player_count,
+        });
+        continue;
+      }
+      const target = ensure(String(row.user_id));
+      if (target.byGame.paodekuai === undefined) target.byGame.paodekuai = [];
+      target.byGame.paodekuai.push({
+        playerCount,
         games: Number(row.games),
         wins: Number(row.wins),
-      };
+      });
+    }
+    if (unknownPlayerCountRows.length > 0) {
+      const first = unknownPlayerCountRows[0]!;
+      this.logger.warn(
+        `risk scan: skipped ${unknownPlayerCountRows.length} PDK row(s) with unknown player_count ` +
+          `(sample userId=${first.userId}, playerCount=${String(first.playerCount)})`,
+      );
     }
     for (const row of deviceRows) {
       ensure(String(row.user_id)).devices = Number(row.devices);
@@ -348,13 +412,18 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       const pdk = stats.byGame.paodekuai;
       const ddzHit =
         ddz !== undefined && ddz.games > minGames && ddz.wins / ddz.games > winRateThreshold;
-      const pdkHit =
-        pdk !== undefined &&
-        pdk.games > pdkMinGames &&
-        pdk.wins / pdk.games > pdkWinRateThreshold;
-      // 两玩法同时命中只算“胜率命中项”一项（不叠分）。
-      const hit1 = ddzHit || pdkHit;
+      const pdkHits = (pdk ?? [])
+        .filter(
+          (stat) =>
+            stat.games > pdkMinGamesByCount[stat.playerCount] &&
+            stat.wins / stat.games > pdkWinRateByCount[stat.playerCount],
+        )
+        .sort((a, b) => a.playerCount - b.playerCount);
+      // 两玩法同时命中只算“胜率命中项”一项（不叠分）；PDK 多人数命中同样不叠分。
+      const hit1 = ddzHit || pdkHits.length > 0;
       const hit2 = stats.devices > deviceLimit;
+      if (ddzHit) incGame(riskScanHitsTotal, 'doudizhu');
+      if (pdkHits.length > 0) incGame(riskScanHitsTotal, 'paodekuai');
       const score = (hit1 ? SINGLE_HIT_SCORE : 0) + (hit2 ? SINGLE_HIT_SCORE : 0);
       if (score >= SINGLE_HIT_SCORE) flagged += 1;
       const reasons: ScanReason[] = [];
@@ -369,21 +438,22 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
           },
         });
       }
-      if (pdkHit && pdk !== undefined) {
+      for (const pdkHit of pdkHits) {
         reasons.push({
           check: 'winRate',
           detail: {
             gameType: 'paodekuai',
-            games: pdk.games,
-            wins: pdk.wins,
-            winRate: pdk.wins / pdk.games,
+            playerCount: pdkHit.playerCount,
+            games: pdkHit.games,
+            wins: pdkHit.wins,
+            winRate: pdkHit.wins / pdkHit.games,
           },
         });
       }
       if (hit2) reasons.push({ check: 'devices', detail: { devices: stats.devices } });
 
       try {
-        await this.reviews.applyScanResult(userId, score, reasons, now);
+        await this.reviews.applyScanResult(userId, score, reasons, now, degradedGames);
       } catch (err) {
         // 单用户失败隔离：warn 留痕 + 跳过（下一轮收敛）。真库双会话的 1213 形态即由
         // 此退化路径承接（不会把整轮打红、不会丢后续用户）。

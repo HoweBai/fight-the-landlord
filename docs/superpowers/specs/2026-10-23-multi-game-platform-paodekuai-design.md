@@ -93,7 +93,7 @@
 - 多盘制/多手牌（麻将）与多座位同时决策（碰/杠/胡抢牌）。
 - 德州扑克的变座位、长桌、盲注/筹码/边池、每手结算。
 - 跑得快的客户端 2/4 人牌桌（引擎/接口支持，客户端首版 3 人）。
-- 跑得快记牌器、牌型语音播报、排行榜/ELO、观战/回放。
+- 跑得快记牌器、排行榜/ELO、观战/回放。（**牌型语音播报已于 2026-10-25 复用斗地主素材接入**，见 `2026-10-25-pdk-voice-announcements-design.md`。）
 - 跑得快机器人接 DouZero 或专用 AI 模型。
 - 改变斗地主的任何规则、视图形状（除新增字段）或结算结果。
 - 重命名 WS 命名空间 `/ws/ddz`。
@@ -273,7 +273,7 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
   paodekuai: {
     id: 'paodekuai', name: '跑得快',
     supportedPlayerCounts: [2, 3, 4], defaultPlayerCount: 3,
-    capabilities: { cardCounter: false, bots: true, goldRoom: true, voiceAnnouncements: false },
+    capabilities: { cardCounter: false, bots: true, goldRoom: true, voiceAnnouncements: false }, // 2026-10-25 语音复用后为 true（见语音 spec）
   },
 };
 
@@ -1043,7 +1043,7 @@ export const GAME_MODES = [
   - 结算展示：名次、剩余张数、倍数、关牌/春天/保本标记、金币变动。
 - 共享组件：`Card`、`Hand`、`PlayArea`、`Seat`、`TurnTimer`、`Settlement` 壳、`TableHud` 复用；
   `Seat` 增 `role?: 'landlord' | 'farmer' | 'none'`（跑得快不画地主角标）。
-- 音效：`useTableSound` 按玩法分派；跑得快首版只播出牌/过牌/输赢，不播斗地主牌型播报。
+- 音效：`useTableSound` 按玩法分派；跑得快首版只播出牌/过牌/输赢，不播斗地主牌型播报。**2026-10-25 起已被语音复用 spec 取代：跑得快复用斗地主牌型播报。**
 - 提示：`game/hint.ts` 增加跑得快枚举，合法性委托 `protocol/src/pdk/rule.ts`；
   `source-boundary` 闸继续禁止客户端自写规则。
 - 历史页：按 `gameType` 显示；跑得快详情最小展示。

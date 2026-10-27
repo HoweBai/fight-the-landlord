@@ -1,0 +1,180 @@
+# 默认拒绝 + 显式放行。hostNetwork 的 edge 不受 NetworkPolicy 约束（见 spec §4.3）。
+# 来源身份统一用 `app` 标签；mac 迁移 Job 用 `app: migrate`。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: ftl
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: ftl
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-to-gateway
+  namespace: ftl
+spec:
+  podSelector: { matchLabels: { app: api-gateway } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: NODE_A_IP_PLACEHOLDER/32 }
+      ports:
+        - { protocol: TCP, port: 3000 }
+---
+# Caddy 直连的回调面：支付异步通知 / 收银台、广告激励回调。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-callbacks
+  namespace: ftl
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [payment-service, currency-service] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: NODE_A_IP_PLACEHOLDER/32 }
+      ports:
+        - { protocol: TCP, port: 3007 }
+        - { protocol: TCP, port: 3004 }
+---
+# 业务面互访：所有 ftl 应用 Pod 之间（MySQL/Redis 另有更严的入站策略）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-mesh
+  namespace: ftl
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          [api-gateway, room-service, game-service, robot-service,
+           user-service, config-service, currency-service, payment-service, douzero]
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl } }
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl } }
+---
+# Redis 使用方：全部业务服务 + 迁移 Job。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis
+  namespace: ftl
+spec:
+  podSelector: { matchLabels: { app: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [api-gateway, room-service, game-service, robot-service, user-service, config-service, currency-service, payment-service, migrate]
+      ports:
+        - { protocol: TCP, port: 6379 }
+---
+# MySQL 使用方：只有四个持库服务 + 迁移 Job。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mysql
+  namespace: ftl
+spec:
+  podSelector: { matchLabels: { app: mysql } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [user-service, config-service, currency-service, payment-service, migrate]
+      ports:
+        - { protocol: TCP, port: 3306 }
+---
+# 四持库服务与迁移 Job 的出站。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-db-clients-egress
+  namespace: ftl
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [user-service, config-service, currency-service, payment-service, migrate] }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: mysql } }
+      ports:
+        - { protocol: TCP, port: 3306 }
+    - to:
+        - podSelector: { matchLabels: { app: redis } }
+      ports:
+        - { protocol: TCP, port: 6379 }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl } }
+---
+# 外部 HTTPS：payment-service 调支付宝（渠道域名可配置，放行 443）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-payment-external
+  namespace: ftl
+spec:
+  podSelector: { matchLabels: { app: payment-service } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        - { protocol: TCP, port: 443 }
+---
+# Prometheus / alert-relay / am-renderer 访问业务指标与 config RPC。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring
+  namespace: ftl
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ftl-monitoring } }
+      ports:
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 9001 }
+        - { protocol: TCP, port: 9002 }
+        - { protocol: TCP, port: 9003 }
+        - { protocol: TCP, port: 9004 }
+        - { protocol: TCP, port: 9005 }
+        - { protocol: TCP, port: 9006 }
+        - { protocol: TCP, port: 9007 }
+        - { protocol: TCP, port: 3106 }
+        - { protocol: TCP, port: 2021 }

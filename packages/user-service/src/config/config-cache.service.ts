@@ -79,6 +79,8 @@ export const RISK_DEVICE_LIMIT_DEFAULT = 3;
 export const RISK_DEVICE_WINDOW_DAYS_DEFAULT = 30;
 export const RISK_AUTO_THROTTLE_DEFAULT = true;
 export const RISK_DEVICE_RETENTION_DAYS_DEFAULT = 365;
+/** PDK 单玩法自动限流阈值的代码默认值（= 种子 50；缺失/非法 ⇒ 50）。 */
+export const RISK_PDK_AUTO_THROTTLE_SCORE_DEFAULT = 50;
 
 /** 风控六键的写死范围（规格 §2.1-3 表；`parseConfigValue` 同口径——两位小数逐字同式）。 */
 const RISK_WIN_RATE_THRESHOLD_MIN = 0.5;
@@ -91,6 +93,21 @@ const RISK_DEVICE_WINDOW_DAYS_MIN = 1;
 const RISK_DEVICE_WINDOW_DAYS_MAX = 365;
 const RISK_DEVICE_RETENTION_DAYS_MIN = 1;
 const RISK_DEVICE_RETENTION_DAYS_MAX = 3_650;
+/** PDK 自动限流阈值的合法范围（分数只有 25/50；26–49 与 50 同效）。 */
+const RISK_PDK_AUTO_THROTTLE_SCORE_MIN = 25;
+const RISK_PDK_AUTO_THROTTLE_SCORE_MAX = 50;
+
+/** 跑得快按人数风控键（2/3/4；旧 PDK 两键为缺失时的回退）。 */
+const PLAYER_WIN_RATE_KEYS: Record<2 | 3 | 4, ConfigKey> = {
+  2: 'game.paodekuai.risk.player2.winRateThreshold',
+  3: 'game.paodekuai.risk.player3.winRateThreshold',
+  4: 'game.paodekuai.risk.player4.winRateThreshold',
+};
+const PLAYER_MIN_GAMES_KEYS: Record<2 | 3 | 4, ConfigKey> = {
+  2: 'game.paodekuai.risk.player2.minGames',
+  3: 'game.paodekuai.risk.player3.minGames',
+  4: 'game.paodekuai.risk.player4.minGames',
+};
 
 /** 启动拉取失败后的重试间隔（design D2：**1s 退避重试直到首次成功**、不阻塞就绪）。 */
 const STARTUP_RETRY_INTERVAL_MS = 1_000;
@@ -313,6 +330,44 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     return this.hasSnapshotKey(key)
       ? this.normalizeMinGames(this.snapshot![key]?.value)
       : this.riskMinGames();
+  }
+
+  /**
+   * 跑得快按人数胜率阈值（2026-10-26，种子 0.8）。
+   * 读顺序：`playerN.winRateThreshold` 存在 ⇒ 校验后使用（非法 ⇒ 代码默认，**不回退**）；
+   * 缺失 ⇒ `riskPaodekuaiWinRateThreshold()`（旧 PDK → DDZ 新键 → DDZ 旧键 → 默认）。
+   */
+  riskPaodekuaiPlayerWinRateThreshold(playerCount: 2 | 3 | 4): number {
+    const key = PLAYER_WIN_RATE_KEYS[playerCount];
+    return this.hasSnapshotKey(key)
+      ? this.normalizeWinRate(this.snapshot![key]?.value)
+      : this.riskPaodekuaiWinRateThreshold();
+  }
+
+  /**
+   * 跑得快按人数最少局数（2026-10-26，种子 100）。回退语义同
+   * `riskPaodekuaiPlayerWinRateThreshold()`。
+   */
+  riskPaodekuaiPlayerMinGames(playerCount: 2 | 3 | 4): number {
+    const key = PLAYER_MIN_GAMES_KEYS[playerCount];
+    return this.hasSnapshotKey(key)
+      ? this.normalizeMinGames(this.snapshot![key]?.value)
+      : this.riskPaodekuaiMinGames();
+  }
+
+  /**
+   * PDK 单玩法自动限流阈值（2026-10-26；int 25–50，种子 50）。
+   * 25 = PDK-only 25 分即自动限流；26–50 = 不自动限流（PDK+设备 50 分仍限流）。
+   * 缺失/非法 ⇒ 50（== 账号级线，语义为“关闭 PDK 单命中自动限流”）。
+   */
+  riskPaodekuaiAutoThrottleScore(): number {
+    const value = this.snapshot?.['game.paodekuai.risk.autoThrottleScore']?.value;
+    return typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= RISK_PDK_AUTO_THROTTLE_SCORE_MIN &&
+      value <= RISK_PDK_AUTO_THROTTLE_SCORE_MAX
+      ? value
+      : RISK_PDK_AUTO_THROTTLE_SCORE_DEFAULT;
   }
 
   /** 单设备关联账号上限（第 22 键，种子 3；int、`2 ≤ n ≤ 100`）。消费方 = T5 扫描 hit2。 */

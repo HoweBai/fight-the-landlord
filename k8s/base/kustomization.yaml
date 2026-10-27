@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap.yaml
+  - rbac.yaml
+  - pvcs.yaml
+  - mysql.yaml
+  - redis.yaml
+  - edge.yaml
+  - api-gateway.yaml
+  - room-service.yaml
+  - game-service.yaml
+  - robot-service.yaml
+  - user-service.yaml
+  - config-service.yaml
+  - currency-service.yaml
+  - payment-service.yaml
+  - douzero.yaml
+  - migrate
+  - networkpolicy.yaml
+  - pdb.yaml
+  - hpa.yaml
+  - monitoring.yaml
+  - prometheus-adapter.yaml
+configMapGenerator:
+  - name: prometheus-config
+    namespace: ftl-monitoring
+    files:
+      - monitoring/prometheus.yml
+  - name: prometheus-k8s-rules
+    namespace: ftl-monitoring
+    files:
+      - monitoring/rules-k8s.yml

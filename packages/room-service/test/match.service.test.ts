@@ -18,7 +18,7 @@ import {
   matchPredicateRejectionsTotal,
   matchSelectionRoundsTotal,
 } from '../src/metrics/room.metrics';
-import { labeledValue, metricValue } from './helpers/metric-readout';
+import { exactSeriesValue, labeledValue } from './helpers/metric-readout';
 import { GameClient } from '../src/gateway/game.client';
 import { RobotClient } from '../src/gateway/robot.client';
 import type { Redis } from 'ioredis';
@@ -170,6 +170,12 @@ const makeMockRedis = (): MockRedis => {
       return 'OK' as const;
     }),
     get: vi.fn(async (key: string) => (existsNow(key) ? (strings.get(key) ?? null) : null)),
+    /**
+     * 审查 P0-1 配套：`RoomsService.create()` 的显式房号纵深校验会读 `EXISTS`。
+     * 本文件的替身此前只实现了 `pipeline().exists`，缺顶层方法会让所有匹配用例在
+     * 夹具建房（固定码 `ABC123`）处崩 —— 与 `zcard`/`pipeline` 同族的替身缺口。
+     */
+    exists: vi.fn(async (...keys: string[]) => keys.filter((key) => existsNow(key)).length),
     /**
      * 风控 T2（Step 0 · F11）：`risk:hit:{userId}:{predicate}` 计数（INCR + EXPIRE 7d）。
      * 真实语义：字符串数字 +1 并**返回新值**；键不存在按 0 起算。
@@ -852,6 +858,38 @@ describe('MatchService', () => {
     expect(parseMatchQueueKey('match:meta:u1')).toBeNull();
   });
 
+  it('人数闸在扫描轮关闭：在队 2 人票整桶 failMatch（实际 5 段键），不建房、不抛', async () => {
+    const T0 = 1_700_000_000_000;
+    configCache.paodekuaiEnabled.mockReturnValue(true);
+    configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(false);
+    configCache.freeBotFillEnabled.mockReturnValue(false);
+    service.setClock(() => T0);
+    for (const id of ['u1', 'u2']) {
+      await service.addToQueue(id, 'random', 15, undefined, undefined, {
+        gameType: 'paodekuai',
+        playerCount: 2,
+      });
+    }
+    service.setClock(() => T0 + 1_000);
+    const publishMock = redis.publish as unknown as {
+      mockClear(): void;
+      mock: { calls: unknown[][] };
+    };
+    publishMock.mockClear();
+
+    await expect(service.scanOnce()).resolves.toBeUndefined();
+
+    const key = 'match:queue:random:paodekuai:2:15:global';
+    expect(redis.zrem).toHaveBeenCalledWith(key, 'u1');
+    expect(redis.zrem).toHaveBeenCalledWith(key, 'u2');
+    expect(redis._zsets.get(key)?.size ?? 0).toBe(0);
+    expect(redis._hashes.has('match:meta:u1')).toBe(false);
+    expect(redis._hashes.has('match:meta:u2')).toBe(false);
+    expect(roomsService.createGameRoom, '闸关不得建房').not.toHaveBeenCalled();
+    const published = publishMock.mock.calls.map((c) => String(c[1]));
+    expect(published.some((p) => p.includes('"code":12007') && p.includes('u1'))).toBe(true);
+  });
+
   it('starts the scan loop exactly once, on module init (§7.3 偏差 A4)', () => {
     const spy = vi.spyOn(service, 'startMatchingLoop');
     service.onModuleInit();
@@ -1157,7 +1195,9 @@ describe('MatchService', () => {
     it('🔴 房间已被别人开起来（playing）⇒ 降级不得把它改回 cancelled（spec §3.3）', async () => {
       // 注入点：房间**刚建好、开局链还没跑**的那一刻 —— 这正是 §0.2 那个竞态的窗口
       //（匹配扫描器正在补位，另一个定时器（自动开局扫描器）把房间推到了 `playing`）。
-      const original = roomsService.createGameRoom.getMockImplementation()!;
+      const original = roomsService.createGameRoom.getMockImplementation()! as (
+        ...args: any[]
+      ) => Promise<import('../src/rooms/rooms.service').Room>;
       roomsService.createGameRoom.mockImplementation(
         async (ids: string[], mode: 'random' | 'practice', baseScore: number) => {
           const room = await original(ids, mode, baseScore);
@@ -2048,7 +2088,11 @@ describe('MatchService', () => {
      *（`robot.client.acquire` 与 `game.client.call`），且都在同一段 ALS 里。
      */
     async function triggerStartViaRoomStart(): Promise<void> {
-      await roomsService.createGameRoom(['u1'], 'random', 15);
+      await (
+        roomsService.createGameRoom as unknown as (
+          ...args: any[]
+        ) => Promise<unknown>
+      )(['u1'], 'random', 15);
       const roomStart = new RoomStartService(
         redis as unknown as Redis,
         roomsService as unknown as RoomsService,
@@ -2225,14 +2269,14 @@ describe('MatchService', () => {
       service.setRng(rngForShuffle(['u1', 'u2', 'u3'], ['u3', 'u1', 'u2']));
       service.setClock(() => T0 + 1_000);
 
-      const roundsBefore = await metricValue(matchSelectionRoundsTotal);
-      const noLegalBefore = await metricValue(matchNoLegalGroupTotal);
+      const roundsBefore = (await exactSeriesValue(matchSelectionRoundsTotal, { game_type: 'doudizhu' })) ?? 0;
+      const noLegalBefore = (await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0;
       await service.scanOnce();
 
       expect(roomsService.createGameRoom).toHaveBeenCalledWith(['u3', 'u1', 'u2'], 'random', 15, 'doudizhu', 3);
       expect(rpc.payloadsOf(RPC_PATTERNS.robotAcquire)).toHaveLength(0);
-      expect(await metricValue(matchSelectionRoundsTotal)).toBe(roundsBefore + 1);
-      expect(await metricValue(matchNoLegalGroupTotal)).toBe(noLegalBefore); // 成组 ⇒ 不计数
+      expect((await exactSeriesValue(matchSelectionRoundsTotal, { game_type: 'doudizhu' })) ?? 0).toBe(roundsBefore + 1);
+      expect((await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0).toBe(noLegalBefore); // 成组 ⇒ 不计数
     });
 
     it('谓词默认关（缺省 false）⇒ 抽取零新增读：无 GET/SET/INCR（快路径，默认生产态）', async () => {
@@ -2441,7 +2485,7 @@ describe('MatchService', () => {
       await fingerprint('C', { deviceId: 'dev-other' });
       service.setClock(() => T0 + 31_000);
 
-      const noLegalBefore = await metricValue(matchNoLegalGroupTotal);
+      const noLegalBefore = (await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0;
       await service.scanOnce();
 
       // S 从**原序最久者**（A）起算 ⇒ [A, C]（B 被拒）；2 人 + 1 机器人
@@ -2449,7 +2493,7 @@ describe('MatchService', () => {
       expect(rpc.payloadsOf(RPC_PATTERNS.robotAcquire)).toHaveLength(1);
       expect((await globalService.findOne('ABC123'))?.players.length).toBe(3);
       // 贪心未成组 ⇒ no_legal +1（可观测定义）
-      expect(await metricValue(matchNoLegalGroupTotal)).toBe(noLegalBefore + 1);
+      expect((await exactSeriesValue(matchNoLegalGroupTotal, { game_type: 'doudizhu' })) ?? 0).toBe(noLegalBefore + 1);
       // B 未被选入：留队（enteredAt 不变）、本轮记账 +1、记忆已写
       expect(redis._zsets.get(Q)?.get('B')).toBe(T0 + 1);
       expect(redis._hashes.get('match:meta:B')?.attempts).toBe('1');

@@ -52,7 +52,9 @@ const redisState = vi.hoisted(() => ({
 }));
 
 vi.mock('ioredis', () => {
-  const ctor = vi.fn(() => {
+  // Vitest 4：`vi.fn` 的箭头函数实现不可 `new`（`is not a constructor`）；
+  // 生产代码是 `new Redis(...)` ⇒ 用普通 function 保留 construct 语义。
+  const ctor = vi.fn(function () {
     const instance = {
       on: vi.fn(),
       subscribe: vi.fn(async () => undefined),
@@ -82,7 +84,7 @@ function makeClient(): { client: ConfigClient; snapshot: ReturnType<typeof vi.fn
   return { client: { snapshot } as unknown as ConfigClient, snapshot };
 }
 
-/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整九十二键由 config-service 保证）。 */
+/** 造一个 `ConfigSnapshotResponse`（只含传入的键；`config` 的完整一百键由 config-service 保证）。 */
 function snapshotWith(
   over: Partial<Record<ConfigKey, unknown>> = {},
   version = 1,

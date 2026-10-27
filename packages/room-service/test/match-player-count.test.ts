@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { makeMatchServiceHarness, type MatchServiceHarness } from './helpers/match-service-harness';
+import { exactSeriesValue } from './helpers/metric-readout';
+import { matchPredicateRejectionsTotal, matchSelectionRoundsTotal } from '../src/metrics/room.metrics';
 
 const T0 = 1_700_000_000_000;
 
@@ -23,9 +25,10 @@ describe('2/3/4 人匹配参数化（Task 2.3）', () => {
     for (const h of harnesses.splice(0)) await h.service.onApplicationShutdown();
   });
 
-  /** 开跑得快（默认含 2/4 人；首版生产由 nonThree 闸收窄为 3）。 */
-  function enablePdk(h: MatchServiceHarness, nonThree = true): void {
+  /** 开跑得快（默认 2/3/4 全开；要测闸关闭的用例显式传 false）。 */
+  function enablePdk(h: MatchServiceHarness, nonThree = true, two = true): void {
     h.configCache.paodekuaiEnabled.mockReturnValue(true);
+    h.configCache.paodekuaiTwoPlayerEnabled.mockReturnValue(two);
     h.configCache.paodekuaiNonThreePlayerEnabled.mockReturnValue(nonThree);
   }
 
@@ -141,5 +144,92 @@ describe('2/3/4 人匹配参数化（Task 2.3）', () => {
       'paodekuai',
       4,
     );
+  });
+
+  it('A1：PDK 抽选轮与谓词拒绝带 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    const beforeRounds = (await exactSeriesValue(matchSelectionRoundsTotal, {
+      game_type: 'paodekuai',
+    })) ?? 0;
+    await enqueuePdk(h, ['a1', 'a2'], 2);
+    await h.service.scanOnce();
+    expect(await exactSeriesValue(matchSelectionRoundsTotal, {
+      game_type: 'paodekuai',
+    })).toBe(beforeRounds + 1);
+
+    const beforeRej = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice', game_type: 'paodekuai',
+    })) ?? 0;
+    await (h.service as unknown as {
+      accountRejection: (...args: unknown[]) => Promise<void>;
+    }).accountRejection(
+      'a1', 'a2', { ok: false, memory: false, rejected: [{ name: 'sameDevice' }] }, T0, new Set(), 'paodekuai',
+    );
+    expect(await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice', game_type: 'paodekuai',
+    })).toBe(beforeRej + 1);
+  });
+
+  it('B 组：2 人 PDK 同 device 票不同房；谓词拒绝指标 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    h.configCache.riskPredicateSameDevice.mockReturnValue(true);
+    h.clock.set(T0);
+    for (const id of ['a1', 'a2']) {
+      await h.service.addToQueue(id, 'random', 15, undefined, { deviceId: 'dev-1' }, {
+        gameType: 'paodekuai',
+        playerCount: 2,
+      });
+    }
+    const before = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice',
+      game_type: 'paodekuai',
+    })) ?? 0;
+    h.clock.set(T0 + 31_000);
+    await h.service.scanOnce();
+
+    for (const call of h.rooms.createGameRoom.mock.calls) {
+      const ids = call[0] as string[];
+      expect(ids.includes('a1') && ids.includes('a2')).toBe(false);
+    }
+    expect(
+      await exactSeriesValue(matchPredicateRejectionsTotal, {
+        predicate: 'sameDevice',
+        game_type: 'paodekuai',
+      }),
+    ).toBeGreaterThan(before);
+  });
+
+  it('B 组：4 人 PDK 全同 device 不会两人同房；谓词拒绝指标 game_type=paodekuai', async () => {
+    const h = make();
+    enablePdk(h);
+    h.configCache.riskPredicateSameDevice.mockReturnValue(true);
+    h.clock.set(T0);
+    for (const id of ['a1', 'a2', 'a3', 'a4']) {
+      await h.service.addToQueue(id, 'random', 15, undefined, { deviceId: 'dev-1' }, {
+        gameType: 'paodekuai',
+        playerCount: 4,
+      });
+    }
+    const before = (await exactSeriesValue(matchPredicateRejectionsTotal, {
+      predicate: 'sameDevice',
+      game_type: 'paodekuai',
+    })) ?? 0;
+    h.clock.set(T0 + 31_000);
+    await h.service.scanOnce();
+
+    for (const call of h.rooms.createGameRoom.mock.calls) {
+      const ids = call[0] as string[];
+      // 同 device 的任意两人都不得同组；全同 device 时最多只应有一个真人进组。
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids.length).toBeLessThanOrEqual(1);
+    }
+    expect(
+      await exactSeriesValue(matchPredicateRejectionsTotal, {
+        predicate: 'sameDevice',
+        game_type: 'paodekuai',
+      }),
+    ).toBeGreaterThan(before);
   });
 });

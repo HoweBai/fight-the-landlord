@@ -124,7 +124,7 @@ export interface GameViewBase<P = Card> {
   /** 按座位的托管态（徽标数据面；与 cardCounts 同族）。 */
   trustees: boolean[];
   currentPlayer: number;
-  /** 桌面历史牌：窗口 2、旧→新、「不出」用 null 表示。 */
+  /** 桌面历史牌：斗地主窗口 2；跑得快按人数（2/3→2、4→3，见 `pdkRecentActionsWindow`）；旧→新、「不出」用 null。 */
   recentActions: RecentActionBase<P>[];
   /** 本回合截止时刻（毫秒时间戳）。客户端倒计时与重连恢复都依赖它。 */
   turnDeadlineAt: number;

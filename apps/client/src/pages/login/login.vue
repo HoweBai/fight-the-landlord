@@ -25,7 +25,9 @@
  */
 import { computed, ref, watch } from 'vue';
 import { useAuthStore } from '../../stores/auth';
+import { useGameStore } from '../../stores/game';
 import { restartGameSession } from '../../composables/useGameSession';
+import { refreshInviteBootConfig } from '../../composables/useClientConfig';
 import { usePageAlignment } from '../../composables/usePageAlignment';
 /** 片①：横屏画布（R710）。 */
 import LandscapeStage from '../../components/LandscapeStage.vue';
@@ -33,6 +35,7 @@ import NoticeStack from '../../components/NoticeStack.vue';
 import { usePageNotices } from '../../composables/usePageNotices';
 
 const auth = useAuthStore();
+const game = useGameStore();
 usePageAlignment('login');
 
 /**
@@ -69,10 +72,30 @@ const password = ref('');
 const confirm = ref('');
 /** 昵称（昵称片）：**仅注册态**渲染，必填、trim 后 1–20 字符。 */
 const nickname = ref('');
+/** 代理分润（2026-10-26）：可选邀请码；仅 `agentInviteEnabled=true` 时渲染。 */
+const inviteCode = ref('');
 const showPassword = ref(false);
 const busy = ref(false);
 
 const isRegister = computed(() => mode.value === 'register');
+/**
+ * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**首次切到注册**时懒拉一次
+ * `GET /api/config/boot`（公开白名单；只回 version + agentInviteEnabled）——
+ * 不阻塞；失败 ⇒ 不渲染，注册照常。
+ */
+const showInviteCode = computed(() => isRegister.value && game.agentInviteEnabled === true);
+let inviteLoading = false;
+async function ensureInviteConfig(): Promise<void> {
+  // 全量配置已加载且**开关为开** ⇒ 无需再拉；否则拉公开启动面（后台可能刚开启，
+  // 旧快照的 false 不应把字段永久藏住）。
+  if ((game.clientConfigVersion > 0 && game.agentInviteEnabled === true) || inviteLoading) return;
+  inviteLoading = true;
+  try {
+    await refreshInviteBootConfig();
+  } finally {
+    inviteLoading = false;
+  }
+}
 /** 主按钮文案：正在提交时进入加载态（禁用态/加载态文案只在 `busy` 期间出现）。 */
 const primaryLabel = computed(() => {
   if (busy.value) return isRegister.value ? '注册中…' : '登录中…';
@@ -94,6 +117,8 @@ function setMode(next: AuthMode) {
   mode.value = next;
   // 切形态后旧字段错误已不对应（「两次密码不一致」在登录态没有意义）。
   notices.dismiss('field');
+  // 代理分润：首次进入注册态懒拉配置（失败不阻塞；字段保持隐藏）。
+  if (next === 'register') void ensureInviteConfig();
 }
 
 /**
@@ -133,9 +158,15 @@ async function submit() {
   notices.dismiss('field');
   busy.value = true;
   try {
-    const signed = isRegister.value
-      ? await auth.signUp(phone.value.trim(), password.value, nickname.value.trim())
-      : await auth.signIn(phone.value.trim(), password.value);
+    let signed: boolean;
+    if (isRegister.value) {
+      const code = showInviteCode.value ? inviteCode.value.trim().toUpperCase() : '';
+      signed = code
+        ? await auth.signUp(phone.value.trim(), password.value, nickname.value.trim(), code)
+        : await auth.signUp(phone.value.trim(), password.value, nickname.value.trim());
+    } else {
+      signed = await auth.signIn(phone.value.trim(), password.value);
+    }
     if (signed) restartGameSession();
   } finally {
     busy.value = false;
@@ -214,6 +245,10 @@ async function submit() {
           <view v-if="isRegister" class="login__field login__field--nickname">
             <text>昵称</text>
             <input v-model="nickname" type="text" maxlength="20" placeholder="1–20 个字符" />
+          </view>
+          <view v-if="showInviteCode" class="login__field login__field--invite">
+            <text>邀请码（选填）</text>
+            <input v-model="inviteCode" type="text" maxlength="16" placeholder="填写代理邀请码" />
           </view>
 
           <view class="login__actions">
@@ -300,7 +335,7 @@ async function submit() {
   padding: $ftl-space-5;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 /**
  * 品牌 logo（U3）。源图 237×147（比例 1.612）⇒ 盒宽 192、高 **96**（Task 2b 压缩，原 120）；
@@ -330,7 +365,7 @@ async function submit() {
   border: $ftl-hairline solid $ftl-color-night-soft;
   border-radius: $ftl-radius-sm;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-md;
   line-height: 1.2;
   cursor: pointer;
@@ -352,7 +387,7 @@ async function submit() {
   flex-direction: column;
   gap: $ftl-space-2;
   font-size: $ftl-font-sm;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 .login__field input {
   box-sizing: border-box;
@@ -398,7 +433,7 @@ async function submit() {
   padding: 0;
   border: 0px;
   background: transparent;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
   cursor: pointer;
@@ -494,7 +529,7 @@ async function submit() {
   border-color: rgba($ftl-color-on-primary, 0.45);
   background: transparent;
   background-image: none;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
 }
 .btn[disabled] {

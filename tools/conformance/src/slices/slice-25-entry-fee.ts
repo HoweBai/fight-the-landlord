@@ -427,8 +427,11 @@ async function summarySourceDelta(
   if (res.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`GET /api/admin/wallet/summary 失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
   }
-  const row = (res.body.data?.rows ?? []).find((r) => r.k === source);
-  return { delta: row?.delta ?? 0, flowCount: row?.flowCount ?? 0 };
+  const rows = (res.body.data?.rows ?? []).filter((r) => r.k === source);
+  return {
+    delta: rows.reduce((acc, row) => acc + row.delta, 0),
+    flowCount: rows.reduce((acc, row) => acc + row.flowCount, 0),
+  };
 }
 
 /** 财务汇总的**漏收块**读数（同上：只断增量）。 */
@@ -726,7 +729,7 @@ export async function runSlice25(): Promise<Checks> {
     const skipHit = await pollUntil(
       () =>
         mysqlQuery(
-          `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
+          `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount,':',game_type) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
         ).out,
       (out) => out.includes('insufficient_funds'),
       20_000,
@@ -734,10 +737,10 @@ export async function runSlice25(): Promise<Checks> {
     checks.that(skipHit.ok, `D skips 行落库（20s 轮询）—— 实际 ${JSON.stringify(skipHit.last)}`);
     checks.eq(
       mysqlText(
-        `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
+        `SELECT CONCAT(reason,':',seat,':',base_score,':',fee_amount,':',game_type) FROM currency_entry_fee_skips WHERE room_code='${roomC.roomCode}' AND owner_id='${u1.id}'`,
       ),
-      `insufficient_funds:${u1Seat}:${MATCH_BASE_SCORE}:${ENTRY_FEE_AMOUNT}`,
-      'C33 skips 行逐字段（reason/seat/baseScore/feeAmount）',
+      `insufficient_funds:${u1Seat}:${MATCH_BASE_SCORE}:${ENTRY_FEE_AMOUNT}:doudizhu`,
+      'C33 skips 行逐字段（reason/seat/baseScore/feeAmount/gameType）',
     );
     const metricsAfter = readRoomMetrics();
     checks.that(

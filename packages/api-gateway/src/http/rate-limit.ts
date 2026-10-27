@@ -55,6 +55,9 @@ export const HTTP_IP_RATE_LIMIT = { max: 120, windowMs: 60_000 } as const;
  */
 export const ADMIN_LOGIN_FAIL = { max: 5, windowMs: 300_000 } as const;
 
+/** 代理门户登录失败桶（2026-10-26）：与 admin 同阈值，键独立。 */
+export const AGENT_LOGIN_FAIL = { max: 5, windowMs: 300_000 } as const;
+
 /**
  * 片⑦ §2.6（T10）：**管理写桶** —— 按管理令牌（sha256 前 16 位指纹）30 次 / 5 分钟。
  *
@@ -262,6 +265,27 @@ export async function recordAdminLoginFailure(redis: Redis, ip: string): Promise
 /** 登录成功后清零（spec F4 逐字：「失败计次、**成功清零**」）。 */
 export async function clearAdminLoginFailures(redis: Redis, ip: string): Promise<void> {
   await redis.del(adminLoginFailKey(ip));
+}
+
+/** 代理登录失败桶的键（与 admin 桶键独立）。 */
+function agentLoginFailKey(ip: string): string {
+  return `ratelimit:agent-login-fail:${ip}`;
+}
+
+export async function isAgentLoginBlocked(redis: Redis, ip: string): Promise<boolean> {
+  const raw = await redis.get(agentLoginFailKey(ip));
+  const count = raw === null ? 0 : Number(raw);
+  return Number.isFinite(count) && count >= AGENT_LOGIN_FAIL.max;
+}
+
+export async function recordAgentLoginFailure(redis: Redis, ip: string): Promise<void> {
+  const key = agentLoginFailKey(ip);
+  const count = await redis.incr(key);
+  if (count === 1) await redis.pexpire(key, AGENT_LOGIN_FAIL.windowMs);
+}
+
+export async function clearAgentLoginFailures(redis: Redis, ip: string): Promise<void> {
+  await redis.del(agentLoginFailKey(ip));
 }
 
 /**

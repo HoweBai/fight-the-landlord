@@ -20,8 +20,10 @@ import {
   currencySettleOutboxOldestSeconds,
   currencySettleOutboxSize,
   currencySettleResidueTotal,
+  currencySettleResultTotal,
+  recordWriteFailuresTotal,
 } from '../../src/metrics/room.metrics';
-import { metricValue } from '../helpers/metric-readout';
+import { exactSeriesValue, metricValue, sumSeriesValue } from '../helpers/metric-readout';
 import { asRedis } from '../helpers/fake-redis';
 import {
   applyOk,
@@ -82,7 +84,11 @@ async function seedMoney(h: SettleHarness, entry: Record<string, unknown>): Prom
 }
 
 function makeSweeper(h: SettleHarness): SettleSweeper {
-  return new SettleSweeper(asRedis(h.redis), h.svc);
+  return new SettleSweeper(
+    asRedis(h.redis),
+    h.svc,
+    h.recordOutbox as unknown as import('../../src/gateway/record-outbox.service').RecordOutboxService,
+  );
 }
 
 describe('settle:outbox 原样重发 ⇒ 成功走完整收尾并从箱中清除', () => {
@@ -120,6 +126,24 @@ describe('settle:outbox 原样重发 ⇒ 成功走完整收尾并从箱中清除
     ]);
     expect(h.record.moneyDelta).toHaveBeenCalledTimes(1);
     expect(h.robotHook.afterSettle).toHaveBeenCalledWith([{ botId: 'bot-int-1', balanceAfter: 985 }], 'doudizhu');
+  });
+
+  it('A2：新条目带 gameType=paodekuai ⇒ 重发请求带同值；旧条目无该键 ⇒ 请求无该键', async () => {
+    const h = makeHarness();
+    await seedSettle(h, settleEntry({ gameType: 'paodekuai', playerCount: 3 }));
+    h.currency.apply.mockImplementation(async (req: { actionId: string; entries: typeof ENTRY }) =>
+      applyOk(req.actionId, req.entries, { alice: 1030, 'bot-int-1': 985, carol: 985 }),
+    );
+    await makeSweeper(h).sweepOnce(NOW);
+    expect(h.currency.apply.mock.calls[0]![0]).toMatchObject({ gameType: 'paodekuai' });
+
+    const legacy = makeHarness();
+    await seedSettle(legacy, settleEntry());
+    legacy.currency.apply.mockImplementation(async (req: { actionId: string; entries: typeof ENTRY }) =>
+      applyOk(req.actionId, req.entries, { alice: 1030, 'bot-int-1': 985, carol: 985 }),
+    );
+    await makeSweeper(legacy).sweepOnce(NOW);
+    expect('gameType' in (legacy.currency.apply.mock.calls[0]![0] as Record<string, unknown>)).toBe(false);
   });
 
   it('replayed 重发同样算送达（replayed 指标；条目清除）', async () => {
@@ -318,14 +342,14 @@ describe('指标：currency_settle_outbox_size / _oldest_seconds（每轮刷新�
 
     await sweeper.sweepOnce(NOW);
 
-    await expect(metricValue(currencySettleOutboxSize)).resolves.toBe(2);
-    await expect(metricValue(currencySettleOutboxOldestSeconds)).resolves.toBe(400);
+    await expect(sumSeriesValue(currencySettleOutboxSize)).resolves.toBe(2);
+    await expect(sumSeriesValue(currencySettleOutboxOldestSeconds)).resolves.toBe(400);
 
     await h.redis.del('settle:outbox', 'recordmoney:outbox');
     await sweeper.sweepOnce(NOW);
 
-    await expect(metricValue(currencySettleOutboxSize)).resolves.toBe(0);
-    await expect(metricValue(currencySettleOutboxOldestSeconds)).resolves.toBe(0);
+    await expect(sumSeriesValue(currencySettleOutboxSize)).resolves.toBe(0);
+    await expect(sumSeriesValue(currencySettleOutboxOldestSeconds)).resolves.toBe(0);
   });
 });
 
@@ -353,5 +377,137 @@ describe('自重排链：10s 常量周期 + 关停闸（照 rooms.reaper 成例�
       sweeper.onApplicationShutdown();
       vi.useRealTimers();
     }
+  });
+
+  it('A1：recordmoney 超龄放弃计 money_delta + dropped{game_type}', async () => {
+    const h = makeHarness();
+    const entry = moneyEntry({ gameType: 'paodekuai', createdAt: 0 });
+    const beforeDropped = (await exactSeriesValue(currencySettleResultTotal, {
+      result: 'dropped', game_type: 'paodekuai',
+    })) ?? 0;
+    const beforeMoney = (await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })) ?? 0;
+
+    await h.svc.resendRecordMoneyOutboxEntry('f1', entry as never, Date.now());
+
+    expect(await exactSeriesValue(currencySettleResultTotal, {
+      result: 'dropped', game_type: 'paodekuai',
+    })).toBe(beforeDropped + 1);
+    expect(await exactSeriesValue(recordWriteFailuresTotal, {
+      game_type: 'paodekuai', kind: 'money_delta',
+    })).toBe(beforeMoney + 1);
+  });
+
+  it('A1：outbox gauge 按 game_type 分组；hgetall 失败保持旧值', async () => {
+    const h = makeHarness();
+    const sweeper = makeSweeper(h);
+    await seedSettle(h, settleEntry({ gameType: 'paodekuai', createdAt: Date.now() }));
+    await seedMoney(h, moneyEntry({ createdAt: Date.now() })); // 缺省 gameType ⇒ ddz
+    // 让两条都留在箱里：settle 重发失败、money 部分匹配
+    h.currency.apply.mockRejectedValueOnce(new Error('down'));
+    h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] });
+    await sweeper.sweepOnce(Date.now());
+
+    const pdk = await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' });
+    const ddz = await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' });
+    expect(pdk).toBe(1);
+    expect(ddz).toBe(1);
+
+    // 先清空真值（若实现吞错后重算，会把 gauge 写成 0/0 —— 这里必须仍保持上一轮值）
+    await h.redis.del('settle:outbox', 'recordmoney:outbox');
+    // C1：record 阶段最先，会先消费一次 hgetall；把失败注入 settle 箱的**第二次**读
+    //（既有 gauge 刷新），否则测到的是 record 阶段隔离而不是 gauge 保持旧值。
+    let settleHgetalls = 0;
+    const hgetall = h.redis.hgetall as unknown as ReturnType<typeof vi.fn>;
+    hgetall.mockImplementation(async (key: string) => {
+      if (key === 'settle:outbox') {
+        settleHgetalls += 1;
+        if (settleHgetalls === 2) throw new Error('redis down');
+      }
+      return h.redis.hashes.get(key) ?? {};
+    });
+    await sweeper.sweepOnce(Date.now()).catch(() => undefined);
+
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' })).toBe(pdk);
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(ddz);
+  });
+
+  it('A1：未知 gameType 的 outbox 条目归 ddz 并汇总 WARN', async () => {
+    const h = makeHarness();
+    const sweeper = makeSweeper(h);
+    await seedMoney(h, moneyEntry({ gameType: 'pdk', createdAt: Date.now() }));
+    h.record.moneyDelta.mockResolvedValueOnce({ matched: [0] }); // 部分匹配 ⇒ 留箱
+    await sweeper.sweepOnce(Date.now());
+
+    // gauge 是**绝对快照**（不是累计）：本用例箱里恰 1 条 ⇒ ddz=1
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'doudizhu' })).toBe(1);
+    expect(await exactSeriesValue(currencySettleOutboxSize, { game_type: 'paodekuai' })).toBe(0);
+  });
+});
+
+describe('C1 record 阶段：最先、隔离、5s 硬超时、在途闸', () => {
+  const okApply = (h: SettleHarness) =>
+    h.currency.apply.mockImplementation(async (req: { actionId: string; entries: typeof ENTRY }) =>
+      applyOk(req.actionId, req.entries, { alice: 1030, 'bot-int-1': 985, carol: 985 }),
+    );
+
+  it('record 阶段先于 settle 箱；record 失败不阻塞 settle', async () => {
+    const h = makeHarness();
+    h.recordOutbox.sweep.mockRejectedValueOnce(new Error('record redis down'));
+    okApply(h);
+    await seedSettle(h, settleEntry());
+
+    await makeSweeper(h).sweepOnce(NOW);
+
+    expect(h.recordOutbox.sweep).toHaveBeenCalledTimes(1);
+    expect(h.currency.apply).toHaveBeenCalledTimes(1);
+    expect(
+      (h.recordOutbox.sweep.mock.invocationCallOrder[0] ?? 0) <
+        (h.currency.apply.mock.invocationCallOrder[0] ?? 0),
+      'record 阶段必须先于 settle 箱（防 legacy 积压饿死 record）',
+    ).toBe(true);
+  });
+
+  it('record 阶段 5s 超时后 legacy 仍处理；在途闸阻止下一轮重复', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeHarness();
+      let resolvePhase!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        resolvePhase = resolve;
+      });
+      h.recordOutbox.sweep.mockReturnValueOnce(pending);
+      okApply(h);
+      await seedSettle(h, settleEntry());
+      const sweeper = makeSweeper(h);
+
+      const first = sweeper.sweepOnce(NOW);
+      await vi.advanceTimersByTimeAsync(5_001);
+      await first;
+      expect(h.currency.apply, '超时后 settle 箱仍须处理').toHaveBeenCalledTimes(1);
+
+      await sweeper.sweepOnce(NOW);
+      expect(h.recordOutbox.sweep, '在途闸必须阻止第二轮重复进入').toHaveBeenCalledTimes(1);
+      resolvePhase();
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('record:outbox HGETALL 失败 ⇒ legacy 仍处理（record 阶段隔离）', async () => {
+    const h = makeHarness();
+    const hgetall = h.redis.hgetall as unknown as ReturnType<typeof vi.fn>;
+    hgetall.mockImplementation(async (key: string) => {
+      if (key === 'record:outbox') throw new Error('record redis down');
+      return h.redis.hashes.get(key) ?? {};
+    });
+    okApply(h);
+    await seedSettle(h, settleEntry());
+
+    await makeSweeper(h).sweepOnce(NOW);
+
+    expect(h.currency.apply).toHaveBeenCalledTimes(1);
   });
 });

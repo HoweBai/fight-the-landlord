@@ -49,26 +49,33 @@ export interface PdkRoom {
 }
 
 /**
- * 起一局真实的 3 人跑得快：入队（带 gameType/playerCount）→ `room.matched` →
- * `room.join`（带 gameType）→ `game.deal`。
+ * 起一局真实的跑得快：入队（带 gameType/playerCount）→ `room.matched` →
+ * `room.join`（带 gameType）→ `game.deal`。默认 3 人（2 人场传 `playerCount: 2`）。
  */
 export async function startPdkRoom(
   labelPrefix: string,
-  options: { baseScore?: number; users?: HarnessUser[] } = {},
+  options: {
+    mode?: 'random' | 'gold';
+    baseScore?: number;
+    users?: HarnessUser[];
+    playerCount?: 2 | 3 | 4;
+  } = {},
 ): Promise<PdkRoom> {
   const baseScore = options.baseScore ?? 15;
+  const mode = options.mode ?? 'random';
+  const playerCount = options.playerCount ?? 3;
   const clients: HarnessClient[] = [];
   try {
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < playerCount; i += 1) {
       const user = options.users?.[i] ?? (await registerUser(i));
       clients.push(await HarnessClient.connect(`${labelPrefix}${i}`, user));
     }
     for (const client of clients) {
       const ack = await client.send('room.match', {
-        mode: 'random',
+        mode,
         baseScore,
         gameType: 'paodekuai',
-        playerCount: 3,
+        playerCount,
       });
       if (ack.code !== ErrCode.OK) {
         throw new ConformanceError(
@@ -194,11 +201,13 @@ export interface PdkOutcome {
   passes: number;
   finishedPayload: any;
   settlement: any;
+  /** `game.settlement` 信封的 version（无消息 ⇒ null；A2 用于拼 settle actionId）。 */
+  settlementVersion: number | null;
   finalView: PdkViewWire;
 }
 
 /**
- * 把一局从 `game.deal` 驱到 `game.finished`（3 个真人；本 oracle 只打单张）。
+ * 把一局从 `game.deal` 驱到 `game.finished`（playerCount 个真人；本 oracle 只打单张）。
  * 判据留在切片里；本函数只做推进 + 事实回传。动作被拒/超时 ⇒ 抛。
  */
 export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutcome> {
@@ -229,6 +238,7 @@ export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutc
         passes,
         finishedPayload: fin.payload,
         settlement: settlementMsg?.payload,
+        settlementVersion: settlementMsg?.version ?? null,
         finalView,
       };
     }
@@ -254,13 +264,14 @@ export async function playPdkToEnd(room: PdkRoom, what: string): Promise<PdkOutc
         passes,
         finishedPayload: done.payload,
         settlement: settlementMsg?.payload,
+        settlementVersion: settlementMsg?.version ?? null,
         finalView: currentPdkView(reader)!,
       };
     }
 
     const actorClient = room.bySeat.get(view.currentPlayer);
     if (!actorClient) {
-      // 本驱动只起 3 个真人；机器人回合（未来扩展）等服务器推进。
+      // 本驱动起的真人座位都已登记在 bySeat；机器人回合（未来扩展）等服务器推进。
       const next = await tryAdvancePdk(reader, view.version, 40_000);
       if (!next && !finishedOn()) {
         throw new ConformanceError(`${what}：机器人回合后 40s 无推进（seat ${view.currentPlayer}）`);

@@ -6,7 +6,11 @@
  * `lastPlayedHand`（规则态）、`initialHands`、机器人内部字段**一律不出站**。
  * `canPass`/`bombCount` 由服务端算好（客户端是哑终端，D42）。
  */
-import { validateOutbound, type PdkPlayerView } from '@fight-the-landlord/protocol';
+import {
+  pdkRecentActionsWindow,
+  validateOutbound,
+  type PdkPlayerView,
+} from '@fight-the-landlord/protocol';
 import { projectRecentActions } from '@fight-the-landlord/shared';
 import type { PdkSession } from '@fight-the-landlord/shared';
 
@@ -31,7 +35,10 @@ export function buildPdkPlayerView(session: PdkSession, seat: number): PdkPlayer
   const trustees = Array.from({ length: session.playerCount }, (_, s) => {
     const atSeat = session.players.find((p) => p.seat === s);
     if (!atSeat) throw new Error(`pdk session is missing a player at seat ${s}`);
-    return session.botIds?.[s] !== undefined ? false : atSeat.trustee === true;
+    // 与 `game.service.isBotSeat` 同口径：只有**非空字符串**才是机器人。
+    // （`loadSession` 已把 JSON 往返的 `null` 归一化，这里再兜一层。）
+    const botId = session.botIds?.[s];
+    return typeof botId === 'string' && botId.length > 0 ? false : atSeat.trustee === true;
   });
 
   const view: PdkPlayerView = {
@@ -46,7 +53,7 @@ export function buildPdkPlayerView(session: PdkSession, seat: number): PdkPlayer
     cardCounts,
     trustees,
     currentPlayer: session.currentPlayer,
-    recentActions: projectRecentActions(session),
+    recentActions: projectRecentActions(session, pdkRecentActionsWindow(session.playerCount)),
     turnDeadlineAt: session.turnDeadlineAt,
     // 首出（lastPlayedHand === null）或自己就是最后出牌者 ⇒ 不可过牌。
     canPass: session.lastPlayedHand !== null && session.lastPlayerIdx !== seat,

@@ -58,15 +58,22 @@ export type RobotDecisionErrorReason = (typeof ROBOT_DECISION_ERROR_REASONS)[num
  */
 export const robotDecisionsTotal: ReturnType<typeof createCounter> = createCounter(
   'robot_decisions_total',
-  '机器人决策次数（result=决策来源 douzero|rule · skill=难度档）。叫抢期恒为 rule —— 协议约定，不是失败信号；失败读 robot_decision_errors_total。',
-  ['result', 'skill'],
+  '机器人**完成**的决策次数（result=决策来源 douzero|rule · skill=难度档 · game_type）。DouZero 错误率 = errors/decisions；PDK 规则 bot 错误率 = errors/(decisions+errors)。',
+  ['result', 'skill', 'game_type'],
 );
 
 /** DouZero 未能给出可用决策（回落规则引擎）的次数；`reason` 值域见 `ROBOT_DECISION_ERROR_REASONS`。 */
 export const robotDecisionErrorsTotal: ReturnType<typeof createCounter> = createCounter(
   'robot_decision_errors_total',
-  '机器人决策失败次数（DouZero 超时/非 2xx/应答解析失败/拒连/返回非法牌 ⇒ 回落规则引擎；reason 值域有界）。',
-  ['reason'],
+  'DouZero 未能给出可用决策的次数（按 reason/玩法；随后回落规则引擎并仍完成决策）。',
+  ['reason', 'game_type'],
+);
+
+/** A1：PDK 规则 bot 抛错（不进 decisions ⇒ 错误率 = errors/(decisions+errors)）。 */
+export const robotRuleErrorsTotal: ReturnType<typeof createCounter> = createCounter(
+  'robot_rule_errors_total',
+  'PDK 规则 bot 决策抛错次数（reason=decision_error，按玩法；抛错不进 decisions）。',
+  ['game_type', 'reason'],
 );
 
 /**

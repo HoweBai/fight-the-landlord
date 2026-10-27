@@ -117,7 +117,7 @@ function isDeadSocketFailure(err: unknown): string | null {
  * ⚠️ 直连（`directJson`/`waitRoomHealthy` 等）不走这里：直连探针各自已有有界的
  *    重试/轮询循环（如 `waitRoomHealthy` 的 1s 循环），本修复不扩面。
  */
-async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, init: RequestInit): Promise<Response> {
+async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(`${GATEWAY_URL}${path}`, init);
   } catch (err) {
@@ -134,7 +134,7 @@ async function fetchDeadSocketRetry(method: 'GET' | 'POST' | 'PUT' | 'DELETE', p
 }
 
 async function request(
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   token?: string,
@@ -194,6 +194,15 @@ export function putJson<T = any>(path: string, body: unknown, token?: string): P
 }
 
 /**
+ * 经网关的 PATCH（代理分润片 2026-10-26：管理端代理资料/设置/payout 用 PATCH）。
+ *
+ * ⚠️ 与 `putJson` 同族同形：**不开放** `extraHeaders`，**不**做死套接字重试。
+ */
+export function patchJson<T = any>(path: string, body: unknown, token?: string): Promise<HttpResult<T>> {
+  return request('PATCH', path, body, token);
+}
+
+/**
  * 经网关的 DELETE（支付配置管理化片起：管理面 `DELETE /api/admin/pay-channel/:key`）。
  *
  * ⚠️ 与 `putJson` 同族同形、同保守：**不开放** `extraHeaders`（调用方无法改身份）、
@@ -245,7 +254,7 @@ export async function adminLogin(): Promise<string> {
   return token;
 }
 
-/** `GET /api/admin/config`：全量四十四键 + 每键 version + 全局 MAX（持管理令牌读）。 */
+/** `GET /api/admin/config`：全量一百零一键 + 每键 version + 全局 MAX（持管理令牌读）。 */
 export function adminGetConfig<T = any>(token: string): Promise<HttpResult<T>> {
   return getJson<T>('/api/admin/config', token);
 }

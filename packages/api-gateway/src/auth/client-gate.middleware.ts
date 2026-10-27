@@ -3,7 +3,7 @@ import { ErrCode } from '@fight-the-landlord/protocol';
 import { NextFunction, Request, Response } from 'express';
 // ⚠️ R462：豁免/白名单判定全部来自**单一真源** `public-paths.ts`（本文件不得再抄字面量
 // —— 就地另抄一份正是「一条路径在一处豁免、在另一处不豁免」的漂移面）。
-import { isAdminPath, isClientConfigPath, isHealthPath, requestPath } from './public-paths';
+import { isAdminPath, isAgentPath, isClientConfigPath, isHealthPath, requestPath } from './public-paths';
 // ⚠️ 值导入：403 + §11.2 信封与玩家/管理面共用**同一份**工具（10003 同族形态）。
 import { CodedForbidden } from './jwt.middleware';
 import { ClientGateService, classifyClientPlatform } from './client-gate.service';
@@ -50,7 +50,7 @@ export class ClientGateMiddleware implements NestMiddleware {
 
     // 豁免三路（复用单一真源谓词；⛔ 不在此处写字面量路径）——**判定之前**短路：
     // 豁免路径既不过闸，也不计入 unidentified（C27）。
-    if (isAdminPath(path) || isHealthPath(path) || isClientConfigPath(path)) return next();
+    if (isAdminPath(path) || isAgentPath(path) || isHealthPath(path) || isClientConfigPath(path)) return next();
 
     const platform = classifyClientPlatform(req.headers[CLIENT_PLATFORM_HEADER]);
     if (platform === null) {

@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // R462：产品**实际消费**的那份白名单（下面用它把「源码字面量」与「运行期真值」钉在一起）。
-import { AUTH_PATHS, HEALTH_PATHS, PUBLIC_PATHS, isHealthPath, isPublicPath } from '../src/auth/public-paths';
+import {
+  AUTH_PATHS,
+  BOOT_CONFIG_PATHS,
+  HEALTH_PATHS,
+  PUBLIC_PATHS,
+  isHealthPath,
+  isPublicPath,
+} from '../src/auth/public-paths';
 // 台账 N46：注释剥离器的**唯一真源**（收敛前本文件是 8 份私有副本之一）。
 import { stripComments } from '@fight-the-landlord/test-utils';
 import { toPosixPath } from './helpers/repo-path';
@@ -268,7 +275,13 @@ describe('§2.4/R267：健康检查的每条路由都必须免鉴权（R293 的�
      * （中间件的注释逐字写着「不得为业务路由开任何例外」）⇒ 它们的允许集是**空**。
      */
     const allowedExtra: Record<string, string[]> = {
-      'api-gateway': ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'],
+      'api-gateway': [
+        '/api/auth/login',
+        '/api/auth/register',
+        '/api/auth/refresh',
+        // 代理分润（r3 Critical #1）：登录前公开启动配置（精确条目）。
+        '/api/config/boot',
+      ],
       'user-service': [],
       'room-service': [],
       'game-service': [],
@@ -297,18 +310,23 @@ describe('§2.4/R267：健康检查的每条路由都必须免鉴权（R293 的�
    * `PUBLIC_PATHS` 指向别的东西（或忘了组合进去），源码级判据会照样绿。这条用
    * **运行期导入**的 `PUBLIC_PATHS` 做交叉验证，并钉住「恰好五条」（§7.1 + R267）。
    */
-  it('R462：产品消费的 `PUBLIC_PATHS` 恰好是 `AUTH_PATHS + HEALTH_PATHS`（且恰好五条）', () => {
+  it('R462：产品消费的 `PUBLIC_PATHS` 恰好是 `AUTH_PATHS + HEALTH_PATHS + BOOT_CONFIG_PATHS`（且恰好六条）', () => {
     const source = readFileSync(join(REPO, 'packages/api-gateway/src/auth/public-paths.ts'), 'utf-8');
-    const composed = exemptPathsOf(source, ['AUTH_PATHS', 'HEALTH_PATHS']);
+    const composed = exemptPathsOf(source, ['AUTH_PATHS', 'HEALTH_PATHS', 'BOOT_CONFIG_PATHS']);
 
     // ① 运行期真值 = 源码字面量的组合（防「改了字面量、产品却用另一个数组」）
     expect([...PUBLIC_PATHS]).toEqual(composed);
     // ② 组合关系本身（防「PUBLIC_PATHS 里偷偷多一条」）
-    expect([...PUBLIC_PATHS]).toEqual([...AUTH_PATHS, ...HEALTH_PATHS]);
-    // ③ 「恰好五条」（§7.1 + R267 的第 5 条 `…/live`）—— 之前只有注释在守它
-    expect(PUBLIC_PATHS).toHaveLength(5);
+    expect([...PUBLIC_PATHS]).toEqual([
+      ...AUTH_PATHS,
+      ...HEALTH_PATHS,
+      ...BOOT_CONFIG_PATHS,
+    ]);
+    // ③ 「恰好六条」（§7.1 + R267 的第 5 条 `…/live` + 代理分润的 `/api/config/boot`）
+    expect(PUBLIC_PATHS).toHaveLength(6);
     expect(AUTH_PATHS).toHaveLength(3);
     expect(HEALTH_PATHS).toHaveLength(2);
+    expect(BOOT_CONFIG_PATHS).toHaveLength(1);
 
     // ④ **提取器的判别力自证**（R115）：`AUTH_PATHS` 是 `HEALTH_PATHS` 的**后缀** ——
     //    把 `HEALTH_PATHS` 写在前面时，两者仍必须各自解析出**自己**那个数组
@@ -326,7 +344,13 @@ describe('§2.4/R267：健康检查的每条路由都必须免鉴权（R293 的�
     // ⑤ **精确匹配，不是前缀**（R293 的负对照形态，两处消费方共用这一份判定）：
     //    近邻路径必须**既不**免鉴权、**也不**被健康豁免 —— 一旦哪天改成 `startsWith`，
     //    这里会当场红（conformance 也在钉 `/api/healthz` 必须 401，但那只覆盖鉴权侧）。
-    for (const nearMiss of ['/api/healthz', '/api/health/livex', '/api/auth/login-as-admin']) {
+    for (const nearMiss of [
+      '/api/healthz',
+      '/api/health/livex',
+      '/api/auth/login-as-admin',
+      '/api/config',
+      '/api/config/bootx',
+    ]) {
       expect(isPublicPath(nearMiss), `${nearMiss} 不得是公开路径`).toBe(false);
     }
     expect(isHealthPath('/api/healthz'), '/api/healthz 不得被限流豁免').toBe(false);
@@ -335,7 +359,9 @@ describe('§2.4/R267：健康检查的每条路由都必须免鉴权（R293 的�
     expect(isPublicPath('/api/health/live')).toBe(true);
     expect(isHealthPath('/api/health/live')).toBe(true);
     expect(isPublicPath('/api/auth/register')).toBe(true);
+    expect(isPublicPath('/api/config/boot')).toBe(true);
     expect(isHealthPath('/api/auth/register')).toBe(false);
+    expect(isHealthPath('/api/config/boot')).toBe(false);
   });
 });
 

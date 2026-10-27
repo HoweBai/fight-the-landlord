@@ -23,11 +23,11 @@
  * ─── 十二组（组序与状态链；未列组沿用前组末态——规格 §5.2 前言）────────────────────
  *  ⓪ 起手自证（前置 = 空/脏库任意；末态 = 干净命名空间 + 种子态自证）：四容器 healthy ·
  *     `relief:claim:*`/`ad:notify:rate` 清源归零 · 开关=false / adpid='' 种子态自证 ·
- *     第四键空间种子在场 · Prometheus rules 恰 27 含两新告警。
+ *     第四键空间种子在场 · Prometheus rules 恰 38 含两新告警。
  *  ① 键空间面（ad-channel 管理面）：掩码读（value 恒 null+指纹=宿主复算）· super_admin
  *     写读回 · 非 SA（operator/finance/viewer）×（PUT/DELETE）⇒ 403 · 种子密钥生效
  *     （末态 = 四键空间回种子）。
- *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 21 键（排序字面，含第 15 键
+ *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 22 键（排序字面，含第 15 键
  *     `reliefAdpid`）· 内部键零泄漏（`ad.`/`currency.` 前缀扫描）· 管理面 65 键 ·
  *     adpid 空串种子方向 + 非空下发生效 + 还原（末态 = adpid=''）。
  *  ③ 签发面（前置 = ③ 内 PUT `reliefEnabled=true` 并等到快照生效；末态 = 开关 ON）：
@@ -164,9 +164,15 @@ const RELIEF_AMOUNT_SEED = 200;
 /** `/api/config` 的**恰好**键集（排序后逐字；记牌器收费片起 = 20 键——阶段 2 已删除派生字段 `entryFeePercents`；
  *  广告片起 `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 /** §2.7 新告警两条（⓪ 的「规则 27 就位」面）。 */
 const AD_ALERT_RULES = ['ReliefCallbackBroken', 'ReliefGrantZero'] as const;
+/** C2（2026-10-26）：资金↔记录对账三条规则（总数 35→38）。 */
+const C2_ALERT_RULES = [
+  'RecordsReconcileMismatch',
+  'RecordsReconcileOrphanOps',
+  'RecordsReconcileStalled',
+] as const;
 /** ⓪ 的容器健康面（本片依赖的真栈容器——含门口与 Prometheus）。 */
 const HEALTH_CONTAINERS = ['ftl-currency-service', 'ftl-config-service', 'ftl-edge', 'ftl-prometheus'] as const;
 
@@ -667,7 +673,7 @@ export async function runSlice24(): Promise<Checks> {
 
   try {
     /* ── ⓪ 起手自证 ──────────────────────────────────────────────────────── */
-    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 27 含两新告警');
+    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 38 含两新告警');
     for (const container of HEALTH_CONTAINERS) {
       const h = await waitContainerHealthy(container);
       checks.that(h.ok, `⓪ ${container} healthy（${h.last}）`);
@@ -703,10 +709,21 @@ export async function runSlice24(): Promise<Checks> {
     );
 
     const ruleNames0 = await fetchPromRuleNames();
-    checks.that(ruleNames0.length === 27, `⓪ Prometheus /api/v1/rules 恰 27 条（25 既有 + 2 救助；T16 同核面）—— 实际 ${ruleNames0.length}`);
+    checks.that(ruleNames0.length === 38, `⓪ Prometheus /api/v1/rules 恰 38 条（29 既有 + 2 救助 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账；A1 同步面）—— 实际 ${ruleNames0.length}`);
     checks.that(
       AD_ALERT_RULES.every((n) => ruleNames0.includes(n)),
-      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 27 条错规则也绿）`,
+      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 38 条错规则也绿）`,
+    );
+    const A1_ALERT_RULES = [
+      'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
+    ];
+    checks.that(
+      A1_ALERT_RULES.every((n) => ruleNames0.includes(n)),
+      `⓪ A1 四条按玩法告警逐个在场（${A1_ALERT_RULES.join('/')}）`,
+    );
+    checks.that(
+      C2_ALERT_RULES.every((n) => ruleNames0.includes(n)),
+      `⓪ C2 三条记录对账规则逐个在场（${C2_ALERT_RULES.join('/')}）`,
     );
 
     /* ── ① 键空间面（ad-channel 管理面）──────────────────────────────────── */
@@ -793,12 +810,12 @@ export async function runSlice24(): Promise<Checks> {
     checks.that(activeLeft.length === 0, `① 三枚一次性账号均已 disabled（不留活跃凭据）—— 残留 ${JSON.stringify(activeLeft)}`);
 
     /* ── ② 键面 ─────────────────────────────────────────────────────────── */
-    step('② 键面：/api/config 恰 21 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
+    step('② 键面：/api/config 恰 22 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
     const uCfg = await registerUser(61);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     expectHttp(checks, cfgA as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/config（玩家面）');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 21 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 22 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
     checks.eq((cfgA.body?.data as Record<string, unknown>)?.[AD_KEY_CLIENT], '', `② ${AD_KEY_CLIENT} 空串种子方向（fail 方向 = 空串 ⇒ 入口不渲染）`);
     const cfgRaw = JSON.stringify(cfgA.body?.data ?? null);
     checks.that(

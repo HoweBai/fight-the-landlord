@@ -1,5 +1,5 @@
 // packages/game-service/src/metrics/game.metrics.ts
-import { createGauge } from '@fight-the-landlord/shared';
+import { createCounter, createGauge } from '@fight-the-landlord/shared';
 
 /**
  * ⚠️ **显式注解**（不是从推断来）：`createGauge` 的返回类型在 .d.ts 里若走推断，会引用
@@ -9,6 +9,7 @@ import { createGauge } from '@fight-the-landlord/shared';
  * 本包可见的符号 ⇒ 声明产物便携。（与 room-service 的 `room.metrics.ts` 同款处置。）
  */
 type GaugeOf = ReturnType<typeof createGauge>;
+type CounterOf = ReturnType<typeof createCounter>;
 
 /**
  * 活跃对局会话数（监控片 · 规格 §2.2）。
@@ -22,5 +23,13 @@ type GaugeOf = ReturnType<typeof createGauge>;
  */
 export const gamesActive: GaugeOf = createGauge(
   'games_active',
-  'game-service 本实例内存缓存中的活跃对局会话数（**per-instance** 语义：多实例部署时各实例各报自己的 cache.size）。',
+  'game-service 本实例内存缓存中的活跃对局会话数（按玩法；**per-instance** 语义：多实例部署时各实例各报自己的 cache.size）。',
+  ['game_type'],
+);
+
+/** A1：局终结算失败（phase=settle|publish；计数后仍抛出）。 */
+export const gameSettleFailuresTotal: CounterOf = createCounter(
+  'game_settle_failures_total',
+  '局终结算失败计数（phase=settle|publish，按玩法；计数后仍抛出）。',
+  ['game_type', 'phase'],
 );

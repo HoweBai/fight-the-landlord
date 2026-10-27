@@ -31,7 +31,7 @@ function mysqlConnectionOptions() {
     /** 迁移脚本（编译产物）。⚠️ 与 `data-source.ts` 共用 `migrationsGlob()`。 */
     migrations: [migrationsGlob()],
     /** 启动时自动跑迁移（新库靠它建表；已存在的库首跑只写迁移表）。 */
-    migrationsRun: true,
+    migrationsRun: process.env.DB_MIGRATIONS_RUN !== 'false',
     /**
      * ⚙️1（支付片）：与 user / config / currency **共库**（`fight_the_landlord`）⇒ 迁移表
      * **必须第四份独立**（user 默认 `migrations`、config 是 `migrations_config`、

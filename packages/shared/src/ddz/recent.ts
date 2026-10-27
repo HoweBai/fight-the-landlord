@@ -2,9 +2,10 @@ import type { RecentAction } from '@fight-the-landlord/protocol';
 import type { GameSession } from './types';
 
 /**
- * 桌面历史牌的**窗口大小**（协议 ④ / 上位 §4.4：「窗口 = 2 手」）。
+ * 桌面历史牌的**默认窗口大小**（协议 ④ / 上位 §4.4：「窗口 = 2 手」）。
  *
- * ⚠️ 窗口长度只在这里写一次 —— 别处（组件、判据、mock）一律引用它。
+ * 斗地主恒用本值；跑得快按人数放大（4 人 = 3，见 protocol `pdkRecentActionsWindow`）。
+ * ⚠️ 默认值只在这里写一次 —— 组件、判据、mock 一律引用它。
  */
 export const RECENT_ACTIONS_WINDOW = 2;
 
@@ -22,8 +23,11 @@ export const RECENT_ACTIONS_WINDOW = 2;
  * ⚠️ **`cards: null` 是「不出」的显式事实**，不是缺省值。
  * ⚠️ 出站安全性：它只含**已经打出过的牌**（公开信息），**不含任何未出的手牌**。
  */
-export function projectRecentActions(session: Pick<GameSession, 'actionLog'>): RecentAction[] {
-  return (session.actionLog ?? []).slice(-RECENT_ACTIONS_WINDOW).map((entry) => ({
+export function projectRecentActions(
+  session: Pick<GameSession, 'actionLog'>,
+  windowSize: number = RECENT_ACTIONS_WINDOW,
+): RecentAction[] {
+  return (session.actionLog ?? []).slice(-windowSize).map((entry) => ({
     seat: entry.seat,
     // `kind === 'pass'` 的 `cards` 恒为 `[]`（§3.2）⇒ 出站时归一成 `null`
     cards: entry.kind === 'pass' ? null : entry.cards,

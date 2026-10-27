@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * 玩家信息条（**共用件**）：头像 + 昵称 + 余额。
  *
@@ -103,7 +103,7 @@ withDefaults(
 }
 /** 货币占位（D12）：弱化到「看得出是个空槽」。 */
 .chip__currency {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-md;
   line-height: 1.2;
 }

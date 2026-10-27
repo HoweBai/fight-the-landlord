@@ -25,6 +25,18 @@ describe('玩家文案：上下文优先级', () => {
     expect(playerMessage(ErrCode.UPSTREAM_UNAVAILABLE, { context: 'rest', serverMessage: 'downstream down' })).toBe('服务暂时不可用，请稍后重试');
   });
 
+  it('12012 改为 message-first（人数/玩法文案可见），空则兜底', () => {
+    expect(
+      playerMessage(ErrCode.GAME_UNAVAILABLE, {
+        context: 'action',
+        serverMessage: '该玩法暂不支持该人数',
+      }),
+    ).toBe('该玩法暂不支持该人数');
+    expect(playerMessage(ErrCode.GAME_UNAVAILABLE, { context: 'action' })).toBe(
+      '这个玩法暂未开放，请稍后再试',
+    );
+  });
+
   it('warning 原样展示服务端 message', () => {
     expect(playerMessage(ErrCode.UPSTREAM_UNAVAILABLE, { context: 'warning', serverMessage: '本局将在 30 秒后由系统代打' })).toBe(
       '本局将在 30 秒后由系统代打',

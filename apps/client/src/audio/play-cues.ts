@@ -60,6 +60,20 @@ const TRIO_BY_RANK: Record<number, CueName> = {
 };
 
 /**
+ * 点数 → 单/对/三张 cue（斗地主与跑得快共用）。
+ * ⚠️ 显式 `CueName | null`：`noUncheckedIndexedAccess` 未开，直接索引会被推成 `CueName`。
+ */
+export function cueForSingleRank(r: number): CueName | null {
+  return SINGLE_BY_RANK[r] ?? null;
+}
+export function cueForPairRank(r: number): CueName | null {
+  return PAIR_BY_RANK[r] ?? null;
+}
+export function cueForTrioRank(r: number): CueName | null {
+  return TRIO_BY_RANK[r] ?? null;
+}
+
+/**
  * 给出牌选一条播报 cue。
  *
  * 空牌 / 非法牌型 / 未知点数 / `parseHand` 抛错 ⇒ `null`（调用方静默）。
@@ -77,11 +91,11 @@ export function cueForPlay(cards: Card[]): CueName | null {
 
   switch (parsed.type) {
     case HandType.Single:
-      return SINGLE_BY_RANK[parsed.keyRank] ?? null;
+      return cueForSingleRank(parsed.keyRank);
     case HandType.Pair:
-      return PAIR_BY_RANK[parsed.keyRank] ?? null;
+      return cueForPairRank(parsed.keyRank);
     case HandType.Trio:
-      return TRIO_BY_RANK[parsed.keyRank] ?? null;
+      return cueForTrioRank(parsed.keyRank);
     case HandType.Straight:
       return 'Straight';
     case HandType.PairStraight:

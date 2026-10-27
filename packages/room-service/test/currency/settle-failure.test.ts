@@ -70,6 +70,7 @@ describe('10007（超时/传输）：同 id 同载荷重发 ≤2 次 ⇒ 仍失�
         entries: ENTRY,
         refId: 'ROOM01:7',
         burn: { residue: 0, rake: 0 },
+        gameType: 'doudizhu',
       });
     }
     await expect(resultCount('retried')).resolves.toBe(retriedBefore + 2);
@@ -241,7 +242,7 @@ describe('14001 ⇒ 重读余额、重算、`:r2` 重发至多一轮', () => {
       new CurrencyServiceError(ErrCode.E_INSUFFICIENT_FUNDS, 'insufficient'),
     );
     h.currency.apply.mockImplementationOnce(async (req: { actionId: string; entries: typeof ENTRY }) =>
-      applyOk(req.actionId, req.entries, { alice: 0, 'bot-int-1': 1012, carol: 1012 }),
+      applyOk(req.actionId, req.entries, { alice: 0, 'bot-int-1': 1013, carol: 1012 }),
     );
     const r2Before = await resultCount('r2');
     const residueBefore = await metricValue(currencySettleResidueTotal);
@@ -259,20 +260,20 @@ describe('14001 ⇒ 重读余额、重算、`:r2` 重发至多一轮', () => {
     ]);
     const second = h.currency.apply.mock.calls[1]![0] as { actionId: string; entries: unknown; burn: unknown };
     expect(second.actionId).toBe('settle:ROOM01:7:r2');
-    // 重算：P=25、g=floor(30×25/60)=12 ⇒ 残差 1
+    // 重算：P=25、g=floor(30×25/60)=12，余数 1 给座位小者 ⇒ 13/12；residue 0
     expect(second.entries).toEqual([
       { ownerId: 'alice', ownerType: 'user', delta: -25 },
-      { ownerId: 'bot-int-1', ownerType: 'robot', delta: 12 },
+      { ownerId: 'bot-int-1', ownerType: 'robot', delta: 13 },
       { ownerId: 'carol', ownerType: 'user', delta: 12 },
     ]);
     expect(first.burn).toEqual({ residue: 0, rake: 0 }); // 第一轮 alice 付满 60 ⇒ 无销毁
-    expect(second.burn).toEqual({ residue: 1, rake: 0 }); // 重算截断 ⇒ 残差 1
+    expect(second.burn).toEqual({ residue: 0, rake: 0 }); // 零头分给赢家 ⇒ 无销毁
     await expect(resultCount('r2')).resolves.toBe(r2Before + 1);
-    // 残差指标 +1（第一轮无截断残差 0、第二轮残差 1）
-    await expect(metricValue(currencySettleResidueTotal)).resolves.toBe(residueBefore + 1);
+    // 两轮 residue 均 0 ⇒ 指标不变
+    await expect(metricValue(currencySettleResidueTotal)).resolves.toBe(residueBefore);
     expect(h.broadcasts[0]!.balances).toEqual([
       { seat: 0, balance: 0 },
-      { seat: 1, balance: 1012 },
+      { seat: 1, balance: 1013 },
       { seat: 2, balance: 1012 },
     ]);
   });

@@ -498,15 +498,15 @@ export async function runSlice14(): Promise<Checks> {
     const c6Relogin = await adminLogin();                     // 抛 = 还原失败；成功 = 自证
     checks.that(c6Relogin.length > 0, 'C6半③ 还原后正确口令可登录（自证还原到位）');
 
-    step('C7：GET /api/config 的 data 键集（排序后）恰好二十一键 + 值类型正确');
+    step('C7：GET /api/config 的 data 键集（排序后）恰好二十二键 + 值类型正确');
     const c7 = await getJson<Record<string, unknown>>('/api/config', user.accessToken);
     checks.eq(c7.body?.code, ErrCode.OK, 'C7 GET /api/config code 0');
     // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15；台费阶段 2：派生字段删除后 21 键
-    // （§2.5/⚙️11 客户端 21 键，含九裸名——`entryFeePercents` 已删除）。
+    // （§2.5/⚙️11 客户端 22 键，含九裸名——`entryFeePercents` 已删除）。
     checks.eq(
       Object.keys(c7.body?.data ?? {}).sort().join(','),
-      'baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      'C7 data 键集（排序后）恰好 21 键（含 cardCounterEnabled）',
+      'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      'C7 data 键集（排序后）恰好 22 键（含 cardCounterEnabled）',
     );
     checks.that(
       Array.isArray(c7.body?.data?.baseScoreLevels) && (c7.body!.data!.baseScoreLevels as unknown[]).length > 0 &&

@@ -1,8 +1,10 @@
 // packages/room-service/src/currency/settle.sweeper.ts
-import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit, Optional, Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
-import { runWithTrace } from '@fight-the-landlord/shared';
+import { LeaderLease } from '../coordination/leader-lease.service';
+import { runWithTrace, setGame } from '@fight-the-landlord/shared';
+import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import {
   RECORD_MONEY_OUTBOX_KEY,
   SETTLE_OUTBOX_KEY,
@@ -14,6 +16,11 @@ import {
   currencySettleOutboxOldestSeconds,
   currencySettleOutboxSize,
 } from '../metrics/room.metrics';
+import {
+  RECORD_OUTBOX_KEY,
+  RECORD_OUTBOX_PHASE_BUDGET_MS,
+  RecordOutboxService,
+} from '../gateway/record-outbox.service';
 
 /**
  * 补偿队列的清扫周期（规格 §5 逐字：常量 **10s**、**不设配置键**）。
@@ -27,10 +34,13 @@ export const SETTLE_SWEEP_INTERVAL_MS = 10_000;
  * `{traceId: randomUUID(), source: 'timer'}`、轮级 catch、关停闸拦住迟到自重排）。
  *
  * 每轮（10s）：
- *  1. 遍历 `settle:outbox`：逐条目调 `SettleService.resendSettleOutboxEntry`
+ *  1. **C1 record 阶段（最先、隔离、5s 硬超时 + 在途闸）**：读 `record:outbox` 快照交给
+ *     `RecordOutboxService.sweep`（分类/自愈/投递/清理/gauge）；失败/超时只记日志，
+ *     不阻塞下面两箱；在途时本轮跳过 record；
+ *  2. 遍历 `settle:outbox`：逐条目调 `SettleService.resendSettleOutboxEntry`
  *     （超龄放弃 / 原样重发 / 成功 ⇒ 完整收尾）；坏 JSON 条目 ⇒ ERROR + 删（否则每轮刷屏）；
- *  2. 遍历 `recordmoney:outbox`：逐条目调 `resendRecordMoneyOutboxEntry`（`matched` 齐三座 ⇒ 清除）；
- *  3. 刷新两个 gauge：`currency_settle_outbox_size`（**两箱之和**）与
+ *  3. 遍历 `recordmoney:outbox`：逐条目调 `resendRecordMoneyOutboxEntry`（`matched` 齐三座 ⇒ 清除）；
+ *  4. 刷新两个 gauge：`currency_settle_outbox_size`（**两箱之和**）与
  *     `currency_settle_outbox_oldest_seconds`（空队列 ⇒ 0；告警阈值 >300s —— 告警先于 TTL 到达）。
  *
  * ⚠️ 单条目失败只记日志、**继续下一条**（一条坏条目/一次下游抖动不该让整轮停摆）；
@@ -39,14 +49,23 @@ export const SETTLE_SWEEP_INTERVAL_MS = 10_000;
 @Injectable()
 export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(SettleSweeper.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /** 清扫链的定时器（自重排；同 reaper：不是 `setInterval`）。 */
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** 关停闸：在途一轮的迟到自重排不得复活循环。 */
   private shuttingDown = false;
+  /** C1：record 阶段在途闸（5s 超时后底层 promise 可能仍在跑；下一轮跳过，防堆叠）。 */
+  private recordPhaseInFlight = false;
 
   constructor(
     private readonly redis: Redis,
     private readonly settle: SettleService,
+    private readonly recordOutbox: RecordOutboxService,
   ) {}
 
   onModuleInit(): void {
@@ -68,7 +87,8 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
   /** 一轮（ALS 包裹 + 轮级 catch；末尾接自重排）。 */
   private runOnce(): void {
     runWithTrace({ traceId: randomUUID(), source: 'timer' }, () => {
-      void this.sweepOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.sweepOnce() : undefined))
         .catch((err) => this.logger.error(`Settle sweep failed: ${String(err)}`))
         .finally(() => {
           // 关停闸（照 `rooms.reaper.ts` 的成例）：在途一轮的迟到回执不得在关停后再排定时器。
@@ -79,6 +99,9 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
 
   /** 立即清扫一轮（测试与运维用，不等下一个周期）。 */
   async sweepOnce(now: number = Date.now()): Promise<void> {
+    // C1：record 阶段最先（独立预算/超时/在途闸）；失败不阻塞既有两箱。
+    await this.sweepRecordPhase(now);
+
     const settleRaw = (await this.redis.hgetall(SETTLE_OUTBOX_KEY)) ?? {};
     for (const [field, raw] of Object.entries(settleRaw)) {
       const entry = this.parseEntry<SettleOutboxEntry>(SETTLE_OUTBOX_KEY, field, raw);
@@ -106,24 +129,75 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
     await this.refreshOutboxGauges(now);
   }
 
-  /** 刷新两个 gauge：size = 两箱条目数之和；oldest = 两侧最老条目年龄（空 ⇒ 0）。 */
+  /** C1 record 阶段：读快照 → 服务 sweep；5s 硬超时 + 在途闸；任何失败只记日志。 */
+  private async sweepRecordPhase(now: number): Promise<void> {
+    if (this.recordPhaseInFlight) {
+      this.logger.warn('record outbox sweep still in flight; skip this round');
+      return;
+    }
+    this.recordPhaseInFlight = true;
+    const phase = (async () => {
+      const raw = (await this.redis.hgetall(RECORD_OUTBOX_KEY)) ?? {};
+      await this.recordOutbox.sweep(raw, now);
+    })()
+      .catch((err) => this.logger.error(`record outbox sweep failed: ${String(err)}`))
+      .finally(() => {
+        this.recordPhaseInFlight = false;
+      });
+    await withTimeout(phase, RECORD_OUTBOX_PHASE_BUDGET_MS).catch(() =>
+      this.logger.error(
+        `record outbox sweep exceeded ${RECORD_OUTBOX_PHASE_BUDGET_MS}ms; legacy continues`,
+      ),
+    );
+  }
+
+  /** 刷新两个 gauge：按玩法分组；先读后写（整条 hgetall 失败 ⇒ 抛给 runOnce，旧值保留）。 */
   private async refreshOutboxGauges(now: number): Promise<void> {
     const settleRaw = (await this.redis.hgetall(SETTLE_OUTBOX_KEY)) ?? {};
     const moneyRaw = (await this.redis.hgetall(RECORD_MONEY_OUTBOX_KEY)) ?? {};
-    const agesMs = [...Object.values(settleRaw), ...Object.values(moneyRaw)]
-      .map((raw) => {
-        try {
-          const parsed = JSON.parse(raw) as { createdAt?: unknown };
-          return typeof parsed.createdAt === 'number' ? now - parsed.createdAt : null;
-        } catch {
-          return null; // 坏条目在遍历时已记过 ERROR —— 这里不再重复
-        }
-      })
-      .filter((age): age is number => age !== null);
-    currencySettleOutboxSize.set(Object.keys(settleRaw).length + Object.keys(moneyRaw).length);
-    currencySettleOutboxOldestSeconds.set(
-      agesMs.length > 0 ? Math.max(0, Math.round(Math.max(...agesMs) / 1000)) : 0,
-    );
+    const sizes = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    const oldest = new Map<GameType, number>([
+      ['doudizhu', 0],
+      ['paodekuai', 0],
+    ]);
+    let badEntries = 0;
+
+    for (const raw of [...Object.values(settleRaw), ...Object.values(moneyRaw)]) {
+      let parsed: { createdAt?: unknown; gameType?: unknown };
+      let rawParsed: unknown;
+      try {
+        rawParsed = JSON.parse(raw);
+      } catch {
+        // 设计 §5：单条目 JSON 坏 ⇒ 归 ddz + 汇总 WARN（整条 hgetall 失败才保留旧值）
+        badEntries += 1;
+        sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      if (rawParsed === null || typeof rawParsed !== 'object') {
+        badEntries += 1;
+        sizes.set('doudizhu', (sizes.get('doudizhu') ?? 0) + 1);
+        continue;
+      }
+      parsed = rawParsed as { createdAt?: unknown; gameType?: unknown };
+      if (parsed.gameType !== undefined && !isGameType(parsed.gameType)) badEntries += 1;
+      const gameType = isGameType(parsed.gameType) ? parsed.gameType : 'doudizhu';
+      sizes.set(gameType, (sizes.get(gameType) ?? 0) + 1);
+      if (typeof parsed.createdAt === 'number') {
+        const age = Math.max(0, Math.round((now - parsed.createdAt) / 1000));
+        oldest.set(gameType, Math.max(oldest.get(gameType) ?? 0, age));
+      }
+    }
+
+    if (badEntries > 0) {
+      this.logger.warn(`Settle outbox gauge: ${badEntries} unparseable/invalid entr(ies) counted as doudizhu`);
+    }
+    for (const gameType of ['doudizhu', 'paodekuai'] as const) {
+      setGame(currencySettleOutboxSize, gameType, sizes.get(gameType) ?? 0);
+      setGame(currencySettleOutboxOldestSeconds, gameType, oldest.get(gameType) ?? 0);
+    }
   }
 
   /**
@@ -150,4 +224,21 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
       this.timer = null;
     }
   }
+}
+
+/** C1：record 阶段的硬超时；超时后底层 promise 继续跑（在途闸阻止下一轮堆叠）。 */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }

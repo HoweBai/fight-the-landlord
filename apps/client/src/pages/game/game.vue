@@ -109,6 +109,8 @@ const ROOM_LOCAL_CODES = new Set([
   ErrCode.ROOM_FULL,
   ErrCode.NOT_IN_ROOM,
   ErrCode.ROOM_ALREADY_STARTED,
+  /** 12012（玩法未开放 / 暂不支持该人数）：REST 建房/占座被拒时就地提示。 */
+  ErrCode.GAME_UNAVAILABLE,
 ]);
 
 /**
@@ -239,12 +241,15 @@ watch(matching, (isMatching) => {
 const ccPerGame = computed(() => store.cardCounterPricePerGameCoins);
 const ccPerHour = computed(() => store.cardCounterPricePerHourCoins);
 /**
- * 入口/弹层可见条件（2026-10-19 入口改造）：总开关开 + 金币场 + 两价格均为数值
- * （旧服务端 null ⇒ 整块不渲染）。
+ * 入口/弹层可见条件（2026-10-19 入口改造）：**玩法能力位**（记牌器是斗地主专属付费能力，
+ * `GAME_META.paodekuai.capabilities.cardCounter=false` ⇒ 跑得快整块不渲染，与开局链
+ * 「不扣费/不下发」同一判据 D17）+ 总开关 + 金币场 + 两价格均为数值（旧服务端 null ⇒
+ * 整块不渲染）。
  * ⚠️ **不含 matching**：模板另外叠 `&& !matching`（匹配中入口隐藏、弹层由 watcher 强制关闭）。
  */
 const ccPanelVisible = computed(
   () =>
+    GAME_META[store.activeGameType].capabilities.cardCounter &&
     store.cardCounterEnabled &&
     store.roomMode === "gold" &&
     typeof ccPerGame.value === "number" &&
@@ -598,9 +603,10 @@ async function match() {
     const outcome = await getGameSession().client.send("room.match", {
       mode: store.roomMode,
       baseScore,
-      // 多玩法（S5.4）：玩法 + 人数随匹配上行；客户端首版只发 3 人。
+      // 多玩法（S5.4）：玩法 + 人数随匹配上行。人数来自 store 的有效值
+      //（客户端能力 ∩ 服务端开放）。模板写 `@click="match()"`，避免 MouseEvent 被当成人数。
       gameType: store.activeGameType,
-      playerCount: GAME_META[store.activeGameType].defaultPlayerCount,
+      playerCount: store.effectivePlayerCount,
       // 风控 T8：设备指纹随行（服务器可见、玩家面永不出站 —— K3）
       deviceId: getDeviceId(),
     });
@@ -856,7 +862,7 @@ async function createAndJoin(replayed = false) {
     const res = await rest.createRoom({
       mode: "practice",
       gameType: store.activeGameType,
-      playerCount: GAME_META[store.activeGameType].defaultPlayerCount,
+      playerCount: store.effectivePlayerCount,
       ...(store.selectedBaseScore === null ? {} : { baseScore: store.selectedBaseScore }),
     });
     if (res.code !== 0) {
@@ -918,7 +924,11 @@ onMounted(() => {
    * ⚠️ 意向兑现用的是**当时选中的底分**（`selectedBaseScore` 跨页存活，`reset()` 不动它）
    * ⇒ 「再来一局」不需要用户重选。
    */
-  if (store.consumeRematch()) void match();
+  if (store.consumeRematch()) {
+    // 上一局人数回写到选择（闸已关时 setter 拒绝，`effectivePlayerCount` 自动回落）。
+    store.setSelectedPlayerCount(store.playerCount);
+    void match();
+  }
 });
 
 /**
@@ -979,13 +989,29 @@ onUnmounted(() => stopBgm());
           >
         </view>
 
+        <!-- 跑得快 2 人场：人数选择（仅当客户端能力 ∩ 服务端开放 > 1 时出现）。
+             ⚠️ 刻意放在 `.game__match` **之外**：既有探针按 `.game__match button`
+             取唯一的「开始游戏」，控件不得挤进那条选择器。 -->
+        <view v-if="!matching && store.activePlayerCounts.length > 1" class="game__players">
+          <button
+            v-for="n in store.activePlayerCounts"
+            :key="n"
+            type="button"
+            class="game__player-option"
+            :class="{ 'game__player-option--active': store.effectivePlayerCount === n }"
+            @click="store.setSelectedPlayerCount(n)"
+          >
+            {{ n }} 人
+          </button>
+        </view>
+
         <view class="game__match">
           <button
             v-if="!matching && store.activeHasSessions"
             type="button"
             class="btn btn--primary"
             :disabled="busy || selectedBaseScore === null"
-            @click="match"
+            @click="match()"
           >
             开始游戏
           </button>
@@ -1391,7 +1417,26 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-6 $ftl-space-9;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
+}
+/** 人数分段（跑得快 2 人场；仅 >1 个可选人数时渲染）。 */
+.game__players {
+  display: flex;
+  gap: $ftl-space-3;
+}
+.game__player-option {
+  padding: $ftl-space-2 $ftl-space-5;
+  border: $ftl-hairline solid $ftl-color-night-deep;
+  border-radius: $ftl-radius-pill;
+  background: rgba($ftl-color-night, 0.85);
+  color: $ftl-color-text-muted;
+  font-size: $ftl-font-sm;
+  line-height: 1.2;
+}
+.game__player-option--active {
+  border-color: $ftl-color-gold-deep;
+  background: rgba($ftl-color-night-deep, 0.85);
+  color: $ftl-color-gold-light;
 }
 /**
  * 中央大标题：白字 + **多层 `text-shadow`** 深色描边（§5.2.1 定稿的排版手法）。
@@ -1409,7 +1454,7 @@ onUnmounted(() => stopBgm());
     0 -2px 0 $ftl-color-night-deep;
 }
 .game__scene-base {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-lg;
   line-height: 1.2;
 }
@@ -1450,7 +1495,7 @@ onUnmounted(() => stopBgm());
 }
 /** 未选底分时的说明（按钮禁用 + 这里说**为什么** —— 本仓忌讳「点了没反应的活按钮」）。 */
 .game__hint {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1556,7 +1601,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .game__friends-head {
   display: flex;
@@ -1658,7 +1703,7 @@ onUnmounted(() => stopBgm());
   font-size: $ftl-font-sm;
 }
 .game__empty :deep(.wd-divider) {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 /** Task 9：会话提示 / 连接死态 / 本地提示统一由 `NoticeStack` 浮层渲染（挂 overlay 槽），
     本页不再有 `.game__notice` 宿主样式（旧悬浮胶囊规则随 `SessionNotice` 摘除一并删除）。 */
@@ -1737,7 +1782,7 @@ onUnmounted(() => stopBgm());
   border-color: rgba($ftl-color-on-primary, 0.45);
   background: transparent;
   background-image: none;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
 }
 .btn[disabled] {
@@ -1874,7 +1919,7 @@ onUnmounted(() => stopBgm());
   white-space: nowrap;
 }
 .game__cardcounter-card-desc {
-  color: rgba($ftl-color-on-primary, 0.65);
+  color: rgba($ftl-color-on-primary, 0.85);
   font-size: $ftl-font-xs;
   line-height: 1.3;
   white-space: nowrap;
@@ -1902,7 +1947,7 @@ onUnmounted(() => stopBgm());
   font-weight: 500;
 }
 .game__cardcounter-price-suffix {
-  color: rgba($ftl-color-on-primary, 0.55);
+  color: rgba($ftl-color-on-primary, 0.8);
   font-size: $ftl-font-xs;
   font-weight: 400;
 }

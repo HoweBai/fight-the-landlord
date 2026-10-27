@@ -147,3 +147,14 @@ SELECT `key`, `value`, `version`, `updated_by` FROM platform_config
 `game.paodekuai.risk.winRateThreshold` / `game.paodekuai.risk.minGames` 是**新增专有键**，
 没有旧平台键对应：回滚到旧镜像时**保留即可，无需回填**（旧镜像不读它们，留着无害）。
 回滚后跑得快不再参与胜率扫描；重新升级到含本片的镜像后自动恢复。
+
+### 5.5 B 组：按人数/自动限流 7 键 + risk_reviews.game_type（2026-10-26）
+
+- **配置键**：`game.paodekuai.risk.player2/3/4.*` 与 `risk.autoThrottleScore` 是新增专有键，
+  无旧平台键对应；回滚到旧镜像时保留即可（旧镜像不读）。
+- **`risk_reviews.game_type`**：回滚**先回滚代码、再 down 迁移**。旧代码不 select 新列，
+  保留列无害；但新代码运行期间 drop 列会直接报错。`down` 会删 `idx_game_status_id` 与
+  `game_type` 列，旧行不需要回填（旧代码不读）。
+- **新指标/告警**：`risk_scan_sql_failures_total` 与 `RiskScanSqlFailures` 对旧镜像是
+  未知指标/规则——旧镜像不 emit，告警保持静默；规则可保留，无需删除。
+- **slice-29 ⑥ 夹具**：仅测试改动（player3 键 + 3 真人），不涉及生产回滚。
