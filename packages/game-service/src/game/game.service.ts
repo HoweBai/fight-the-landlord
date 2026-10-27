@@ -1066,15 +1066,15 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     if (session.state === GameState.Ended || session.state === GameState.Init) return;
 
     // 时长优先级（逐字，⚠️ r2 次要 5）：overrideMs（R8① min）> forceNormal（R106）> 默认档。
+    // ⚠️ 本函数**只读** turnDeadlineAt，绝不写；唯一的 deadline 写入点是 rescheduleTurn
+    //   与动作/超时转移后的 setDeadlineAfterTransition。
     const d = this.durations();
     const now = Date.now();
     let timeoutMs: number;
     if (opts?.overrideMs !== undefined) {
       timeoutMs = Math.max(0, opts.overrideMs);
-      session.turnDeadlineAt = now + timeoutMs;
     } else if (opts?.forceNormal) {
       timeoutMs = d.normal;
-      session.turnDeadlineAt = now + timeoutMs;
     } else if (
       Number.isFinite(session.turnDeadlineAt) &&
       session.turnDeadlineAt > now
@@ -1082,9 +1082,8 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       // 窗口共享 deadline：重挂必须取剩余，不得每次重算满额。
       timeoutMs = session.turnDeadlineAt - now;
     } else {
-      // 旧会话/测试夹具可能没有有效 deadline：回退到按当前行动者计算。
+      // 旧会话/测试夹具可能没有有效 deadline：回退到按当前行动者计算，但不写回。
       timeoutMs = Math.max(0, this.deadlineFor(session) - now);
-      session.turnDeadlineAt = now + timeoutMs;
     }
     const runtime = this.runtimeFor(session);
     const timerFn = runtime.timerPhase(session) === 'bid' ? createBidTimer : createPlayTimer;
