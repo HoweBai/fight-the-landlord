@@ -29,7 +29,12 @@ data:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: prometheus-adapter, namespace: ftl-monitoring, labels: { app: prometheus-adapter } }
+metadata:
+  {
+    name: prometheus-adapter,
+    namespace: ftl-monitoring,
+    labels: { app: prometheus-adapter }
+  }
 spec:
   selector: { app: prometheus-adapter }
   ports:
@@ -37,7 +42,12 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: prometheus-adapter, namespace: ftl-monitoring, labels: { app: prometheus-adapter } }
+metadata:
+  {
+    name: prometheus-adapter,
+    namespace: ftl-monitoring,
+    labels: { app: prometheus-adapter }
+  }
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -67,6 +77,23 @@ spec:
             periodSeconds: 10
           volumeMounts:
             - { name: config, mountPath: /etc/adapter }
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
       volumes:
         - name: config
           configMap: { name: prometheus-adapter-config }
+        - name: tmp
+          emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault

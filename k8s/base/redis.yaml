@@ -29,7 +29,13 @@ spec:
       priorityClassName: ftl-data-critical
       nodeSelector: { ftl-data: "true" }
       terminationGracePeriodSeconds: 60
-      securityContext: { fsGroup: 999 }
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           image: redis:7-alpine
@@ -47,18 +53,29 @@ spec:
             requests: { cpu: 250m, memory: 1Gi }
             limits: { cpu: 250m, memory: 1Gi }
           readinessProbe:
-            exec: { command: ["redis-cli", "ping"] }
+            exec: { command: [ "redis-cli", "ping" ] }
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            exec: { command: ["redis-cli", "ping"] }
+            exec: { command: [ "redis-cli", "ping" ] }
             initialDelaySeconds: 30
             periodSeconds: 20
           volumeMounts:
             - { name: redis-data, mountPath: /data }
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata: { name: redis-data }
       spec:
         storageClassName: local-path
-        accessModes: [ReadWriteOnce]
+        accessModes: [ ReadWriteOnce ]
         resources: { requests: { storage: 5Gi } }

@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata: { name: edge, namespace: ftl, labels: { app: edge } }
+spec:
+  # k3s servicelb：80/443 由 Service 暴露，避免 hostNetwork（KSV-0009）。
+  # externalTrafficPolicy: Local 保留真实客户端 IP（替代原 hostNetwork 的 R431 目的）。
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector: { app: edge }
+  ports:
+    - { name: http, port: 80, targetPort: 80 }
+    - { name: https, port: 443, targetPort: 443 }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,16 +27,14 @@ spec:
       labels: { app: edge }
     spec:
       priorityClassName: ftl-data-critical
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-      dnsConfig:
-        searches:
-          - ftl-monitoring.svc.cluster.local
-          - ftl.svc.cluster.local
-          - svc.cluster.local
-          - cluster.local
       nodeSelector: { ftl-data: "true" }
-      securityContext: { runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001 }
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: edge
           image: ghcr.io/howebai/fight-the-landlord-edge:IMAGE_TAG_PLACEHOLDER
@@ -48,6 +59,22 @@ spec:
             periodSeconds: 20
           volumeMounts:
             - { name: caddy-data, mountPath: /data }
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
       volumes:
         - name: caddy-data
           persistentVolumeClaim: { claimName: caddy-data }
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
