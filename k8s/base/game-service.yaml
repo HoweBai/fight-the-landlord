@@ -33,6 +33,13 @@ spec:
       priorityClassName: ftl-data-critical
       nodeSelector: { ftl-data: "true" }
       terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: game-service
           image: ghcr.io/howebai/fight-the-landlord-game-service:IMAGE_TAG_PLACEHOLDER
@@ -58,3 +65,15 @@ spec:
             httpGet: { path: /api/health/live, port: 3003 }
             initialDelaySeconds: 30
             periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

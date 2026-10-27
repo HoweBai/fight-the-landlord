@@ -19,7 +19,7 @@ kind: ClusterRole
 metadata: { name: ftl-kube-state-metrics }
 rules:
   - apiGroups: [""]
-    resources: [pods, nodes, services, endpoints, namespaces, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, secrets, configmaps]
+    resources: [pods, nodes, services, endpoints, namespaces, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, configmaps]
     verbs: [list, watch]
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]

@@ -698,13 +698,19 @@ export function securityJobViolations(inp: SecurityInputs): string[] {
       if (!body.includes(need)) v.push(`trivy 步缺 ${need}（C7）`);
     }
   }
-  const FAMILY = /^(CVE-[0-9]{4}-[0-9]{4,}|GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}|AVD-DS-[0-9]{4})$/;
+  // 2026-10-27 k3s 加固：KSV 配置例外只允许「平台固有」的 3 条（node-exporter 主机采集、
+  // deployer 网络资源写权限）；新增 KSV 例外必须同步改白名单，避免通配式放宽。
+  const KSV_ALLOWED = new Set(['KSV-0010', 'KSV-0121', 'KSV-0056']);
+  const FAMILY = /^(CVE-[0-9]{4}-[0-9]{4,}|GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}|AVD-DS-[0-9]{4}|KSV-[0-9]{4})$/;
   const tLines = inp.trivyignore.split('\n').map((l) => l.trimEnd());
   for (let i = 0; i < tLines.length; i++) {
     const l = tLines[i];
     if (l === '' || l.startsWith('#')) continue;
     if (/[*]/.test(l) || /\bexp:/.test(l)) v.push(`.trivyignore 第 ${i + 1} 行含禁形态：${l}（C7）`);
     else if (!FAMILY.test(l)) v.push(`.trivyignore 第 ${i + 1} 行 ID 不在族白名单：${l}（C7）`);
+    else if (/^KSV-/.test(l) && !KSV_ALLOWED.has(l)) {
+      v.push(`.trivyignore 第 ${i + 1} 行 KSV 例外未登记在允许集：${l}（C7）`);
+    }
     if (i === 0 || !tLines[i - 1].startsWith('#')) v.push(`.trivyignore 第 ${i + 1} 行缺上一行 # 理由行（C7）`);
   }
   // C9：self-test 步（C2 已覆盖识别，这里显式点名步骤文本）
