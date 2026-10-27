@@ -392,13 +392,22 @@ export class GameService implements OnApplicationShutdown {
 
     const existing = await this.getSession(dto.roomCode);
     if (existing) {
-      // 幂等只对**同玩法/同人数/同规则快照**成立；不同玩法不得静默复用旧会话。
-      if (
-        existing.gameType !== gameType ||
-        existing.playerCount !== playerCount ||
-        JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)
-      ) {
-        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数/规则不一致');
+      /**
+       * 幂等只对**同玩法/同人数**成立；不同玩法不得静默复用旧会话。
+       *
+       * ⚠️ 审查 P1-3：**不得**把 rules 加入拒绝条件。room-service 每次重试都从
+       * 配置缓存重新组装 `pdkRules`；60s 热更新窗口内改任一键，重试载荷就会与
+       * 首次快照不同 ⇒ 误报 12012，strict 路径耗尽预算后房间被取消，而
+       * game-service 可能已有活会话（分叉）。局中改配置不影响在途局（设计 D19），
+       * **首次快照即真源**；差异只 WARN。
+       */
+      if (existing.gameType !== gameType || existing.playerCount !== playerCount) {
+        throw new GameError(ErrCode.GAME_UNAVAILABLE, '同一房间的玩法/人数不一致');
+      }
+      if (JSON.stringify(existing.rules ?? null) !== JSON.stringify(dto.rules ?? null)) {
+        this.logger.warn(
+          `Rules snapshot drift for room ${dto.roomCode}: keeping the first snapshot (config changed during start retry)`,
+        );
       }
       this.logger.log(`Reusing existing session for room ${dto.roomCode}`);
       return { roomCode: existing.roomCode, state: existing.state, version: existing.version };
