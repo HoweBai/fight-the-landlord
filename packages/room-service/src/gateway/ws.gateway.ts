@@ -13,6 +13,7 @@ import {
   ErrCode,
   isGameType,
   isPdkSettlementResult,
+  isMahjongSettlementResult,
   type Ack,
   type GameType,
   type GameView,
@@ -1001,7 +1002,14 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
       const finishedPayload =
         result && isPdkSettlementResult(result)
           ? { gameType: 'paodekuai' as const, winnerSeats: result.winnerSeats }
-          : { winner: result?.winner ?? ('landlord' as const) };
+          : result && isMahjongSettlementResult(result)
+            ? {
+                gameType: 'mahjong' as const,
+                winnerSeats: result.winnerSeats,
+                endReason: result.endReason,
+                huazhuSeats: result.huazhuSeats,
+              }
+            : { winner: result?.winner ?? ('landlord' as const) };
       this.broadcastLocal(event.roomCode, 'game.finished', event.version, finishedPayload);
       if (result) this.broadcastLocal(event.roomCode, 'game.settlement', event.version, result);
       // §9.6 归池（R207）+ 记录片 T5（设计 D2）：**局终内务链** —— 顶部读一次

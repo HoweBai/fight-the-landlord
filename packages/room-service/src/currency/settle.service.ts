@@ -6,6 +6,7 @@ import {
   ErrCode,
   isGameType,
   isPdkSettlementResult,
+  isMahjongSettlementResult,
   type CurrencyApplyData,
   type CurrencyBurn,
   type CurrencyEntryIn,
@@ -195,7 +196,26 @@ export function settlementShapeProblem(
     }
     return null;
   }
+  if (gameType === 'mahjong') {
+    if (!isMahjongSettlementResult(result)) return 'expected mahjong settlement vector';
+    if (result.playerCount !== seatNumbers.length) {
+      return `playerCount ${result.playerCount} != seats ${seatNumbers.length}`;
+    }
+    if (!Array.isArray(result.scoreChanges) || result.scoreChanges.length !== seatNumbers.length) {
+      return 'scoreChanges length does not match seats';
+    }
+    const seen = new Set<number>();
+    for (const change of result.scoreChanges) {
+      if (!seatNumbers.includes(change.seat) || seen.has(change.seat)) {
+        return `unknown or duplicate seat ${change.seat}`;
+      }
+      if (!Number.isSafeInteger(change.delta)) return `delta at seat ${change.seat} is not an integer`;
+      seen.add(change.seat);
+    }
+    return null;
+  }
   if (isPdkSettlementResult(result)) return 'expected doudizhu settlement result';
+  if (isMahjongSettlementResult(result)) return 'expected doudizhu settlement result';
   if (!Number.isInteger(result.landlordSeat) || !seatNumbers.includes(result.landlordSeat)) {
     return `landlordSeat ${String(result.landlordSeat)} invalid`;
   }
@@ -253,7 +273,16 @@ export function computeSettlement(input: {
     gameType === 'paodekuai' && isPdkSettlementResult(result)
       ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
       : null;
+  const mahjongBySeat =
+    gameType === 'mahjong' && isMahjongSettlementResult(result)
+      ? new Map(result.scoreChanges.map((c) => [c.seat, c.delta]))
+      : null;
   const rawOf = (seat: SettleSeatRef): number => {
+    if (gameType === 'mahjong') {
+      const raw = mahjongBySeat?.get(seat.seat);
+      if (raw === undefined) throw new Error(`mahjong scoreChanges missing seat ${seat.seat}`);
+      return raw;
+    }
     if (gameType === 'paodekuai') {
       const raw = pdkBySeat?.get(seat.seat);
       if (raw === undefined) {
@@ -264,6 +293,9 @@ export function computeSettlement(input: {
     }
     if (isPdkSettlementResult(result)) {
       throw new Error('settlement result shape mismatch: pdk vector in doudizhu game');
+    }
+    if (isMahjongSettlementResult(result)) {
+      throw new Error('settlement result shape mismatch: mahjong vector in doudizhu game');
     }
     return seat.seat === result.landlordSeat ? result.landlordScoreChange : result.farmerScoreChange;
   };

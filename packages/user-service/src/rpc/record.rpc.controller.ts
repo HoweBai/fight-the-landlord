@@ -431,6 +431,7 @@ export class RecordRpcController {
     // ── 昵称快照：user_id IN 查 users（机器人不进查询 ⇒ 快照取发送侧展示名）──────
     const nicknameById = await this.loadNicknameSnapshots(manager, req.seats);
 
+    if ('gameType' in req.result) return false;
     const ddzResult: DdzSettlementResult = req.result;
 
     // ── 1 行 game_records（列序与 DDL 逐字一致）──────────────────────────

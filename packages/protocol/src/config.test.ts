@@ -109,6 +109,18 @@ describe('完整键清单与客户端子集', () => {
       'currency.reliefThresholdCoins',
       // 代理分润（2026-10-26）：客户端邀请码开关（裸名 agentInviteEnabled）
       'agent.inviteEnabled',
+      // 四川麻将（2026-10-28）
+      'game.levels.mahjong',
+      'game.mahjong.enabled',
+      'game.mahjong.freeRoomEnabled',
+      'game.mahjong.goldRoomEnabled',
+      'game.mahjong.friendRoomEnabled',
+      'game.mahjong.freeBotFillEnabled',
+      'game.mahjong.goldBotFillEnabled',
+      'game.mahjong.entryMultiplier',
+      'game.mahjong.rakePercent',
+      'game.mahjong.sbrGoldEnabled',
+      'game.mahjong.rules',
     ]);
     expect(CLIENT_CONFIG_KEYS).toEqual([
       'baseScoreLevels', 'friendRoomEnabled', 'freeRoomEnabled', 'goldRoomEnabled',

@@ -3,6 +3,7 @@ import { GAME_META } from '../game';
 import { resolveGameType } from '../views';
 import { validateClientMessage, validateOutbound, ProtocolError } from '../validate';
 import { decodeMahjongHand, encodeMahjongHand, type Tile } from './tile';
+import { DEFAULT_CHENGDU_RULES, DEFAULT_SBR_RULES, parseMahjongRules } from './rules';
 import type { MahjongPlayerView, MahjongSettlementResult } from './types';
 import type { MahjongRulesConfig } from './rules';
 
@@ -139,5 +140,26 @@ describe('mahjong protocol', () => {
     expect(() =>
       validateOutbound({ type: 'game.settlement', version: 1, payload: bad }),
     ).toThrow(/zero-sum/);
+  });
+
+  it('rules preset: chengdu 6/32×, sbr 3/8×, overrides and unknown key', () => {
+    expect(parseMahjongRules(undefined)).toMatchObject({
+      preset: 'chengdu',
+      fanCap: 6,
+      exchangeThreeEnabled: true,
+      huazhuMode: 'payEach',
+    });
+    expect(parseMahjongRules({ preset: 'sbr' })).toMatchObject({
+      preset: 'sbr',
+      fanCap: DEFAULT_SBR_RULES.fanCap,
+      exchangeThreeEnabled: false,
+      huazhuMode: 'burn48',
+      gangTransfer: 'none',
+    });
+    expect(parseMahjongRules({ preset: 'chengdu', fanCap: 4 }).fanCap).toBe(4);
+    expect(parseMahjongRules({ preset: 'chengdu', fanTable: { qingYiSe: 5 } }).fanTable.qingYiSe).toBe(5);
+    expect(() => parseMahjongRules({ nope: 1 })).toThrow(/unknown key/);
+    expect(() => parseMahjongRules({ fanCap: 99 })).toThrow(/fanCap/);
+    expect(DEFAULT_CHENGDU_RULES.preset).toBe('chengdu');
   });
 });

@@ -328,11 +328,19 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
         return this.doudizhuEnabled();
       case 'paodekuai':
         return this.paodekuaiEnabled();
+      case 'mahjong':
+        return this.mahjongEnabled();
       default: {
         const exhaustive: never = gameType; // 新增玩法时这里编译失败，防漏接
         return exhaustive;
       }
     }
+  }
+
+  /** 麻将总开关：缺失/非 boolean ⇒ false（暗上线）。 */
+  private mahjongEnabled(): boolean {
+    const value = this.snapshot?.['game.mahjong.enabled']?.value;
+    return typeof value === 'boolean' ? value : false;
   }
 
   /**
