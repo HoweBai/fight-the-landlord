@@ -32,6 +32,7 @@ import {
 } from '../lib/http';
 import { mysqlExec, mysqlNum } from '../lib/mysql';
 import { execCurl, seriesValueExact, sumMetric } from '../lib/prom-text';
+import { countSnapshotApplied } from '../lib/snapshot-log';
 
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const TAG = Date.now().toString(36).toUpperCase().slice(-5);
@@ -197,37 +198,37 @@ async function readAdminConfig(admin: string): Promise<AdminConfig> {
 
 interface SnapshotTarget {
   version: number;
-  /** PUT **之前**该版本日志行的条数（还原时必须出现**新增**一条，防「旧行假通过」）。 */
-  baseline: number;
+  /** PUT **之前**取的时间锚：只数 `ts ≥ sinceMs` 的行（旧行不假通过；滑动窗口老化也无关）。 */
+  sinceMs: number;
 }
 
-function snapshotLineCount(version: number): number {
-  const needle = `config snapshot applied (version=${version})`;
-  return currencyLogs(300).split(needle).length - 1;
-}
-
-/** PUT 档位表并返回「应出现的快照版本 + 基线行数」（`max(全局限, 本键版本+1)`，照 slice-31 口径）。 */
+/** PUT 档位表并返回「应出现的快照版本 + 时间锚」（`max(全局限, 本键版本+1)`，照 slice-31 口径）。 */
 async function putLevels(admin: string, levels: unknown): Promise<SnapshotTarget> {
   const before = await readAdminConfig(admin);
   const version = Math.max(before.version, (before.config[LEVELS_KEY]?.version ?? 0) + 1);
-  const baseline = snapshotLineCount(version); // 🔴 必须在 PUT 之前取
+  const sinceMs = Date.now(); // 🔴 必须在 PUT 之前取：发布→响应只有毫秒级窗口，取后取会漏掉自己那行
   const put = await adminPutConfig(LEVELS_KEY, levels, admin);
   if (put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`PUT ${LEVELS_KEY} 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
-  return { version, baseline };
+  return { version, sinceMs };
 }
 
-/** 等**PUT 之后新增**一条该版本的 `config snapshot applied` 行（安全网重拉也算——它读的是新值）。 */
+/**
+ * 等**PUT 之后**出现该版本的 `config snapshot applied` 行（安全网重拉也算——它读的是新值）。
+ * ⚠️ 判据串的单一真源 = `lib/snapshot-log.ts`（只认 `version=N\b`）：currency-service 的行是
+ * `config snapshot applied (version=N, reliefEnabled=…)`，写死右括号曾在权威轮恒红
+ * （2026-10-27 根因：计数恒 0 ⇒ 70s 必超时）。
+ */
 async function waitSnapshotApplied(target: SnapshotTarget): Promise<void> {
   const hit = await pollUntil(
-    () => snapshotLineCount(target.version) > target.baseline,
-    (found) => found,
+    () => countSnapshotApplied(currencyLogs(300), target.version, target.sinceMs),
+    (found) => found > 0,
     70_000,
   );
   if (!hit.ok) {
     throw new ConformanceError(
-      `currency-service 70s 内未出现新的配置快照应用行（version=${target.version}，基线 ${target.baseline}）`,
+      `currency-service 70s 内未出现 PUT 之后的配置快照应用行（version=${target.version}）`,
     );
   }
 }

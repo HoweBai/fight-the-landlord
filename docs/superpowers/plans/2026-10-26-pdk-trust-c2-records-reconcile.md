@@ -183,7 +183,7 @@
 | C1 | 阻断 | PDK `ended_at` 是 BIGINT：TypeORM/mysql2 默认 `bigNumberStrings=true` ⇒ 读回数字字符串，`Date.parse('1793…')` = NaN；pdk 记录侧/台费侧判定永久失明，假库与 slice-35 均掩盖 | 已修：`toEpochMs` 先按 epoch 数字串解析再回退 `Date.parse`；fake 忠实返回 BIGINT 字符串；新增 pdk 字符串回归用例；slice-35 增 pdk 记录侧 missing sentinel（Q room）。判别力自证：临时回退 ⇒ pdk 回归 + byGame 两例当场红 |
 | I1 | 高 | 10k/20k 基准测的是假库 O(记录×玩家) 关联（20k 并行负载 6.2s），非服务开销 | 已修：fake 按 recordId 建玩家索引；读数 52.6ms/128.6ms（<5s，无优化登记） |
 | I2 | 高 | spec §5.1 要求异常类别聚合（样例 room/version）未实现，告警 runbook 无落点 | 已修：`logSamples()` 每桶最多 3 条样例/玩法一行；补日志聚合用例（第 4 条不入样例） |
-| I3 | 高 | slice-35 档位还原等待用全局 MAX 版本 + 旧日志可假通过 | 已修：`putLevels` 在 PUT 前取该版本日志行基线，`waitSnapshotApplied` 要求**新增**一行（安全网重拉也读新值）；超时 70s |
+| I3 | 高 | slice-35 档位还原等待用全局 MAX 版本 + 旧日志可假通过 | 已修：`putLevels` 在 PUT **之前**取时间锚，`waitSnapshotApplied` 只数 `ts ≥ 锚` 的行并要求 ≥1 条（安全网重拉也读新值）；超时 70s。**2026-10-27 权威轮首红复核订正**：原判据串是 `config snapshot applied (version=N)`（版本号后紧跟 `)`），而 currency-service 实际行是 `(version=N, reliefEnabled=…)` ⇒ 计数恒 0、必超时（产品链路正常，属测试缺陷）。改为共享 `lib/snapshot-log.ts`（`version=N\b` 正则 + 时间锚；同时消除滑动窗口「旧行老化 vs 新行到达相抵」假红），并补纯函数单测（真实行格式 + 锚前旧行/其他版本负对照） |
 | M1 | 低 | verify-monitoring 的 Mismatch 谓词只钉 6 桶中 2 个 metric 名 | 已修：六名全列（267 checks） |
 | M2 | 低 | 超时错误文案用默认 60s 而非注入值 | 已修：`runSnapshot(..., timeoutMs)` 透传 |
 | M3 | 低 | `settleByRoomVersion` 只写不读（死代码） | 已修：删除 |

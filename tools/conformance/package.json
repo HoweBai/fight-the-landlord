@@ -2,10 +2,11 @@
   "name": "@fight-the-landlord/conformance",
   "version": "0.1.0",
   "private": true,
-  "description": "端到端联调测试（真实后端 + 真实 socket.io 客户端）。刻意不提供 test 脚本：它需要 3000-3003 的服务在跑，挂进 turbo run test 会让无容器环境假红。用 pnpm conformance 显式运行。",
+  "description": "端到端联调测试（真实后端 + 真实 socket.io 客户端）。`test` 只跑**纯函数单测**（不碰容器，能挂进 turbo run test）；需要真栈的切片仍用 pnpm conformance 显式运行。",
   "scripts": {
     "build": "tsc",
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
     "conformance": "node dist/run.js",
     "multi-replica": "node dist/multi-replica-main.js",
     "ws-load": "node dist/ws-load.js",
@@ -35,6 +36,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "js-yaml": "4.3.2",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.12"
   }
 }
