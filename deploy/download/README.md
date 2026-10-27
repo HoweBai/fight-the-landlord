@@ -10,7 +10,7 @@
 
 | 步骤 | 命令 / 行为 |
 |---|---|
-| ① 打包 | HBuilderX **云打包**（云端证书）：见下方命令；产物下载地址用 `cli pack status` 查 |
+| ① 打包 | `bash scripts/deploy/pack-apk.sh <host[:port]>`（自动写端点 → HBuilderX 云打包 → 校验产物；本机 HBuilderX 路径可用 `HX_CLI` 覆盖） |
 | ② 上传资产 | `bash scripts/deploy/publish-apk.sh <apk路径>` → 创建/替换 Release **`apk-latest`** 的资产（文件名保持不变） |
 | ③ 构建带上 | `images` workflow 在 `build-images.sh` 前自动 `gh release download apk-latest --pattern '*.apk' -D deploy/download`；**拉不到就失败（fail-closed）** ⇒ 线上 `*.apk` 不会静默 404 |
 | ④ 只预览 | `bash scripts/deploy/preview.sh download`（秒传进运行中的 `ftl-edge`，不重建镜像） |
@@ -18,6 +18,19 @@
 
 ⚠️ 手动本地构建（`build-images.sh`）仍然按本目录内容烘镜像 —— 若目录为空，线上 `*.apk` 就是 404。
 ⚠️ Release tag `apk-latest` 不是版本 tag（不匹配 `v*` / `dev-*`）⇒ 不触发任何 workflow。
+
+## ⚠️ 端点注入（2026-10-27 白屏事故）
+
+App 没有「同源」概念：`apps/client/.env.production.local` 必须存在并写两个**真机可达**的绝对地址
+（HBuilderX 云打包读 `.env*` 文件，**不经过** `scripts/build-app.mjs`）：
+
+```
+VITE_WS_ENDPOINT=https://<host>
+VITE_API_BASE=https://<host>/api
+```
+
+缺了它 ⇒ App 启动 `session.start` 抛「VITE_WS_ENDPOINT 为空」⇒ `createInstanceContext` 失败 ⇒ **白屏**。
+`pack-apk.sh` 会自动写该文件并**校验产物 app-service.js 真的含端点**，缺端点拒绝发布。
 
 ## HBuilderX 云打包命令（Windows，本机已装 HBuilderX）
 

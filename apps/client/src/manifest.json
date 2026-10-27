@@ -2,8 +2,8 @@
     "name" : "优比棋牌",
     "appid" : "__UNI__CE6765E",
     "description" : "优比棋牌（多人在线棋牌平台）客户端（uni-app 多端）",
-    "versionName" : "0.1.1",
-    "versionCode" : "101",
+    "versionName" : "0.1.2",
+    "versionCode" : "102",
     "transformPx" : false,
     "app-plus" : {
         "screenOrientation" : [ "landscape-primary", "landscape-secondary" ],
