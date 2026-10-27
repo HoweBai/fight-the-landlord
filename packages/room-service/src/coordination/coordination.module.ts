@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConnectionRegistry } from './connection-registry.service';
+import { FinalizationGuard } from './finalization-guard.service';
+import { LeaderLease } from './leader-lease.service';
 
 /**
  * 多副本协调件（spec 2026-10-27 D12/D13）。
@@ -8,7 +10,7 @@ import { ConnectionRegistry } from './connection-registry.service';
  */
 @Global()
 @Module({
-  providers: [ConnectionRegistry],
-  exports: [ConnectionRegistry],
+  providers: [ConnectionRegistry, LeaderLease, FinalizationGuard],
+  exports: [ConnectionRegistry, LeaderLease, FinalizationGuard],
 })
 export class CoordinationModule {}

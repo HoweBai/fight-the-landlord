@@ -1,7 +1,8 @@
 // packages/room-service/src/currency/settle.sweeper.ts
-import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit, Optional, Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
+import { LeaderLease } from '../coordination/leader-lease.service';
 import { runWithTrace, setGame } from '@fight-the-landlord/shared';
 import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import {
@@ -40,6 +41,12 @@ export const SETTLE_SWEEP_INTERVAL_MS = 10_000;
 @Injectable()
 export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(SettleSweeper.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /** 清扫链的定时器（自重排；同 reaper：不是 `setInterval`）。 */
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** 关停闸：在途一轮的迟到自重排不得复活循环。 */
@@ -69,7 +76,8 @@ export class SettleSweeper implements OnModuleInit, OnApplicationShutdown {
   /** 一轮（ALS 包裹 + 轮级 catch；末尾接自重排）。 */
   private runOnce(): void {
     runWithTrace({ traceId: randomUUID(), source: 'timer' }, () => {
-      void this.sweepOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.sweepOnce() : undefined))
         .catch((err) => this.logger.error(`Settle sweep failed: ${String(err)}`))
         .finally(() => {
           // 关停闸（照 `rooms.reaper.ts` 的成例）：在途一轮的迟到回执不得在关停后再排定时器。

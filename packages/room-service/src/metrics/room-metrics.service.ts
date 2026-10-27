@@ -5,7 +5,10 @@ import {
   Logger,
   type OnApplicationShutdown,
   type OnModuleInit,
+  Optional,
+  Inject,
 } from '@nestjs/common';
+import { LeaderLease } from '../coordination/leader-lease.service';
 import { runWithTrace, setGame } from '@fight-the-landlord/shared';
 import { isGameType, type GameType } from '@fight-the-landlord/protocol';
 import { Redis } from 'ioredis';
@@ -35,6 +38,12 @@ export const ROOM_METRICS_SAMPLE_INTERVAL_MS = 15_000;
 @Injectable()
 export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(RoomMetricsService.name);
+
+  /** 多副本：定时回调边界的单实例门（属性注入，保持构造签名不变）。 */
+  @Optional() @Inject(LeaderLease) private readonly leader: LeaderLease | null = null;
+  private leaderGate(): Promise<boolean> {
+    return this.leader ? this.leader.isLeader() : Promise.resolve(true);
+  }
   /** 自重排定时器（`setTimeout` 链；片⑦ 三处循环的同款形态）。 */
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** 关停闸（照 `ConfigCacheService` / `records-cleanup.service.ts` 的成例）。 */
@@ -59,7 +68,8 @@ export class RoomMetricsService implements OnModuleInit, OnApplicationShutdown {
    */
   private runRound(): void {
     runWithTrace({ traceId: randomUUID(), source: 'timer' }, () => {
-      void this.sampleOnce()
+      void this.leaderGate()
+        .then((ok) => (ok ? this.sampleOnce() : undefined))
         .catch((err: unknown) => this.logger.error(`Room metrics sample failed: ${String(err)}`))
         .finally(() => {
           // 🔴 关停闸：在途一轮的迟到回执不得在关停后再排定时器。
