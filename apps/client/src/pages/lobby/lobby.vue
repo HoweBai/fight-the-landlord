@@ -740,6 +740,67 @@ const currentRuleMode = computed(() =>
     : undefined,
 );
 
+/**
+ * 把 description 纯字符串解析成结构化段数组（方案 A：运行时解析、不改数据模型）。
+ *
+ * 输入格式（gameModes.ts 的字符串约定）：
+ *   【段标题】\n
+ *   正文行…\n
+ *   · 列表项…\n
+ *   \n
+ *   【下一段标题】\n
+ *   …
+ *
+ * 输出：Section[] —— 每段有 title（去括号后）和 lines 数组。
+ * lines 的 type:
+ *   'bullet' — 以 `· ` 开头的行（去掉前缀）
+ *   'text'   — 普通正文行
+ *
+ * ⚠️ 不改 GameMode 接口 —— 两个玩法的 description 字符串保持原样。
+ */
+interface RuleLine {
+  readonly type: 'text' | 'bullet';
+  readonly content: string;
+}
+interface RuleSection {
+  readonly title: string;
+  readonly lines: RuleLine[];
+}
+const ruleSections = computed<readonly RuleSection[]>(() => {
+  const desc = currentRuleMode.value?.description;
+  if (!desc) return [];
+
+  const sections: RuleSection[] = [];
+  // 按 \n\n 分段 —— gameModes.ts 里段之间都用双换行隔开
+  const rawSections = desc.split(/\n\n+/);
+
+  for (const raw of rawSections) {
+    const lines = raw.split('\n').map((l) => l.trimEnd());
+    if (lines.length === 0) continue;
+
+    // 首行是【xxx】段标题，正则去括号
+    const titleMatch = lines[0]?.match(/^【(.+?)】$/);
+    if (!titleMatch) continue;
+
+    const title = titleMatch[1]!;
+    const bodyLines: RuleLine[] = [];
+    for (const l of lines.slice(1)) {
+      const trimmed = l.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith('·')) {
+        bodyLines.push({
+          type: 'bullet',
+          content: trimmed.replace(/^·\s*/, ''),
+        });
+      } else {
+        bodyLines.push({ type: 'text', content: trimmed });
+      }
+    }
+    sections.push({ title, lines: bodyLines });
+  }
+  return sections;
+});
+
 function openRule(modeId: string) {
   ruleModeId.value = modeId;
   ruleOpen.value = true;
@@ -1134,9 +1195,32 @@ onUnmounted(() => stopBgm());
               关闭
             </button>
           </view>
-          <!-- 正文区：white-space: pre-wrap 保留 description 里的 \n 换行；
-               overflow-y: auto 让长内容可滚；max-height 限死面板高度不溢出屏幕。 -->
-          <text class="lobby__rule-body">{{ currentRuleMode.description }}</text>
+          <!--
+            正文区：结构化渲染（运行时解析 description → section 列表）。
+            保留 .lobby__rule-body class（测试断言依赖 text() 包含「王炸」）。
+            overflow-y: auto 让长内容可滚；max-height 限死面板高度不溢出屏幕。
+          -->
+          <view class="lobby__rule-body">
+            <view
+              v-for="(section, si) in ruleSections"
+              :key="si"
+              class="lobby__rule-section"
+            >
+              <view class="lobby__rule-section-title">
+                {{ section.title }}
+              </view>
+              <template v-for="(line, li) in section.lines" :key="li">
+                <text
+                  v-if="line.type === 'text'"
+                  class="lobby__rule-line"
+                >{{ line.content }}</text>
+                <view v-else class="lobby__rule-bullet">
+                  <text class="lobby__rule-bullet-dot">·</text>
+                  <text class="lobby__rule-bullet-text">{{ line.content }}</text>
+                </view>
+              </template>
+            </view>
+          </view>
         </view>
       </view>
     </view>
@@ -1453,15 +1537,63 @@ onUnmounted(() => stopBgm());
   font-weight: 700;
   line-height: 1.2;
 }
-/** 规则正文：保留 \n 换行；overflow-y:auto 让长内容可滚；max-height 卡死面板高度。 */
+/**
+ * 规则正文区（结构化渲染，2026-10-27 UI 层次优化）。
+ * 不再是一段 white-space: pre-wrap 的纯文本 —— 而是多个 section（段）
+ * 组成的 flex 列，每段有标题 + 正文/列表。
+ */
 .lobby__rule-body {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-6;
   overflow-y: auto;
-  color: rgba($ftl-color-on-primary, 0.9);
+  padding-right: $ftl-space-2;
+}
+/**
+ * 单个段（section）：段之间有 gap（由 body 提供），段内有自己的间距。
+ */
+.lobby__rule-section {
+  display: flex;
+  flex-direction: column;
+  gap: $ftl-space-3;
+}
+/**
+ * 段标题：左色条（gold 4px 宽）+ 字重 700 + 稍大字号 + 金色。
+ * 用 border-left 做色条，padding-left 出间距 —— 比 ::before 伪元素简单。
+ */
+.lobby__rule-section-title {
+  padding-left: $ftl-space-3;
+  border-left: 4px solid $ftl-color-gold;
+  color: $ftl-color-gold-light;
   font-size: $ftl-font-md;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  font-weight: 700;
+  line-height: 1.3;
+}
+/** 普通正文行：基础字号 + 0.9 透明度 + 1.7 行距（比原来 1.6 松一点）。 */
+.lobby__rule-line {
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
+  line-height: 1.7;
+}
+/** 列表行：flex 让圆点和文字对齐；圆点 0.7 透明度 + 缩进 8px。 */
+.lobby__rule-bullet {
+  display: flex;
+  gap: $ftl-space-2;
+  align-items: flex-start;
+}
+.lobby__rule-bullet-dot {
+  flex: 0 0 auto;
+  margin-top: 2px; /* 微调让圆点和文字基线对齐 */
+  color: rgba($ftl-color-gold, 0.8);
+  font-size: $ftl-font-md;
+  line-height: 1.7;
+}
+.lobby__rule-bullet-text {
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: $ftl-font-sm;
+  line-height: 1.7;
 }
 /**
  * 规则弹层里的按钮：次按钮语言（§5.2.1）——和菜单/救助弹层同款
