@@ -2,7 +2,14 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Redis } from 'ioredis';
-import type { ConfigKey, ConfigSnapshot } from '@fight-the-landlord/protocol';
+import type {
+  BaseScoreLevel,
+  ConfigKey,
+  ConfigSnapshot,
+  EntryFeePercent,
+  GameType,
+} from '@fight-the-landlord/protocol';
+import { entryFeePercentsFromLevels } from '@fight-the-landlord/protocol';
 import { runWithTrace } from '@fight-the-landlord/shared';
 import { ConfigClient } from './config.client';
 
@@ -273,6 +280,26 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
       : CURRENCY_RECONCILE_DEFAULT_INTERVAL_MS;
   }
 
+  /**
+   * C2：某玩法的台费档位费率表。返回 `null` = 快照不可用/档位缺失/非法（配置不可用，
+   * 调用方跳过台费检查）；返回 `[]` = 合法空表；合法全 0 档位 ⇒ **非空全 0 数组**
+   * （不丢档位，`entryFeeOf` 自然得 0）。
+   *
+   * 读法：`game.levels.<gameType>` 存在 ⇒ 只认它（非法 ⇒ null，不回退）；缺失 ⇒ 斗地主回退
+   * 旧 `game.baseScoreLevels`；跑得快无旧键 ⇒ null。
+   */
+  entryFeePercents(gameType: GameType): readonly EntryFeePercent[] | null {
+    const key = gameType === 'paodekuai' ? 'game.levels.paodekuai' : 'game.levels.doudizhu';
+    const primary = this.snapshot?.[key]?.value;
+    if (primary !== undefined) {
+      return isValidLevels(primary) ? entryFeePercentsFromLevels(primary) : null;
+    }
+    if (gameType !== 'doudizhu') return null;
+    const legacy = this.snapshot?.['game.baseScoreLevels']?.value;
+    if (legacy === undefined) return null;
+    return isValidLevels(legacy) ? entryFeePercentsFromLevels(legacy) : null;
+  }
+
   /** 首次快照就位的等待：六循环首排动作（⚙️5）的**有界等待消费**（测试/生产共用 —— 生产侧 = `bootFirstScheduling()` 的就绪路 race）。 */
   waitForFirstSnapshot(): Promise<void> {
     if (this.snapshot !== null) return Promise.resolve();
@@ -405,4 +432,23 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
       });
     }, this.safetyNetMs);
   }
+}
+
+/** C2：档位表形状自保（只用于台费对账；非法 ⇒ 配置不可用，不猜）。 */
+function isValidLevels(value: unknown): value is BaseScoreLevel[] {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const level = item as Partial<BaseScoreLevel>;
+    return (
+      typeof level.name === 'string' &&
+      level.name.length > 0 &&
+      Number.isInteger(level.baseScore) &&
+      (level.baseScore as number) > 0 &&
+      (level.entryFeePercent === undefined ||
+        (Number.isInteger(level.entryFeePercent) &&
+          level.entryFeePercent >= 0 &&
+          level.entryFeePercent <= 100))
+    );
+  });
 }

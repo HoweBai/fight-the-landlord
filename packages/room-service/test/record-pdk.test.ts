@@ -50,6 +50,10 @@ function makeHarness() {
   config.paodekuaiTwoPlayerEnabled.mockReturnValue(true);
   const rooms = new RoomsService(asRedis(redis), asConfigCache(config));
   const recordClient = { write: vi.fn().mockResolvedValue(true) };
+  const recordOutbox = {
+    enqueue: vi.fn().mockResolvedValue({ status: 'queued' as const, raw: 'raw' }),
+    ack: vi.fn().mockResolvedValue(true),
+  };
   const settle = { settle: vi.fn().mockResolvedValue(undefined), bindBroadcast: vi.fn() };
   const gateway = new WsGateway(
     asRedis(redis),
@@ -65,10 +69,11 @@ function makeHarness() {
     settle as never,
     { report: vi.fn() } as never,
     { ensure: vi.fn().mockResolvedValue(new Map()) } as never,
+    recordOutbox as never,
   );
   const serverEmit = vi.fn();
   gateway.server = { to: vi.fn(() => ({ emit: serverEmit })) } as never;
-  return { redis, config, rooms, recordClient, settle, gateway, serverEmit };
+  return { redis, config, rooms, recordClient, recordOutbox, settle, gateway, serverEmit };
 }
 
 async function makeThreeSeatPdkRoom(redis: ReturnType<typeof createFakeRedis>, rooms: RoomsService) {

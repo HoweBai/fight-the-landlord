@@ -1006,7 +1006,7 @@ const IA_KEY_SET = new Set(
 );
 /** 快照表外键的虚拟域（计数 0 时不渲染）。 */
 const UNGROUPED_DOMAIN_ID = '__ungrouped';
-const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '' });
+const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDomainId: null });
 
 /**
  * 左树配置叶 id ⇄ IA 域 id（HTML 静态树用固定叶 id；IA 表保留源生域 id）。
@@ -1020,7 +1020,6 @@ const CFG_NAV = [
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
   { leaf: 'nav-cfg-dataad-btn', count: 'nav-count-dataad', domain: 'dataAds' },
-  { leaf: 'nav-cfg-agent-btn', count: 'nav-count-agent', domain: 'agent' },
   { leaf: 'nav-cfg-ungrouped-btn', count: 'nav-count-ungrouped', domain: UNGROUPED_DOMAIN_ID },
 ];
 
@@ -1279,11 +1278,43 @@ const agentsState = {
     detail: null,
   },
   adjustments: { status: '', page: 0, pageSize: 20, rows: [], loading: false, loaded: false, done: true },
-  recon: { loading: false, summary: null },
+  recon: { loading: false, summary: null, armed: false },
   audit: { page: 0, rows: [], loading: false, loaded: false },
-  loading: false,
-  loaded: false,
+  /** 页签状态（2026-10-26 代理工作台）：默认列表；epoch 登出递增，用于丢弃迟到响应。 */
+  tab: 'list',
+  epoch: 0,
+  roleApplied: false,
+  list: { loaded: false, loading: false },
+  treeReq: { loaded: false, loading: false },
+  settingsReq: { loaded: false, loading: false },
 };
+
+/** 代理工作台页签（左→右；id 同时用于状态与静态闸断言）。 */
+const AGENT_TABS = [
+  { id: 'list', btn: 'agent-tab-list', panel: 'agent-panel-list' },
+  { id: 'settlements', btn: 'agent-tab-settlements', panel: 'agent-panel-settlements' },
+  { id: 'adjustments', btn: 'agent-tab-adjustments', panel: 'agent-panel-adjustments' },
+  { id: 'recon', btn: 'agent-tab-recon', panel: 'agent-panel-recon' },
+  { id: 'audit', btn: 'agent-tab-audit', panel: 'agent-panel-audit' },
+  { id: 'settings', btn: 'agent-tab-settings', panel: 'agent-panel-settings' },
+];
+
+/** 页签 UI（active + 面板显隐）；数据加载归 loadAgents。 */
+function applyAgentTabUI(tab) {
+  for (const t of AGENT_TABS) {
+    const btn = $(t.btn);
+    const panel = $(t.panel);
+    if (btn) btn.classList.toggle('active', t.id === tab);
+    if (panel) panel.hidden = t.id !== tab;
+  }
+}
+
+/** 切页签：只切 UI；设置页签每次激活重建邀请码行（表单不回填，防丢未保存编辑）。 */
+function switchAgentTab(tab) {
+  agentsState.tab = tab;
+  applyAgentTabUI(tab);
+  if (tab === 'settings') renderAgentInviteRow();
+}
 
 const riskState = {
   filter: { status: '', gameType: '' },
@@ -1384,6 +1415,9 @@ const canPayWrite = () => roleOf() === 'super_admin' || roleOf() === 'finance';
 const canAgentWrite = () => roleOf() === 'super_admin';
 /** 代理结算动作门面：super_admin | finance（P-ag3；打款/驳回）。 */
 const canAgentSettle = () => roleOf() === 'super_admin' || roleOf() === 'finance';
+/** 配置键写面门面：super_admin 全量；operator 除 agent.*（网关 P-ag0 字面路由）外可写。 */
+const canWriteConfigKey = (key) =>
+  roleOf() === 'super_admin' || (roleOf() === 'operator' && !key.startsWith('agent.'));
 
 /** 顶栏状态条（登录错误 / 保存反馈共用）。kind ∈ info|ok|warn|err。 */
 function showMsg(text, kind = 'info') {
@@ -1471,8 +1505,11 @@ async function login(username, password) {
 
 /** 拉全量一百零一键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
+  const epoch = agentsState.epoch;
   const { status, body } = await api('/api/admin/config');
   if (handleAuth(status)) return;
+  // 登出后迟到的 200 不得回填快照（epoch 变化或会话已失效 ⇒ 丢弃）。
+  if (!sessionStorage.getItem(TOKEN_KEY) || !agentsResponseFresh(epoch)) return;
   if (status === 0) return showMsg('无法连接服务端', 'err');
   if (status !== 200 || !body?.data?.config) {
     return showMsg(`加载失败（HTTP ${status}）`, 'err');
@@ -1480,6 +1517,7 @@ async function loadAll() {
   currentConfig = body.data.config;
   updateCfgNav();
   if (activeView === 'config') renderConfigRows({ preserve: true });
+  if (activeView === 'agents' && agentsState.tab === 'settings') renderAgentInviteRow();
 }
 
 /* ── v2.1 配置中心：左树计数/域切换 + 整页内联设置行（无中列、无独立编辑器）──── */
@@ -1551,10 +1589,16 @@ function normalizeCfgDomain() {
       domainSnapshotCount(IA_DOMAINS.find((d) => d.id === m.domain)) > 0,
   );
   cfgUI.domainId = first ? first.domain : UNGROUPED_DOMAIN_ID;
+  cfgUI.tabId = null;
+  cfgUI.tabDomainId = null;
 }
 
 /** 点左树配置叶：切域（已在 config 视图只重渲染，避免重复懒加载与状态复位）。 */
 function openCfgDomain(domainId) {
+  if (domainId !== cfgUI.domainId) {
+    cfgUI.tabId = null;
+    cfgUI.tabDomainId = null;
+  }
   cfgUI.domainId = domainId;
   cfgUI.query = '';
   $('settings-search').value = '';
@@ -1581,7 +1625,7 @@ function renderSettings(view = activeView) {
   else $('ad-channel-view').hidden = true;
 }
 
-/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则按当前域 tabs 顺序出分区标题。 */
+/** 设置行整页渲染：搜索态扁平「搜索结果（N）」；否则当前域（多页签域出页签条 + 常驻面板）。 */
 function renderConfigRows({ preserve = false } = {}) {
   const host = $('settings-rows');
   const scrollEl = $('settings-host');
@@ -1592,47 +1636,33 @@ function renderConfigRows({ preserve = false } = {}) {
 
   host.textContent = '';
   const q = cfgUI.query.trim().toLowerCase();
-  let sections;
-  let headerDomain = null;
+  let rendered = 0;
+  let multiTab = false;
   if (q) {
     const keys = snapshotKeys().filter(
       (k) =>
         !LEGACY_KEY_SET.has(k) &&
         (k.toLowerCase().includes(q) || notesHaystack(k).includes(q)),
     );
-    sections = [{ name: `搜索结果（${keys.length}）`, keys }];
+    if (keys.length > 0) {
+      const title = document.createElement('h3');
+      title.className = 'settings-section';
+      title.textContent = `搜索结果（${keys.length}）`;
+      host.append(title);
+      for (const key of keys) {
+        host.append(buildKeyCard(key));
+        rendered += 1;
+      }
+    }
   } else {
     normalizeCfgDomain();
     const domain = domainById(cfgUI.domainId);
-    headerDomain = domain;
-    sections = domain
-      ? domain.tabs
-          .map((t) => ({
-            name: t.name,
-            keys: t.keys.filter((k) => k in currentConfig),
-          }))
-          .filter((s) => s.keys.length > 0)
-      : [];
-  }
-
-  let rendered = 0;
-  // 玩法域顶部开关卡（搜索态不渲染；搜索态里该键作为普通布尔行走 buildKeyCard）。
-  for (const key of headerDomain?.headerKeys ?? []) {
-    host.append(buildGameHeader(headerDomain, key));
-    rendered += 1;
-  }
-  for (const sec of sections) {
-    if (sec.keys.length === 0) continue;
-    const title = document.createElement('h3');
-    title.className = 'settings-section';
-    title.textContent = sec.name;
-    host.append(title);
-    for (const key of sec.keys) {
-      host.append(buildKeyCard(key));
-      rendered += 1;
+    if (domain) {
+      multiTab = (domain.tabs ?? []).length > 1;
+      rendered = renderCfgDomain(host, domain);
     }
   }
-  if (rendered === 0) {
+  if (rendered === 0 && !multiTab) {
     const empty = document.createElement('p');
     empty.className = 'settings-empty';
     empty.textContent = q ? '没有匹配的配置键' : '（暂无可展示的配置键）';
@@ -1646,6 +1676,91 @@ function renderConfigRows({ preserve = false } = {}) {
     const card = host.querySelector(`[data-key="${cssEscape(focusedKey)}"]`);
     card?.querySelector('input, textarea, select')?.focus();
   }
+}
+
+/** 非搜索域渲染：header 开关键卡 →（多页签）页签条 + 全部面板 /（单页签）分区标题 + 键。 */
+function renderCfgDomain(host, domain) {
+  let rendered = 0;
+  // 玩法域顶部开关卡：域级开关，永远在页签条之前。
+  for (const key of domain.headerKeys ?? []) {
+    host.append(buildGameHeader(domain, key));
+    rendered += 1;
+  }
+  const tabs = domain.tabs ?? [];
+  if (tabs.length > 1) {
+    const active = resolveCfgTab(domain, tabs);
+    host.append(buildConfigTabStrip(tabs));
+    for (const t of tabs) {
+      const keys = t.keys.filter((k) => k in currentConfig);
+      const panel = el('div', 'cfg-tab-panel');
+      panel.dataset.tab = t.id;
+      panel.hidden = t.id !== active?.id;
+      if (keys.length === 0) {
+        panel.append(el('p', 'settings-empty cfg-tab-empty', '本页签暂无可展示的键'));
+      } else {
+        for (const key of keys) panel.append(buildKeyCard(key));
+      }
+      host.append(panel);
+    }
+    // 多页签域不做全局空态（每个面板自判）；rendered 只含 header 键，调用方在 multiTab 下忽略。
+    return rendered;
+  }
+  for (const t of tabs) {
+    const keys = t.keys.filter((k) => k in currentConfig);
+    if (keys.length === 0) continue;
+    host.append(el('h3', 'settings-section', t.name));
+    for (const key of keys) {
+      host.append(buildKeyCard(key));
+      rendered += 1;
+    }
+  }
+  return rendered;
+}
+
+/** 当前页签解析：tabId 必须与 tabDomainId 配对（ddz/pdk 有同名页签）。 */
+function resolveCfgTab(domain, tabs) {
+  const stored =
+    cfgUI.tabDomainId === domain.id ? tabs.find((t) => t.id === cfgUI.tabId) : null;
+  const active =
+    stored ??
+    tabs.find((t) => t.keys.some((k) => k in currentConfig)) ??
+    tabs[0] ??
+    null;
+  cfgUI.tabId = active?.id ?? null;
+  cfgUI.tabDomainId = active ? domain.id : null;
+  return active;
+}
+
+/** 页签条：点击只切 UI（DOM 保留），不重建设置行。 */
+function buildConfigTabStrip(tabs) {
+  const strip = el('div', 'tabs cfg-tabs');
+  for (const t of tabs) {
+    const on = t.id === cfgUI.tabId;
+    const b = btn(t.name, `tab-btn${on ? ' active' : ''}`);
+    b.dataset.tab = t.id;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      if (t.id === cfgUI.tabId) return;
+      applyCfgTabUI(t.id);
+      $('settings-host').scrollTop = 0;
+    });
+    strip.append(b);
+  }
+  return strip;
+}
+
+/** 页签切换：active 高亮 + 面板显隐（全部面板常驻 DOM）。 */
+function applyCfgTabUI(tabId) {
+  const host = $('settings-rows');
+  for (const b of host.querySelectorAll('.cfg-tabs .tab-btn')) {
+    const on = b.dataset.tab === tabId;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  for (const p of host.querySelectorAll('.cfg-tab-panel')) {
+    p.hidden = p.dataset.tab !== tabId;
+  }
+  cfgUI.tabId = tabId;
 }
 
 /**
@@ -1789,6 +1904,7 @@ function buildGameHeader(domain, key) {
 /** 47 简单键行：标题/作用在左、控件在右、脏状态出保存/还原；草稿跨重渲染保留。 */
 function buildSimpleRow(key) {
   const ctrl = CONFIG_CONTROLS[key];
+  const writable = canWriteConfigKey(key);
   const snap = currentConfig[key]?.value;
   const card = el('div', 'row-card');
   card.dataset.key = key;
@@ -1823,6 +1939,7 @@ function buildSimpleRow(key) {
       val.textContent = input.checked ? '已启用（true）' : '已停用（false）';
     };
     input.checked = Boolean(drafts.has(key) ? drafts.get(key) : snap);
+    input.disabled = !writable;
     sync();
     input.addEventListener('change', () => onInput(input.checked));
     label.append(input, track, val);
@@ -1839,6 +1956,7 @@ function buildSimpleRow(key) {
     input.className = 'num-input';
     input.step = ctrl.step ?? 1;
     input.value = String(drafts.has(key) ? drafts.get(key) : snap ?? '');
+    input.disabled = !writable;
     wrap.append(input);
     if (ctrl.suffix) wrap.append(el('span', 'num-suffix', ctrl.suffix));
     input.addEventListener('input', () => onInput(Number(input.value)));
@@ -1857,6 +1975,7 @@ function buildSimpleRow(key) {
     input.className = 'text-input';
     input.spellcheck = false;
     input.value = String(drafts.has(key) ? drafts.get(key) : snap ?? '');
+    input.disabled = !writable;
     input.addEventListener('input', () => onInput(input.value));
     ctl.append(input);
     read = () => input.value;
@@ -1886,6 +2005,7 @@ function buildSimpleRow(key) {
   });
   saveBtn.addEventListener('click', () => saveRow(key, card, read));
 
+  if (!writable) actions.hidden = true;
   card.append(main, ctl, actions);
   return card;
 }
@@ -2442,7 +2562,8 @@ function switchView(view) {
   if (view === 'accounts' && !accState.loaded) loadAccounts();
   if (view === 'agents') {
     applyAgentRole();
-    if (!agentsState.loaded) loadAgents();
+    switchAgentTab(agentsState.tab);
+    loadAgents();
   }
 }
 
@@ -3114,19 +3235,40 @@ async function loadFinReconcile() {
   if (status === 0) return showMsg('无法连接服务端', 'err');
   if (status !== 200 || !body?.data) return showMsg(`加载对账状态失败（HTTP ${status}）`, 'err');
   const d = body.data;
+  // C2：`records` 是加性字段（旧服务没有 ⇒ 全部 '—'，不崩）。
+  const records = d.records;
   $('rec-last-attempt').textContent = fmtTime(d.lastAttemptAt);
   $('rec-last-success').textContent = fmtTime(d.lastSuccessAt);
-  $('rec-last-result').textContent = d.lastResult ? formatReconcileResult(d.lastResult) : '—';
+  $('rec-last-result').textContent = d.lastResult
+    ? formatReconcileResult(d.lastResult, records)
+    : records?.lastResult
+      ? `记录对账 ${formatRecordsReconcileResult(records.lastResult)}`
+      : '—';
   $('rec-last-error').textContent = d.lastError ?? '—';
+  $('rec-records-last-attempt').textContent = fmtTime(records?.lastAttemptAt);
+  $('rec-records-last-success').textContent = fmtTime(records?.lastSuccessAt);
+  $('rec-records-last-error').textContent = records?.lastError ?? '—';
   $('rec-running').hidden = !d.running;
   $('rec-run-btn').disabled = Boolean(d.running) || !canWalletWrite();
 }
 
 /** 一轮读数 → 单行文本（字段名 = `CurrencyReconcileRoundResult`）。 */
-function formatReconcileResult(r) {
-  return (
+function formatReconcileResult(r, records) {
+  const base =
     `账实不符 ${r.driftAccounts} · 缓存清理 ${r.cacheDriftDeleted} · 孤儿赠送 ${r.orphanSignupGrants}` +
-    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`
+    ` · 池余额 ${r.robotPoolBalance} · 机器人合计 ${r.robotAccountsBalanceSum}`;
+  // C2：可选链 —— `records`（或其中的 lastResult）缺失 ⇒ 保持旧文本，旧服务不崩。
+  const recordsResult = records?.lastResult;
+  return recordsResult ? `${base} · 记录对账 ${formatRecordsReconcileResult(recordsResult)}` : base;
+}
+
+/** C2 记录对账一轮读数 → 单行文本；字段缺失按 0（`?? 0`，与后端全量 set 口径一致）。 */
+function formatRecordsReconcileResult(r) {
+  return (
+    `孤儿 ${r?.orphanOps ?? 0} · 缺失 ${r?.missingOps ?? 0} · 全NULL ${r?.nullNoOp ?? 0}` +
+    ` · 金额 ${r?.amountMismatch ?? 0} · 待定 ${r?.pending ?? 0} · 疑似NULL ${r?.nullMoneyDelta ?? 0}` +
+    ` · 台费疑似 ${r?.entryFeeSuspect ?? 0} · 台费未知 ${r?.entryFeeUnknown ?? 0}` +
+    ` · 台费孤儿 ${r?.entryFeeOrphanOps ?? 0} · truncated ${r?.truncated ? 1 : 0}`
   );
 }
 
@@ -3172,6 +3314,10 @@ function resetFinance() {
   $('rec-last-success').textContent = '—';
   $('rec-last-result').textContent = '—';
   $('rec-last-error').textContent = '—';
+  // C2：记录对账状态（加性字段）同款复位。
+  $('rec-records-last-attempt').textContent = '—';
+  $('rec-records-last-success').textContent = '—';
+  $('rec-records-last-error').textContent = '—';
   $('rec-running').hidden = true;
   $('rec-run-btn').disabled = false;
 }
@@ -5935,6 +6081,7 @@ function agentApiError(res, prefix) {
 
 /** 写面门面：设置/新建/调账输入对 finance 只读隐藏（真闸在服务端）。 */
 function applyAgentRole() {
+  if (agentsState.roleApplied) return;
   const write = canAgentWrite();
   for (const id of [
     'ag-settings-enabled',
@@ -5953,44 +6100,121 @@ function applyAgentRole() {
   $('ag-create-panel').hidden = true;
   for (const id of ['ag-adjust-agent', 'ag-adjust-delta', 'ag-adjust-reason']) $(id).disabled = !write;
   $('ag-adjust-create-btn').hidden = !write;
+  agentsState.roleApplied = true;
 }
 
-/** 首次进入代理页：七个数据面并行拉取（任一失败只降级对应区块）。 */
+/** 迟到响应守卫：epoch 变化或会话已失效 ⇒ 丢弃（不置 loaded、不渲染）。 */
+function agentsResponseFresh(epoch) {
+  return agentsState.epoch === epoch && Boolean(sessionStorage.getItem(TOKEN_KEY));
+}
+
+async function ensureAgentList() {
+  const flags = agentsState.list;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentList()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+async function ensureAgentTree() {
+  const flags = agentsState.treeReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentTree()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+async function ensureAgentSettings() {
+  const flags = agentsState.settingsReq;
+  if (flags.loading || flags.loaded) return;
+  flags.loading = true;
+  try {
+    if (await loadAgentSettings()) flags.loaded = true;
+  } finally {
+    flags.loading = false;
+  }
+}
+
+/** 配置快照请求去重（同 epoch 并发激活只发一次；跨会话不串）。 */
+let configSnapshotReq = null;
+
+/** 配置快照（邀请码行需要）：已载即用；否则 loadAll 后按是否真到手判定。 */
+async function ensureConfigSnapshot() {
+  if (Object.keys(currentConfig).length > 0) return true;
+  const epoch = agentsState.epoch;
+  if (configSnapshotReq && configSnapshotReq.epoch === epoch) return configSnapshotReq.promise;
+  const promise = (async () => {
+    await loadAll();
+    return agentsResponseFresh(epoch) && Object.keys(currentConfig).length > 0;
+  })();
+  configSnapshotReq = { epoch, promise };
+  try {
+    return await promise;
+  } finally {
+    if (configSnapshotReq?.promise === promise) configSnapshotReq = null;
+  }
+}
+
+/** 对账首次激活：种默认区间并跑一次（armed 只置一次）。 */
+function armAgentRecon() {
+  if (agentsState.recon.armed) return;
+  agentsState.recon.armed = true;
+  const now = Date.now();
+  $('ag-recon-from').value = localDateTimeValue(now - 7 * DAY_MS);
+  $('ag-recon-to').value = localDateTimeValue(now);
+  loadAgentReconciliation();
+}
+
+/** 进页/切页签：只拉当前页签的数据；各区块自行去重（loading/loaded）。 */
 async function loadAgents() {
-  if (agentsState.loading) return;
-  agentsState.loading = true;
-  await Promise.all([
-    loadAgentList(),
-    loadAgentTree(),
-    loadAgentSettings(),
-    loadAgentSettlements(),
-    loadAgentAdjustments(),
-    loadAgentAudit(),
-  ]);
-  agentsState.loading = false;
-  // 会话在加载途中过期 ⇒ showLoginView 已清零；不要把 loaded 再翻回 true。
-  if (!sessionStorage.getItem(TOKEN_KEY)) return;
-  agentsState.loaded = true;
-  if (agentsState.recon.summary === null) {
-    const now = Date.now();
-    $('ag-recon-from').value = localDateTimeValue(now - 7 * DAY_MS);
-    $('ag-recon-to').value = localDateTimeValue(now);
-    loadAgentReconciliation();
+  const tab = agentsState.tab;
+  if (tab === 'list') {
+    await Promise.all([ensureAgentList(), ensureAgentTree()]);
+  } else if (tab === 'settings') {
+    await Promise.all([ensureAgentSettings(), ensureConfigSnapshot()]);
+    if (activeView === 'agents' && agentsState.tab === 'settings') renderAgentInviteRow();
+  } else if (tab === 'settlements') {
+    if (!agentsState.settlements.loaded && !agentsState.settlements.loading) {
+      await loadAgentSettlements();
+    }
+  } else if (tab === 'adjustments') {
+    if (!agentsState.adjustments.loaded && !agentsState.adjustments.loading) {
+      await loadAgentAdjustments();
+    }
+  } else if (tab === 'recon') {
+    armAgentRecon();
+  } else if (tab === 'audit') {
+    if (!agentsState.audit.loaded && !agentsState.audit.loading) await loadAgentAudit();
   }
 }
 
 async function loadAgentList() {
+  const epoch = agentsState.epoch;
   const p = new URLSearchParams();
   if (agentsState.filter.q) p.set('q', agentsState.filter.q);
   if (agentsState.filter.status) p.set('status', agentsState.filter.status);
   p.set('page', String(agentsState.page - 1));
   p.set('pageSize', String(agentsState.pageSize));
   const { status, body } = await api(`/api/admin/agents?${p.toString()}`);
-  if (handleAuth(status)) return;
-  if (status === 0) return showMsg('无法连接服务端', 'err');
-  if (status === 403) return showMsg('当前角色无权查看代理', 'err');
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
+  if (status === 0) {
+    showMsg('无法连接服务端', 'err');
+    return false;
+  }
+  if (status === 403) {
+    showMsg('当前角色无权查看代理', 'err');
+    return false;
+  }
   if (status !== 200 || !Array.isArray(body?.data?.rows)) {
-    return showMsg(`加载代理失败（HTTP ${status}）`, 'err');
+    showMsg(`加载代理失败（HTTP ${status}）`, 'err');
+    return false;
   }
   agentsState.rows = body.data.rows;
   agentsState.total = Number(body.data.total ?? 0);
@@ -6000,16 +6224,23 @@ async function loadAgentList() {
     return loadAgentList();
   }
   renderAgents();
+  return true;
 }
 
 async function loadAgentTree() {
+  const epoch = agentsState.epoch;
   const { status, body } = await api('/api/admin/agents/tree');
-  if (handleAuth(status)) return;
-  if (status !== 200 || !Array.isArray(body?.data)) return;
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
+  if (status !== 200 || !Array.isArray(body?.data)) {
+    showMsg(`加载代理树失败（HTTP ${status}）`, 'err');
+    return false;
+  }
   agentsState.tree = flattenAgentTree(body.data);
   agentsState.byId = new Map(agentsState.tree.map((a) => [a.id, a]));
   fillAgentCreateParent();
   renderAgents();
+  return true;
 }
 
 function fillAgentCreateParent() {
@@ -6069,13 +6300,30 @@ function buildAgentRow(row) {
 /* ── 设置 ─────────────────────────────────────────────────────── */
 
 async function loadAgentSettings() {
+  const epoch = agentsState.epoch;
   const { status, body } = await api('/api/admin/agents/settings');
-  if (handleAuth(status)) return;
+  if (handleAuth(status)) return false;
+  if (!agentsResponseFresh(epoch)) return false;
   if (status !== 200 || !body?.data) {
-    return showMsg(`加载代理设置失败（HTTP ${status}）`, 'err');
+    showMsg(`加载代理设置失败（HTTP ${status}）`, 'err');
+    return false;
   }
   agentsState.settings = body.data;
   renderAgentSettings();
+  return true;
+}
+
+/** 邀请码开关行（配置中心同款 row）：每次激活重建；无快照时给占位。 */
+function renderAgentInviteRow() {
+  const host = $('ag-invite-row');
+  if (!host) return;
+  host.textContent = '';
+  if (Object.keys(currentConfig).length === 0) {
+    const loading = agentsState.settingsReq.loading || Boolean(configSnapshotReq);
+    host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
+    return;
+  }
+  host.append(buildSimpleRow('agent.inviteEnabled'));
 }
 
 function renderAgentSettings() {
@@ -6593,6 +6841,7 @@ async function bulkRebindAgent(fromAgentId, toAgentId, dryRun) {
 
 async function loadAgentSettlements(page = agentsState.settlements.page) {
   if (agentsState.settlements.loading) return;
+  const epoch = agentsState.epoch;
   agentsState.settlements.loading = true;
   const p = new URLSearchParams({
     page: String(page),
@@ -6602,6 +6851,7 @@ async function loadAgentSettlements(page = agentsState.settlements.page) {
   const { status, body } = await api(`/api/admin/agent-settlements?${p.toString()}`);
   agentsState.settlements.loading = false;
   if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
   if (status !== 200 || !Array.isArray(body?.data)) {
     return showMsg(`加载结算队列失败（HTTP ${status}）`, 'err');
   }
@@ -6727,6 +6977,7 @@ async function rejectAgentSettlement(settlement) {
 /* ── 人工调账 ──────────────────────────────────────────────────── */
 
 async function loadAgentAdjustments(page = agentsState.adjustments.page) {
+  const epoch = agentsState.epoch;
   if (agentsState.adjustments.loading) return;
   agentsState.adjustments.loading = true;
   const p = new URLSearchParams({
@@ -6737,6 +6988,7 @@ async function loadAgentAdjustments(page = agentsState.adjustments.page) {
   const { status, body } = await api(`/api/admin/agent-adjustments?${p.toString()}`);
   agentsState.adjustments.loading = false;
   if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
   if (status !== 200 || !Array.isArray(body?.data)) {
     return showMsg(`加载调账失败（HTTP ${status}）`, 'err');
   }
@@ -6844,6 +7096,7 @@ async function rejectAgentAdjustment(row) {
 
 async function loadAgentReconciliation() {
   if (agentsState.recon.loading) return;
+  const epoch = agentsState.epoch;
   const fromRaw = $('ag-recon-from').value;
   const toRaw = $('ag-recon-to').value;
   const from = fromRaw ? new Date(fromRaw) : new Date(Date.now() - 7 * DAY_MS);
@@ -6857,6 +7110,7 @@ async function loadAgentReconciliation() {
   const { status, body } = await api(`/api/admin/agent-reconciliation?${p.toString()}`);
   agentsState.recon.loading = false;
   if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
   if (status !== 200 || !body?.data) return showMsg(`对账失败（HTTP ${status}）`, 'err');
   agentsState.recon.summary = body.data;
   renderAgentReconciliation();
@@ -6889,6 +7143,7 @@ function renderAgentReconciliation() {
 
 async function loadAgentAudit() {
   if (agentsState.audit.loading) return;
+  const epoch = agentsState.epoch;
   agentsState.audit.loading = true;
   const p = new URLSearchParams({
     page: String(agentsState.audit.page),
@@ -6897,6 +7152,7 @@ async function loadAgentAudit() {
   const { status, body } = await api(`/api/admin/agent-audit?${p.toString()}`);
   agentsState.audit.loading = false;
   if (handleAuth(status)) return;
+  if (!agentsResponseFresh(epoch)) return;
   if (status !== 200 || !Array.isArray(body?.data)) {
     return showMsg(`加载审计失败（HTTP ${status}）`, 'err');
   }
@@ -6958,10 +7214,17 @@ function resetAgents() {
     loaded: false,
     done: true,
   };
-  agentsState.recon = { loading: false, summary: null };
+  agentsState.recon = { loading: false, summary: null, armed: false };
   agentsState.audit = { page: 0, rows: [], loading: false, loaded: false };
-  agentsState.loading = false;
-  agentsState.loaded = false;
+  agentsState.tab = 'list';
+  agentsState.epoch += 1;
+  agentsState.roleApplied = false;
+  agentsState.list = { loaded: false, loading: false };
+  agentsState.treeReq = { loaded: false, loading: false };
+  agentsState.settingsReq = { loaded: false, loading: false };
+  const inviteRow = $('ag-invite-row');
+  if (inviteRow) inviteRow.textContent = '';
+  applyAgentTabUI('list');
   $('ag-q').value = '';
   $('ag-status').value = '';
   $('ag-body').textContent = '';
@@ -7089,6 +7352,12 @@ function wireAgents() {
       loadAgentAudit();
     }
   });
+  for (const t of AGENT_TABS) {
+    $(t.btn).addEventListener('click', () => {
+      switchAgentTab(t.id);
+      loadAgents();
+    });
+  }
 }
 
 /** 启动：有完整会话（token + username + role）⇒ 主视图（各视图懒加载）；否则登录视图。 */

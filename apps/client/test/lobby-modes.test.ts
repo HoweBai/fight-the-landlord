@@ -205,6 +205,28 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
     expect(flat(wrapper.find('.lobby__mode-icon-char').text()), '缺素材时图标位走 CSS 兜底').toBe('斗');
   });
 
+  it('info 图标打开玩法规则弹层：内容/关闭/遮罩关闭，且不改变选中玩法', async () => {
+    const { wrapper, store } = mountLobby();
+    await flushPromises();
+
+    const info = wrapper.find('.lobby__mode-info');
+    expect(info.exists(), '有 description 时渲染 info 图标').toBe(true);
+    const before = store.activeMode;
+
+    await info.trigger('click');
+    expect(wrapper.find('.lobby__rule-dialog').exists(), '点 info 打开规则弹层').toBe(true);
+    expect(flat(wrapper.find('.lobby__rule-title').text())).toContain('斗地主 玩法介绍');
+    expect(flat(wrapper.find('.lobby__rule-body').text())).toContain('王炸');
+    expect(store.activeMode, '点 info 不得切换选中玩法').toBe(before);
+
+    await wrapper.find('.lobby__rule-close').trigger('click');
+    expect(wrapper.find('.lobby__rule-dialog').exists(), '关闭按钮关闭弹层').toBe(false);
+
+    await wrapper.find('.lobby__mode-info').trigger('click');
+    await wrapper.find('.lobby__rule-dialog').trigger('click');
+    expect(wrapper.find('.lobby__rule-dialog').exists(), '点遮罩关闭弹层').toBe(false);
+  });
+
   it('点玩法卡 ⇒ 只写 store 的 activeMode、**不跳页**（片规格 §3 裁决一 · 行为变更）', async () => {
     const { wrapper, store } = mountLobby();
     await flushPromises();

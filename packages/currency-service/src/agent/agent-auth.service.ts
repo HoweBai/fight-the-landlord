@@ -3,23 +3,24 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { DataSource } from 'typeorm';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import {
+  AGENT_JWT_AUDIENCE,
+  AGENT_JWT_SECRET_FALLBACK,
+  AGENT_JWT_TYP,
+  ErrCode,
+} from '@fight-the-landlord/protocol';
 import { DomainError } from '../http/errors';
 import { REDIS } from '../redis/redis.module';
 import { hashPassword, verifyPassword } from './agent-password';
-import { normalizePhone, toSafeInt } from './agent.util';
-export const AGENT_JWT_AUDIENCE = 'ftl-agent';
-export const AGENT_JWT_TYP = 'agent-access';
+import { maskPhone, normalizePhone, toSafeInt } from './agent.util';
 export const AGENT_JWT_TTL_SECONDS = 12 * 60 * 60;
 export const AGENT_LOGIN_MAX_FAILURES = 5;
 export const AGENT_LOGIN_FAIL_TTL_SECONDS = 300;
-/** 两侧（currency 签发 / gateway 验签）必须逐字同值。 */
-export const AGENT_JWT_SECRET_FALLBACK = 'dev-secret-change-in-production';
 
 /**
  * 代理令牌密钥链：`AGENT_JWT_SECRET || JWT_SECRET || 兜底`。
  * ⚠️ `||` 不是 `??`（compose 空串透传 ⇒ 必须回落；与 admin middleware 同族）。
- * gateway 有一份逐字副本，由跨服务源码闸比对（任务 10）。
+ * 两侧常量从 protocol 包编译时 import 保证逐字同值。
  */
 export function agentJwtSecret(): string {
   return (
@@ -50,7 +51,7 @@ export interface AgentLoginResult {
   agent: {
     id: string;
     name: string;
-    phone: string;
+    phoneMasked: string;
     rateBp: number;
     status: string;
     mustChangePassword: boolean;
@@ -111,7 +112,7 @@ export class AgentAuthService {
       agent: {
         id: String(row.id),
         name: String(row.name),
-        phone,
+        phoneMasked: maskPhone(phone),
         rateBp: toSafeInt(row.rate_bp, 'agent_accounts.rate_bp'),
         status: String(row.status),
         mustChangePassword: Number(row.must_change_password) === 1,

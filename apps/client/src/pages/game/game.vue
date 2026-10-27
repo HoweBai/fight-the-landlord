@@ -1417,7 +1417,7 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-6 $ftl-space-9;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 /** 人数分段（跑得快 2 人场；仅 >1 个可选人数时渲染）。 */
 .game__players {
@@ -1428,7 +1428,7 @@ onUnmounted(() => stopBgm());
   padding: $ftl-space-2 $ftl-space-5;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-pill;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
   color: $ftl-color-text-muted;
   font-size: $ftl-font-sm;
   line-height: 1.2;
@@ -1454,7 +1454,7 @@ onUnmounted(() => stopBgm());
     0 -2px 0 $ftl-color-night-deep;
 }
 .game__scene-base {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-lg;
   line-height: 1.2;
 }
@@ -1495,7 +1495,7 @@ onUnmounted(() => stopBgm());
 }
 /** 未选底分时的说明（按钮禁用 + 这里说**为什么** —— 本仓忌讳「点了没反应的活按钮」）。 */
 .game__hint {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
   line-height: 1.4;
 }
@@ -1601,7 +1601,7 @@ onUnmounted(() => stopBgm());
   overflow-y: auto;
   border: $ftl-hairline solid $ftl-color-night-deep;
   border-radius: $ftl-radius-lg;
-  background: rgba($ftl-color-night, 0.62);
+  background: rgba($ftl-color-night, 0.85);
 }
 .game__friends-head {
   display: flex;
@@ -1703,7 +1703,7 @@ onUnmounted(() => stopBgm());
   font-size: $ftl-font-sm;
 }
 .game__empty :deep(.wd-divider) {
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
 }
 /** Task 9：会话提示 / 连接死态 / 本地提示统一由 `NoticeStack` 浮层渲染（挂 overlay 槽），
     本页不再有 `.game__notice` 宿主样式（旧悬浮胶囊规则随 `SessionNotice` 摘除一并删除）。 */
@@ -1782,7 +1782,7 @@ onUnmounted(() => stopBgm());
   border-color: rgba($ftl-color-on-primary, 0.45);
   background: transparent;
   background-image: none;
-  color: rgba($ftl-color-on-primary, 0.75);
+  color: rgba($ftl-color-on-primary, 0.9);
   font-size: $ftl-font-sm;
 }
 .btn[disabled] {
@@ -1919,7 +1919,7 @@ onUnmounted(() => stopBgm());
   white-space: nowrap;
 }
 .game__cardcounter-card-desc {
-  color: rgba($ftl-color-on-primary, 0.65);
+  color: rgba($ftl-color-on-primary, 0.85);
   font-size: $ftl-font-xs;
   line-height: 1.3;
   white-space: nowrap;
@@ -1947,7 +1947,7 @@ onUnmounted(() => stopBgm());
   font-weight: 500;
 }
 .game__cardcounter-price-suffix {
-  color: rgba($ftl-color-on-primary, 0.55);
+  color: rgba($ftl-color-on-primary, 0.8);
   font-size: $ftl-font-xs;
   font-weight: 400;
 }

@@ -1,16 +1,22 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { NextFunction, Request, Response } from 'express';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import {
+  AGENT_JWT_AUDIENCE,
+  AGENT_JWT_SECRET_FALLBACK,
+  AGENT_JWT_TYP,
+  ErrCode,
+} from '@fight-the-landlord/protocol';
 import { AGENT_ID_HEADER, AGENT_VER_HEADER } from './identity-headers';
 import { isAgentLoginPath, isAgentPath, requestPath } from './public-paths';
 import { CodedUnauthorized } from './jwt.middleware';
 
-export const AGENT_JWT_AUDIENCE = 'ftl-agent';
-export const AGENT_JWT_TYP = 'agent-access';
-/** 与 currency-service `agent-auth.service.ts` **逐字同值**（跨服务源码闸比对）。 */
-export const AGENT_JWT_SECRET_FALLBACK = 'dev-secret-change-in-production';
+// Re-export constants for consumer convenience (test imports from this barrel).
+export { AGENT_JWT_AUDIENCE, AGENT_JWT_TYP };
 
+/**
+ * 代理令牌密钥链（常量从 protocol 编译时 import，保证与 currency 签发侧逐字同值）。
+ */
 export function agentJwtSecret(): string {
   return (
     process.env.AGENT_JWT_SECRET ||

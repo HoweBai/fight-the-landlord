@@ -491,8 +491,15 @@ export function tagComposeFetchViolations(text: string): string[] {
 export function deployDevViolations(text: string): string[] {
   const v: string[] = [];
   const code = stripHashLines(text);
-  if (!/scripts\/deploy\/build-images\.sh(?![\w.-])/.test(code)) {
-    v.push('找不到对 `scripts/deploy/build-images.sh` 的调用 —— 构建必须走正典配方（重实现 = 配方分叉成两处实现）');
+  // 2026-10-27 起构建由 GitHub `images` workflow 承担（本机不再 bake）。
+  if (!/git\s+tag\s+"?\$TAG/.test(code)) {
+    v.push('找不到 `git tag "$TAG"` —— dev 镜像必须由 tag 触发 GitHub 构建');
+  }
+  if (!/git\s+push\s+origin\s+"?\$TAG/.test(code)) {
+    v.push('找不到 `git push origin "$TAG"` —— tag 不推 origin 就不会触发 images workflow');
+  }
+  if (!/gh\s+run\s+(list|view|watch)/.test(code)) {
+    v.push('找不到 `gh run …` 等待 GitHub 构建 —— 构建必须走正典 workflow（不得本机重实现）');
   }
   if (!/scripts\/deploy\/deploy\.sh(?![\w.-])/.test(code)) {
     v.push('找不到对 `scripts/deploy/deploy.sh` 的调用 —— 部署必须走正典入口');
@@ -755,17 +762,26 @@ export async function runSlice074Pipeline(): Promise<Checks> {
       ` —— 实际 jobs = ${JSON.stringify(Object.keys(ci.jobs ?? {}))}`,
   );
 
-  // ── images.yml：**只** push→master（feature 分支不跑）────────────────
+  // ── images.yml：push→master + dev-* tag + 手动出包（2026-10-27 测试服入口）────
   const images = readWorkflow('images.yml');
   const imagesOn = onShape(images.on);
   checks.that(
-    JSON.stringify(imagesOn.events) === JSON.stringify(['push']),
-    `images.yml 触发恰为 {push} —— 实际 ${JSON.stringify(imagesOn.events)}`,
+    JSON.stringify(imagesOn.events) === JSON.stringify(['push', 'workflow_dispatch']),
+    `images.yml 触发恰为 {push, workflow_dispatch} —— 实际 ${JSON.stringify(imagesOn.events)}`,
   );
   checks.that(
     JSON.stringify(imagesOn.pushBranches) === JSON.stringify(['master']),
-    `images.yml 只跑 push→master（feature 分支不跑 —— R1304 的触发分级）` +
+    `images.yml 的 push 分支只跑 master（R1304 的触发分级）` +
       ` —— 实际 push.branches = ${JSON.stringify(imagesOn.pushBranches)}`,
+  );
+  checks.that(
+    JSON.stringify(imagesOn.pushTags) === JSON.stringify(['dev-*']),
+    `images.yml 的 push tag 只跑 dev-*（测试服出包；不得放开 v*，否则与 release.yml 双跑）` +
+      ` —— 实际 push.tags = ${JSON.stringify(imagesOn.pushTags)}`,
+  );
+  checks.that(
+    imagesOn.dispatch === true,
+    `images.yml 必须有 workflow_dispatch（dev/测试服手动出包入口）—— 实际 ${imagesOn.dispatch}`,
   );
 
   // ── conformance.yml：push→master **且** 可被 release.yml 复用 ────────
@@ -1258,26 +1274,21 @@ export async function runSlice074Pipeline(): Promise<Checks> {
 
   // ── deploy-dev.sh（2026-10-15 用户拍板）：dev → 测试服的**一条命令**封装 ──────────────
   //    两条性质见 `deployDevViolations` 的注释。判别力自证 = 两个负对照（各对应一种**具体**改写）。
-  step('deploy-dev.sh：一条命令封装必须调用正典脚本（build-images.sh / deploy.sh），且 tag 构造只用 `dev-` 前缀');
+  step('deploy-dev.sh：构建走 GitHub images（gh run）、部署调 deploy.sh，tag 只用 dev- 前缀');
   const deployDevText = readFileSync(join(REPO_ROOT, 'scripts', 'deploy', 'deploy-dev.sh'), 'utf8');
   const ddSelf = deployDevViolations(deployDevText);
   checks.that(
     ddSelf.length === 0,
-    '`scripts/deploy/deploy-dev.sh` 必须满足两条性质（谓词注释见 `deployDevViolations`）：① 三步调用' +
-      '正典脚本（构建 = build-images.sh / 部署 = deploy.sh）；② tag 构造只用 `dev-` 前缀（`v*` 会触发' +
-      `release.yml 发布链）—— 违例：${JSON.stringify(ddSelf)}`,
+    '`scripts/deploy/deploy-dev.sh` 必须满足：① 构建走 GitHub images（`git tag` + `git push` + `gh run`）；' +
+      '② 部署调 `deploy.sh`；③ tag 构造只用 `dev-` 前缀（`v*` 会触发 release.yml 发布链）' +
+      `—— 违例：${JSON.stringify(ddSelf)}`,
   );
-  // 负对照①：删掉「构建」的正典调用、改成在脚本里**重实现**（bake 直调等价物）喂同一谓词 ⇒ 必须红。
-  // ⚠️ replace 的字面量 = 真文件的调用行形态；若改了真文件的写法而**没同步这里** ⇒ 替换空转 ⇒ 下面
-  //    这条**红**（响亮地要你同步对照，而不是静默变空测）。
-  const ddReimplemented = deployDevText.replace(
-    'bash scripts/deploy/build-images.sh "$TAG"',
-    'docker buildx bake -f docker-compose.yml --push',
-  );
+  // 负对照①：把「等 GitHub 构建」的 `gh run` 删掉、改成脚本里**本机重实现** ⇒ 必须红。
+  const ddReimplemented = deployDevText.replace(/gh run/g, 'docker buildx bake');
   checks.that(
-    deployDevViolations(ddReimplemented).some((x) => x.includes('build-images.sh')),
-    '负对照①：删掉 `build-images.sh` 的正典调用、改为在 deploy-dev.sh 里**重实现**构建喂同一谓词 ⇒ ' +
-      '必须报缺正典调用（若这条绿 ⇒ 配方可以分叉成两处实现而无人知——本仓为该形态付过多次代价）',
+    deployDevViolations(ddReimplemented).some((x) => x.includes('gh run')),
+    '负对照①：删掉 `gh run` 的 GitHub 构建等待、改为在 deploy-dev.sh 里**重实现**构建喂同一谓词 ⇒ ' +
+      '必须报缺正典构建调用（若这条绿 ⇒ 配方可以分叉成两处实现而无人知——本仓为该形态付过多次代价）',
   );
   // 负对照②：tag 前缀换成 `v`（一次手滑就会触发 release.yml）⇒ 必须红。
   const ddVTag = deployDevText.replace('TAG="dev-$SHA"', 'TAG="v$SHA"');

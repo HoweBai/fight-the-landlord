@@ -98,11 +98,14 @@ const EXPECTED_ALERTS = [
   'ReliefCallbackBroken', 'ReliefGrantZero',
   'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
   'RiskScanSqlFailures',
+  'RecordOutboxStuck', 'RecordOutboxAbandoned', 'RecordLost',
+  // C2（2026-10-26）：资金↔记录对账三条（数量 35→38；38 条 = 35 类，3 类按 severity 拆名）。
+  'RecordsReconcileMismatch', 'RecordsReconcileOrphanOps', 'RecordsReconcileStalled',
 ];
 const alertText = readFileSync(ALERT_FILE, 'utf8')
   .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
 const alertRaw = readFileSync(ALERT_FILE, 'utf8');
-ok(alertRaw.includes('**32 条**') && alertRaw.includes('32 条 = 29 类'), '告警头注释为 32 条 / 29 类');
+ok(alertRaw.includes('**38 条**') && alertRaw.includes('38 条 = 35 类'), '告警头注释为 38 条 / 35 类');
 const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
 ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
 ok(
@@ -114,13 +117,46 @@ const ALERT_PREDICATES = {
   GameSettleFailures: ['phase', '> 0'],
   SettleDroppedByGame: ['result="dropped"'],
   RecordWriteFailuresHigh: ['kind="record_lost"', '>= 3'],
+  RecordOutboxStuck: ['record_outbox_oldest_seconds', '> 600'],
+  RecordOutboxAbandoned: ['result=~"abandoned|corrupt|rejected"', '24h'],
+  RecordLost: ['kind="record_lost"', '> 0'],
+  // C2：记录对账三条（Mismatch 汇总六个非孤儿桶；OrphanOps 独立 critical；Stalled 全局无玩法标签）。
+  RecordsReconcileMismatch: [
+    'currency_records_reconcile_amount_mismatch',
+    'currency_records_reconcile_missing_ops',
+    'currency_records_reconcile_null_no_op',
+    'currency_records_reconcile_null_money_delta',
+    'currency_records_reconcile_entry_fee_suspect',
+    'currency_records_reconcile_entry_fee_orphan_ops',
+    '> 0',
+  ],
+  RecordsReconcileOrphanOps: ['currency_records_reconcile_orphan_ops', '> 0'],
+  RecordsReconcileStalled: ['currency_records_reconcile_last_success_timestamp_seconds', '> 7200'],
 };
+/** 无 `game_type` 标签的全局告警（Stalled 是单进程级「最近成功」）。 */
+const GLOBAL_ALERTS = new Set(['RecordsReconcileStalled']);
 for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
   const block = new RegExp(`- alert: ${name}[\\s\\S]*?(?=\\n\\s*- alert:|$)`).exec(alertText)?.[0] ?? '';
   ok(block !== '', `存在告警 ${name}`);
-  ok(/^\s*expr:\s*.*game_type/m.test(block), `${name} 的 expr 含 game_type`);
+  if (GLOBAL_ALERTS.has(name)) {
+    ok(!/^\s*expr:\s*.*game_type/m.test(block), `${name} 的 expr 不含 game_type（全局告警）`);
+  } else {
+    ok(/^\s*expr:\s*.*game_type/m.test(block), `${name} 的 expr 含 game_type`);
+  }
   for (const needle of needles) ok(block.includes(needle), `${name} 含关键谓词 ${needle}`);
   ok((alertText.match(new RegExp(`- alert: ${name}\\b`, 'g')) ?? []).length === 1, `${name} 规则名唯一`);
+}
+
+// C2 结构断言（spec §5.5）：三条新规则必须是 `labels.severity` + `annotations.summary/runbook`
+// —— 多行正则，容 8/10 空格缩进；判别力自证：把 severity 移出 labels ⇒ 这里红。
+for (const name of [
+  'RecordsReconcileMismatch',
+  'RecordsReconcileOrphanOps',
+  'RecordsReconcileStalled',
+]) {
+  const block = new RegExp(`- alert: ${name}[\\s\\S]*?(?=\\n\\s*- alert:|$)`).exec(alertText)?.[0] ?? '';
+  ok(/^\s*labels:\s*\n\s+severity:\s*(warning|critical)\s*$/m.test(block), `${name} 用 labels.severity（YAML 结构）`);
+  ok(/^\s*annotations:\s*\n\s+summary:/m.test(block), `${name} 用 annotations.summary（YAML 结构）`);
 }
 
 // B 组：SQL 失败告警按 scope 分组，不含 game_type（scope 覆盖 device）。

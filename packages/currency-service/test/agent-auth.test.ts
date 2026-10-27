@@ -2,13 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
 import type { Redis } from 'ioredis';
 import type { DataSource } from 'typeorm';
-import { ErrCode } from '@fight-the-landlord/protocol';
-import {
-  AGENT_JWT_AUDIENCE,
-  AGENT_JWT_SECRET_FALLBACK,
-  AgentAuthService,
-  agentJwtSecret,
-} from '../src/agent/agent-auth.service';
+import { AGENT_JWT_AUDIENCE, AGENT_JWT_SECRET_FALLBACK, ErrCode } from '@fight-the-landlord/protocol';
+import { AgentAuthService, agentJwtSecret } from '../src/agent/agent-auth.service';
 import { hashPassword, verifyPassword } from '../src/agent/agent-password';
 
 function fakeRedis() {

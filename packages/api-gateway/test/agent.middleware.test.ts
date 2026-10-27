@@ -119,20 +119,29 @@ describe('AgentAuthMiddleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('跨服务密钥链逐字同源：currency 签发侧与 gateway 验签侧', () => {
+  it('跨服务密钥链逐字同源：常量统一从 protocol 包 import，消除手工同步', () => {
     const currency = readFileSync(
       join(REPO, 'packages/currency-service/src/agent/agent-auth.service.ts'),
       'utf-8',
     );
     const gateway = readFileSync(join(REPO, 'packages/api-gateway/src/auth/agent.middleware.ts'), 'utf-8');
+    const protocolSrc = readFileSync(
+      join(REPO, 'packages/protocol/src/agent-auth.ts'),
+      'utf-8',
+    );
     const fallbackLine = "AGENT_JWT_SECRET_FALLBACK = 'dev-secret-change-in-production'";
-    expect(currency).toContain(fallbackLine);
-    expect(gateway).toContain(fallbackLine);
+    // 常量真源必须在 protocol
+    expect(protocolSrc).toContain(fallbackLine);
+    expect(protocolSrc).toContain("AGENT_JWT_AUDIENCE = 'ftl-agent'");
+    expect(protocolSrc).toContain("AGENT_JWT_TYP = 'agent-access'");
+    // 两侧不得再自定义常量，必须从 protocol import
     for (const source of [currency, gateway]) {
-      expect(source).toContain('process.env.AGENT_JWT_SECRET ||');
-      expect(source).toContain('process.env.JWT_SECRET ||');
+      expect(source).toMatch(/from ['"]@fight-the-landlord\/protocol['"]/);
       expect(source).toContain('AGENT_JWT_SECRET_FALLBACK');
       expect(source).toContain("'ftl-agent'");
+      // 各自仍有密钥解析函数（依赖 process.env，留在服务内）
+      expect(source).toContain('process.env.AGENT_JWT_SECRET ||');
+      expect(source).toContain('process.env.JWT_SECRET ||');
     }
   });
 });

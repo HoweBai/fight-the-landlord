@@ -15,7 +15,9 @@
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
     "verify:k8s": "node scripts/verify-k8s-manifests.mjs",
     "verify:shutdown": "node scripts/verify-shutdown-hooks.mjs",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "verify:admin-agents": "node scripts/admin-agents-probe.mjs",
+    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

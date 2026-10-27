@@ -29,3 +29,4 @@ export * from './payment';
 export * from './pay-channel';
 export * from './notify-channel';
 export * from './ad-channel';
+export * from './agent-auth';

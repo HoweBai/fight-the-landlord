@@ -32,6 +32,8 @@ function makeDb(opts: {
 } = {}) {
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     void params;
+    // 递归 CTE 也包含 `FROM agent_accounts WHERE id = ?`，必须先于单行查询匹配。
+    if (sql.includes('WITH RECURSIVE _sub')) return [];
     if (sql.includes('FROM `agent_accounts` WHERE `id` = ?')) return [opts.agentRow ?? AGENT_ROW];
     if (sql.includes('FROM `agent_bindings` WHERE `owner_id` IN')) return opts.bindings ?? [];
     if (sql.includes('COUNT(*) AS `cnt` FROM `agent_bindings`')) return [{ cnt: 2 }];
@@ -56,7 +58,7 @@ function makeDb(opts: {
       return [{ micro: opts.unsettledMicro ?? 6000 }];
     }
     if (sql.includes('SUM(`commission_micro`)')) return [{ micro: 9000 }];
-    if (sql.includes('SELECT `id`, `parent_id` FROM `agent_accounts`')) return [];
+    if (sql.includes('WITH RECURSIVE _sub')) return [];
     throw new Error(`fake portal DB 未识别 SQL：${sql.slice(0, 80)}`);
   });
   return { query };

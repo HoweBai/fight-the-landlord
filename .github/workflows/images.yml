@@ -1,5 +1,8 @@
 # push→master 时把 14 个自建镜像构建并推到 GHCR（R1304 的触发分级：feature 分支**不**跑）。
 #
+# 2026-10-27：增加 **workflow_dispatch** 入口 —— 给 dev/测试服手动出镜像，避免本机构建。
+# 手动路径**只推 input 指定的 tag，不推 `latest`**（防止 dev 镜像覆盖 master 的 latest）。
+#
 # ⚠️ 为什么不放在 `ci.yml` 里：`ci.yml` 只是六阶段（`scripts/ci.sh`）的薄调用；
 #    把构建塞进去会让「六阶段」不再是规格里那张表。
 name: images
@@ -7,6 +10,16 @@ name: images
 on:
   push:
     branches: [master]
+    # 2026-10-27：测试服/ dev tag 触发 GitHub 构建（tag 上的 workflow 文件即生效，
+    # 不要求该触发器已在默认分支）。`dev-*` 只构建推送同名 tag，不碰 `latest`。
+    tags: ['dev-*']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        # 自由文本：经 env 传入、在 shell 里带引号引用（同 release.yml 的 REF_NAME 纪律）。
+        description: '要构建推送的镜像 tag（如 dev-cbab81f）；只构建推送，不部署'
+        required: true
+        type: string
 
 jobs:
   images:
@@ -28,9 +41,44 @@ jobs:
       # ⚠️ `-af` 只在 **runner 侧**允许（一次性机器）；服务器侧只许 `-f`（R1307/R1314）。
       - name: 清理 runner 磁盘
         run: docker image prune -af || true
+      # 2026-10-27：APK 不入库 ⇒ 从 GitHub Release 资产拉进 `deploy/download/` 再烘进 edge。
+      # **fail-closed**：拉不到就失败 —— 否则线上 `/download/*.apk` 会静默 404（README 的既有坑）。
+      - name: 拉取 APK（Release 资产）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_RELEASE_TAG: ${{ vars.APK_RELEASE_TAG || 'apk-latest' }}
+        run: |
+          mkdir -p deploy/download
+          rm -f deploy/download/*.apk
+          if ! gh release download "$APK_RELEASE_TAG" --pattern '*.apk' --dir deploy/download --clobber; then
+            echo "❌ 无法从 Release '$APK_RELEASE_TAG' 下载 APK —— /download/*.apk 会 404，拒绝构建。" >&2
+            echo "   处置：bash scripts/deploy/publish-apk.sh <apk路径>（上传后再重跑）" >&2
+            exit 1
+          fi
+          N="$(ls deploy/download/*.apk 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$N" != "1" ]; then
+            echo "❌ Release 资产里应恰有 1 个 .apk（实测 $N 个）" >&2
+            exit 1
+          fi
+          APK="$(ls deploy/download/*.apk | head -1)"
+          # 资产名为 ASCII（gh/Windows 会丢中文）；线上文件名必须是 uni-ad 表单里的「优比棋牌.apk」。
+          if [ "$(basename "$APK")" != "优比棋牌.apk" ]; then
+            mv "$APK" "deploy/download/优比棋牌.apk"
+          fi
+          ls -l deploy/download
       - name: 构建并推送 14 个镜像
         env:
           IMAGE_PREFIX: ghcr.io/howebai/fight-the-landlord
+          # 手动入口的 tag 与 tag push 的 ref 名都走 env（自由文本不得直接插进 run: 的 shell 源码）。
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           SHORT="$(git rev-parse HEAD | cut -c1-7)"
-          bash scripts/deploy/build-images.sh "sha-$SHORT" latest
+          if [ -n "$IMAGE_TAG_INPUT" ]; then
+            bash scripts/deploy/build-images.sh "$IMAGE_TAG_INPUT"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            bash scripts/deploy/build-images.sh "$REF_NAME"
+          else
+            bash scripts/deploy/build-images.sh "sha-$SHORT" latest
+          fi

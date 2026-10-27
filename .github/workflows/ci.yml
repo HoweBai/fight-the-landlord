@@ -40,6 +40,9 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # agent 前端 ERROR_TEXT 与后端 ErrCode 枚举必须同步 —— 零依赖 Node 脚本，直接读源码
+      - name: agent ERROR_TEXT ↔ ErrCode 同步闸
+        run: node scripts/check-agent-errors.mjs
       # ⚠️ **必须带 `...`**（= 连同它的依赖一起构建）：`tools/conformance` import 了
       #    `@fight-the-landlord/protocol`，而 `tsc` 解析到的是那个包的 `dist/*.d.ts` ——
       #    不先构建它就会 TS2307 假红。不构建 6 个服务：切片跑在容器里，宿主不需要它们的 dist。

@@ -20,6 +20,8 @@ import { CurrencyModule } from '../currency/currency.module';
 import { RoomMetricsService } from '../metrics/room-metrics.service';
 // 昵称片：WsGateway 的第 13 个构造依赖（房间昵称缓存；依赖 RpcClientsModule 的 NicknameClient）。
 import { RoomNicknamesService } from '../rooms/room-nicknames.service';
+// C1：WsGateway 的第 14 个构造依赖（写前入箱）；与 SettleSweeper 共用同一模块单例。
+import { RecordOutboxModule } from './record-outbox.module';
 
 /**
  * `room-service` 的 socket.io 网关模块（§4.1：**唯一**允许 emit 到 `/ws/ddz` 的服务）。
@@ -45,6 +47,8 @@ import { RoomNicknamesService } from '../rooms/room-nicknames.service';
     // ② 金币场 T4：WsGateway 的第 9/10 个构造依赖（见上面的 import 注）。
     ConfigCacheModule,
     CurrencyModule,
+    // C1：WsGateway 的第 14 个构造依赖（RecordOutboxService）。
+    RecordOutboxModule,
   ],
   providers: [WsGateway, RoomMetricsService, RoomNicknamesService],
   exports: [WsGateway],

@@ -86,17 +86,29 @@ function mountHistory(over: Partial<PdkRecord> = {}) {
   return { wrapper, calls };
 }
 
+/** 新版筛选是下拉（旧 `.history__game` chips 已退役）：打开玩法下拉并选项。 */
+async function chooseGame(
+  wrapper: ReturnType<typeof mountHistory>['wrapper'],
+  name: string,
+): Promise<void> {
+  await wrapper.find('.history__select').trigger('click');
+  const item = wrapper
+    .findAll('.history__dropdown-item')
+    .find((w) => flat(w.text()) === name);
+  expect(item, `缺玩法选项：${name}`).toBeTruthy();
+  await item!.trigger('click');
+  await flushPromises();
+}
+
 describe('S6.3：历史页跑得快战绩', () => {
   it('默认查斗地主；切「跑得快」⇒ 请求带 gameType=paodekuai 并渲染 pdk 摘要', async () => {
     const { wrapper, calls } = mountHistory();
     await flushPromises();
     expect(calls[0]!.url).toContain('/records/mine');
     expect(calls[0]!.url).not.toContain('gameType=');
+    expect(flat(wrapper.find('.history__select').text())).toContain('斗地主');
 
-    const games = wrapper.findAll('.history__game');
-    expect(games.map((g) => flat(g.text()))).toEqual(['斗地主', '跑得快']);
-    await games[1]!.trigger('click');
-    await flushPromises();
+    await chooseGame(wrapper, '跑得快');
 
     const pdkCall = calls.at(-1)!;
     expect(pdkCall.url).toContain('gameType=paodekuai');
@@ -128,8 +140,7 @@ describe('S6.3：历史页跑得快战绩', () => {
       ],
     });
     await flushPromises();
-    await wrapper.findAll('.history__game')[1]!.trigger('click');
-    await flushPromises();
+    await chooseGame(wrapper, '跑得快');
 
     const card = wrapper.find('.history__card--pdk');
     expect(flat(card.text())).toContain('4 人局');
@@ -138,8 +149,7 @@ describe('S6.3：历史页跑得快战绩', () => {
   it('展开：每座 playedCount / 剩余张数与初始手牌（复用 Hand）', async () => {
     const { wrapper } = mountHistory();
     await flushPromises();
-    await wrapper.findAll('.history__game')[1]!.trigger('click');
-    await flushPromises();
+    await chooseGame(wrapper, '跑得快');
 
     await wrapper.find('.history__card--pdk .history__summary').trigger('click');
     await flushPromises();
@@ -157,10 +167,8 @@ describe('S6.3：历史页跑得快战绩', () => {
   it('切回斗地主 ⇒ 列表回到斗地主数据源、请求不带 gameType', async () => {
     const { wrapper, calls } = mountHistory();
     await flushPromises();
-    await wrapper.findAll('.history__game')[1]!.trigger('click');
-    await flushPromises();
-    await wrapper.findAll('.history__game')[0]!.trigger('click');
-    await flushPromises();
+    await chooseGame(wrapper, '跑得快');
+    await chooseGame(wrapper, '斗地主');
 
     expect(calls.at(-1)!.url).not.toContain('gameType=');
     expect(wrapper.find('.history__card--pdk').exists()).toBe(false);

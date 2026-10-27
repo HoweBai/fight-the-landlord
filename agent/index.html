@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0f172a" />
+    <!-- CSP：纯静态、无 inline script、无 CDN，只允许 'self' -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>代理门户 · 优比棋牌</title>
     <link rel="stylesheet" href="/agent/style.css" />
   </head>

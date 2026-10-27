@@ -12,6 +12,8 @@ import { AdminFinanceController } from './admin/admin-finance.controller';
 import { FinanceQueryService } from './admin/finance-query.service';
 import { ReverseService } from './admin/reverse.service';
 import { ReconcileService } from './reconcile/reconcile.service';
+// C2：资金↔记录对账（只读自调度循环；**值导入** —— DI 需要运行期身份）。
+import { RecordsReconcileService } from './reconcile/records-reconcile.service';
 import { WithdrawableService } from './currency/withdrawable.service';
 import { WithdrawableRpcController } from './rpc/withdrawable.rpc.controller';
 import { AgentModule } from './agent/agent.module';
@@ -123,6 +125,9 @@ import { currencyDatabaseOptions } from './database.config';
   providers: [
     HealthService,
     ReconcileService,
+    // C2：记录对账（未注册 = `onModuleInit` 永不执行 ⇒ 对账循环不存在、指标全缺，
+    // 而单测传替身仍全绿 —— T6 教训同款）。
+    RecordsReconcileService,
     FinanceQueryService,
     ReverseService,
     WithdrawableService,

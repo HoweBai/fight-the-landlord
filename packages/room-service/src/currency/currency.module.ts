@@ -15,6 +15,8 @@ import { ConfigCacheModule } from '../config/config-cache.module';
 // `SettleSweeper` 注入 Redis ⇒ 与各业务模块同一形态（@Global 模块仍逐模块 import —— 见
 // RoomsModule / MatchModule 的成例：这行让「装配子集 compile」时依赖可见）。
 import { RedisProviderModule } from '../redis.provider.module';
+// C1：`SettleSweeper` 的第三构造依赖（record 阶段）；与 WsGateway 共用同一模块单例。
+import { RecordOutboxModule } from '../gateway/record-outbox.module';
 
 /**
  * room-service 的**货币边装配**（② 金币场 T4；设计 §5：汇率面全住 room-service）。
@@ -39,6 +41,7 @@ import { RedisProviderModule } from '../redis.provider.module';
     RpcClientsModule,
     ConfigCacheModule,
     RedisProviderModule,
+    RecordOutboxModule,
   ],
   providers: [
     {

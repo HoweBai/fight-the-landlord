@@ -20,6 +20,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(resolve(REPO_ROOT, p), 'utf8');
@@ -332,7 +333,7 @@ const defaultsBlock = balancedBlock(app, 'const GAME_SWITCH_DEFAULTS = {', '{', 
 ok(/['"]game\.doudizhu\.enabled['"]\s*:\s*true/.test(defaultsBlock), '默认值：斗地主 true');
 ok(/['"]game\.paodekuai\.enabled['"]\s*:\s*false/.test(defaultsBlock), '默认值：跑得快 false');
 const renderRowsBlock = /function renderConfigRows\([\s\S]*?\n\}/.exec(app)?.[0] ?? '';
-ok(renderRowsBlock.includes('buildGameHeader('), 'renderConfigRows 调用 buildGameHeader');
+ok(renderRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
 const fnBody = balancedBlock(app, 'function lastEnabledGameWarning', '{', '}');
 ok(fnBody !== '', '找到 lastEnabledGameWarning');
 const lastWarn = new Function(
@@ -703,6 +704,69 @@ ok(renderSettingsBlock.includes('renderConfigRows()'), 'renderSettings 块完整
 ok(viewsBlock.includes('accounts:'), 'VIEWS 块完整（含 accounts）');
 ok(renderConfigRowsBlock.includes('scrollEl.scrollTop = scrollTop'), 'renderConfigRows 块完整（含滚动恢复）');
 
+/* ── 12b. 2026-10-27 配置中心重内容域页内页签 ─────────────────────
+ * 页签面板全部渲染、只切 hidden（保 struct/JSON 未保存编辑）；tabId 与 tabDomainId
+ * 成对校验（ddz/pdk 有同名页签 rules/rooms/risk）。 */
+const cfgUiBlock = balancedBlock(app, 'const DEFAULT_CFG_UI', '{', '}');
+ok(cfgUiBlock !== '', '找到 DEFAULT_CFG_UI 字面量');
+ok(cfgUiBlock.includes('tabId') && cfgUiBlock.includes('tabDomainId'), 'DEFAULT_CFG_UI 含 tabId/tabDomainId');
+for (const fn of ['function buildConfigTabStrip', 'function applyCfgTabUI', 'function renderCfgDomain']) {
+  ok(app.includes(fn), `app.js 含页签针脚 ${JSON.stringify(fn)}`);
+}
+const renderCfgDomainBlock = functionBody(app, 'function renderCfgDomain');
+ok(renderCfgDomainBlock !== '', '找到 renderCfgDomain 函数体');
+for (const needle of [
+  'buildConfigTabStrip(',
+  'tabs.length > 1',
+  'cfg-tab-panel',
+  'cfg-tab-empty',
+]) {
+  ok(renderCfgDomainBlock.includes(needle), `renderCfgDomain 含 ${JSON.stringify(needle)}`);
+}
+ok(renderCfgDomainBlock.includes('buildGameHeader('), 'renderCfgDomain 渲染玩法开关键卡');
+const resolveCfgTabBlock = functionBody(app, 'function resolveCfgTab');
+ok(
+  resolveCfgTabBlock !== '' && resolveCfgTabBlock.includes('tabDomainId === domain.id'),
+  'resolveCfgTab 按域配对 tabDomainId',
+);
+ok(renderConfigRowsBlock.includes('renderCfgDomain('), 'renderConfigRows 调用 renderCfgDomain');
+ok(openCfgDomainBlock.includes('tabDomainId = null'), 'openCfgDomain 复位 tabDomainId');
+const normalizeCfgDomainBlock = functionBody(app, 'function normalizeCfgDomain');
+ok(
+  normalizeCfgDomainBlock !== '' && normalizeCfgDomainBlock.includes('tabDomainId = null'),
+  'normalizeCfgDomain 复位 tabDomainId',
+);
+let iaDomainsForTabs = [];
+if (iaBlock !== '') {
+  try {
+    iaDomainsForTabs = vm.runInNewContext(`(${iaBlock})`);
+  } catch {
+    iaDomainsForTabs = [];
+  }
+}
+let headerTabOverlap = 0;
+let dupTabKeys = 0;
+for (const g of iaDomainsForTabs) {
+  for (const d of g.domains ?? []) {
+    const tabKeys = new Set((d.tabs ?? []).flatMap((t) => t.keys));
+    for (const hk of d.headerKeys ?? []) if (tabKeys.has(hk)) headerTabOverlap += 1;
+    const seen = new Set();
+    for (const t of d.tabs ?? []) {
+      for (const k of t.keys ?? []) {
+        if (seen.has(k)) dupTabKeys += 1;
+        else seen.add(k);
+      }
+    }
+  }
+}
+ok(iaDomainsForTabs.length > 0, 'CONFIG_IA 可被 vm 解析（页签交叉断言）');
+ok(headerTabOverlap === 0, `CONFIG_IA 的 headerKeys 与页签键无交集（实测 ${headerTabOverlap}）`);
+ok(dupTabKeys === 0, `CONFIG_IA 同域页签键无重复（实测 ${dupTabKeys}）`);
+ok(
+  /\.cfg-tabs\s*\{/.test(css) && /\.cfg-tab-panel\s*\{/.test(css),
+  'style.css 含 .cfg-tabs / .cfg-tab-panel 规则',
+);
+
 
 /* ── 11. 2026-10-22 玩家管理页 ────────────────────────────────────── */
 for (const id of ['nav-players-btn', 'players-view', 'pl-summary', 'pl-body', 'pl-detail', 'pl-back-btn', 'pl-page-size']) {
@@ -853,6 +917,98 @@ ok(setStatusBlock !== '' && setStatusBlock.includes('/status'), 'setAgentStatus 
 ok(!app.includes('innerHTML'), 'app.js 零 innerHTML（代理页同纪律）');
 ok(/\.agents-secret\s*\{/.test(css), 'style.css 含 .agents-secret 规则');
 ok(/\.agents-actions\s*\{/.test(css), 'style.css 含 .agents-actions 规则');
+
+/* ── 13. 2026-10-26 代理工作台：单入口 + 页内页签 ───────────────────
+ * 「通用设置 → 代理」叶并入「运营 → 代理」；CONFIG_IA 的 agent 域保留（85 键锚点），
+ * 只删左树叶。防回潮：旧叶/计数三件套零引用 + CFG_NAV↔HTML 双向一致。 */
+for (const gone of ['nav-cfg-agent-btn', 'nav-count-agent']) {
+  ok(!html.includes(gone), `index.html 已移除 ${gone}`);
+  ok(!app.includes(gone), `app.js 已无 ${gone} 引用`);
+}
+const cfgNavBlock = balancedBlock(app, 'const CFG_NAV');
+ok(cfgNavBlock !== '', '找到 CFG_NAV 字面量');
+const cfgNavLeaves = [...cfgNavBlock.matchAll(/leaf:\s*'([^']+)'/g)].map((m) => m[1]);
+const cfgNavCounts = [...cfgNavBlock.matchAll(/count:\s*'([^']+)'/g)].map((m) => m[1]);
+for (const id of [...cfgNavLeaves, ...cfgNavCounts]) {
+  ok(html.includes(`id="${id}"`), `CFG_NAV 的 #${id} 在 index.html 存在`);
+}
+const htmlCfgLeaves = [...html.matchAll(/id="(nav-cfg-[a-z-]+-btn)"/g)].map((m) => m[1]);
+for (const id of htmlCfgLeaves) {
+  ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
+}
+
+const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];
+for (const id of AGENT_TAB_IDS) {
+  ok(html.includes(`id="agent-tab-${id}"`), `index.html 含页签按钮 #agent-tab-${id}`);
+}
+const agentPanelTag = (id) =>
+  new RegExp(`<div\\b[^>]*\\bid="${id}"[^>]*>`).exec(html)?.[0] ?? '';
+for (const id of AGENT_TAB_IDS) {
+  const tag = agentPanelTag(`agent-panel-${id}`);
+  ok(tag !== '', `index.html 含页签面板 #agent-panel-${id}`);
+  if (id === 'list') ok(tag !== '' && !/\bhidden\b/.test(tag), '列表面板初始可见');
+  else ok(tag !== '' && /\bhidden\b/.test(tag), `#agent-panel-${id} 初始 hidden`);
+}
+ok(html.includes('id="ag-invite-row"'), 'index.html 含邀请码行容器 #ag-invite-row');
+
+const agentTabsBlock = balancedBlock(app, 'const AGENT_TABS');
+ok(agentTabsBlock !== '', '找到 AGENT_TABS 字面量');
+let agentTabs = [];
+if (agentTabsBlock !== '') {
+  try {
+    agentTabs = vm.runInNewContext(`(${agentTabsBlock})`);
+  } catch {
+    agentTabs = [];
+  }
+}
+ok(Array.isArray(agentTabs) && agentTabs.length === 6, `AGENT_TABS 恰 6 项（实测 ${agentTabs.length}）`);
+ok(
+  Array.isArray(agentTabs) &&
+    [...agentTabs.map((t) => t.id)].sort().join(',') === [...AGENT_TAB_IDS].sort().join(','),
+  'AGENT_TABS id 集合精确',
+);
+for (const t of agentTabs) {
+  ok(html.includes(`id="${t.btn}"`), `AGENT_TABS 的 #${t.btn} 在 HTML 存在`);
+  ok(html.includes(`id="${t.panel}"`), `AGENT_TABS 的 #${t.panel} 在 HTML 存在`);
+}
+for (const needle of [
+  'function applyAgentTabUI',
+  'function switchAgentTab',
+  'function renderAgentInviteRow',
+  'function ensureConfigSnapshot',
+  'const canWriteConfigKey',
+]) {
+  ok(app.includes(needle), `app.js 含页签针脚 ${JSON.stringify(needle)}`);
+}
+const wireAgentsTabsBlock = functionBody(app, 'function wireAgents');
+ok(wireAgentsTabsBlock.includes('AGENT_TABS'), 'wireAgents 按 AGENT_TABS 绑定页签');
+const resetAgentsBlock = functionBody(app, 'function resetAgents');
+ok(/tab\s*=\s*'list'/.test(resetAgentsBlock), "resetAgents 复位 tab = 'list'");
+ok(/epoch\s*\+=\s*1|epoch\+\+/.test(resetAgentsBlock), 'resetAgents 递增 epoch');
+ok(/roleApplied\s*=\s*false/.test(resetAgentsBlock), 'resetAgents 复位 roleApplied');
+ok(/armed:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 recon.armed');
+ok(/list\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 list.loaded');
+ok(/treeReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock), 'resetAgents 复位 treeReq.loaded');
+ok(
+  /settingsReq\s*=\s*\{\s*loaded:\s*false/.test(resetAgentsBlock),
+  'resetAgents 复位 settingsReq.loaded',
+);
+const listTabTag = /<button\b[^>]*\bid="agent-tab-list"[^>]*>/.exec(html)?.[0] ?? "";
+ok(/\bactive\b/.test(listTabTag), "agent-tab-list 初始 active");
+const settingsFormEnd = html.indexOf('</form>', html.indexOf('id="ag-settings-form"'));
+ok(
+  settingsFormEnd >= 0 && html.indexOf('id="ag-invite-row"') > settingsFormEnd,
+  '#ag-invite-row 位于设置表单之外（避免 Enter 误提交）',
+);
+const applyAgentRoleBlock = functionBody(app, 'function applyAgentRole');
+ok(applyAgentRoleBlock.includes('roleApplied'), 'applyAgentRole 有 roleApplied 守卫');
+const loadAllBlock = functionBody(app, 'async function loadAll');
+ok(loadAllBlock.includes('renderAgentInviteRow()'), 'loadAll 保存后重建邀请码行');
+ok(loadAllBlock.includes('sessionStorage.getItem(TOKEN_KEY)'), 'loadAll 赋值前校验 token');
+const buildSimpleRowBlock = functionBody(app, 'function buildSimpleRow');
+ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色收权');
+ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
+ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {

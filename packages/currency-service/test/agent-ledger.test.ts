@@ -90,6 +90,22 @@ function makeDb(opts: {
         const b = bindings.get(String(p[0]));
         return b === undefined ? [] : [b];
       }
+      if (sql.includes('WITH RECURSIVE _chain')) {
+        // 递归 CTE 拉全链：p[0]=directAgentId, p[1]=maxDepth-1
+        const directId = String(p[0]);
+        const maxLevel = Number(p[1]);
+        const out: Array<Record<string, unknown>> = [];
+        let curId: string | undefined = directId;
+        let lvl = 0;
+        while (curId && lvl <= maxLevel) {
+          const a = agents.get(curId);
+          if (!a) break;
+          out.push({ id: curId, lvl, ...a });
+          curId = a.parent_id === null ? undefined : String(a.parent_id);
+          lvl += 1;
+        }
+        return out;
+      }
       if (sql.includes('FROM `agent_accounts`')) {
         const a = agents.get(String(p[0]));
         return a === undefined ? [] : [{ id: String(p[0]), ...a }];

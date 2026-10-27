@@ -16,6 +16,7 @@ const TARGETS = [
   'robotRuleErrorsTotal', 'riskScanHitsTotal',
   'gameStartFailuresTotal', 'gameSettleFailuresTotal',
   'recordWriteFailuresTotal', 'recordWriteSkipsTotal',
+  'recordOutboxSize', 'recordOutboxOldestSeconds', 'recordOutboxResendTotal',
 ];
 
 function walk(dir: string): string[] {
@@ -47,5 +48,11 @@ describe('A1 源码闸：指标写点必须经 incGame/setGame', () => {
   it('闸的正例自证：直写形态会被识别（防目标名拼错静默失效）', () => {
     expect(new RegExp('\\bgamesStartedTotal\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b').test('gamesStartedTotal.inc();')).toBe(true);
     expect(new RegExp('\\bgamesStartedTotal\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b').test('gamesStartedTotal?.set({});')).toBe(true);
+    for (const name of ['recordOutboxSize', 'recordOutboxOldestSeconds', 'recordOutboxResendTotal']) {
+      expect(
+        new RegExp(`\\b${name}\\s*\\??\\s*\\.\\s*(inc|set|labels)\\b`).test(`${name}.set({});`),
+        `${name} 的正向自证失效（名字拼错会让负扫静默放过）`,
+      ).toBe(true);
+    }
   });
 });

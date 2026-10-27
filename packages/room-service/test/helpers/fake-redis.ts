@@ -1,6 +1,10 @@
 import { vi } from 'vitest';
 import { CANCEL_IF_WAITING_LUA } from '../../src/rooms/rooms.service';
 import { BOT_NAMES_RELEASE_LOCK_LUA } from '../../src/rooms/bot-names';
+import {
+  CAS_HDEL_RECORD_OUTBOX_LUA,
+  CAS_HSET_RECORD_OUTBOX_LUA,
+} from '../../src/gateway/record-outbox.service';
 import type { Redis } from 'ioredis';
 
 /**
@@ -45,8 +49,28 @@ export function makeFakeEval(
       strings.delete(key);
       return 1;
     }
+    if (script === CAS_HDEL_RECORD_OUTBOX_LUA) {
+      // C1：比较 raw 后才 HDEL（防误删快照后同 field 的新条目）。
+      const field = String(args[0] ?? '');
+      const expected = String(args[1] ?? '');
+      const hash = hashes.get(key);
+      if (!hash || hash[field] !== expected) return 0;
+      delete hash[field];
+      if (Object.keys(hash).length === 0) hashes.delete(key);
+      return 1;
+    }
+    if (script === CAS_HSET_RECORD_OUTBOX_LUA) {
+      // C1：比较 raw 后才 HSET（createdAt 自愈；防覆盖快照后同 field 的新条目）。
+      const field = String(args[0] ?? '');
+      const expected = String(args[1] ?? '');
+      const next = String(args[2] ?? '');
+      const hash = hashes.get(key);
+      if (!hash || hash[field] !== expected) return -1;
+      hash[field] = next;
+      return 1;
+    }
     throw new Error(
-      'FakeRedis.eval 只实现了 CANCEL_IF_WAITING_LUA / BOT_NAMES_RELEASE_LOCK_LUA 两段脚本 —— 新增脚本请同步扩展本替身（别让它静默返回假结果）',
+      'FakeRedis.eval 只实现了 CANCEL_IF_WAITING_LUA / BOT_NAMES_RELEASE_LOCK_LUA / CAS_HDEL_RECORD_OUTBOX_LUA / CAS_HSET_RECORD_OUTBOX_LUA 四段脚本 —— 新增脚本请同步扩展本替身（别让它静默返回假结果）',
     );
   });
 }
