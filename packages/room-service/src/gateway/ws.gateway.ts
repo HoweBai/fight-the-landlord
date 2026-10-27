@@ -872,6 +872,52 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
 
   // ─── S→C 推送（§4.4 / §6.3 / §6.7）─────────────────────────────
 
+  /**
+   * 订阅一条内部事件频道（**可恢复**；2026-10-27 真栈事故的回归门）。
+   *
+   * 🔴 事故形态（conformance run 40539527543）：进程健康、匹配/建房/开局全部正常，
+   * 但 `room.matched` / `game.deal` 一条都送不出去 —— room-service 启动时两条订阅连接
+   * 各报一次 `Redis subscriber error: Connection in subscriber mode, only subscriber
+   * commands may be used`，此后**订阅永久丢失且不再报错**。
+   *
+   * 机制（上游 redis/ioredis#2037）：ioredis ≥5.8.2 的握手在连接建立后先发
+   * `CLIENT SETINFO`×2、再由 `_readyCheck` 发 `INFO`；若 `subscribe()` 落在**握手窗口**
+   * （`status === 'connect'`），SUBSCRIBE 回执会先被处理并置 subscriber 模式 ⇒ 随后
+   * ready-check 的 `INFO` 被本地拒收 → `recoverFromFatalError` 断开重连；而关闭时状态
+   * 不是 `ready` ⇒ `autoResubscribe` 不保存 `prevCondition` ⇒ **重连不会自动重订阅**，
+   * 一次性 `subscribe()` 也早已 resolve（不会重试）⇒ 静默地永久失联。
+   *
+   * 四条纪律（缺一不可）：
+   *  ① `message` 处理器**先于**订阅注册（首条消息不得落空）；
+   *  ② **只在 `ready` 后**下发 SUBSCRIBE（客户端在 `connecting`/`connect` 时一律不碰）；
+   *  ③ **每次 `ready` 都幂等重订阅** —— 覆盖上述竞态导致的重连与任何断线重连，
+   *     **不依赖** `autoResubscribe`；
+   *  ④ 失败**响亮**（error 日志），不吞。
+   */
+  private subscribeChannel(conn: Redis, channel: string, onMessage: (raw: string) => void): void {
+    conn.on('message', (ch: string, raw: string) => {
+      if (ch !== channel) return;
+      onMessage(raw);
+    });
+    conn.on('ready', () => {
+      void this.ensureSubscribed(conn, channel);
+    });
+    // 已 ready（启动晚于建连）⇒ 立刻订；否则交给上面的 `ready` 监听。
+    void this.ensureSubscribed(conn, channel);
+  }
+
+  /** 仅在连接 ready 时下发 SUBSCRIBE（其余时机由 `ready` 监听兜住）。 */
+  private async ensureSubscribed(conn: Redis, channel: string): Promise<void> {
+    if (conn.status !== 'ready') return;
+    try {
+      await conn.subscribe(channel);
+      this.logger.log(`Subscribed to ${channel}`);
+    } catch (err) {
+      // 不致命（下一次 `ready` 会重试），但必须响亮 —— 静默 = 「推送链可以不存在」。
+      this.logger.error(`Failed to subscribe ${channel}: ${String(err)}`);
+    }
+  }
+
   /** game-service → room-service：`game:events`（唯一推送通路）。 */
   async subscribeToGameEvents(): Promise<void> {
     /**
@@ -880,9 +926,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
      * 原先这些行（含 `Invalid game event from Redis`）落在 ALS 之外 ⇒ `bootstrap`（假话）。
      */
     return runWithTrace({ traceId: null, source: 'internal' }, async () => {
-      await this.gameEventsRedis.subscribe(GAME_EVENTS_CHANNEL);
-      this.gameEventsRedis.on('message', (channel: string, raw: string) => {
-        if (channel !== GAME_EVENTS_CHANNEL) return;
+      this.subscribeChannel(this.gameEventsRedis, GAME_EVENTS_CHANNEL, (raw) => {
         // ⚠️ 回调**不在**上面那层包裹的作用域里（ioredis 的事件循环自有其异步上下文，
         // ALS 按「谁发起的」传播）⇒ 处理器内部**再包一次**，否则这几行仍旧是 bootstrap。
         runWithTrace({ traceId: null, source: 'internal' }, () => {
@@ -896,7 +940,6 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
           this.onGameEvent(event);
         });
       });
-      this.logger.log(`Subscribed to ${GAME_EVENTS_CHANNEL}`);
     });
   }
 
@@ -904,9 +947,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
   async subscribeToMatchEvents(): Promise<void> {
     // 最终评审 I2：与 `subscribeToGameEvents` 同形（内部事件 ⇒ 不编造 id、来源如实）。
     return runWithTrace({ traceId: null, source: 'internal' }, async () => {
-      await this.matchEventsRedis.subscribe(MATCH_EVENTS_CHANNEL);
-      this.matchEventsRedis.on('message', (channel: string, raw: string) => {
-        if (channel !== MATCH_EVENTS_CHANNEL) return;
+      this.subscribeChannel(this.matchEventsRedis, MATCH_EVENTS_CHANNEL, (raw) => {
         // ⚠️ 与上面同一条理由：回调的执行不在注册时的 ALS 作用域里 ⇒ 内部再包一次。
         runWithTrace({ traceId: null, source: 'internal' }, () => {
           let event: MatchEvent;
@@ -919,7 +960,6 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnMo
           this.onMatchEvent(event);
         });
       });
-      this.logger.log(`Subscribed to ${MATCH_EVENTS_CHANNEL}`);
     });
   }
 
