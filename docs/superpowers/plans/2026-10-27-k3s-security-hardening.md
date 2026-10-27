@@ -36,10 +36,26 @@
 
 - `pnpm verify:k8s`：99 文档通过（edge 判据已改）。
 - `pnpm verify:monitoring`：267 checks 通过（compose 面未变）。
-- `git push` 后 `gh workflow run ci.yml --ref fix/k3s-security-hardening`，看 `security-scan` 的 trivy 结果；
-  迭代到 0。
+- `gh workflow run ci.yml --ref fix/k3s-security-hardening`（run `40529165489`）：
+  **ci / render-gate / security-scan 三 job 全 success**；trivy 0 条 HIGH/CRITICAL（3 条平台固有项入受控例外）。
 - 真集群验证（部署前）：MySQL/Redis 非 root + 只读根、node-exporter 指标覆盖、edge LB Local 的客户端 IP、
   kubelet cadvisor 抓取权限 —— 均需在 k3s 预演/自测清单里逐项验。
+- **不在本片范围**：master 全量 conformance 仍红于 `slice-35-records-reconcile`
+  （C2 已知待权威轮项，日志：currency-service 70s 内未出现新配置快照应用行）；与本片改动无关。
+
+## 受控 KSV 例外（3 条）
+
+`.trivyignore` 新增且仅允许以下 3 条（`slice-07.4` 的 `KSV_ALLOWED` 白名单同步收口）：
+
+| ID | 原因 | 收窄面 |
+|---|---|---|
+| KSV-0010 | node-exporter 采集主机指标必须 `hostPID` | 仅 node-exporter DaemonSet |
+| KSV-0121 | node-exporter 必须只读挂载 host `/proc` | 仅 `/host/proc`，不再挂 `/` 或 `/sys` |
+| KSV-0056 | ftl-deployer `apply -k` 必须能写 Service/NetworkPolicy | 仅两个 deployer Role；已移除 exec/portforward |
+
+> 决策：未把 Service/NetworkPolicy 写权限拆成「管理员预应用」——那会改变部署语义且无法在 CI 验证；
+> 先以受控例外收口，后续若做 GitOps/Argo 再拆。
+
 
 ## 风险与已知代价
 
