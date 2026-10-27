@@ -93,8 +93,9 @@
 ### 1.4 前端形态说明
 
 - **目标态**：uni-app（两份旧文档均选 uni-app，`design.md §十` 称参考文档选 Cocos3D 系**转述错误**）。
-- **现状（切片 P10 迁移后，2026-09-17）**：`apps/client` 是**唯一**前端，且**已经是 uni-app 工程**（Vue 3 线，
-  `@dcloudio/*@3.0.0-alpha-5020620260914001`，编译器 5.26；Vite 被钉在 **5.2.8** —— 该插件的 peer 是精确版本）。
+- **现状（切片 P10 迁移后，2026-09-17；Vite 于 2026-10-27 升级）**：`apps/client` 是**唯一**前端，且**已经是 uni-app 工程**（Vue 3 线，
+  `@dcloudio/*@3.0.0-alpha-5020620260914001`，编译器 5.26；Vite 已升到 **6.4.4**（Dependabot 修复，三端构建实测通过；
+  该插件的 peer 仍声明精确 5.2.8，安装有 peer warning）。
   工程形态：`src/pages.json`（页面栈：`pages/login/login` · `pages/lobby/lobby` · `pages/game/game` · `pages/table/table` · `pages/history/history` · `pages/wallet/wallet`〔支付片=第 6 页，§7.7〕）
   - `src/manifest.json`（各端配置）+ `src/main.ts` 的 uni-app 入口约定（`createSSRApp` + `createApp()`）
   - `src/App.vue` 作为**应用外壳**（uni-app 里它的模板不渲染）。
@@ -2032,7 +2033,7 @@ pnpm lint                                        # tsc --noEmit
 
 `ci.yml` 另有第二个 job **`render-gate`**（每次 push 跑纯渲染判据 —— 不需要 docker daemon、≈2.8s）：它关掉的是片① 登记的 **R2**（「新增的生产形态保证没有任何自动闸」）。
 
-`ci.yml` 另有第三个 job **`security-scan`**（M0.1，每次 push 与 PR 跑）：三路全阻断——依赖漏洞（`scripts/security/check-audit.mjs`，`pnpm audit --prod` 的 critical/high 必须清零，唯一条机器可读豁免 = `scripts/security/audit-exceptions.json` 的 vite/1123525）· 密钥泄露（gitleaks v8.30.1 钉版全历史）· 配置误配（trivy v0.75.0 钉版 config）。它与 `render-gate` 同理由**不进六阶段**（六阶段真源在 `scripts/ci.sh`）。判据 = `slice-07.4-pipeline` 的 C1–C25。
+`ci.yml` 另有第三个 job **`security-scan`**（M0.1，每次 push 与 PR 跑）：三路全阻断——依赖漏洞（`scripts/security/check-audit.mjs`，`pnpm audit --prod` 的 critical/high 必须清零，机器可读豁免 = `scripts/security/audit-exceptions.json`，2026-10-27 起为**空集**）· 密钥泄露（gitleaks v8.30.1 钉版全历史）· 配置误配（trivy v0.75.0 钉版 config）。它与 `render-gate` 同理由**不进六阶段**（六阶段真源在 `scripts/ci.sh`）。判据 = `slice-07.4-pipeline` 的 C1–C25。
 
 **成本控制**（R1314，与具体额度数字无关）：① 构建走 buildx + GHA 缓存 ② 触发分级（**三个工作流表**）③ **额度吃紧时的降级路径**：把 `conformance.yml` 的 `on.push.branches` 删掉 ⇒ 真栈 conformance 只在 tag 上跑（`render-gate` 不受影响，仍在每次 push 跑）；⚠️ **但已不是「一行改动」**（2026-09-25 订正）：`slice-07.4-pipeline` 把触发集合钉成恰好 {push, workflow_call} ⇒ 删 `on.push` 会让它红 —— **得分两处一起改** ④ CI runner 侧允许 `docker image prune -af`，**服务器侧只许 `-f`** ⑤ tag 路径的构建次数 = **2**（`images` + `conformance` 复用拉取）。
 

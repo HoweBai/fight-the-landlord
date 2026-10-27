@@ -26,7 +26,7 @@ const { conn } = vi.hoisted(() => {
 });
 
 vi.mock('ioredis', () => {
-  const ctor = vi.fn(() => conn);
+  const ctor = vi.fn(function () { return conn; });
   return { default: ctor, Redis: ctor };
 });
 

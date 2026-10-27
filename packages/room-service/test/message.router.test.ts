@@ -163,7 +163,7 @@ describe('routeClientMessage', () => {
      */
     const failExistsFor = (redis: ReturnType<typeof makeRedis>, prefix: string): void => {
       const existsMock = redis.exists as unknown as ReturnType<typeof vi.fn>;
-      const real = existsMock.getMockImplementation()!;
+      const real = existsMock.getMockImplementation()! as (key: string) => Promise<number>;
       existsMock.mockImplementation(async (key: string) => {
         if (String(key).startsWith(prefix)) throw new Error('redis down');
         return real(key);
@@ -296,7 +296,7 @@ describe('routeClientMessage', () => {
       Logger.overrideLogger(createRedactingLogger(sink, { service: 'room-service' }));
       const { deps, match, redis } = makeDeps();
       const existsMock = redis.exists as unknown as ReturnType<typeof vi.fn>;
-      const real = existsMock.getMockImplementation()!;
+      const real = existsMock.getMockImplementation()! as (key: string) => Promise<number>;
       existsMock.mockImplementation(async (key: string) => {
         if (String(key).startsWith('risk:banned:')) throw new Error('redis down');
         return real(key);
@@ -313,7 +313,7 @@ describe('routeClientMessage', () => {
       const { deps, rooms, redis } = makeDeps();
       rooms.findOne.mockResolvedValue(null); // 房间不存在 ⇒ 正常语义是 12001（证明真的走进了正常链）
       const existsMock = redis.exists as unknown as ReturnType<typeof vi.fn>;
-      const real = existsMock.getMockImplementation()!;
+      const real = existsMock.getMockImplementation()! as (key: string) => Promise<number>;
       existsMock.mockImplementation(async (key: string) => {
         if (String(key).startsWith('risk:banned:')) throw new Error('redis down');
         return real(key);
@@ -604,7 +604,7 @@ describe('routeClientMessage', () => {
       const { deps, match, configCache, currency } = makeDeps();
       // 2026-10-04 用户裁决：种子默认开 ⇒ 夹具缺省也是 true；「关」场景**显式**构造
       //（两个方向的行为覆盖都要在）。
-      expect(configCache.goldRoomEnabled()).toBe(true); // 缺省即种子态 true —— 钉一遍免得夹具漂移
+      expect((configCache.goldRoomEnabled as unknown as () => boolean)()).toBe(true); // 缺省即种子态 true —— 钉一遍免得夹具漂移
       configCache.goldRoomEnabled.mockReturnValue(false);
 
       const off = await route(deps, makeSocket('alice'), C('room.match', { mode: 'gold', baseScore: 15 }));

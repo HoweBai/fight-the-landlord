@@ -236,7 +236,7 @@ describe('§2.7 对账面板状态与互斥（服务层）', () => {
     await vi.advanceTimersByTimeAsync(CURRENCY_RECONCILE_FIRST_RUN_DELAY_MS); // 定时轮到点 ⇒ 遇旗跳过
 
     expect(
-      warnSpy.mock.calls.map((args) => String(args[0])).filter((m) => m.includes('currency reconcile skipped')),
+      warnSpy.mock.calls.map((args: unknown[]) => String(args[0])).filter((m: string) => m.includes('currency reconcile skipped')),
       '「跳过本轮并记日志」= 恰一行 warn',
     ).toHaveLength(1);
     expect(skipTraceIds, '跳过轮无 runWithTrace 包裹（本轮未尝试 ⇒ 无「这一轮」的 trace）').toEqual([undefined]);

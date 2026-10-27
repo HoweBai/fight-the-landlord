@@ -639,9 +639,10 @@ describe('⑧ 定时挂载与 runOnce 全序（两链首排/重排现读/关停�
   /** 本用例捕获到的启动行（`afterSnapshotReady` 是唯一打印落点；两链两行都经它）。 */
   const startedLines = (): string[] =>
     logSpy.mock.calls
-      .map((args) => String(args[0]))
+      .map((args: unknown[]) => String(args[0]))
       .filter(
-        (m) => m.includes('Payment scan loop started') || m.includes('Payment reconcile loop started'),
+        (m: string) =>
+          m.includes('Payment scan loop started') || m.includes('Payment reconcile loop started'),
       );
 
   it('runOnce 全序：closeExpired → sweepCreated → creditPending → ④resolveHolding → ⑤rollbackTimeout → ⑥refunds.resolveHolding → ⑦refunds.rollbackRecovery → ⑧refunds.replayUnknown（返回值汇总）', async () => {

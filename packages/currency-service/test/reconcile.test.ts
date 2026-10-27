@@ -153,7 +153,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
 
   /** 本用例捕获到的启动行（`afterSnapshotReady` 是唯一打印落点）。 */
   const startedLines = (log: ReturnType<typeof vi.spyOn>): string[] =>
-    log.mock.calls.map((args) => String(args[0])).filter((m) => m.includes('Currency reconcile loop started'));
+    log.mock.calls.map((args: unknown[]) => String(args[0])).filter((m: string) => m.includes('Currency reconcile loop started'));
 
   it('注册面（T6 教训）：`ReconcileService` 在 `AppModule` 的 providers 里', () => {
     const providers = Reflect.getMetadata('providers', AppModule) as unknown[];
@@ -179,7 +179,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
       '首跑 = 检查① + 检查③ + 两个新 gauge（缓存为空 ⇒ 检查②无逐键读）',
     ).toHaveLength(4);
     expect(
-      logSpy.mock.calls.some((args) => String(args[0]).includes('currency reconcile done')),
+      logSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('currency reconcile done')),
       '轮摘要（心跳）：零漂移轮也要留痕',
     ).toBe(true);
 
@@ -417,8 +417,8 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
     expect(result.driftAccounts).toBe(1);
     expect(await metricValue(currencyReconcileDriftAccounts)).toBe(1);
     const drifts = errorSpy.mock.calls
-      .map((args) => String(args[0]))
-      .filter((msg) => msg.includes('currency reconcile drift'));
+      .map((args: unknown[]) => String(args[0]))
+      .filter((msg: string) => msg.includes('currency reconcile drift'));
     expect(drifts).toHaveLength(1);
     expect(drifts[0]).toContain('ownerId=u-drift');
     expect(drifts[0]).toContain('balance=100');
@@ -437,7 +437,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
     expect(second.driftAccounts).toBe(0);
     expect(await metricValue(currencyReconcileDriftAccounts)).toBe(0);
     expect(
-      errorSpy.mock.calls.map((args) => String(args[0])).filter((msg) => msg.includes('currency reconcile drift')),
+      errorSpy.mock.calls.map((args: unknown[]) => String(args[0])).filter((msg: string) => msg.includes('currency reconcile drift')),
     ).toHaveLength(1);
   });
 
@@ -524,7 +524,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
     expect(result.orphanSignupGrants).toBe(1);
     expect(await metricValue(currencyOrphanSignupGrants)).toBe(1);
     expect(
-      warnSpy.mock.calls.map((args) => String(args[0])).some((msg) => msg.includes('orphan signup grants') && msg.includes('count=1')),
+      warnSpy.mock.calls.map((args: unknown[]) => String(args[0])).some((msg: string) => msg.includes('orphan signup grants') && msg.includes('count=1')),
       '>0 必须留痕（只读诊断，warn）',
     ).toBe(true);
 
@@ -634,7 +634,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
     db.directFailuresRemaining = 1;
     await vi.advanceTimersByTimeAsync(100); // 第 2 轮：检查①查询抛
     expect(
-      errorSpy.mock.calls.some((args) => String(args[0]).includes('currency reconcile failed')),
+      errorSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('currency reconcile failed')),
       '失败轮留 error 行（timer 来源）',
     ).toBe(true);
     expect(
@@ -717,7 +717,7 @@ describe('§2.12 对账自调度循环（T8：三检查 + 指标 + 日志）', (
 
     expect(res.ok).toBe(true); // 不回滚（权威值在 MySQL 与响应里）
     expect(
-      warnSpy.mock.calls.some((args) => String(args[0]).includes('cache_write_failed')),
+      warnSpy.mock.calls.some((args: unknown[]) => String(args[0]).includes('cache_write_failed')),
     ).toBe(true);
     expect(await metricValue(currencyReconcileCacheDriftTotal)).toBe(before + 1);
   });

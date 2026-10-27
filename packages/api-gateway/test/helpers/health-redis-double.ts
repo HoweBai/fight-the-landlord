@@ -63,7 +63,10 @@ export function resetHealthRedisDouble(): void {
 
 /** 交给 `vi.mock('ioredis', …)` 的工厂直接用。 */
 export function healthRedisMockModule() {
-  const ctor = vi.fn(() => instance);
+  // Vitest 4：箭头函数实现不可 `new`；用普通 function 保留 construct 语义。
+  const ctor = vi.fn(function () {
+    return instance;
+  });
   return { default: ctor, Redis: ctor };
 }
 

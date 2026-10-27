@@ -26,10 +26,18 @@ import type { SessionGuard } from '../src/auth/session.guard';
 describe('API Gateway (HTTP security boundary)', () => {
   let server: import('http').Server;
   let baseUrl: string;
+  // Vitest 4 的 `vi.fn` 默认签名是 `Mock<Procedure | Constructable>`，不再是
+  // 可直接调用的具体函数类型；这里显式给出调用签名（断言仍可 toHaveBeenCalled）。
+  type ForwardMock = (
+    method: string,
+    path: string,
+    body: unknown,
+    res: any,
+  ) => Promise<unknown>;
   let proxy: {
-    forwardToUserSvc: ReturnType<typeof vi.fn>;
-    forwardToRoomSvc: ReturnType<typeof vi.fn>;
-    forwardToGameSvc: ReturnType<typeof vi.fn>;
+    forwardToUserSvc: ForwardMock;
+    forwardToRoomSvc: ForwardMock;
+    forwardToGameSvc: ForwardMock;
   };
   let mockJwtService: { verify: ReturnType<typeof vi.fn> };
   let session: { isActive: ReturnType<typeof vi.fn> };

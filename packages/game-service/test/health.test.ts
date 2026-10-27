@@ -36,7 +36,10 @@ const { conn } = vi.hoisted(() => {
 });
 
 vi.mock('ioredis', () => {
-  const ctor = vi.fn(() => conn);
+  // Vitest 4：箭头函数实现不可 `new`；用普通 function 保留 construct 语义。
+  const ctor = vi.fn(function () {
+    return conn;
+  });
   return { default: ctor, Redis: ctor };
 });
 

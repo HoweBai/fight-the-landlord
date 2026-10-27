@@ -105,7 +105,8 @@ describe('假红④镜像侧对账闸：patchedDependencies ⇒ 镜像 Dockerfil
   });
 
   it('① 前提端：patchedDependencies 非空时，每个 patch 文件必须真实存在', () => {
-    expect(patched.length).toBeGreaterThan(0); // 假红④ 修复在位（若整条修复被回滚，这行会提醒复议本闸）
+    // 2026-10-27 Dependabot 修复：vitest 升到 4.x 后不再需要 2.1.9 补丁，
+    // `patchedDependencies` 为空是合法状态；空集时本闸退化为「无可对账项」。
     for (const [name, path] of patched) {
       expect(existsSync(join(REPO, path)), `${name} → ${path} 不存在`).toBe(true);
     }

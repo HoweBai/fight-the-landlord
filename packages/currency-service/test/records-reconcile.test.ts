@@ -670,8 +670,8 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     const svc = mkService(db);
     await svc.runOnce();
     const lines = warnSpy.mock.calls
-      .map((args) => String(args[0]))
-      .filter((message) => message.includes('records reconcile samples doudizhu'));
+      .map((args: unknown[]) => String(args[0]))
+      .filter((message: string) => message.includes('records reconcile samples doudizhu'));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('sample-0');
     expect(lines[0]).not.toContain('sample-3'); // 第 4 条不进样例（每桶上限 3）
@@ -1057,7 +1057,7 @@ describe('RecordsReconcileService（C2 Task 2）', () => {
     expect(svc.getStatus().lastError).toContain("doesn't exist");
     expect(
       errorSpy.mock.calls.some(
-        (args) => String(args[0]).includes('缺表（1146）') && String(args[0]).includes('部署'),
+        (args: unknown[]) => String(args[0]).includes('缺表（1146）') && String(args[0]).includes('部署'),
       ),
     ).toBe(true);
   });

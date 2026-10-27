@@ -53,7 +53,7 @@ const redisState = vi.hoisted(() => ({
 }));
 
 vi.mock('ioredis', () => {
-  const ctor = vi.fn(() => {
+  const ctor = vi.fn(function () {
     const instance = {
       on: vi.fn(),
       subscribe: vi.fn(async () => undefined),
