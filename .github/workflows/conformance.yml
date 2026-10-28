@@ -1,17 +1,21 @@
 # 真栈 conformance：**Linux 侧验证的自动化答案**（片① 用户裁决「后移到实际部署时统一跑」由此落地且长期生效）。
 #
-# 三种被调用形态：
+# 四种被调用形态：
 #   * push→master：自己构建 14 镜像，起真栈，跑全部切片（feature 分支**不跑** —— R1304 的触发分级）。
 #   * `workflow_call`（由 `release.yml` 传 `image_tag`）：**拉刚推好的 tag 镜像**，省一次全量构建
 #     （R1314⑤：tag 路径的构建次数 = 2）。
+#   * `workflow_dispatch`（2026-10-29 新增）：**feature 集成分支的权威轮入口** —— 推集成分支后
+#     `gh workflow run conformance.yml --ref <branch>` 手动跑整轮（C3 硬闸：slice 未过权威轮不得合 dev）。
+#     GitHub 要求本工作流文件存在于默认分支；未给 `inputs.image_tag` ⇒ 本机构建 14 镜像。
 #
 # ⚠️ **额度吃紧时的降级路径**（R1314③）：删掉下面的 `on.push.branches`、只留 `workflow_call`
 #    ⇒ 真栈 conformance 就只在 tag 上跑。
-#    ⚠️ 触发面**不是**「tag 与手动 dispatch」：dispatch 打的是 `release.yml`，而它的 `conformance`
-#       job 带 `if: github.event_name == 'push'` ⇒ 那条路径上本工作流**整条被跳过**（回滚快正靠它）。
-#    ⚠️ 也**已不是一行改动**：`slice-07.4-pipeline` 把本文件的触发集合钉成 {push, workflow_call}
-#       ⇒ 删 `on.push` 会让那一片红（得分两处一起改）。代价不变：master 上不再有真栈闸
-#       （渲染闸 `render-gate` 仍在 `ci.yml` 里每次 push 跑，不受影响）。
+#    ⚠️ 触发面**不是**「tag 与手动 dispatch」：release 回滚 dispatch 打的是 `release.yml`，而它的
+#       `conformance` job 带 `if: github.event_name == 'push'` ⇒ 那条路径上本工作流**整条被跳过**
+#       （回滚快正靠它）。本文件自己的 `workflow_dispatch` **只跑 conformance、不触发任何部署**。
+#    ⚠️ 也**已不是一行改动**：`slice-07.4-pipeline` 把本文件的触发集合钉成
+#       {push, workflow_call, workflow_dispatch} ⇒ 删 `on.push` 会让那一片红（得分两处一起改）。
+#       代价不变：master 上不再有真栈闸（渲染闸 `render-gate` 仍在 `ci.yml` 里每次 push 跑，不受影响）。
 name: conformance
 
 on:
@@ -24,6 +28,7 @@ on:
         description: '从 GHCR 拉的既有 tag；留空 = 本机构建'
         required: false
         type: string
+  workflow_dispatch:
 
 jobs:
   conformance:
