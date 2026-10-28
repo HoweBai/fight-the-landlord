@@ -19,6 +19,32 @@ describe('LeaderLease', () => {
     await expect(new LeaderLease(redis).isLeader()).resolves.toBe(true);
     expect(redis.eval).toHaveBeenCalled();
   });
+
+  /**
+   * 🔴 2026-10-28：`release()` 此前**没有调用点** ⇒ 滚动更新/重启后旧实例的锁要等 TTL 120s，
+   * 新实例在这段时间恒非 leader ⇒ 撮合/自动开局/回收/结算整体空窗 ≤2 分钟。本组钉住
+   * 「关停即释放」这一钩子（Nest 的 `onApplicationShutdown`，由 `enableShutdownHooks` 驱动）。
+   */
+  it('关停 ⇒ 释放自己的锁（COMPARE_DEL，不是续约脚本）', async () => {
+    const redis = { set: vi.fn(), eval: vi.fn().mockResolvedValue(1) } as any;
+    const lease = new LeaderLease(redis);
+
+    await lease.onApplicationShutdown();
+
+    expect(redis.eval, '关停必须发起一次释放（否则新实例要空窗到 TTL）').toHaveBeenCalledTimes(1);
+    const [script, numKeys, key, id] = redis.eval.mock.calls[0] as [string, number, string, string];
+    expect(script, '释放用的是 COMPARE_DEL（只删「值仍是自己」的锁）').toContain("redis.call('DEL', KEYS[1])");
+    expect(script, '不得误用续约脚本（RENEW 只 PEXPIRE、不释放）').not.toContain('PEXPIRE');
+    expect(numKeys).toBe(1);
+    expect(key).toBe('ftl:room:leader');
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(0);
+  });
+
+  it('关停时 Redis 故障 ⇒ 只 warn、不抛（关停不得被拖住，TTL 兜底）', async () => {
+    const redis = { set: vi.fn(), eval: vi.fn().mockRejectedValue(new Error('redis down')) } as any;
+    await expect(new LeaderLease(redis).onApplicationShutdown()).resolves.toBeUndefined();
+  });
 });
 
 describe('FinalizationGuard', () => {
