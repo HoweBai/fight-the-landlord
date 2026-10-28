@@ -1247,6 +1247,258 @@ const STRUCT_META = {
   'game.doudizhu.robot.modelBySkill': { label: '各档模型' },
 };
 
+/* ── 四川麻将规则表单（2026-10-29）────────────────────────────────
+ * 描述表是**纯字面量**（无外部标识符、无函数，可含注释）：protocol 门禁
+ * packages/protocol/src/mahjong/admin-rules-form.gate.test.ts 会从本文件提取它，
+ * 用真 parseMahjongRules 验证枚举/范围/番键等价——改这里必须同步协议。 */
+
+/** 预设展示名（只读徽标 + 重置确认文案）。 */
+const MAHJONG_PRESET_LABELS = { chengdu: '成都血战到底', sbr: 'SBR 竞技近似' };
+
+const MAHJONG_RULES_FORM = {
+  fanLabels: {
+    // 命名番表（17）
+    pingHu: '平胡',
+    duiDuiHu: '对对胡',
+    qingYiSe: '清一色',
+    daiYaoJiu: '带幺九',
+    qiDui: '七对',
+    qingDui: '清对',
+    jiangDui: '将对',
+    longQiDui: '龙七对',
+    qingQiDui: '清七对',
+    qingYaoJiu: '清幺九',
+    qingLongQiDui: '清龙七对',
+    gangShangHua: '杠上花',
+    gangShangPao: '杠上炮',
+    qiangGangHu: '抢杠胡',
+    jinGouDiao: '金钩钓',
+    gen: '根',
+    ziMo: '自摸',
+    // 加法番表（9）
+    root: '根（每组）',
+    allPungs: '碰碰胡',
+    goldenWait: '金钩钓',
+    fullFlush: '清一色',
+    sevenPairs: '七对',
+    winAfterKong: '杠上花',
+    shootAfterKong: '杠上炮',
+    robbingKong: '抢杠胡',
+    underTheSea: '海底',
+    // 可选番（8）
+    duanYaoJiu: '断幺九',
+    haiDi: '海底',
+    perGang: '每杠',
+    shuangLong: '双龙七对',
+    sanLong: '三龙七对',
+    shiBaLuoHan: '十八罗汉',
+    tianHu: '天胡',
+    diHu: '地胡',
+  },
+  tables: {
+    fanTable: {
+      keys: [
+        'pingHu', 'duiDuiHu', 'qingYiSe', 'daiYaoJiu', 'qiDui', 'qingDui', 'jiangDui',
+        'longQiDui', 'qingQiDui', 'qingYaoJiu', 'qingLongQiDui', 'gangShangHua',
+        'gangShangPao', 'qiangGangHu', 'jinGouDiao', 'gen', 'ziMo',
+      ],
+      min: 0,
+      max: 20,
+    },
+    additiveFanTable: {
+      keys: [
+        'root', 'allPungs', 'goldenWait', 'fullFlush', 'sevenPairs', 'winAfterKong',
+        'shootAfterKong', 'robbingKong', 'underTheSea',
+      ],
+      min: 0,
+      max: 20,
+    },
+    optionalFans: {
+      keys: [
+        'duanYaoJiu', 'haiDi', 'perGang', 'shuangLong', 'sanLong', 'shiBaLuoHan',
+        'tianHu', 'diHu',
+      ],
+      min: 0,
+      max: 20,
+    },
+  },
+  groups: [
+    {
+      id: 'scoring',
+      title: '计分',
+      fields: [
+        {
+          path: 'scoringPolicy',
+          label: '计分方式',
+          type: 'enum',
+          options: [
+            ['named', '命名番表（成都口径）'],
+            ['additive', '加法番表（SBR 口径）'],
+          ],
+          note: '命名 = 取单一最高主番再加番；加法 = 逐项特征相加。',
+        },
+        {
+          path: 'fanBase',
+          label: '底番',
+          type: 'enum',
+          valueType: 'number',
+          options: [
+            [1, '1（番从 1 起算：平胡 1 番 = 1× 底）'],
+            [0, '0（番从 0 起算：0 番 = 1× 底）'],
+          ],
+        },
+        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8 },
+        { path: 'minFanToHu', label: '起胡番', type: 'int', min: 0, max: 6, note: '0 = 不设门槛。' },
+        {
+          path: 'selfDrawMode',
+          label: '自摸加成',
+          type: 'enum',
+          options: [
+            ['addBase', '每家多付 1× 底'],
+            ['addPoint', '每家多付 1× 底（SBR 写法，当前同 addBase）'],
+            ['addFan', '番 +1'],
+            ['none', '无加成'],
+          ],
+          note: 'addBase 与 addPoint 当前实现同义；addFan 读命名番表的「自摸」项，SBR 空表时实际 +0。',
+        },
+        {
+          path: 'rootIncludesKong',
+          label: '根包含杠',
+          type: 'bool',
+          note: '开 = 已杠的四张也算根；龙七对的定义四张始终不算根。',
+        },
+      ],
+    },
+    {
+      id: 'namedFan',
+      title: '命名番表',
+      table: 'fanTable',
+      note: '仅「命名番表」口径生效；0 或留空 = 该番不成立；平胡建议 ≥1。',
+    },
+    {
+      id: 'additiveFan',
+      title: '加法番表',
+      table: 'additiveFanTable',
+      note: '仅「加法番表」口径生效；全为 0 时任何牌都是 0 番（只按底分结算）。',
+    },
+    {
+      id: 'optionalFan',
+      title: '可选番',
+      table: 'optionalFans',
+      note: '0 = 关闭；非 0 = 满足条件时加该番（每杠 × 杠数）。',
+    },
+    {
+      id: 'flow',
+      title: '换牌与流程',
+      fields: [
+        { path: 'exchangeThreeEnabled', label: '换三张', type: 'bool' },
+        {
+          path: 'exchangeDirection',
+          label: '交换方向',
+          type: 'enum',
+          options: [
+            ['random', '随机（掷骰）'],
+            ['clockwise', '下家（顺时针）'],
+            ['counterclockwise', '上家（逆时针）'],
+            ['opposite', '对家'],
+          ],
+        },
+        { path: 'lastFourForcedHu', label: '最后四张必胡', type: 'bool' },
+        {
+          path: 'passHuMode',
+          label: '过水',
+          type: 'enum',
+          options: [
+            ['off', '不过水（可立即再胡）'],
+            ['sameTile', '同张不可再胡'],
+            ['sameTileOrHigherFan', '同张需番更高'],
+          ],
+        },
+      ],
+    },
+    {
+      id: 'gang',
+      title: '杠与转账',
+      fields: [
+        {
+          path: 'directGangMode',
+          label: '直杠付款',
+          type: 'enum',
+          options: [
+            ['contract', '仅点杠者付 2× 底'],
+            ['everyone', '点杠者 2× 底 + 其余在场每家 1× 底'],
+          ],
+        },
+        {
+          path: 'gangTransfer',
+          label: '呼叫转移',
+          type: 'enum',
+          options: [
+            ['none', '不转移（杠分退回）'],
+            ['toEachWinner', '转给每个赢家'],
+            ['split', '拆分'],
+          ],
+        },
+        {
+          path: 'refundOnDraw',
+          label: '荒庄退税',
+          type: 'enum',
+          options: [
+            ['nonReadyAll', '所有未听者退'],
+            ['kongDeclarerOnly', '仅杠者退'],
+          ],
+          note: '两档当前实现同义：退税对象都是杠事件收款人且荒庄未听/花猪。',
+        },
+      ],
+    },
+    {
+      id: 'settle',
+      title: '花猪与查叫',
+      fields: [
+        {
+          path: 'huazhuMode',
+          label: '花猪处置',
+          type: 'enum',
+          options: [
+            ['payEach', '赔每家封顶分'],
+            ['burn48', '销毁 48× 底（SBR）'],
+            ['off', '不罚'],
+          ],
+        },
+        {
+          path: 'huazhuPayees',
+          label: '花猪赔付对象',
+          type: 'enum',
+          options: [
+            ['active', '仍在场的非花猪玩家'],
+            ['nonFlowerPig', '除花猪外所有玩家（含已胡者）'],
+          ],
+        },
+        { path: 'chajiaoEnabled', label: '查大叫', type: 'bool' },
+        {
+          path: 'chajiaoAllSameState',
+          label: '全员同状态',
+          type: 'enum',
+          options: [
+            ['none', '不结算（当前实现与「照常赔付」同义）'],
+            ['pay', '照常赔付'],
+          ],
+          note: '当前代码两档无可观测差异（settle.ts 的守卫分支不产生查叫事件）；文档描述的差异尚未实现，另立片对账。',
+        },
+      ],
+    },
+    {
+      id: 'timing',
+      title: '决策时长',
+      fields: [
+        { path: 'claimWindowMs', label: '出牌响应窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+        { path: 'exchangeWindowMs', label: '换三张窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+        { path: 'lackWindowMs', label: '定缺窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+      ],
+    },
+  ],
+};
+
 /** 当前全量快照（登录后 loadAll 填充）：key -> {value, version}。 */
 let currentConfig = {};
 /** 简单键未保存草稿（切域/重渲染不丢；保存成功或点还原后删除）。 */
