@@ -118,6 +118,68 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   }
 }
 
+// —— 麻将 Batch 2 动画（2026-10-28）——
+
+/// 副露 pop 入场（碰）：scale 0.6 + 下方 12px 弹起。起始态可见（只动 transform）。
+@keyframes ftl-peng-pop {
+  from { transform: scale(0.6) translateY(12px); }
+  to { transform: none; }
+}
+
+/// 副露 pop 入场（杠）：4 张更重，scale 更小、位移稍大。
+@keyframes ftl-gang-pop {
+  from { transform: scale(0.55) translateY(14px); }
+  to { transform: none; }
+}
+
+/// 副露 pop 入场（暗杠）：和 gang 同形态（牌背视觉已够区分，时长不再差异化）。
+@keyframes ftl-angang-pop {
+  from { transform: scale(0.5) translateY(16px); }
+  to { transform: none; }
+}
+
+/// 胡牌 banner 飞出：起始态可见 transform-only；停留 0.4s 后 100% 才淡出。
+@keyframes ftl-hu-banner {
+  0%   { transform: scale(1.4) translateY(-10px); opacity: 1; }
+  30%  { transform: none; opacity: 1; }
+  70%  { transform: none; opacity: 1; }
+  100% { transform: scale(0.9) translateY(-20px); opacity: 0; }
+}
+
+/// 手牌双击后向右上飞出（对齐弃牌河位置）。起始态可见。
+@keyframes ftl-fly-out {
+  from { transform: none; }
+  to   { transform: translateY(-20px) translateX(12px) scale(0.7); opacity: 0; }
+}
+
+/// 当前玩家座位面板发光循环：box-shadow 呼吸。
+@keyframes ftl-active-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba($ftl-color-gold, 0.25); }
+  50%      { box-shadow: 0 0 22px rgba($ftl-color-gold, 0.55); }
+}
+
+/// 定缺推荐按钮呼吸（独立于 urgent-pulse，1.6s vs 0.8s）。
+@keyframes ftl-lack-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+
+// —— 麻将 Batch 3 动画（2026-10-28）——
+
+/// Claim 窗口紧急呼吸：1.6s 循环 scale 脉动（claim 响应紧急态）。
+@keyframes ftl-claim-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+/// 麻将专用结算入场：从缩小 0.8 + 上方 20px 入场。
+/// ⚠️ 只从位移/缩放起手（阻断 B3 修法），起始态零 opacity。
+/// ⚠️ 不动现有的 ftl-settlement-in（斗地主/跑得快共用），这是麻将独立版本。
+@keyframes ftl-mj-settlement-in {
+  from { transform: scale(0.8) translateY(20px); }
+  to   { transform: none; opacity: 1; }
+}
+
 /**
  * 错峰容器：`min(i, 12) * 35ms`（参考实现同款上限 —— 不封顶的话 20 张牌要等 700ms）。
  * 由宿主在模板里给 `--ftl-delay`；缺省 0ms ⇒ 不传也能动，只是不递增。
@@ -212,6 +274,48 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   animation-delay: var(--ftl-delay, 0ms);
 }
 
+// —— 麻将 Batch 2 anim- 类（2026-10-28）——
+
+/// 副露 pop（碰）：一次性入场，0.36s。起始态可见，backwards 填充只在 delay 等待期摆好姿势。
+.anim-meld-pop {
+  animation: ftl-peng-pop 0.36s $ftl-ease both;
+}
+/// 副露 pop 修饰符：杠更重、位移更大，时长稍长 0.06s。
+.anim-meld-pop--gang {
+  animation: ftl-gang-pop 0.42s $ftl-ease both;
+}
+/// 副露 pop 修饰符：暗杠同 gang 时长（牌背视觉已够区分，不再差异化时长）。
+.anim-meld-pop--angang {
+  animation: ftl-angang-pop 0.42s $ftl-ease both;
+}
+/// 胡牌 banner：0.8s 内 transform 缩放 → 停留 → 淡出。起始态全可见。
+.anim-hu-banner {
+  animation: ftl-hu-banner 0.8s $ftl-ease forwards;
+}
+/// 手牌双击飞出：0.24s 向右上飞出 + 淡出。forwards 填充停在飞出位置。
+.anim-fly-out {
+  animation: ftl-fly-out 0.24s $ftl-ease forwards;
+}
+/// 当前玩家座位面板发光：box-shadow 呼吸循环。
+.anim-active-glow {
+  animation: ftl-active-glow 1.8s ease-in-out infinite;
+}
+/// 定缺推荐按钮呼吸：独立于 urgent-pulse（1.6s vs 0.8s），不污染已用组件。
+.anim-lack-pulse {
+  animation: ftl-lack-pulse 1.6s ease-in-out infinite;
+}
+
+// —— 麻将 Batch 3 anim- 类（2026-10-28）——
+
+/// Claim 窗口紧急呼吸（循环，ease-in-out）。
+.anim-claim-pulse {
+  animation: ftl-claim-pulse 1.6s ease-in-out infinite;
+}
+/// 麻将专用结算入场（一次性，$ftl-ease）。
+.anim-mj-settlement-in {
+  animation: ftl-mj-settlement-in 0.36s $ftl-ease both;
+}
+
 /**
  * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
  * 形态照参考实现（`transition: none` + `animation: none !important`）。
@@ -229,7 +333,16 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-toast-in,
   .anim-float-up,
   .anim-urgent-pulse,
-  .anim-wait-dot {
+  .anim-wait-dot,
+  .anim-meld-pop,
+  .anim-meld-pop--gang,
+  .anim-meld-pop--angang,
+  .anim-hu-banner,
+  .anim-fly-out,
+  .anim-active-glow,
+  .anim-lack-pulse,
+  .anim-claim-pulse,
+  .anim-mj-settlement-in {
     animation: none !important;
     transition: none !important;
     transform: none !important;

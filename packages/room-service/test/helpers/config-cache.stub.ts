@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { DEFAULT_PDK_RULES } from '@fight-the-landlord/shared';
+import { DEFAULT_PDK_RULES, DEFAULT_CHENGDU_RULES } from '@fight-the-landlord/shared';
 import { supportsPlayerCount, type GameType } from '@fight-the-landlord/protocol';
 import type { ConfigCacheService, CycleKey } from '../../src/config/config-cache.service';
 import { CYCLE_MS_DEFAULTS } from '../../src/config/config-cache.service';
@@ -61,6 +61,10 @@ export interface ConfigCacheStub {
   paodekuaiTwoPlayerEnabled: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：本局跑得快规则快照。 */
   pdkRules: ReturnType<typeof vi.fn>;
+  /** T11：本局麻将规则快照。 */
+  mahjongRules: ReturnType<typeof vi.fn>;
+  /** T11：金币场 sbr burn48 资损闸（缺省 false）。 */
+  mahjongSbrGoldEnabled: ReturnType<typeof vi.fn>;
   /** 多玩法（Task 2.2）：玩法是否开放（2026-10-24 起两个玩法都读开关）。 */
   gameEnabled: ReturnType<typeof vi.fn>;
   /** 玩法开放开关（2026-10-24）：斗地主总开关（缺省 true）。 */
@@ -115,6 +119,8 @@ export function makeConfigCache(
     paodekuaiNonThreePlayerEnabled,
     paodekuaiTwoPlayerEnabled,
     pdkRules: vi.fn(() => ({ ...DEFAULT_PDK_RULES })),
+    mahjongRules: vi.fn(() => ({ ...DEFAULT_CHENGDU_RULES })),
+    mahjongSbrGoldEnabled: vi.fn(() => false),
     doudizhuEnabled,
     gameEnabled: vi.fn((gameType: GameType) => {
       switch (gameType) {

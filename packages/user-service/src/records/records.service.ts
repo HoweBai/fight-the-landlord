@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { ErrCode, decodeCards, decodeHand, type Card, type PdkRecord } from '@fight-the-landlord/protocol';
+import { ErrCode, decodeCards, decodeHand, type Card, type MahjongRecordView, type PdkRecord } from '@fight-the-landlord/protocol';
 import { DomainError } from '../http/errors';
 
 /**
@@ -84,6 +84,42 @@ export interface MyRecordsPage {
 export interface PdkRecordsPage {
   items: PdkRecord[];
   nextCursor: string | null;
+}
+
+/** 麻将一页（`MahjongRecordView` 由 protocol 定义；只给自己的手牌/公开副露）。 */
+export interface MahjongRecordsPage {
+  items: MahjongRecordView[];
+  nextCursor: string | null;
+}
+
+/** 麻将页面查询行形态。 */
+interface MahjongPageRow {
+  mine_id: number | string;
+  my_seat: number | string;
+  ended_at: number | string;
+  record_id: number | string;
+  room_code: string;
+  mode: string;
+  player_count: number | string;
+  base_score: number | string;
+  dealer_seat: number | string;
+}
+
+/** 麻将玩家行（父表字段不重复进 DTO）。 */
+interface MahjongPlayerRow {
+  record_id: number | string;
+  seat: number | string;
+  nickname: string | null;
+  is_robot: number | string;
+  hand: string;
+  final_hand: string | null;
+  melds: unknown;
+  discards: unknown;
+  lack_suit: number | string | null;
+  is_out: number | string;
+  fan: number | string | null;
+  multiplier: number | string | null;
+  score_change: number | string;
 }
 
 /** pdk 页面查询行形态（列名即 SQL 别名）。 */
@@ -321,6 +357,131 @@ export class RecordsService {
       ? encodeRecordsCursor(bigintMs(last.ended_at), Number(last.mine_id))
       : null;
     return { items, nextCursor };
+  }
+
+  /**
+   * 麻将「我的历史战绩」一页（T12）。
+   *
+   * 与 ddz/pdk 同一条 keyset/游标/分页规则，换两张 mahjong 表；只给自己的**初始手牌**
+   * （`ownHand`），他人手牌永不出站（DTO 里只有昵称/副露/弃牌/缺门/番/分差）。
+   */
+  async getMyMahjongRecords(
+    userId: string,
+    query: { cursor?: unknown; limit?: unknown; mode?: unknown; from?: unknown; to?: unknown } = {},
+  ): Promise<MahjongRecordsPage> {
+    const limit = clampRecordsLimit(query.limit);
+    const cursor = query.cursor === undefined ? null : decodeRecordsCursor(query.cursor as string);
+    const mode =
+      typeof query.mode === 'string' && RECORDS_MODE_VALUES.includes(query.mode as RecordsMode)
+        ? (query.mode as RecordsMode)
+        : query.mode === undefined
+          ? null
+          : throwInvalidParam('mode');
+    const dateRange = parseDateRange(query.from, query.to);
+
+    const pageRows = await this.queryMahjongPage(userId, cursor, limit, mode, dateRange);
+    const hasMore = pageRows.length > limit;
+    const rows = hasMore ? pageRows.slice(0, limit) : pageRows;
+    if (rows.length === 0) return { items: [], nextCursor: null };
+
+    const playersByRecord = await this.queryMahjongPlayers(
+      rows.map((row) => Number(row.record_id)),
+    );
+    const items = rows.map((row) =>
+      this.toMahjongDto(row, playersByRecord.get(String(row.record_id)) ?? []),
+    );
+
+    const last = rows[rows.length - 1]!;
+    const nextCursor = hasMore
+      ? encodeRecordsCursor(bigintMs(last.ended_at), Number(last.mine_id))
+      : null;
+    return { items, nextCursor };
+  }
+
+  /** 麻将 keyset 页面（`ended_at DESC, mine.id DESC`；`ended_at` 是 BIGINT 毫秒）。 */
+  private async queryMahjongPage(
+    userId: string,
+    cursor: { endedAtMs: number; playerRowId: number } | null,
+    limit: number,
+    mode: RecordsMode | null,
+    dateRange: { fromMs: number; toMs: number } | null,
+  ): Promise<MahjongPageRow[]> {
+    const whereClauses: string[] = ['mine.`user_id` = ?'];
+    const params: unknown[] = [userId];
+    if (mode !== null) {
+      whereClauses.push('r.`mode` = ?');
+      params.push(mode);
+    }
+    if (dateRange !== null) {
+      whereClauses.push('mine.`ended_at` >= ?');
+      params.push(dateRange.fromMs);
+      whereClauses.push('mine.`ended_at` < ?');
+      params.push(dateRange.toMs);
+    }
+    if (cursor) {
+      whereClauses.push('(mine.`ended_at` < ? OR (mine.`ended_at` = ? AND mine.`id` < ?))');
+      params.push(cursor.endedAtMs, cursor.endedAtMs, cursor.playerRowId);
+    }
+
+    const sql =
+      'SELECT mine.`id` AS `mine_id`, mine.`seat` AS `my_seat`, mine.`ended_at` AS `ended_at`, ' +
+      'r.`id` AS `record_id`, r.`room_code`, r.`mode`, r.`player_count`, r.`base_score`, r.`dealer_seat` ' +
+      'FROM `game_record_players_mahjong` mine ' +
+      'JOIN `game_records_mahjong` r ON r.`id` = mine.`record_id` ' +
+      `WHERE ${whereClauses.join(' AND ')} ` +
+      'ORDER BY mine.`ended_at` DESC, mine.`id` DESC LIMIT ?';
+    params.push(limit + 1);
+    return (await this.dataSource.query(sql, params)) as MahjongPageRow[];
+  }
+
+  /** 麻将附页：本页各局的全部玩家行。 */
+  private async queryMahjongPlayers(recordIds: number[]): Promise<Map<string, MahjongPlayerRow[]>> {
+    const byRecord = new Map<string, MahjongPlayerRow[]>();
+    if (recordIds.length === 0) return byRecord;
+    const placeholders = recordIds.map(() => '?').join(', ');
+    const rows = (await this.dataSource.query(
+      'SELECT `record_id`, `seat`, `nickname`, `is_robot`, `hand`, `final_hand`, `melds`, `discards`, ' +
+        '`lack_suit`, `is_out`, `fan`, `multiplier`, `score_change` ' +
+        `FROM \`game_record_players_mahjong\` WHERE \`record_id\` IN (${placeholders}) ` +
+        'ORDER BY `record_id` ASC, `seat` ASC',
+      recordIds,
+    )) as MahjongPlayerRow[];
+    for (const row of rows) {
+      const key = String(row.record_id);
+      const list = byRecord.get(key) ?? [];
+      list.push(row);
+      byRecord.set(key, list);
+    }
+    return byRecord;
+  }
+
+  /** 逐键构造 `MahjongRecordView`（他人手牌只给公开副露/弃牌；不给 rngSeed）。 */
+  private toMahjongDto(
+    row: MahjongPageRow,
+    players: MahjongPlayerRow[],
+  ): MahjongRecordView {
+    const ownSeat = Number(row.my_seat);
+    const mine = players.find((p) => Number(p.seat) === ownSeat);
+    return {
+      roomCode: String(row.room_code),
+      endedAt: bigintMs(row.ended_at),
+      gameType: 'mahjong',
+      mode: row.mode as MahjongRecordView['mode'],
+      playerCount: 4,
+      dealerSeat: Number(row.dealer_seat),
+      ownSeat,
+      ...(mine === undefined ? {} : { ownHand: mine.hand }),
+      seats: players.map((p) => ({
+        seat: Number(p.seat),
+        ...(p.nickname === null ? {} : { nickname: p.nickname }),
+        melds: jsonOf(p.melds, []),
+        discards: jsonOf(p.discards, []),
+        lackSuit: p.lack_suit === null ? null : (Number(p.lack_suit) as 0 | 1 | 2),
+        isOut: Number(p.is_out) === 1,
+        ...(p.fan === null ? {} : { fan: Number(p.fan) }),
+        delta: Number(p.score_change),
+      })),
+    };
   }
 
   /** pdk keyset 页面（同斗地主：`ended_at DESC, mine.id DESC`；`ended_at` 是 BIGINT 毫秒）。 */

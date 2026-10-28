@@ -1,7 +1,7 @@
 // packages/room-service/src/gateway/game.client.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { ErrCode, RPC_PATTERNS, type Card, type GameTrusteeRequest, type PlayerView, type RpcResult } from '@fight-the-landlord/protocol';
+import { ErrCode, RPC_PATTERNS, type Card, type GameTrusteeRequest, type MahjongAction, type PlayerView, type RpcResult } from '@fight-the-landlord/protocol';
 import { metaFromTrace } from '@fight-the-landlord/shared';
 import { lastValueFrom, timeout } from 'rxjs';
 import { TRANSPORT_FAILURE_MESSAGE } from './transport-failure';
@@ -124,12 +124,12 @@ export class GameClient {
      * （spec §3.5-A 记的那一类）。收紧之后，调用方传裸数字数组会**当场编译报错**，
      * 而不是等到运行期被 `validateClientMessage` 拦成 `10001`。
      */
-    payload: { grab?: boolean; cards?: Card[]; baseVersion?: number },
+    payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction; baseVersion?: number; windowId?: string },
   ): Promise<unknown> {
-    const { baseVersion, ...params } = payload;
+    const { baseVersion, windowId, ...params } = payload;
     const resp = await this.call(
       RPC_PATTERNS.gameAction,
-      { roomCode, userId, action, payload: params, baseVersion },
+      { roomCode, userId, action, payload: params, baseVersion, ...(windowId === undefined ? {} : { windowId }) },
       TIMEOUT_MS.view,
     );
     return resp.data;

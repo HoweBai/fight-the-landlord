@@ -66,6 +66,13 @@ export const RISK_WIN_RATE_PDK_SQL =
   "SELECT p.user_id, r.player_count AS player_count, COUNT(*) AS games, SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id, r.player_count";
 
 /**
+ * 四川麻将胜率统计（T12）：同一口径（随机/金币场、排除机器人整局、只活跃账号）；
+ * 胜 = `p.won`（写入侧来自 isOut）。4 人一局，不分人数桶。
+ */
+export const RISK_WIN_RATE_MAHJONG_SQL =
+  "SELECT p.user_id, COUNT(*) AS games, SUM(p.won) AS wins FROM game_record_players_mahjong p JOIN game_records_mahjong r ON r.id = p.record_id JOIN users u ON u.id = p.user_id AND u.status = 'active' WHERE r.mode IN ('random','gold') AND p.user_id IS NOT NULL AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_mahjong x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY p.user_id";
+
+/**
  * 设备数统计（规格 §2.5-2 **SQL2 逐字**；`? = now − risk.deviceWindowDays 天`）。
  * ⚠️ F1 修：**同样带 users 过滤**，防 banned 用户经此单边进入轮次。
  */
@@ -100,7 +107,7 @@ interface PdkWinStat extends GameWinStat {
 
 /** 并集内一个用户的统计：按玩法分开（PDK 再按人数），设备数平台级。 */
 interface MergedRiskStat {
-  byGame: { doudizhu?: GameWinStat; paodekuai?: PdkWinStat[] };
+  byGame: { doudizhu?: GameWinStat; paodekuai?: PdkWinStat[]; mahjong?: GameWinStat };
   devices: number;
 }
 
@@ -326,6 +333,7 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     };
     let winRows: DdzWinRow[] | null = null;
     let pdkWinRows: PdkWinRow[] | null = null;
+    let mjWinRows: DdzWinRow[] | null = null;
     const degradedGames: GameType[] = [];
     try {
       winRows = (await this.dataSource.query(RISK_WIN_RATE_SQL)) as DdzWinRow[];
@@ -347,8 +355,18 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
         `risk scan: paodekuai win-rate SQL failed (round continues with doudizhu/device): ${reason}`,
       );
     }
-    if (winRows === null && pdkWinRows === null) {
-      throw new Error('risk scan: both game win-rate queries failed');
+    try {
+      mjWinRows = (await this.dataSource.query(RISK_WIN_RATE_MAHJONG_SQL)) as DdzWinRow[];
+    } catch (err) {
+      degradedGames.push('mahjong');
+      riskScanSqlFailuresTotal.inc({ scope: 'mahjong' });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `risk scan: mahjong win-rate SQL failed (round continues with doudizhu/paodekuai/device): ${reason}`,
+      );
+    }
+    if (winRows === null && pdkWinRows === null && mjWinRows === null) {
+      throw new Error('risk scan: all game win-rate queries failed');
     }
     let deviceRows: Array<{ user_id: string; devices: number | string }>;
     try {
@@ -371,6 +389,12 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     };
     for (const row of winRows ?? []) {
       ensure(String(row.user_id)).byGame.doudizhu = {
+        games: Number(row.games),
+        wins: Number(row.wins),
+      };
+    }
+    for (const row of mjWinRows ?? []) {
+      ensure(String(row.user_id)).byGame.mahjong = {
         games: Number(row.games),
         wins: Number(row.wins),
       };
@@ -410,8 +434,11 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     for (const [userId, stats] of merged) {
       const ddz = stats.byGame.doudizhu;
       const pdk = stats.byGame.paodekuai;
+      const mj = stats.byGame.mahjong;
       const ddzHit =
         ddz !== undefined && ddz.games > minGames && ddz.wins / ddz.games > winRateThreshold;
+      const mjHit =
+        mj !== undefined && mj.games > minGames && mj.wins / mj.games > winRateThreshold;
       const pdkHits = (pdk ?? [])
         .filter(
           (stat) =>
@@ -420,10 +447,11 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
         )
         .sort((a, b) => a.playerCount - b.playerCount);
       // 两玩法同时命中只算“胜率命中项”一项（不叠分）；PDK 多人数命中同样不叠分。
-      const hit1 = ddzHit || pdkHits.length > 0;
+      const hit1 = ddzHit || pdkHits.length > 0 || mjHit;
       const hit2 = stats.devices > deviceLimit;
       if (ddzHit) incGame(riskScanHitsTotal, 'doudizhu');
       if (pdkHits.length > 0) incGame(riskScanHitsTotal, 'paodekuai');
+      if (mjHit) incGame(riskScanHitsTotal, 'mahjong');
       const score = (hit1 ? SINGLE_HIT_SCORE : 0) + (hit2 ? SINGLE_HIT_SCORE : 0);
       if (score >= SINGLE_HIT_SCORE) flagged += 1;
       const reasons: ScanReason[] = [];
@@ -435,6 +463,17 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
             games: ddz.games,
             wins: ddz.wins,
             winRate: ddz.wins / ddz.games,
+          },
+        });
+      }
+      if (mjHit && mj !== undefined) {
+        reasons.push({
+          check: 'winRate',
+          detail: {
+            gameType: 'mahjong',
+            games: mj.games,
+            wins: mj.wins,
+            winRate: mj.wins / mj.games,
           },
         });
       }

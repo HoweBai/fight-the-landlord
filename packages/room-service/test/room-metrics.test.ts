@@ -45,8 +45,24 @@ describe('RoomMetricsService：rooms_active（SCAN room:*，排派生键）', ()
     );
   });
 
-  it('15s 自重排；shutdown 后不再采样（关停闸 —— 迟到回执不得复活循环）', async () => {
-    const scan = vi.fn(async () => ['0', []]);
+  it('麻将房间也出 game_type=mahjong 的 rooms_active 序列', async () => {
+    const scan = vi.fn(async (cursor: string) =>
+      cursor === '0'
+        ? ['0', ['room:MJ1', 'room:MJ1:seats', 'room:MJ1:cardcount']]
+        : ['0', []],
+    );
+    const pipeline = vi.fn(() => ({
+      hget: vi.fn().mockReturnThis(),
+      exec: async () => [[null, 'mahjong']],
+    }));
+    const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
+
+    await service.sampleOnce();
+
+    expect(await exactSeriesValue(roomsActive, { game_type: 'mahjong' })).toBe(1);
+  });
+
+  it('15s 自重排；shutdown 后不再采样（关停闸 —— 迟到回执不得复活循环）', async () => {    const scan = vi.fn(async () => ['0', []]);
     const pipeline = vi.fn(() => ({ hget: vi.fn().mockReturnThis(), exec: async () => [] }));
     const service = new RoomMetricsService({ scan, pipeline } as unknown as Redis);
     vi.useFakeTimers();

@@ -23,6 +23,9 @@
 import type { ErrCode } from './errors';
 import type { Card, GameView } from './views';
 import type { SettlementResult } from './settlement';
+import type { MahjongAction } from './mahjong/actions';
+import type { Tile } from './mahjong/tile';
+import type { MahjongMeldView } from './mahjong/types';
 // 多玩法（Task 2.5）：`record.moneyDelta` 的玩法/人数校验要用运行期目录。
 import { isGameType, supportsPlayerCount, type GameType } from './game';
 import type { ConfigSnapshot } from './config';
@@ -240,6 +243,8 @@ export interface StartGameRequest {
   /** 内部测试专用：固定随机种子/牌堆（仅 INTERNAL_TEST_HOOKS=1，生产默认关闭）。 */
   seed?: number;
   testDeck?: Card[];
+  /** 麻将确定性牌墙（仅内部测试钩子）。 */
+  testTiles?: Tile[];
   players: {
     /** 对外 ID：人类为 `userId`，机器人为 `displayId`（§9.2）。 */
     id: string;
@@ -300,9 +305,11 @@ export interface GameActionRequest {
    * 编译器被明确告知「别管」，形状错了也不会报。R697 之后直接给出精确类型，
    * **那处 `as` 随之删除**。
    */
-  payload: { grab?: boolean; cards?: Card[] };
+  payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction };
   /** §6.5 的 CAS 版本号；`bid`/`play`/`pass` 需要真实值。 */
   baseVersion: number;
+  /** 麻将多行动者窗口 id；非麻将忽略。 */
+  windowId?: string;
   /** R1104/R1105：RPC 元数据（ALS 里有 traceId 时**才出现**；§15.3 的 id 过这一跳的载体）。 */
   meta?: RpcMeta;
 }
@@ -361,6 +368,8 @@ export interface RecordWriteRequest {
   /** 多玩法：过渡期可选；缺失 = doudizhu/3。 */
   gameType?: GameType;
   playerCount?: number;
+  /** 麻将：庄家座位（来自记录信封；旧请求/其他玩法省略 ⇒ 记录侧回落 seats[0]）。 */
+  dealerSeat?: number;
   result: SettlementResult;
   seats: Array<{
     seat: number;
@@ -370,6 +379,15 @@ export interface RecordWriteRequest {
     hand: string;
     /** 跑得快：本局实际打出的张数（关牌判定）；斗地主省略。 */
     playedCount?: number;
+    /** 麻将：终局手牌/副露/弃牌/缺门/胡信息/分数（可选；旧玩法省略）。 */
+    finalHand?: string;
+    melds?: MahjongMeldView[];
+    discards?: Tile[];
+    lackSuit?: number | null;
+    isOut?: boolean;
+    fan?: number;
+    multiplier?: number;
+    delta?: number;
     /**
      * 仅机器人座：本局展示昵称快照（room 从 `room:{code}:nicknames` 读取）。
      * 人类座必须省略/null —— 人类昵称仍由 user-service 按 `user_id` 查 `users`。

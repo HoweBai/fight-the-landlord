@@ -403,7 +403,14 @@ async function dispatch(
       return forwardAction(deps, userId, 'bid', { grab: message.payload.grab }, message.meta.baseVersion);
 
     case 'game.play':
-      return forwardAction(deps, userId, 'play', { cards: message.payload.cards }, message.meta.baseVersion);
+      return forwardAction(
+        deps,
+        userId,
+        'play',
+        { cards: message.payload.cards, mahjong: message.payload.mahjong },
+        message.meta.baseVersion,
+        message.meta.windowId,
+      );
 
     case 'game.pass':
       return forwardAction(deps, userId, 'pass', {}, message.meta.baseVersion);
@@ -1036,12 +1043,17 @@ async function forwardAction(
   action: 'bid' | 'play' | 'pass',
   payload: Record<string, unknown>,
   baseVersion: number,
+  windowId?: string,
 ): Promise<Ack> {
   const resolved = await deps.reconnect.resolveRecoverableRoom(userId);
   if (!resolved) return fail(ErrCode.NOT_IN_ROOM, 'You are not in an active game');
   const roomCode = resolved.roomCode;
 
-  const result = await deps.game.action(roomCode, action, userId, { ...payload, baseVersion });
+  const result = await deps.game.action(roomCode, action, userId, {
+    ...payload,
+    baseVersion,
+    ...(windowId === undefined ? {} : { windowId }),
+  });
   return ok(result);
 }
 

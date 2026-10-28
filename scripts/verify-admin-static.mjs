@@ -10,8 +10,8 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 85 个 active 键
- *     （80 简单 + 5 结构化）。
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 96 个 active 键
+ *     （89 简单 + 7 结构化）。
  *  3. 控件定稿表：80 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
@@ -214,9 +214,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 101, `protocol CONFIG_KEYS 恰 101 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 85, `active = CONFIG_KEYS − LEGACY 恰 85 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 85, `CONFIG_IA 覆盖 85 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 112, `protocol CONFIG_KEYS 恰 112 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 96, `active = CONFIG_KEYS − LEGACY 恰 96 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 96, `CONFIG_IA 覆盖 96 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -297,7 +297,7 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 85, `CONFIG_NOTES 恰 85 条（实测 ${noteKeys.length}；代理分润 +1、B 组 +7）`);
+ok(noteKeys.length === 96, `CONFIG_NOTES 恰 96 条（实测 ${noteKeys.length}；麻将 +11）`);
 /* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
 const PDK_NOTE_KEYS = [
   'game.levels.paodekuai',
@@ -365,6 +365,8 @@ ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnab
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
+  'game.levels.mahjong',
+  'game.mahjong.rules',
   'pay.rechargePackages',
   'game.doudizhu.robot.skillDistribution',
   'game.doudizhu.robot.modelBySkill',
@@ -408,6 +410,14 @@ const BOOL_KEYS = [
   'game.paodekuai.springMultiplierEnabled',
   'game.paodekuai.baobenEnabled',
   'game.doudizhu.enabled',
+  // 四川麻将 7 个布尔键
+  'game.mahjong.enabled',
+  'game.mahjong.freeRoomEnabled',
+  'game.mahjong.goldRoomEnabled',
+  'game.mahjong.friendRoomEnabled',
+  'game.mahjong.freeBotFillEnabled',
+  'game.mahjong.goldBotFillEnabled',
+  'game.mahjong.sbrGoldEnabled',
 ];
 const TEXT_KEYS = ['ad.reliefAdpid', 'game.paodekuai.airplaneWings'];
 /** 27 数字键逐键后缀定论（'' = 无后缀；值 = 控件右侧后缀原文）。 */
@@ -432,6 +442,8 @@ const NUMBER_SUFFIX = {
   'game.doudizhu.entryMultiplier': '倍',
   'game.paodekuai.rakePercent': '%',
   'game.paodekuai.entryMultiplier': '倍',
+  'game.mahjong.rakePercent': '%',
+  'game.mahjong.entryMultiplier': '倍',
   'currency.reliefThresholdCoins': '金币',
   'currency.signupGrant': '金币',
   'currency.reliefAmount': '金币',
@@ -466,15 +478,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 80, `CONFIG_CONTROLS 恰 80 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 89, `CONFIG_CONTROLS 恰 89 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
-ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '85 键 = 80 简单 ∪ 5 结构化（无遗漏）');
+ok(STRUCT_KEYS.every((k) => !entries.has(k)), '7 个结构化键不在简单控件表');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '96 键 = 89 简单 ∪ 7 结构化（无遗漏）');
 ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 36 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '36 布尔键 type=bool');
+ok(BOOL_KEYS.length === 43 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '43 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 42, `数字键定论表 42 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 44, `数字键定论表 44 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);

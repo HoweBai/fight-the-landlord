@@ -37,7 +37,7 @@ async function exactGauge(
 const fakeGame = (count: number) =>
   ({
     activeSessionCount: () => count,
-    activeSessionCountByGameType: () => ({ doudizhu: count, paodekuai: 0 }),
+    activeSessionCountByGameType: () => ({ doudizhu: count, paodekuai: 0, mahjong: 0 }),
   }) as unknown as GameService;
 
 describe('GameMetricsService：games_active（15s 采样 cache.size）', () => {
@@ -54,7 +54,7 @@ describe('GameMetricsService：games_active（15s 采样 cache.size）', () => {
   });
 
   it('关停后不再排 timer：15s 定时器真的在跑，shutdown 清掉后不再采样', async () => {
-    const activeSessionCountByGameType = vi.fn(() => ({ doudizhu: 1, paodekuai: 0 }));
+    const activeSessionCountByGameType = vi.fn(() => ({ doudizhu: 1, paodekuai: 0, mahjong: 0 }));
     const service = new GameMetricsService({ activeSessionCountByGameType } as unknown as GameService);
     vi.useFakeTimers();
     try {
@@ -94,7 +94,7 @@ describe('GameMetricsService：games_active（15s 采样 cache.size）', () => {
         ],
       });
       expect(service.activeSessionCount(), '一场会话 ⇒ 1').toBe(1);
-      expect(service.activeSessionCountByGameType()).toEqual({ doudizhu: 1, paodekuai: 0 });
+      expect(service.activeSessionCountByGameType()).toEqual({ doudizhu: 1, paodekuai: 0, mahjong: 0 });
 
       await service.startGame({
         roomCode: 'GMTR1',
@@ -116,7 +116,7 @@ describe('A1：games_active 按玩法采样', () => {
   it('按 game_type 分组写入', async () => {
     const service = new GameMetricsService({
       activeSessionCount: () => 3,
-      activeSessionCountByGameType: () => ({ doudizhu: 2, paodekuai: 1 }),
+      activeSessionCountByGameType: () => ({ doudizhu: 2, paodekuai: 1, mahjong: 0 }),
     } as unknown as GameService);
     service.sampleOnce();
     expect(await exactGauge(gamesActive, { game_type: 'doudizhu' })).toBe(2);

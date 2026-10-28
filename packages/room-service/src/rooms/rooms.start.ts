@@ -11,7 +11,9 @@ import {
   type CurrencyApplyData,
   type EntryFeeSkipReason,
   type GameType,
+  type MahjongRulesConfig,
   type PdkRulesConfig,
+  type Tile,
 } from '@fight-the-landlord/protocol';
 import { clearBotBindings, readBotBindings, writeBotBindings, botsKey, type BotBinding } from './rooms.bots';
 import { ensureBotDisplayNames } from './bot-names';
@@ -42,7 +44,7 @@ import { gameStartFailuresTotal, gamesStartedTotal } from '../metrics/room.metri
 import { incGame } from '@fight-the-landlord/shared';
 
 /** A1：failPdkStart 的指标 reason 枚举；null = start_rpc 已在 startAndAnnounce 的 catch 计过。 */
-type PdkStartFailureReason = 'bot_fill' | 'pending_write' | 'rules' | null;
+type PdkStartFailureReason = 'bot_fill' | 'pending_write' | 'rules' | 'sbr_gold_off' | null;
 import { entryFeeConflictTotal, entryFeeSkippedTotal } from '../metrics/room.metrics';
 import { cardCounterConsumedTotal, cardCounterConsumeErrorTotal } from '../metrics/room.metrics';
 
@@ -85,6 +87,8 @@ export interface StartRoomOptions {
   seed?: number;
   /** 内部测试钩子：固定牌堆（同上）；合法性由 game-service 校验。 */
   testDeck?: Card[];
+  /** 麻将确定性牌墙（同上）。 */
+  testTiles?: Tile[];
 }
 
 /**
@@ -219,12 +223,13 @@ export class RoomStartService {
 
     const gameType = room.gameType ?? DEFAULT_GAME_TYPE;
     const isPdk = gameType === 'paodekuai';
-    // pdk 全程 strict（spec §4.6.3）：失败**不得**写 playing / 调 onSeats / 取消票。
-    const strict = isPdk ? true : options.strict;
+    const isMahjong = gameType === 'mahjong';
+    // pdk/麻将全程 strict：失败**不得**写 playing / 调 onSeats / 取消票。
+    const strict = isPdk || isMahjong ? true : options.strict;
 
     const filled = await this.fillBots(code, room);
     if (!filled) {
-      if (isPdk) {
+      if (isPdk || isMahjong) {
         return this.failPdkStart(code, room, room.players, 'bot_fill', 'bot fill failed', options.onSeats);
       }
       incGame(gameStartFailuresTotal, gameType, 1, { reason: 'bot_fill' });
@@ -276,7 +281,7 @@ export class RoomStartService {
       }
     } catch (err) {
       this.logger.error(`Failed to store match:pending / reconnect record for ${code}: ${String(err)}`);
-      if (isPdk) {
+      if (isPdk || isMahjong) {
         return this.failPdkStart(
           code, room, filled.seats, 'pending_write', 'match:pending write failed', options.onSeats,
         );
@@ -303,7 +308,7 @@ export class RoomStartService {
      * ③ pdk 规则快照（spec §4.6.3 / RH3-e）：**必须在 announce / onSeats / game.start 之前**读。
      * 失败 ⇒ 不 announce、不 start、不调 onSeats；房间留 `waiting`，重试预算 +1。
      */
-    let rules: PdkRulesConfig | undefined;
+    let rules: PdkRulesConfig | MahjongRulesConfig | undefined;
     if (isPdk) {
       try {
         rules = this.configCache.pdkRules();
@@ -317,10 +322,37 @@ export class RoomStartService {
           options.onSeats,
         );
       }
+    } else if (isMahjong) {
+      try {
+        rules = this.configCache.mahjongRules();
+      } catch (err) {
+        return this.failPdkStart(
+          code,
+          room,
+          filled.seats,
+          'rules',
+          `mahjong rules unavailable: ${err instanceof Error ? err.message : String(err)}`,
+          options.onSeats,
+        );
+      }
+      /**
+       * 资损闸（spec §3.2）：`sbr` 的 48×底花猪 burn 在金币场默认**不开** ——
+       * 只有显式打开 `game.mahjong.sbrGoldEnabled` 才放行；否则本房按规则不可开。
+       */
+      if (room.mode === 'gold' && rules.huazhuMode === 'burn48' && !this.configCache.mahjongSbrGoldEnabled()) {
+        return this.failPdkStart(
+          code,
+          room,
+          filled.seats,
+          'sbr_gold_off',
+          'mahjong sbr burn48 disabled in gold rooms',
+          options.onSeats,
+        );
+      }
     }
 
     // 斗地主：`onSeats` 仍在开局**之前**（旧顺序逐字保留）；pdk 后置到 game.start 成功之后。
-    if (!isPdk && options.onSeats) {
+    if (!isPdk && !isMahjong && options.onSeats) {
       try {
         await options.onSeats(filled.seats);
       } catch (err) {
@@ -337,15 +369,15 @@ export class RoomStartService {
       filled.bindings,
       strict,
       // pdk：读规则成功 → announce → game.start（顺序固定；好友房发布路径也如此）。
-      isPdk ? true : options.announceFirst === true,
+      isPdk || isMahjong ? true : options.announceFirst === true,
       gameType,
       room.maxPlayers,
       rules,
-      { seed: options.seed, testDeck: options.testDeck },
+      { seed: options.seed, testDeck: options.testDeck, testTiles: options.testTiles },
     );
 
     if (!ok) {
-      if (isPdk) {
+      if (isPdk || isMahjong) {
         // start_rpc 已在 startAndAnnounce 的 catch 计过；这里只做重试/取消
         return this.failPdkStart(code, room, filled.seats, null, 'game.start failed', options.onSeats);
       }
@@ -358,7 +390,7 @@ export class RoomStartService {
      * ④ pdk：`onSeats` **后置**到 `game.start` 成功之后（spec RH3-a/§4.6.3）。
      * 失败只 WARN —— 房已开成功；未删的票由下一轮扫描凭 claim（= roomCode）幂等清理。
      */
-    if (isPdk && options.onSeats) {
+    if ((isPdk || isMahjong) && options.onSeats) {
       try {
         await options.onSeats(filled.seats);
       } catch (err) {
@@ -922,9 +954,9 @@ export class RoomStartService {
     gameType: GameType,
     playerCount: number,
     /** pdk 的规则快照（D19：局中改配置不影响进行中的牌局）；斗地主为 undefined。 */
-    rules: PdkRulesConfig | undefined,
+    rules: PdkRulesConfig | MahjongRulesConfig | undefined,
     /** 内部测试钩子（Task 4.4）：仅 conformance 传入；生产 undefined。 */
-    testHooks: { seed?: number; testDeck?: Card[] },
+    testHooks: { seed?: number; testDeck?: Card[]; testTiles?: Tile[] },
   ): Promise<boolean> {
     const players = this.buildStartPlayers(seats, bindings);
     // 🔴 匹配路径：**先公告、再开局**（见 `startRoom` 的 `announceFirst` 说明 ——
@@ -947,6 +979,7 @@ export class RoomStartService {
         ...(rules === undefined ? {} : { rules }),
         ...(testHooks.seed === undefined ? {} : { seed: testHooks.seed }),
         ...(testHooks.testDeck === undefined ? {} : { testDeck: testHooks.testDeck }),
+        ...(testHooks.testTiles === undefined ? {} : { testTiles: testHooks.testTiles }),
       });
     } catch (err) {
       incGame(gameStartFailuresTotal, gameType, 1, { reason: 'start_rpc' });

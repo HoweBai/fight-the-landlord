@@ -109,6 +109,40 @@ describe('新校验器 × 旧 ddz 消息', () => {
       validateOutbound({ type: 'game.finished', version: 1, payload: { winner: 'landlord' } }),
     ).not.toThrow();
   });
+
+  it('麻将 game.finished 通过（winnerSeats 可空 + endReason/huazhuSeats）', () => {
+    expect(() =>
+      validateOutbound({
+        type: 'game.finished',
+        version: 4,
+        payload: { gameType: 'mahjong', winnerSeats: [], endReason: 'wallEmpty', huazhuSeats: [3] },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateOutbound({
+        type: 'game.finished',
+        version: 4,
+        payload: { gameType: 'mahjong', winnerSeats: [0, 2], endReason: 'threeWinners', huazhuSeats: [] },
+      }),
+    ).not.toThrow();
+  });
+
+  it('麻将 game.finished 非法 endReason/座位 ⇒ 拒绝', () => {
+    expect(() =>
+      validateOutbound({
+        type: 'game.finished',
+        version: 4,
+        payload: { gameType: 'mahjong', winnerSeats: [0], endReason: 'x', huazhuSeats: [] },
+      }),
+    ).toThrow();
+    expect(() =>
+      validateOutbound({
+        type: 'game.finished',
+        version: 4,
+        payload: { gameType: 'mahjong', winnerSeats: [4], endReason: 'threeWinners', huazhuSeats: [] },
+      }),
+    ).toThrow();
+  });
 });
 
 /**

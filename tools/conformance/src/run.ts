@@ -50,6 +50,7 @@ import { runSlice32 } from './slices/slice-32-agent';
 import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
 import { runSlice34 } from './slices/slice-34-record-outbox';
 import { runSlice35 } from './slices/slice-35-records-reconcile';
+import { runSlice36 } from './slices/slice-36-mahjong';
 
 interface Case {
   title: string;
@@ -141,6 +142,8 @@ const CASES: Record<string, Case> = {
   'slice-34-record-outbox': { title: '记录 outbox（真栈：ok/replayed/corrupt/abandoned/rejected）', run: runSlice34 },
   // C2：资金↔记录对账（三轮：基线/注入/pdk 清零；分页 sentinel + 零写 + GET/gauge 一致）。
   'slice-35-records-reconcile': { title: '记录对账（真栈：GET/gauge/分页/跨界/台费/零写）', run: runSlice35 },
+  // T12：四川麻将全链路（真栈：4 人匹配/换三张/定缺/claim/重连/结算/记录）。
+  'slice-36-mahjong': { title: '四川麻将（真栈：4 人局/重连/结算/记录/开关还原）', run: runSlice36 },
 };
 
 function printUsage(): void {

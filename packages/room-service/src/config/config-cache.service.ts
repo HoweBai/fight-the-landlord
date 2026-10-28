@@ -14,6 +14,8 @@ import {
   type ConfigSnapshot,
   type EntryFeePercent,
   type GameType,
+  type MahjongRulesConfig,
+  parseMahjongRules,
   type PdkRulesConfig,
 } from '@fight-the-landlord/protocol';
 import { DEFAULT_PDK_RULES, runWithTrace } from '@fight-the-landlord/shared';
@@ -199,7 +201,7 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
 
   /** 免费场开关。缺失/非 boolean ⇒ **true**（与种子一致：保持现状开）。 */
   freeRoomEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
-    return this.gameBool(gameType, 'freeRoomEnabled', 'room.freeRoomEnabled', true);
+    return this.gameBool(gameType, 'freeRoomEnabled', 'room.freeRoomEnabled', gameType === 'mahjong' ? false : true);
   }
 
   /**
@@ -211,18 +213,18 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
       gameType,
       'goldRoomEnabled',
       'room.goldRoomEnabled',
-      gameType === 'paodekuai' ? false : true,
+      gameType === 'paodekuai' || gameType === 'mahjong' ? false : true,
     );
   }
 
   /** 免费场补位开关。缺失 ⇒ true（现状）。 */
   freeBotFillEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
-    return this.gameBool(gameType, 'freeBotFillEnabled', 'room.freeBotFillEnabled', true);
+    return this.gameBool(gameType, 'freeBotFillEnabled', 'room.freeBotFillEnabled', gameType === 'mahjong' ? false : true);
   }
 
   /** 金币场补位开关。缺失 ⇒ true（现状）。 */
   goldBotFillEnabled(gameType: GameType = DEFAULT_GAME_TYPE): boolean {
-    return this.gameBool(gameType, 'goldBotFillEnabled', 'room.goldBotFillEnabled', true);
+    return this.gameBool(gameType, 'goldBotFillEnabled', 'room.goldBotFillEnabled', gameType === 'mahjong' ? false : true);
   }
 
   /** 该模式是否允许缺人补机器人（`practice` 恒 true，历史面不变）。 */
@@ -328,11 +330,19 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
         return this.doudizhuEnabled();
       case 'paodekuai':
         return this.paodekuaiEnabled();
+      case 'mahjong':
+        return this.mahjongEnabled();
       default: {
         const exhaustive: never = gameType; // 新增玩法时这里编译失败，防漏接
         return exhaustive;
       }
     }
+  }
+
+  /** 麻将总开关：缺失/非 boolean ⇒ false（暗上线）。 */
+  private mahjongEnabled(): boolean {
+    const value = this.snapshot?.['game.mahjong.enabled']?.value;
+    return typeof value === 'boolean' ? value : false;
   }
 
   /**
@@ -388,11 +398,27 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
     };
   }
 
+  /** 本局麻将规则快照：JSON 键 `game.mahjong.rules`；缺失 ⇒ chengdu 默认；非法 ⇒ 抛。 */
+  mahjongRules(): MahjongRulesConfig {
+    const value = this.snapshot?.['game.mahjong.rules']?.value;
+    return parseMahjongRules(value);
+  }
+
+  /**
+   * 金币场是否允许 `sbr` 预设的 **48×底 burn**（spec §3.2 的资损闸）。
+   * 缺失/非 true ⇒ false（fail-closed：说不清就不放行）。
+   */
+  mahjongSbrGoldEnabled(): boolean {
+    return this.snapshot?.['game.mahjong.sbrGoldEnabled']?.value === true;
+  }
+
   /** 玩法档位键：斗地主新键（旧键仅作缺失回退）；跑得快既有新键。 */
   private levelsKeyOf(
     gameType: GameType,
-  ): 'game.levels.doudizhu' | 'game.levels.paodekuai' {
-    return gameType === 'paodekuai' ? 'game.levels.paodekuai' : 'game.levels.doudizhu';
+  ): 'game.levels.doudizhu' | 'game.levels.paodekuai' | 'game.levels.mahjong' {
+    if (gameType === 'paodekuai') return 'game.levels.paodekuai';
+    if (gameType === 'mahjong') return 'game.levels.mahjong';
+    return 'game.levels.doudizhu';
   }
 
   /**

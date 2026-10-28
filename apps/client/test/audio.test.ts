@@ -56,9 +56,9 @@ beforeEach(() => {
 describe('cue 表（纯数据）', () => {
   it('每个值都指向本地 audio 目录（主包 /static/audio 或牌桌分包 /pages/table/static/audio）的 .mp3', () => {
     const entries = Object.entries(CUES);
-    expect(entries).toHaveLength(64);
+    expect(entries).toHaveLength(75);
     // 项 6 分包后：牌桌音效在分包，大厅 BGM 留主包。
-    const localMp3 = /^\/(?:static|pages\/table\/static)\/audio\/[A-Za-z0-9_]+\.mp3$/;
+    const localMp3 = /^\/(?:static|pages\/table\/static)\/audio\/(?:[A-Za-z0-9_]+\/)?[A-Za-z0-9_]+\.mp3$/;
     for (const [name, src] of entries) {
       expect(src, `${name} 的 src`).toMatch(localMp3);
     }
