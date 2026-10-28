@@ -31,7 +31,10 @@ COPY packages/user-service ./packages/user-service
 # 用 `--build-from-source` **只**重建 bcrypt：不走网络，只用本镜像已有的 python3/make/g++，
 # 构建确定可重复。缺了它，user-service 会以
 # `MODULE_NOT_FOUND: .../bcrypt_lib.node` 崩溃重启（已实测）。
-RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts \
+# --frozen-lockfile：容器只 COPY 所需 workspace 子集，pnpm 按盘上实际存在的包对账；
+# 同一 commit 的依赖解析必须与已提交 pnpm-lock.yaml 完全一致（no-frozen 会静默改写 lockfile，
+# 实测会装出不同的 peer 布局）。2026-10-28 复刻容器上下文实验通过。
+RUN npm install -g pnpm@9.15.0 && pnpm install --frozen-lockfile --ignore-scripts \
  && cd node_modules/.pnpm/bcrypt@*/node_modules/bcrypt \
  && ./node_modules/.bin/node-pre-gyp install --fallback-to-build --build-from-source
 

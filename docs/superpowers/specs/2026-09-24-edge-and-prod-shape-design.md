@@ -392,7 +392,7 @@ clientIp(headers, socketAddr):
 | **I3** | `JWT_SECRET=${…:-dev-secret-change-in-production}` 与 `DB_PASSWORD:-root` 是**静默**失败（与 `INTERNAL_SERVICE_TOKEN` 的 fail-closed 方向相反），而 ①k 看不见它（两边同一默认值 ⇒ 「逐字相等」照样成立） | 手册 ② 加一条**必须 0 命中**的自检 |
 | **I4** | 两处**控制者已裁决但未执行**的动作 | 删除死文件 `Dockerfile.services`（0 活引用 + `COPY .env.local` 已不可满足）· 补 R1202 的**镜像层**判据（`find /srv -name ".env*"` 为空；镜像不在则只 info） |
 
-**Minor**：修掉 M1（A6b 收紧为「剥行注释后不含字面 `internal`」+ 那条强于事实的注释）· M2（B4「控制桶」措辞强于事实）· M5（`finally` 应为复原而非 `delete`）· M6（基文件加顶层 `name: pokergame`，实测目录名无关）；**登记不修** M3（`parseTrustProxy` 接受具名预置/CIDR —— 风险有界）· M4（每请求 compile，微秒级）· M7（`--no-frozen-lockfile` 与 `node:20-slim` EOL，全仓既有选择 ⇒ 建议下一片）· M8（裸 `/api` 落 `file_server` 404）· M9（两条「已清」守卫的窄假红窗 ⇒ 建议进已知假红清单）。
+**Minor**：修掉 M1（A6b 收紧为「剥行注释后不含字面 `internal`」+ 那条强于事实的注释）· M2（B4「控制桶」措辞强于事实）· M5（`finally` 应为复原而非 `delete`）· M6（基文件加顶层 `name: pokergame`，实测目录名无关）；**登记不修** M3（`parseTrustProxy` 接受具名预置/CIDR —— 风险有界）· M4（每请求 compile，微秒级）· M7（`--no-frozen-lockfile` 与 `node:20-slim` EOL，全仓既有选择 ⇒ 建议下一片；**2026-10-28 订正**：`--frozen-lockfile` 已在 10 个镜像 Dockerfile 落地（新闸 `dockerfile-frozen-lockfile.gate.test.ts`），`node:20-slim` EOL 仍未处理）· M8（裸 `/api` 落 `file_server` 404）· M9（两条「已清」守卫的窄假红窗 ⇒ 建议进已知假红清单）。
 
 **Recommendations → 交下一片**：
 - **R2（→ 片②）**：`pnpm run ci` 与 Actions **完全不含 conformance** ⇒ 本片新增的生产形态保证（A1–A10）**没有任何自动闸**。接法只需让 `run.ts` 的 `main()` 对纯渲染用例跳过 `assertGatewayHealthy()`，即可在 Actions 加一个 job（`docker compose config` **不需要 daemon**）。

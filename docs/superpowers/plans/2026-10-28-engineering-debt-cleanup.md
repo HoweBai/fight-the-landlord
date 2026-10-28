@@ -496,7 +496,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: `logicalLines`、`copiesPackageJson`（来自 helper）
 - Produces: `export function frozenViolations(src: string): string[]`
 
-- [ ] **Step 1: 新建门禁测试**
+- [x] **Step 1: 新建门禁测试**
 
 完整文件：
 
@@ -575,13 +575,16 @@ export function frozenViolations(src: string): string[] {
   const violations: string[] = [];
   installs.forEach((install, idx) => {
     const label = installs.length > 1 ? `install#${idx + 1}: ` : '';
-    if (HAS_NO_FROZEN.test(install)) {
+    const noFrozen = HAS_NO_FROZEN.test(install);
+    const frozenFalse = HAS_FROZEN_FALSE.test(install);
+    if (noFrozen) {
       violations.push(`${label}forbidden: 使用 --no-frozen-lockfile（会静默改写 lockfile，破坏可复现构建）`);
-    } else if (!HAS_FROZEN.test(install)) {
-      violations.push(`${label}missing: pnpm install 缺 --frozen-lockfile`);
     }
-    if (HAS_FROZEN_FALSE.test(install)) {
+    if (frozenFalse) {
       violations.push(`${label}forbidden: --frozen-lockfile=false / 0（显式关闭 frozen）`);
+    }
+    if (!noFrozen && !frozenFalse && !HAS_FROZEN.test(install)) {
+      violations.push(`${label}missing: pnpm install 缺 --frozen-lockfile`);
     }
   });
   return violations;
@@ -684,7 +687,7 @@ describe('镜像依赖可复现闸：pnpm install 必须 --frozen-lockfile', () 
 });
 ```
 
-- [ ] **Step 2: 跑门禁确认红**
+- [x] **Step 2: 跑门禁确认红**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dockerfile-frozen
@@ -692,7 +695,7 @@ pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dock
 
 Expected: FAIL，10 个参与 Dockerfile 各报 `forbidden: 使用 --no-frozen-lockfile`。
 
-- [ ] **Step 3: 改 10 个 Dockerfile 的 install flag 与注释**
+- [x] **Step 3: 改 10 个 Dockerfile 的 install flag 与注释**
 
 用 Node 做**逐字节固定串替换**（不匹配就抛错）：
 
@@ -710,7 +713,7 @@ console.log("patched 10 Dockerfiles");
 
 Expected: `patched 10 Dockerfiles`；每个 Dockerfile 的 RUN 上方出现 3 行注释。
 
-- [ ] **Step 4: 跑门禁与全量 lint**
+- [x] **Step 4: 跑门禁与全量 lint**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dockerfile-frozen
@@ -719,7 +722,7 @@ pnpm --dir D:/Code/ftl-eng-debt exec turbo run lint --force
 
 Expected: 门禁通过；`turbo lint` 30/30（Task 0 已修 TS2345）。
 
-- [ ] **Step 5: 复跑安装上下文实验（room-service + edge 两个子集）与负对照**
+- [x] **Step 5: 复跑安装上下文实验（room-service + edge 两个子集）与负对照**
 
 ```bash
 mkdir -p D:/Code/ftl-exp
@@ -743,13 +746,13 @@ Expected: `ROOM_FROZEN_EXIT=0`；`ROOM_DRIFT_EXIT=1` 且输出含
 `ERR_PNPM_OUTDATED_LOCKFILE`；`EDGE_FROZEN_EXIT=0`。
 ⚠️ `--offline` 依赖本机既有 pnpm store（本机已暖）。
 
-- [ ] **Step 6: 回填 M7**
+- [x] **Step 6: 回填 M7**
 
 `docs/superpowers/specs/2026-09-24-edge-and-prod-shape-design.md` 的 M7 条目追加：
 「**2026-10-28 订正**：`--frozen-lockfile` 已在 10 个镜像 Dockerfile 落地（新闸
 `dockerfile-frozen-lockfile.gate.test.ts`）；`node:20-slim` EOL 仍未处理。」
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git -C D:/Code/ftl-eng-debt add -A

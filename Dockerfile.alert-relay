@@ -38,7 +38,10 @@ COPY packages/alert-relay ./packages/alert-relay
 # Install dependencies.
 # ⚠️ `--ignore-scripts` 的由来见 `Dockerfile.user-service` 详注（sqlite3 的 prebuild-install
 # 无超时拉 GitHub）；relay 自身无原生依赖，跳过脚本无副作用。
-RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts
+# --frozen-lockfile：容器只 COPY 所需 workspace 子集，pnpm 按盘上实际存在的包对账；
+# 同一 commit 的依赖解析必须与已提交 pnpm-lock.yaml 完全一致（no-frozen 会静默改写 lockfile，
+# 实测会装出不同的 peer 布局）。2026-10-28 复刻容器上下文实验通过。
+RUN npm install -g pnpm@9.15.0 && pnpm install --frozen-lockfile --ignore-scripts
 
 # Build the service（按依赖顺序：test-utils 是 protocol 测试文件的 import，先于 protocol；
 # 缺 protocol 时 shared 的 tsc 解析不到 @fight-the-landlord/protocol）
