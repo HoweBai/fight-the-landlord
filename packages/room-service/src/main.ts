@@ -38,7 +38,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
   // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
-  app.enableShutdownHooks();
+  // useProcessExit（2026-10-28）：容器里 node 是 PID 1 —— Nest 关停后默认「重发信号」，
+  // 而**无处理器的信号对 PID 1 被内核丢弃** ⇒ 关完也不退（真栈实测 >60s：3002 已关、
+  // 9002 仍应答，compose 靠 SIGKILL、k8s 会吃满 terminationGracePeriod）。显式 exit 才是真停机。
+  app.enableShutdownHooks(undefined, { useProcessExit: true });
   // 多副本：socket.io Redis 适配器（房间广播跨 Pod、fetchSockets 顶替旧连接）
   const wsAdapter = new RedisIoAdapter(app);
   await wsAdapter.connect(process.env.REDIS_URL || 'redis://localhost:6379');
