@@ -111,7 +111,7 @@
 | `slice-07.4-pipeline` | 从 compose 派生「带 `build:` 服务集合」断言**恰好 8**（`:956-960`，注释 `:66`）——`ci.yml:56-63` 的 render-gate **每次 push/PR 都跑**（不需要 docker）⇒ **现在是「每次 push 必红点」**（r1b-R2） | 8→12 + 注释；baselines 的 render 列同提交回填 |
 | `slice-07.2-hardening` 出站超时闸 | 硬编码包清单 `:963`（`api-gateway,user-service,room-service,game-service,robot-service,shared`）——**不含未来的 alert-relay**（r1b-Y3） | 清单 += `alert-relay` |
 | `slice-07.3-edge` / Caddyfile | `redir` 显式 matcher 与 handle 组按 matcher 重排的**实测经验**在 `deploy/Caddyfile:37-45`、`/admin` 两条 handle 在 `:48-54`；**`/admin` 301 的 C20 判据住在 `slice-14-config-center.ts:531/:561`**（`run.ts:61` 映射）——不在 edge 切片（r1a-31） | 新增 `/grafana` 两 handle 断言（先例引对）；**新旧 handle 次序必须真栈实测**（引先例机制） |
-| Dockerfile 对账闸（`shared/test/dockerfile-workspace-copy.gate.test.ts:154-161` · `dockerfile-patches-copy.gate.test.ts:97-104`） | 动态扫 `Dockerfile.*`：凡 `COPY package.json`+`pnpm install` 者必须 COPY 齐工作区依赖与 `patches/` | `Dockerfile.alert-relay` **照 `Dockerfile.user-service` 的 COPY 次序模板**（Y4）；另 3 个（FROM 官方+COPY 配置）不参与 |
+| Dockerfile 对账闸（`shared/test/dockerfile-workspace-copy.gate.test.ts:154-161` · `dockerfile-patches-copy.gate.test.ts:97-104`） | 动态扫 `Dockerfile.*`：凡 `COPY package.json`+`pnpm install` 者必须 COPY 齐工作区依赖与 `patches/` | `Dockerfile.alert-relay` **照 `Dockerfile.user-service` 的 COPY 次序模板**（Y4）；另 3 个（FROM 官方+COPY 配置）不参与（**2026-10-28 订正**：`COPY patches` 已随 `patches/` 删除；现行语义见 `dockerfile-patches-copy.gate.test.ts`） |
 | `conformance-stack.sh` | `SERVICES` 8 项；`--profile edge`；**down 侧 R1209 点名 rm** | 三路径全扩（up/down/pull-retag；§D9） |
 | `tools/conformance/src/slices/` | 现至 `slice-15-records`（211 断言，`baselines.json:32`） | 新增 `slice-16-monitoring` |
 | `baselines.json` | 按 CI 实测回填（静态读数可本机先填） | 新切片基线 + full/render 列更新 |
@@ -184,7 +184,7 @@
 
 ### D4 — 配置与密钥交付（配置进镜像 / 密钥只从 `.env`；**按 R3 重写为可执行机制**）
 
-- **四个新镜像**：`Dockerfile.prometheus` / `Dockerfile.grafana` / `Dockerfile.alertmanager`（FROM 官方 + COPY `deploy/monitoring/**` 配置）与 `Dockerfile.alert-relay`（**照 `Dockerfile.user-service` 的 COPY 次序模板**——工作区依赖 + `patches/` 在 install 之前，Y4 两门对账闸）；relay 源码即 `packages/alert-relay`；规则文件 `rules/*.yml` 进镜像 + **promtool 校验**（§D9）。
+- **四个新镜像**：`Dockerfile.prometheus` / `Dockerfile.grafana` / `Dockerfile.alertmanager`（FROM 官方 + COPY `deploy/monitoring/**` 配置）与 `Dockerfile.alert-relay`（**照 `Dockerfile.user-service` 的 COPY 次序模板**——工作区依赖 + `patches/` 在 install 之前，Y4 两门对账闸；**2026-10-28 订正**：`patches/` 与 `COPY patches` 已删除，现行语义见 `dockerfile-patches-copy.gate.test.ts`）；relay 源码即 `packages/alert-relay`；规则文件 `rules/*.yml` 进镜像 + **promtool 校验**（§D9）。
 - **密钥机制（逐镜像定死；BusyBox 系无 envsubst、无 gettext，R3①）**：
   - **prometheus**：Dockerfile `USER root` 阶段预建 `/etc/prometheus/secret`（**`chown 65534:65534`、目录 mode 显式 700**，官方镜像以 `nobody` 运行）→ 回 `USER 65534`；entrypoint（`/bin/sh`）`printf '%s' "$INTERNAL_SERVICE_TOKEN" > /etc/prometheus/secret/internal_token && chmod 600` 后 **`exec prometheus "$@"`**（转发官方 CMD 参数——`--config.file`/`--storage.tsdb.path` 等；r2-B2 备忘）（R3③）。
   - **alertmanager**：entrypoint **shell 条件拼装**（heredoc，不用 envsubst）生成 `alertmanager.yml` 到**数据卷内**（nobody 可写，`--config.file` 指过去，文件 600）：`webhook` receiver（指向 relay，Bearer via `credentials_file`）**恒在**；`global.smtp_*` 与 `email_configs` **仅当 SMTP 四件套全非空时拼入**（半配 ⇒ 打印明确错误并 `exit 1`——响亮）；**`heartbeat` receiver 恒以「已定义」形态存在**——SMTP 已配 = 带 `email_configs`，未配 = **空接收器**（官方认可的丢弃形态；AM 对「路由引用了未定义 receiver」是**载入失败**，所以不能只删 receiver 留路由——r2-🟡6，alertmanager#2429）；YAML 引号纪律：变量值含 `"`、`\` 或换行 ⇒ 拒绝启动（响亮），文档附「授权码是字母数字」的前提（R3②：这样 **SMTP 未配时 AM 照常健康**——CI 无 SMTP 起栈不再红，生产也没了静默 crash-loop）。

@@ -7,9 +7,6 @@ WORKDIR /app
 COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY package.json ./
-# ⚠️ 2026-10-27 起 pnpm.patchedDependencies 为空（vitest 4 已不需要补丁）；
-# COPY patches 暂留（目录仍有历史补丁文件；删除需同步改全部 Dockerfile，另立清理片）
-COPY patches ./patches
 # 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）
 COPY tsconfig.base.json ./
 # 依赖方向：protocol 零依赖 → client 依赖 protocol
@@ -19,7 +16,10 @@ COPY packages/test-utils ./packages/test-utils
 COPY packages/protocol ./packages/protocol
 COPY packages/shared ./packages/shared
 COPY apps/client ./apps/client
-RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts
+# --frozen-lockfile：容器只 COPY 所需 workspace 子集，pnpm 按盘上实际存在的包对账；
+# 同一 commit 的依赖解析必须与已提交 pnpm-lock.yaml 完全一致（no-frozen 会静默改写 lockfile，
+# 实测会装出不同的 peer 布局）。2026-10-28 复刻容器上下文实验通过。
+RUN npm install -g pnpm@9.15.0 && pnpm install --frozen-lockfile --ignore-scripts
 # 台账 N46：test-utils 是 protocol 测试文件（`src/robot-availability-wiring.gate.test.ts`）的 import，
 # 而 protocol build 编译 `src/` 全树（含该测试）⇒ 必须先建 test-utils
 RUN pnpm --filter @fight-the-landlord/test-utils build \

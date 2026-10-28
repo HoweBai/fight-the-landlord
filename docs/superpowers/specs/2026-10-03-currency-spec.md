@@ -58,7 +58,7 @@
 
 | 组 | 文件 |
 |---|---|
-| 镜像配方 | `Dockerfile.currency-service`（照抄 config-service 模板；**patches/ 拷贝面逐行核对**——双 Dockerfile 闸盯） |
+| 镜像配方 | `Dockerfile.currency-service`（照抄 config-service 模板；**patches/ 拷贝面逐行核对**——双 Dockerfile 闸盯）（**2026-10-28 订正**：`patches/` 与 `COPY patches` 已删除；现行语义见 `dockerfile-patches-copy.gate.test.ts`） |
 | 新服务包 | `packages/currency-service/`：`package.json`（name `@fight-the-landlord/currency-service`；scripts build/test/lint/dev/migration:*）、`tsconfig.json`、`vitest.config.ts`、`src/{main.ts,app.module.ts,database.config.ts,data-source.ts}`、`src/http/{errors.ts,internal-token.middleware.ts,x-admin.guard.ts}`、`src/rpc/`（接收控制器 + 服务 + 模块）、`src/apply/`（写路径）、`src/reconcile/`（自调度循环）、`src/wallet/`（REST 控制器）、`src/redis/`（照 user-service 模板）、`src/migrations/1789600000000-Currency.ts`、`test/*` |
 | protocol 契约面 | `packages/protocol/src/currency.ts`（新，§2.2）+ `src/currency.test.ts`（新） |
 | user-service | `src/currency/{currency.module.ts,currency.client.ts}`（新；§2.7/§2.13）；`src/users/admin-users.controller.ts`（新；`XAdminGuard` 复制件放 `src/http/x-admin.guard.ts`） |
