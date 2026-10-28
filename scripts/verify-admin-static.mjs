@@ -128,6 +128,7 @@ for (const id of [
   'settings-rows',
   'nav-cfg-ddz-btn',
   'nav-cfg-pdk-btn',
+  'nav-cfg-mahjong-btn',
   'nav-cfg-economy-btn',
   'nav-cfg-paycfg-btn',
   'nav-cfg-riskcfg-btn',
@@ -947,6 +948,19 @@ for (const id of [...cfgNavLeaves, ...cfgNavCounts]) {
 const htmlCfgLeaves = [...html.matchAll(/id="(nav-cfg-[a-z-]+-btn)"/g)].map((m) => m[1]);
 for (const id of htmlCfgLeaves) {
   ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
+}
+
+/* 2026-10-28 麻将片回归：麻将域进了 CONFIG_IA（含备注/控件/JSON 编辑器），却漏了左树叶。
+ * 键在 IA_KEY_SET 里 ⇒ 也不落「未分组」兜底桶 ⇒ 刷新后配置页除搜索框外无任何入口。
+ * 防回潮：每个玩法域（headerKeys 非空）都必须有同名域的 CFG_NAV 叶。 */
+const cfgNavDomainIds = [...cfgNavBlock.matchAll(/domain:\s*'([^']+)'/g)].map((m) => m[1]);
+const iaGameDomainIds = iaDomainsForTabs
+  .flatMap((g) => g.domains ?? [])
+  .filter((d) => (d.headerKeys ?? []).length > 0)
+  .map((d) => d.id);
+ok(iaGameDomainIds.length > 0, 'CONFIG_IA 含玩法域（headerKeys 非空）');
+for (const id of iaGameDomainIds) {
+  ok(cfgNavDomainIds.includes(id), `玩法域 '${id}' 已登记左树叶（CFG_NAV.domain）`);
 }
 
 const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];

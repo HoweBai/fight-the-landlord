@@ -1110,11 +1110,13 @@ const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDoma
 /**
  * 左树配置叶 id ⇄ IA 域 id（HTML 静态树用固定叶 id；IA 表保留源生域 id）。
  * 顺序 = 左树渲染序；末项 = 动态「未分组」叶（计数 0 时隐藏）。
- * 2026-10-21：客户端接入已并入 risk 域页签，独立叶删除（5+1 叶）。
+ * 2026-10-21：客户端接入已并入 risk 域页签，独立叶删除。
+ * 2026-10-28：新增「四川麻将」域叶（玩法域 = 3：斗地主/跑得快/四川麻将；7+1 叶）。
  */
 const CFG_NAV = [
   { leaf: 'nav-cfg-ddz-btn', count: 'nav-count-ddz', domain: 'ddz' },
   { leaf: 'nav-cfg-pdk-btn', count: 'nav-count-pdk', domain: 'pdk' },
+  { leaf: 'nav-cfg-mahjong-btn', count: 'nav-count-mahjong', domain: 'mahjong' },
   { leaf: 'nav-cfg-economy-btn', count: 'nav-count-economy', domain: 'currency' },
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
@@ -1270,7 +1272,7 @@ let adjustActionId = null;
  */
 const VIEWS = {
   // v2.1：config 与凭据两页共用 #settings-host（内部分流见 renderSettings）；
-  // nav-config-btn 无叶可挂，作为 hidden 锚点保留（openCfgDomain 驱动 5 个域叶）。
+  // nav-config-btn 无叶可挂，作为 hidden 锚点保留（openCfgDomain 驱动各配置域叶）。
   config: { el: 'settings-host', nav: 'nav-config-btn', roles: ['super_admin', 'operator'] },
   /** 支付配置管理化片 T10（⚙️11 / 规格 §2.8）：读面**有意扩 finance**（写控件仅 super_admin 渲染）。 */
   payChannel: {
@@ -1668,7 +1670,7 @@ function domainById(id) {
   return IA_DOMAINS.find((d) => d.id === id) ?? null;
 }
 
-/** 左树 5+1 配置叶：计数徽标 + 角色/空数显隐（其余 10 叶由 applyRoleNav 按 VIEW_ORDER 处理）。 */
+/** 左树配置叶（含未分组虚拟叶）：计数徽标 + 角色/空数显隐（其余 10 叶由 applyRoleNav 按 VIEW_ORDER 处理）。 */
 function updateCfgNav() {
   const canCfg = canView('config');
   const extra = ungroupedKeys();
@@ -2690,7 +2692,7 @@ function switchView(view) {
     // settings-host 被三视图共用：其 hidden 只能按「当前视图是否属于三视图」算一次，
     // 不能在循环里逐名翻转（否则同 el 的末位视图恒赢，config 激活时 host 也被隐藏）。
     if (!SETTINGS_VIEWS.has(name)) $(VIEWS[name].el).hidden = name !== view;
-    // config 的 nav 是 hidden 锚点：永不挂 active，配置域高亮落到 5+1 个 nav-cfg-* 叶。
+    // config 的 nav 是 hidden 锚点：永不挂 active，配置域高亮落到各 nav-cfg-* 叶。
     if (name !== 'config') $(VIEWS[name].nav).classList.toggle('active', name === view);
   }
   $('settings-host').hidden = !SETTINGS_VIEWS.has(view);
@@ -5578,7 +5580,7 @@ function wire() {
     cfgUI.query = '';
     renderConfigRows();
   });
-  // 左树 5+1 配置域叶（10 个凭据/运营/审计叶在下方按既有 id 逐个绑定）。
+  // 左树 配置域叶（10 个凭据/运营/审计叶在下方按既有 id 逐个绑定）。
   for (const m of CFG_NAV) {
     $(m.leaf).addEventListener('click', () => openCfgDomain(m.domain));
   }
