@@ -1347,7 +1347,7 @@ const MAHJONG_RULES_FORM = {
             [0, '0（番从 0 起算：0 番 = 1× 底）'],
           ],
         },
-        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8 },
+        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8, note: '封顶番数：结算倍数 = 2^(封顶后番 − 底番)，封顶只夹倍数、不改变能否胡牌。' },
         { path: 'minFanToHu', label: '起胡番', type: 'int', min: 0, max: 6, note: '0 = 不设门槛。' },
         {
           path: 'selfDrawMode',
@@ -1402,6 +1402,7 @@ const MAHJONG_RULES_FORM = {
             ['counterclockwise', '上家（逆时针）'],
             ['opposite', '对家'],
           ],
+          note: 'random = 每局掷骰在顺时针/逆时针/对家中选；固定方向则每局都按该方向换牌。',
         },
         { path: 'lastFourForcedHu', label: '最后四张必胡', type: 'bool' },
         {
@@ -1413,6 +1414,7 @@ const MAHJONG_RULES_FORM = {
             ['sameTile', '同张不可再胡'],
             ['sameTileOrHigherFan', '同张需番更高'],
           ],
+          note: '过水：off = 过胡后可立即再胡；sameTile = 同一张牌过胡后、自己摸牌前不能再胡同一张；sameTileOrHigherFan = 同上，但番更高可以胡。',
         },
       ],
     },
@@ -1428,6 +1430,7 @@ const MAHJONG_RULES_FORM = {
             ['contract', '仅点杠者付 2× 底'],
             ['everyone', '点杠者 2× 底 + 其余在场每家 1× 底'],
           ],
+          note: '直杠（明杠别人打出的牌）的付款方：contract 仅点杠者付 2× 底；everyone 点杠者 2× 底、其余在场每家 1× 底。',
         },
         {
           path: 'gangTransfer',
@@ -1438,6 +1441,7 @@ const MAHJONG_RULES_FORM = {
             ['toEachWinner', '转给每个赢家'],
             ['split', '拆分'],
           ],
+          note: '杠上炮时已收杠分的去向：none = 退回；toEachWinner = 转给每个赢家；split = 拆分。',
         },
         {
           path: 'refundOnDraw',
@@ -1464,6 +1468,7 @@ const MAHJONG_RULES_FORM = {
             ['burn48', '销毁 48× 底（SBR）'],
             ['off', '不罚'],
           ],
+          note: '荒庄时花猪（缺门未打完/未定缺）的处置：payEach = 赔每家封顶分；burn48 = 销毁 48× 底；off = 不罚。',
         },
         {
           path: 'huazhuPayees',
@@ -1473,8 +1478,9 @@ const MAHJONG_RULES_FORM = {
             ['active', '仍在场的非花猪玩家'],
             ['nonFlowerPig', '除花猪外所有玩家（含已胡者）'],
           ],
+          note: 'payEach 时花猪赔给谁：active = 仍在场的非花猪玩家；nonFlowerPig = 除花猪外所有玩家（含已胡者）。',
         },
-        { path: 'chajiaoEnabled', label: '查大叫', type: 'bool' },
+        { path: 'chajiaoEnabled', label: '查大叫', type: 'bool', note: '查大叫：荒庄时未听牌者赔每个听牌者「该听牌者最大可胡番」；花猪不参与。' },
         {
           path: 'chajiaoAllSameState',
           label: '全员同状态',

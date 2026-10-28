@@ -345,6 +345,7 @@ ok(zeroDom.errors.length === 0, `全 0 实例零异常（实测 ${zeroDom.errors
   dom.state.lastPut = null;
   clickEl(cw, dropBtn);
   await waitVersion(cw, 3);
+  ok(dom.state.lastPut !== null, '移除按钮确实发出了 PUT');
   ok(!('xyzFutureSwitch' in (dom.state.lastPut?.body.value ?? {})), '移除后保存 body 不含未知键');
   ok(dom.errors.length === 0, `未知键实例零异常（实测 ${dom.errors.length}）`);
 }
@@ -364,6 +365,7 @@ ok(zeroDom.errors.length === 0, `全 0 实例零异常（实测 ${zeroDom.errors
   dom.state.lastPut = null;
   clickEl(cw, fillBtn);
   await waitVersion(cw, 2);
+  ok(dom.state.lastPut !== null, '补齐按钮确实发出了 PUT');
   ok(dom.state.lastPut?.body.value.claimWindowMs === undefined, '补齐 PUT = 原快照（不含缺失字段）');
   ok(dom.errors.length === 0, `缺字段实例零异常（实测 ${dom.errors.length}）`);
 }

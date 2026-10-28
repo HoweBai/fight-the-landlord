@@ -1047,6 +1047,7 @@ ok(!app.includes('function buildRulesJsonEditor'), 'raw JSON 编辑器已移除'
 ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
 ok(app.includes('按预设重置全部规则'), '预设重置按钮文案');
 ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮文案');
+ok(app.includes('按服务端默认补齐'), '缺字段补齐按钮文案');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {
