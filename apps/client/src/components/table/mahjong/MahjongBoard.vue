@@ -950,10 +950,11 @@ function onMeldPopDone(key: string) {
 }
 .mj__phase {
   color: $ftl-color-gold;
-  font-size: $ftl-font-lg;
+  font-size: 18px;
   font-weight: 700;
   text-shadow: 0 2px 8px rgba($ftl-color-night-deep, 0.6);
   white-space: nowrap;
+  letter-spacing: 2px;
 }
 .mj__claim-tile {
   display: flex;
@@ -1049,7 +1050,7 @@ function onMeldPopDone(key: string) {
   flex: 0 0 auto;
   align-items: flex-end;
   justify-content: center;
-  gap: 0;
+  gap: 2px;
   min-height: 79px;
   padding: $ftl-space-2 0 0;
   overflow-x: auto;
@@ -1084,16 +1085,17 @@ function onMeldPopDone(key: string) {
 }
 
 // Batch 5 C 组：手牌精确听牌关联高亮（闸纪律：纯 outline 叠加，不碰 box-shadow/transform）
+// 视觉反馈优化：2px + 更高 alpha，在深绿牌桌上更醒目
 :deep(.ting-safe) {
-  outline: 1px solid rgba(74, 222, 128, 0.5); // 绿色：打出后听牌不变
-  outline-offset: -1px;
+  outline: 2px solid rgba(74, 222, 128, 0.75); // 绿色：打出后听牌不变
+  outline-offset: -2px;
 }
 :deep(.ting-warn) {
-  outline: 1px solid rgba(251, 191, 36, 0.7); // 黄色：丢听牌
-  outline-offset: -1px;
+  outline: 2px solid rgba(251, 191, 36, 0.9); // 黄色：丢听牌
+  outline-offset: -2px;
 }
 :deep(.ting-danger) {
-  outline: 2px solid rgba(248, 113, 113, 0.9); // 红色：打出后不听
+  outline: 2px solid rgba(248, 113, 113, 0.95); // 红色：打出后不听
   outline-offset: -2px;
 }
 

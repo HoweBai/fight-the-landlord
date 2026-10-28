@@ -135,7 +135,7 @@ const hasMeta = computed(
         :class="{ 'mj__discard--latest': i === discards.length - 1 && discards.length > 0 }"
         @click="emit('discard-click', tile)"
       />
-      <view class="mj-river__mask" />
+      <view v-if="discards.length > 6" class="mj-river__mask" />
     </view>
 
     <view v-if="revealed" class="mj-seat__row mj-seat__row--revealed">
@@ -304,7 +304,7 @@ const hasMeta = computed(
   display: flex;
   gap: 2px;
 }
-.mj-seat--compact .mj-seat__row {
+.mj-seat--compact .mj-seat__row:not(.mj-seat__row--river):not(.mj-seat__row--revealed) {
   max-height: 60px;
 }
 </style>
