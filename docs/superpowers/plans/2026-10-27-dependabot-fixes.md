@@ -29,6 +29,10 @@ GitHub Dependabot 在 `dev`/默认分支报告 67 条 open alert（17 critical /
 > vitest 2 的临时文件并发写假红；vitest 4 已重写该路径。`patches/vitest@2.1.9.patch`
 > 与 Dockerfile 的 `COPY patches ./patches` 暂保留（删除它们需同步改 10 个 Dockerfile，
 > 另立清理片），但已不再被引用。
+>
+> **2026-10-28 已清理**：`patches/` 与 10 个 Dockerfile 的 `COPY patches ./patches` 已删除；
+> `dockerfile-patches-copy.gate.test.ts` 改为双向闸（有 patchedDependencies ⇒ 必须 COPY；
+> 为空 ⇒ 禁止 COPY）。
 
 ## 兼容性改动（升级带来的必要适配）
 
@@ -67,7 +71,7 @@ GitHub Dependabot 在 `dev`/默认分支报告 67 条 open alert（17 critical /
 | uni-app 只声明 `vite: 5.2.8` peer | 我们用 Vite 6.4.4 构建成功、测试全绿，但上游未声明支持 | 监控；若后续 uni 升级仍锁 Vite 5，可回退 client 的 vite 并接受该组 dev-only 告警 |
 | esbuild 0.25 override 覆盖 uni-cli-shared 的 0.20.2 | 构建成功 | 已由 client build 实测 |
 | Vitest 4 行为变化 | 已修 7 类测试/配置适配 | 全仓 44/44 绿 |
-| `patches/` 与 Dockerfile COPY 暂留 | 已无 patchedDependencies | 另立清理片删除；当前不参与安装 |
+| `patches/` 与 Dockerfile COPY 暂留 | 已无 patchedDependencies | **2026-10-28 已清理**（目录与 10 处 COPY 删除；双向闸落地） |
 | Dependabot 重扫延迟 | push 后 GitHub 异步更新 alert | 推送后复查；未清零则按残留项继续 |
 
 ## 涉及文件
