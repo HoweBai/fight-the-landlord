@@ -686,10 +686,10 @@ const CONFIG_NOTES = {
     ['注意', '客户端大厅按此表渲染场次卡；空表 ⇒ 不显示任何场次。'],
   ],
   'game.mahjong.rules': [
-    ['作用', '四川麻将规则快照（番表/封顶/换三张/呼叫转移/退税/花猪/时长等全部开关）。'],
-    ['取值', 'JSON 对象，字段见 docs/games/mahjong.md 与 protocol MahjongRulesConfig；服务端按严格 schema 解析。'],
+    ['作用', '四川麻将规则快照（番表/封顶/换三张/呼叫转移/退税/花猪/查叫/时长等全部开关）。'],
+    ['取值', '后台以分组表单编辑（计分/番表/换牌与流程/杠与转账/花猪与查叫/决策时长）；保存由服务端按严格 schema 校验。'],
     ['生效', '保存后新开的房间使用新规则；已在局中的沿用开局快照。'],
-    ['注意', '非法 JSON/未知字段/越界值会被服务端拒绝；preset 仅作标注，不自动改其它字段。'],
+    ['注意', '保存不会改变预设；要整口径切换用「按预设重置全部规则」。番表项清空 = 关闭该番（写 0）。'],
   ],
   'game.mahjong.enabled': [
     ['作用', '四川麻将总开关：关 ⇒ 大厅不显示、匹配/建房被拒绝（12012）。'],
@@ -1241,7 +1241,7 @@ const STRUCT_META = {
   'game.levels.doudizhu': { label: '斗地主档位表' },
   'game.levels.paodekuai': { label: '跑得快档位表' },
   'game.levels.mahjong': { label: '四川麻将档位表' },
-  'game.mahjong.rules': { label: '四川麻将规则 JSON' },
+  'game.mahjong.rules': { label: '四川麻将规则' },
   'pay.rechargePackages': { label: '充值档位表' },
   'game.doudizhu.robot.skillDistribution': { label: '机器人技能分布' },
   'game.doudizhu.robot.modelBySkill': { label: '各档模型' },
@@ -2666,7 +2666,7 @@ function buildMahjongRulesEditor(body, ctx) {
     warnings.textContent = '';
     const list = [];
     if (currentPolicy() === 'additive' && fanTableAllZero('additiveFanTable')) {
-      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」恢复 SBR 默认番表。');
+      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」并选择 SBR 预设恢复默认番表。');
     }
     if (currentPolicy() === 'named' && fanTableAllZero('fanTable')) {
       list.push('命名番表为空：绝大多数牌只按平胡兜底 1 番，请先补齐番值。');

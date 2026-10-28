@@ -1036,6 +1036,18 @@ ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色�
 ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
 ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
 
+/* ── 12. 四川麻将规则表单（2026-10-29）────────────────────────── */
+const mjFormBlock = balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}');
+ok(mjFormBlock.length > 500, `麻将规则描述表块可提取且非空（实测 ${mjFormBlock.length} 字符）`);
+for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
+  ok(mjFormBlock.includes(`title: '${title}'`), `麻将表单分组：${title}`);
+}
+ok(app.includes('function buildMahjongRulesEditor'), '麻将规则表单渲染器存在');
+ok(!app.includes('function buildRulesJsonEditor'), 'raw JSON 编辑器已移除');
+ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
+ok(app.includes('按预设重置全部规则'), '预设重置按钮文案');
+ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮文案');
+
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {
   console.error(`admin static verify: ${failures.length} FAILED / ${checks} checks`);

@@ -138,6 +138,15 @@
 | `exchangeWindowMs` | 15000 | 15000 |
 | `lackWindowMs` | 15000 | 15000 |
 
+**后台编辑**：配置中心 → 玩法 → 四川麻将 → 「玩法规则」页签提供分组表单
+（计分 / 命名番表 / 加法番表 / 可选番 / 换牌与流程 / 杠与转账 / 花猪与查叫 / 决策时长），
+不再直接编辑 JSON。保存只写入表单里显示的字段、**不改变 `preset`**；整口径切换用
+「按预设重置全部规则」（服务端按所选预设补默认值）。番表项清空 = 关闭该番（写 0）——
+服务端对缺键会按预设默认合并，所以「删键」并不能关闭番项。
+
+`chajiaoAllSameState`：代码当前两档（`none` / `pay`）**无可观测差异**，与 §6 第 2 条的描述
+不一致；该差异另立片对账，本表按当前实际行为标注。
+
 闸键：`game.mahjong.enabled` / `freeRoomEnabled` / `goldRoomEnabled` / `friendRoomEnabled` /
 `freeBotFillEnabled` / `goldBotFillEnabled` / `entryMultiplier` / `rakePercent` /
 `sbrGoldEnabled` / `rules` / `game.levels.mahjong`。
