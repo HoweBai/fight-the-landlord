@@ -1,5 +1,5 @@
-# deploy/monitoring/prometheus/rules/ftl-alerts.yml —— 告警规则唯一真源（规格 §2.4bis + 金币场片 §11.2 + 风控片 §2.12 + 支付片 §2.6 + 通知通道片 §3.8 + 广告小片 §2.7 + 多玩法片 A1 + B 组风控 SQL 失败 + C1 记录 outbox + C2 资金↔记录对账：**38 条**）。
-# 38 条 = 35 类，3 类按 severity 拆名（Http5xxRatio / HostDiskSpace / WsConnections）。
+# deploy/monitoring/prometheus/rules/ftl-alerts.yml —— 告警规则唯一真源（规格 §2.4bis + 金币场片 §11.2 + 风控片 §2.12 + 支付片 §2.6 + 通知通道片 §3.8 + 广告小片 §2.7 + 多玩法片 A1 + B 组风控 SQL 失败 + C1 记录 outbox + C2 资金↔记录对账 + C3 资金异常：**41 条**）。
+# 41 条 = 38 类，3 类按 severity 拆名（Http5xxRatio / HostDiskSpace / WsConnections）。
 # ⚠️ 改阈值 = 发版（规则进镜像 + promtool check rules 做语法闸，C3）。
 # ⚠️ 备份新鲜度**不设规则**（设计 §D6：独立闸 check-backup-fresh.sh 在先，只上板）——
 #    不要"顺手补一条"，那是被裁决过的范围。
@@ -336,6 +336,31 @@ groups:
         annotations:
           summary: '记录对账 >2h 未成功（含从未成功）'
           runbook: '查 currency-service 日志/MySQL 连通/缺表 1146/truncated=1；下一轮自愈。'
+      # ── C3 资金异常（2026-10-28；全部 max_over_time —— ClusterIP 轮询多副本时 series 抖动安全）──
+      - alert: RiskFundScanQueryFailures
+        expr: 'max by (scope) (max_over_time(risk_fund_scan_round_failures[15m])) > 0'
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '资金异常采集查询失败（scope={{ $labels.scope }}）'
+          runbook: '看 user-service 日志 scope 对应查询（doudizhu/paodekuai/ops）；超时/截断/表权限；本轮对应玩法冻结，下一轮自愈。'
+      - alert: RiskFundScanStalled
+        expr: 'time() - max_over_time(risk_fund_scan_last_success_timestamp_seconds[15m]) > 7200'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '资金异常采集 >2h 未全量成功（含从未成功）'
+          runbook: '查 user-service 扫描日志、currency_ops/game_records(_pdk) 可达性；round_failures 分 scope/reason。'
+      - alert: RiskFundHitsHigh
+        expr: 'max_over_time(risk_fund_scan_hit_users[15m]) > 10'
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: '资金异常信号集中（单轮命中用户 >10 持续 2h）'
+          runbook: '看管理端审核队列（reasons 的 pairUserId/deviceId）与 06-risk 面板；按对子/设备人工核对，不自动封禁。'
       - alert: RiskScanSqlFailures
         expr: 'sum by (scope) (increase(risk_scan_sql_failures_total[10m])) > 0'
         for: 5m

@@ -43,6 +43,21 @@ import {
 } from '../src/risk/scan.service';
 import { SNAPSHOT_BOOT_WAIT_MS, type ConfigCacheService } from '../src/config/config-cache.service';
 import { riskScanLastSuccessTimestampSeconds } from '../src/risk/risk.metrics';
+import {
+  riskFundScanHitUsers,
+  riskFundScanLastSuccessTimestampSeconds,
+  riskFundScanRoundFailures,
+} from '../src/risk/risk.metrics';
+import {
+  FUND_OPS_SQL,
+  FUND_PAIR_PDK_SQL,
+  FUND_RAKE_COUNTS_DDZ_SQL,
+  FUND_RAKE_COUNTS_PDK_SQL,
+  FUND_SAME_DEVICE_DDZ_SQL,
+  FUND_SAME_DEVICE_PDK_SQL,
+  FUND_WIN_REFS_DDZ_SQL,
+  FUND_WIN_REFS_PDK_SQL,
+} from '../src/risk/fund-scan';
 
 const DAY_MS = 86_400_000;
 /** 固定时间轴原点（`now` 注入；不随真实时钟漂移）。 */
@@ -258,6 +273,16 @@ class FakeScanDb {
   failPdk = false;
   failMahjong = false;
   failDevice = false;
+  /** C3（2026-10-28）：8 条只读查询的回执 + 逐 SQL 故障注入。 */
+  fundSameDeviceDdz: Array<Record<string, unknown>> = [];
+  fundSameDevicePdk: Array<Record<string, unknown>> = [];
+  fundPair: Array<Record<string, unknown>> = [];
+  fundCountsDdz: Array<Record<string, unknown>> = [];
+  fundRefsDdz: Array<Record<string, unknown>> = [];
+  fundCountsPdk: Array<Record<string, unknown>> = [];
+  fundRefsPdk: Array<Record<string, unknown>> = [];
+  fundOps: Array<Record<string, unknown>> = [];
+  failFundSql = new Set<string>();
   private held: Promise<unknown> | null = null;
 
   holdNextQuery(): { resolve: (value: unknown) => void } {
@@ -289,6 +314,27 @@ class FakeScanDb {
       if (sql === SPEC_RISK_DEVICE_COUNT_SQL) {
         if (this.failDevice) return Promise.reject(new Error('device db down（仿真）'));
         return Promise.resolve(this.deviceRows);
+      }
+      if (this.failFundSql.has(sql)) return Promise.reject(new Error('fund db down（仿真）'));
+      switch (sql) {
+        case FUND_SAME_DEVICE_DDZ_SQL:
+          return Promise.resolve(this.fundSameDeviceDdz);
+        case FUND_SAME_DEVICE_PDK_SQL:
+          return Promise.resolve(this.fundSameDevicePdk);
+        case FUND_PAIR_PDK_SQL:
+          return Promise.resolve(this.fundPair);
+        case FUND_RAKE_COUNTS_DDZ_SQL:
+          return Promise.resolve(this.fundCountsDdz);
+        case FUND_WIN_REFS_DDZ_SQL:
+          return Promise.resolve(this.fundRefsDdz);
+        case FUND_RAKE_COUNTS_PDK_SQL:
+          return Promise.resolve(this.fundCountsPdk);
+        case FUND_WIN_REFS_PDK_SQL:
+          return Promise.resolve(this.fundRefsPdk);
+        case FUND_OPS_SQL:
+          return Promise.resolve(this.fundOps);
+        default:
+          break;
       }
       if (sql === SPEC_RISK_BANNED_USERS_SQL) {
         return Promise.resolve(this.bannedIds.map((id) => ({ id })));
@@ -425,6 +471,21 @@ async function labeledMetric(name: string, labels: string): Promise<number> {
   return m ? Number(m[1]) : 0;
 }
 
+/** 多标签指标的**顺序无关**读数（prom-client 输出标签顺序不保证；缺系列 ⇒ 0）。 */
+async function seriesValue(name: string, labels: Record<string, string>): Promise<number> {
+  const text = await metricsRegistry().metrics();
+  const wanted = Object.entries(labels);
+  for (const line of text.split('\n')) {
+    const m = new RegExp(`^${name}\\{(.+)\\} ([\\d.eE+]+)$`).exec(line);
+    if (m === null) continue;
+    const pairs = [...m[1]!.matchAll(/([a-z_]+)="([^"]*)"/g)].map((match) => [match[1], match[2]]);
+    if (wanted.every(([key, value]) => pairs.some(([k, v]) => k === key && v === value))) {
+      return Number(m[2]);
+    }
+  }
+  return 0;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
@@ -496,7 +557,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(db.queries).toHaveLength(2);
     });
 
-    it('game_type 推导：ddz/pdk/mixed/platform/旧 reasons 缺省 ddz；update 改写', async () => {
+    it('game_type 推导：ddz/pdk/mahjong/mixed/platform/旧 reasons 缺省 ddz；update 改写', async () => {
       const R_DDZ: ScanReason[] = [
         { check: 'winRate', detail: { gameType: 'doudizhu', games: 101, wins: 90, winRate: 90 / 101 } },
       ];
@@ -515,9 +576,18 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       for (const [reasons, expected] of [
         [R_DDZ, 'doudizhu'],
         [R_PDK, 'paodekuai'],
+        [R_MJ, 'mahjong'],
         [R_MIX, 'mixed'],
+        [[...R_DDZ, ...R_MJ], 'mixed'],
+        [[...R_MJ, ...R_PAIR_PDK], 'mixed'],
         [R_DEV, 'platform'],
         [R_LEGACY, 'doudizhu'],
+        [R_SAME_DDZ, 'doudizhu'],
+        [R_PAIR_PDK, 'paodekuai'],
+        [R_FREQ_PDK, 'paodekuai'],
+        [R_RAKE_DDZ, 'doudizhu'],
+        [R_C3_MIX, 'mixed'],
+        [[...R_RAKE_DDZ, ...R_DEV], 'doudizhu'], // devices 不改变玩法集合
       ] as const) {
         db = new FakeRiskDb();
         await mkSvc().applyScanResult('u-A', 25, reasons, T0);
@@ -558,6 +628,43 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     const R_LEGACY_PDK: ScanReason[] = [
       { check: 'winRate', detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 } },
     ];
+    // 2026-10-28 麻将并入：winRate 的 gameType 集合含 mahjong；与 ddz/pdk 并存 ⇒ mixed。
+    const R_MJ: ScanReason[] = [
+      { check: 'winRate', detail: { gameType: 'mahjong', games: 101, wins: 85, winRate: 85 / 101 } },
+    ];
+    // C3（2026-10-28）：新 check 的玩法维度必须与 winRate 同口径参与推导/冻结涉及面。
+    const R_SAME_DDZ: ScanReason[] = [
+      {
+        check: 'sameDevice',
+        detail: { gameType: 'doudizhu', windowHours: 168, pairUserId: 'u-B', deviceId: 'dev-1', games: 3 },
+      },
+    ];
+    const R_PAIR_PDK: ScanReason[] = [
+      {
+        check: 'pairWinRate',
+        detail: {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: 168,
+          pairUserId: 'u-B',
+          dominantUserId: 'u-A',
+          games: 5,
+          wins: 5,
+          winRate: 1,
+          netWin: 1500,
+        },
+      },
+    ];
+    const R_FREQ_PDK: ScanReason[] = [
+      {
+        check: 'pairFrequency',
+        detail: { gameType: 'paodekuai', playerCount: 2, windowHours: 26, pairUserId: 'u-B', games: 10 },
+      },
+    ];
+    const R_RAKE_DDZ: ScanReason[] = [
+      { check: 'highRake', detail: { gameType: 'doudizhu', windowHours: 26, games: 20, rakeUpperBound: 6000 } },
+    ];
+    const R_C3_MIX: ScanReason[] = [...R_SAME_DDZ, ...R_PAIR_PDK];
 
     it('PDK 自动限流线：pdkScore=25 + PDK 25 ⇒ open 武装；26/49/50 ⇒ 不武装', async () => {
       for (const [pdkScore, shouldThrottle] of [
@@ -676,6 +783,69 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       await mkSvc().applyScanResult('u-A', 25, R_LEGACY_PDK, T0, ['paodekuai']);
       expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
       expect(db.actions).toHaveLength(0);
+    });
+
+    it('冻结①：涉及面含 C3 check——最新行只有 pdk 对子 reason 也会在 pdk 降级时冻结', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'doudizhu', // 列值故意不一致：reasons 兜底必须仍识别 pdk
+          reasons: JSON.stringify([
+            {
+              check: 'pairWinRate',
+              detail: { gameType: 'paodekuai', playerCount: 2, games: 5, wins: 5, winRate: 1, netWin: 1500 },
+            },
+          ]),
+        }),
+      );
+
+      await mkSvc().applyScanResult('u-A', 25, R_PAIR_PDK, T0, ['paodekuai']);
+
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+      expect(redis.calls).toHaveLength(0);
+    });
+
+    it('冻结①：麻将并入——列值 mahjong 或 reasons 含 mahjong 均随麻将降级冻结', async () => {
+      db.reviews.push(mkReview({ id: 9, status: 'open', score: 25, game_type: 'mahjong' }));
+      await mkSvc().applyScanResult('u-A', 25, R_MJ, T0, ['mahjong']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+      expect(redis.calls).toHaveLength(0);
+
+      db = new FakeRiskDb();
+      redis = new FakeRedis();
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'doudizhu', // 列值故意不一致：reasons 兜底必须仍识别 mahjong
+          reasons: JSON.stringify(R_MJ),
+        }),
+      );
+      await mkSvc().applyScanResult('u-A', 25, R_MJ, T0, ['mahjong']);
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+    });
+
+    it('冻结①：C3 命中行不涉及失败玩法 ⇒ 正常更新（paodekuai 行 + doudizhu 不可用）', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'paodekuai',
+          reasons: JSON.stringify([{ check: 'pairFrequency', detail: { gameType: 'paodekuai', games: 10 } }]),
+        }),
+      );
+
+      await mkSvc().applyScanResult('u-A', 25, R_PAIR_PDK, T0, ['doudizhu']);
+
+      expect(db.queries.length).toBeGreaterThan(1);
+      expect(db.reviews[0]!.score).toBe(25);
     });
 
     it('冻结②：任一玩法失败 + throttled(auto) ⇒ 不解除，仅续旗 EX 7d，零 DB 写/审计', async () => {
@@ -1477,7 +1647,7 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       });
     });
 
-    it('查询顺序固定：斗地主 → 跑得快 → 麻将 → 设备 → 自愈名单 → open 计数', async () => {
+    it('查询顺序固定：斗地主 → 跑得快 → 麻将 → 设备 → C3 八条 → 自愈名单 → open 计数', async () => {
       await mkSvc().runScanOnce(T0);
 
       expect(db.queries.map((q) => q.sql)).toEqual([
@@ -1485,9 +1655,329 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
         SPEC_RISK_WIN_RATE_PDK_SQL,
         SPEC_RISK_WIN_RATE_MAHJONG_SQL,
         SPEC_RISK_DEVICE_COUNT_SQL,
+        FUND_SAME_DEVICE_DDZ_SQL,
+        FUND_SAME_DEVICE_PDK_SQL,
+        FUND_PAIR_PDK_SQL,
+        FUND_RAKE_COUNTS_DDZ_SQL,
+        FUND_WIN_REFS_DDZ_SQL,
+        FUND_RAKE_COUNTS_PDK_SQL,
+        FUND_WIN_REFS_PDK_SQL,
+        FUND_OPS_SQL,
         SPEC_RISK_BANNED_USERS_SQL,
         "SELECT COUNT(*) AS cnt FROM risk_reviews WHERE status='open'",
       ]);
+    });
+
+    it('C3-only 命中：两个账号都进并集、score=25、reason 带 gameType/windowHours', async () => {
+      db.fundSameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+
+      const result = await mkSvc().runScanOnce(T0);
+
+      expect(result).toEqual({ skipped: false, users: 2, flagged: 2 });
+      const calls = callsByUser();
+      expect(calls['u-A']).toEqual({
+        score: 25,
+        reasons: [
+          {
+            check: 'sameDevice',
+            detail: {
+              gameType: 'doudizhu',
+              windowHours: 168,
+              pairUserId: 'u-B',
+              deviceId: 'dev-1',
+              games: 3,
+            },
+          },
+        ],
+      });
+      expect(calls['u-B']).toEqual({
+        score: 25,
+        reasons: [
+          {
+            check: 'sameDevice',
+            detail: {
+              gameType: 'doudizhu',
+              windowHours: 168,
+              pairUserId: 'u-A',
+              deviceId: 'dev-1',
+              games: 3,
+            },
+          },
+        ],
+      });
+    });
+
+    it('评分矩阵：winRate+C3=50 / devices+C3=50 / 三项=75（C3 只算一项）', async () => {
+      const sameDevice = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+
+      db = new FakeScanDb();
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.fundSameDeviceDdz = sameDevice;
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+      expect(callsByUser()['u-A']?.score).toBe(50);
+      expect(
+        (callsByUser()['u-A']?.reasons as ScanReason[]).map((reason) => reason.check),
+      ).toEqual(['winRate', 'sameDevice']);
+
+      db = new FakeScanDb();
+      db.deviceRows = [{ user_id: 'u-A', devices: 5 }];
+      db.fundSameDeviceDdz = sameDevice;
+      await mkSvc().runScanOnce(T0);
+      expect(callsByUser()['u-A']?.score).toBe(50);
+
+      db = new FakeScanDb();
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.deviceRows = [{ user_id: 'u-A', devices: 5 }];
+      db.fundSameDeviceDdz = sameDevice;
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+      expect(callsByUser()['u-A']?.score).toBe(75);
+    });
+
+    it('reasons 顺序：winRate(ddz→pdk) → devices → sameDevice → pairWinRate → pairFrequency → highRake', async () => {
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.pdkWinRows = [{ user_id: 'u-A', player_count: 3, games: 5, wins: 5 }];
+      db.deviceRows = [{ user_id: 'u-A', devices: 5 }];
+      db.fundSameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+      db.fundPair = [
+        {
+          user_a: 'u-A',
+          user_b: 'u-C',
+          games_7d: 10,
+          wins_a: 10,
+          wins_b: 0,
+          net_a: 1500,
+          net_b: -1500,
+          games_24h: 10,
+        },
+      ];
+      db.fundCountsDdz = [{ user_id: 'u-A', games: 20 }];
+      db.fundRefsDdz = [{ user_id: 'u-A', room_code: 'R1', game_version: 1 }];
+      db.fundOps = [{ ref_id: 'R1:1', burned_rake: 5000 }];
+
+      await mkSvc(
+        makeScanConfig({ minGames: 100, pdkMinGames3: 1, pdkWinRate3: 0.5 }),
+      ).runScanOnce(T0);
+
+      expect(
+        (callsByUser()['u-A']?.reasons as ScanReason[]).map((reason) => reason.check),
+      ).toEqual([
+        'winRate',
+        'winRate',
+        'devices',
+        'sameDevice',
+        'pairWinRate',
+        'pairFrequency',
+        'highRake',
+      ]);
+      expect(callsByUser()['u-A']?.score).toBe(75);
+    });
+
+    it('C3 降级：对子 SQL 抛 ⇒ 冻结 paodekuai；ops 抛 ⇒ 两玩法；整轮仍 ok', async () => {
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.failFundSql.add(FUND_PAIR_PDK_SQL);
+      const okBefore = await labeledMetric('risk_scan_runs_total', '{result="ok"}');
+
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+
+      expect(callsByUser()['u-A']?.score).toBe(25);
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['paodekuai']);
+      expect(await labeledMetric('risk_scan_runs_total', '{result="ok"}')).toBe(okBefore + 1);
+
+      db = new FakeScanDb();
+      reviews.applyScanResult.mockClear();
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.failFundSql.add(FUND_OPS_SQL);
+
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['doudizhu', 'paodekuai']);
+    });
+
+    it('指标：hits_total 每用户每 check +1；hit_users 只算 C3；round_failures 成功轮全 0', async () => {
+      // 审查 M3：**不** setSystemTime —— 注入 now（T0）与真实时钟不同，才能钉住
+      // last_success 用的是 now/1000 而不是轮末 Date.now()/1000。
+      db.fundSameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+      const hitsBefore = await seriesValue('risk_fund_scan_hits_total', {
+        check: 'sameDevice',
+        game_type: 'doudizhu',
+      });
+      const okBefore = await labeledMetric('risk_fund_scan_runs_total', '{result="ok"}');
+
+      await mkSvc().runScanOnce(T0);
+
+      expect(
+        await seriesValue('risk_fund_scan_hits_total', {
+          check: 'sameDevice',
+          game_type: 'doudizhu',
+        }),
+      ).toBe(hitsBefore + 2);
+      expect(await simpleMetric('risk_fund_scan_hit_users')).toBe(2);
+      expect(await labeledMetric('risk_fund_scan_runs_total', '{result="ok"}')).toBe(okBefore + 1);
+      expect(await simpleMetric('risk_fund_scan_last_success_timestamp_seconds')).toBe(T0 / 1000);
+      for (const scope of ['doudizhu', 'paodekuai', 'ops']) {
+        for (const reason of ['sql', 'truncated']) {
+          expect(
+            await seriesValue('risk_fund_scan_round_failures', { scope, reason }),
+            `${scope}/${reason}`,
+          ).toBe(0);
+        }
+      }
+    });
+
+    it('hit_users 不被 winRate/devices 命中污染：仅既有信号命中 ⇒ hit_users=0', async () => {
+      riskFundScanHitUsers.set(7);
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.deviceRows = [{ user_id: 'u-A', devices: 5 }];
+
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+
+      expect(await simpleMetric('risk_fund_scan_hit_users')).toBe(0);
+    });
+
+    it('失败轮：runs{fail}+1、last_success 不推进、round_failures 对应组合=1', async () => {
+      vi.setSystemTime(T0);
+      riskFundScanLastSuccessTimestampSeconds.set(123);
+      db.winRows = [{ user_id: 'u-A', games: 101, wins: 90 }];
+      db.failFundSql.add(FUND_PAIR_PDK_SQL);
+      const failBefore = await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}');
+
+      await mkSvc(makeScanConfig({ minGames: 100 })).runScanOnce(T0);
+
+      expect(await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}')).toBe(
+        failBefore + 1,
+      );
+      expect(await simpleMetric('risk_fund_scan_last_success_timestamp_seconds')).toBe(123);
+      expect(
+        await seriesValue('risk_fund_scan_round_failures', { scope: 'paodekuai', reason: 'sql' }),
+      ).toBe(1);
+      expect(
+        await seriesValue('risk_fund_scan_round_failures', { scope: 'doudizhu', reason: 'sql' }),
+      ).toBe(0);
+    });
+
+    it('整轮失败（设备 SQL 抛）⇒ fund runs{fail}+1（审查 M1：C3 未跑到也要记轮次）', async () => {
+      db.failDevice = true;
+      const failBefore = await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}');
+
+      await expect(mkSvc().runScanOnce(T0)).rejects.toThrow();
+
+      expect(await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}')).toBe(
+        failBefore + 1,
+      );
+    });
+
+    it('降级玩法去重：胜率 ddz 失败 + C3 ddz 失败 ⇒ 第 5 参恰 [doudizhu]（审查 M6）', async () => {
+      db.failDdz = true;
+      db.failFundSql.add(FUND_SAME_DEVICE_DDZ_SQL);
+      db.pdkWinRows = [{ user_id: 'u-A', player_count: 2, games: 2, wins: 2 }];
+
+      await mkSvc(makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 })).runScanOnce(T0);
+
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['doudizhu']);
+    });
+
+    it('boot：fund last_success / hit_users / round_failures 全置 0', async () => {
+      riskFundScanLastSuccessTimestampSeconds.set(999);
+      riskFundScanHitUsers.set(9);
+      riskFundScanRoundFailures.set({ scope: 'ops', reason: 'sql' }, 3);
+      const svc = mkSvc();
+
+      svc.onModuleInit();
+
+      expect(await simpleMetric('risk_fund_scan_last_success_timestamp_seconds')).toBe(0);
+      expect(await simpleMetric('risk_fund_scan_hit_users')).toBe(0);
+      expect(
+        await seriesValue('risk_fund_scan_round_failures', { scope: 'ops', reason: 'sql' }),
+      ).toBe(0);
+      svc.onApplicationShutdown();
+    });
+
+    it('autoThrottleScore=25 + C3-only pdk（25 分）⇒ 不武装（线仍 50）', async () => {
+      const riskDb = new FakeRiskDb();
+      const riskRedis = new FakeRedis();
+      const realReviews = new ReviewsService(
+        riskDb.dataSource as never,
+        riskRedis as never,
+        makeReviewsConfig(true, 25),
+      );
+      db.fundPair = [
+        {
+          user_a: 'u-A',
+          user_b: 'u-B',
+          games_7d: 5,
+          wins_a: 5,
+          wins_b: 0,
+          net_a: 1500,
+          net_b: -1500,
+          games_24h: 4,
+        },
+      ];
+      const svc = new ScanService(
+        db.dataSource as never,
+        redis as never,
+        makeScanConfig(),
+        realReviews,
+      );
+
+      await svc.runScanOnce(T0);
+      await svc.runScanOnce(T0);
+
+      expect(riskDb.reviews).toHaveLength(2); // 对子两侧都进队列
+      const row = riskDb.reviews.find((review) => review.user_id === 'u-A');
+      expect(row?.score).toBe(25);
+      expect(row?.status).toBe('open');
+      expect(
+        riskRedis.calls.filter((call) => call.op === 'set' && call.key.startsWith('risk:limit:')),
+      ).toHaveLength(0);
+    });
+
+    it('端到端落库：真实 ReviewsService 把对子命中写成 game_type=paodekuai', async () => {
+      const riskDb = new FakeRiskDb();
+      const realReviews = new ReviewsService(
+        riskDb.dataSource as never,
+        redis as never,
+        makeReviewsConfig(),
+      );
+      db.fundPair = [
+        {
+          user_a: 'u-A',
+          user_b: 'u-B',
+          games_7d: 5,
+          wins_a: 5,
+          wins_b: 0,
+          net_a: 1500,
+          net_b: -1500,
+          games_24h: 10,
+        },
+      ];
+      const svc = new ScanService(
+        db.dataSource as never,
+        redis as never,
+        makeScanConfig(),
+        realReviews,
+      );
+
+      await svc.runScanOnce(T0);
+
+      const row = riskDb.reviews.find((review) => review.user_id === 'u-A');
+      expect(row?.game_type).toBe('paodekuai');
+      const reasons = JSON.parse(row!.reasons) as Array<{
+        check: string;
+        detail: Record<string, unknown>;
+      }>;
+      expect(reasons.map((reason) => reason.check)).toEqual(['pairWinRate', 'pairFrequency']);
+      expect(reasons[0]!.detail.gameType).toBe('paodekuai');
+    });
+
+    it('轮摘要日志含 fundHits=', async () => {
+      db.fundSameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+
+      await mkSvc().runScanOnce(T0);
+
+      expect(
+        captured.records.some((record) => record.msg.includes('fundHits=2')),
+        captured.records.map((record) => record.msg).join('\n'),
+      ).toBe(true);
     });
 
     it('PDK SQL 抛 ⇒ 单玩法隔离：DDZ 照跑、轮 ok、scope 指标 +1、状态机收到 [paodekuai]', async () => {
