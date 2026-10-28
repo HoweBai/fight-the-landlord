@@ -7,6 +7,8 @@
 #   * `workflow_dispatch`（2026-10-29 新增）：**feature 集成分支的权威轮入口** —— 推集成分支后
 #     `gh workflow run conformance.yml --ref <branch>` 手动跑整轮（C3 硬闸：slice 未过权威轮不得合 dev）。
 #     GitHub 要求本工作流文件存在于默认分支；未给 `inputs.image_tag` ⇒ 本机构建 14 镜像。
+#     可选 `inputs.only`（逗号分隔）跑**定向轮**（只跑指定切片、跳过 baselines 全量校验）；
+#     定向轮只用于快速定因，**不是**权威轮。
 #
 # ⚠️ **额度吃紧时的降级路径**（R1314③）：删掉下面的 `on.push.branches`、只留 `workflow_call`
 #    ⇒ 真栈 conformance 就只在 tag 上跑。
@@ -29,6 +31,11 @@ on:
         required: false
         type: string
   workflow_dispatch:
+    inputs:
+      only:
+        description: '定向轮：只跑指定切片（逗号分隔，如 slice-17-currency）；留空 = 全部（权威轮必须留空）'
+        required: false
+        type: string
 
 jobs:
   conformance:
@@ -76,20 +83,29 @@ jobs:
       #    （`tee`，常态 0）⇒ `|| fail=1` 永不触发、**某片红也不会让 job 红**，闸就这样静默地少做
       #    （R115 同族）。成例：`ci.yml` 的 `render-gate` 在 `| tee` 前显式写同一行。
       #    `set +e` 只关 errexit、与 pipefail 互不干扰（默认 shell 本就带 pipefail 时此行为 no-op）。
-      - name: 跑全部切片（顺序取自 run.ts 的 CASES）
+      - name: 跑全部切片（顺序取自 run.ts 的 CASES；`only` 非空 ⇒ 定向轮）
         env:
           # 片⑦ I6：与「起真栈」步、`lib/http.ts` 的 `ADMIN_PASSWORD` 常量**三处同源** ——
           # 管理面登录（slice-14 C6半/C15、slice-06/07.1/07.2-hardening/12 的开关前置）用它。
           # 不显式给的话这里会回落到 helper 的默认值（也是 conformance-admin-pass，但两处默认
           # 对齐是有意为之，别把「碰巧相等」当契约）。
           ADMIN_PASSWORD: conformance-admin-pass
+          # 定向轮（workflow_dispatch.only）：只跑列出的切片，**跳过 baselines 全量校验**。
+          # ⚠️ 定向轮不是权威轮 —— 权威轮必须留空（全序 + baselines 全量）。
+          ONLY: ${{ inputs.only }}
         run: |
           set +e
           set -o pipefail
           fail=0
           LOG="$RUNNER_TEMP/conformance.log"
           : > "$LOG"
+          if [ -n "$ONLY" ]; then
+            echo "⚠️ 定向轮（only=$ONLY）：只跑指定切片，跳过 baselines 全量校验 —— 结果**不是**权威轮" | tee -a "$LOG"
+          fi
           for c in $(node tools/conformance/dist/run.js --list); do
+            if [ -n "$ONLY" ] && ! echo ",$ONLY," | tr -d ' ' | grep -q ",$c,"; then
+              continue
+            fi
             echo "───── $c ─────" | tee -a "$LOG"
             node tools/conformance/dist/run.js "$c" 2>&1 | tee -a "$LOG"
             rc="${PIPESTATUS[0]}"
@@ -101,7 +117,11 @@ jobs:
             echo "[loop] $c ⇒ exit $rc" | tee -a "$LOG"
             if [ "$rc" -ne 0 ]; then fail=1; fi
           done
-          node scripts/check-baselines.mjs full "$LOG" || fail=1
+          if [ -z "$ONLY" ]; then
+            node scripts/check-baselines.mjs full "$LOG" || fail=1
+          else
+            echo "⚠️ 定向轮已跳过 check-baselines full（缺片会被判「缺席」）；权威轮请留空 only 重跑" | tee -a "$LOG"
+          fi
           exit $fail
       - name: 失败诊断（仅失败时）—— 容器重启数/OOM/事件/尾部日志
         if: failure()
