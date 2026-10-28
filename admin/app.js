@@ -2379,38 +2379,197 @@ function buildSimpleRow(key) {
 }
 
 /**
- * 麻将规则 JSON 编辑器：原样编辑对象（严格 schema 校验在服务端 parseMahjongRules）。
- * 与其它结构化卡共用同一套行内保存协议：read 抛错 ⇒ 行内拦截、不发请求。
+ * 四川麻将规则表单（2026-10-29）：描述表驱动；整对象原子保存。
+ * 与其它结构化卡共用行内协议：ctx.bind(read, reset)；read 抛错 ⇒ saveRow 行内拦截。
+ * 番表语义（D9）：快照中存在的番键清空 ⇒ 写 0；不存在的番键清空 ⇒ 省略。
+ * 保存永不改写 preset（D3）：preset/rulesVersion 直接取快照值。
  */
-function buildRulesJsonEditor(body, ctx) {
-  const box = document.createElement('textarea');
-  box.className = 'json-box';
-  box.rows = 12;
-  box.spellcheck = false;
-  const stringify = () => JSON.stringify(ctx.snap, null, 2);
-  box.value = stringify();
-  box.addEventListener('input', () => {
+function buildMahjongRulesEditor(body, ctx) {
+  const snap = ctx.snap && typeof ctx.snap === 'object' ? ctx.snap : {};
+  const fieldRefs = new Map();
+  const tableRefs = new Map();
+
+  function onChange() {
     ctx.dirty();
     ctx.state('', '');
-  });
-  ctx.bind(
-    () => {
-      let parsed;
-      try {
-        parsed = JSON.parse(box.value);
-      } catch {
-        throw new Error('规则不是合法 JSON');
+  }
+
+  function fieldErr(errEl, msg) {
+    errEl.textContent = msg;
+    throw new Error(msg);
+  }
+
+  function buildFieldRow(field) {
+    const row = el('div', 'mj-field');
+    row.dataset.field = field.path;
+    const label = el('label', 'mj-label', field.label);
+    label.htmlFor = `mj-${field.path}`;
+    row.append(label, el('code', 'mj-key', field.path));
+    const errEl = el('p', 'mj-field-err');
+    const clearErr = () => {
+      errEl.textContent = '';
+    };
+
+    if (field.type === 'bool') {
+      const wrap = el('label', 'switch');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.id = `mj-${field.path}`;
+      input.checked = snap[field.path] === true;
+      wrap.append(input, el('span', 'switch-track'));
+      row.append(wrap);
+      fieldRefs.set(field.path, () => input.checked);
+      input.addEventListener('change', () => {
+        clearErr();
+        onChange();
+      });
+    } else if (field.type === 'enum') {
+      const input = document.createElement('select');
+      input.className = 'mj-select';
+      input.id = `mj-${field.path}`;
+      for (const [value, text] of field.options) {
+        const opt = document.createElement('option');
+        opt.value = String(value);
+        opt.textContent = text;
+        input.append(opt);
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('规则必须是 JSON 对象');
+      input.value = String(snap[field.path]);
+      row.append(input);
+      fieldRefs.set(field.path, () =>
+        field.valueType === 'number' ? Number(input.value) : input.value,
+      );
+      input.addEventListener('change', () => {
+        clearErr();
+        onChange();
+      });
+    } else {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'mj-num';
+      input.id = `mj-${field.path}`;
+      input.min = String(field.min);
+      input.max = String(field.max);
+      input.step = '1';
+      input.value = String(snap[field.path]);
+      row.append(input);
+      if (field.unit) row.append(el('span', 'mj-unit', field.unit));
+      fieldRefs.set(field.path, () => {
+        const raw = input.value.trim();
+        if (raw === '') fieldErr(errEl, `「${field.label}」不能为空`);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < field.min || n > field.max) {
+          fieldErr(errEl, `「${field.label}」须为 ${field.min}–${field.max} 的整数`);
+        }
+        return n;
+      });
+      input.addEventListener('input', () => {
+        clearErr();
+        onChange();
+      });
+    }
+    if (field.note) row.append(el('p', 'mj-note', field.note));
+    row.append(errEl);
+    return row;
+  }
+
+  function buildFieldGroup(group) {
+    const sec = el('section', 'mj-group');
+    sec.dataset.group = group.id;
+    sec.append(el('h4', 'mj-group-title', group.title));
+    if (group.note) sec.append(el('p', 'mj-group-note', group.note));
+    for (const field of group.fields ?? []) {
+      if (!Object.hasOwn(snap, field.path)) continue;
+      sec.append(buildFieldRow(field));
+    }
+    return sec;
+  }
+
+  function buildFanGroup(group) {
+    const meta = MAHJONG_RULES_FORM.tables[group.table];
+    const src =
+      snap[group.table] && typeof snap[group.table] === 'object' ? snap[group.table] : {};
+    const details = document.createElement('details');
+    details.className = 'mj-group mj-fan-group';
+    details.dataset.group = group.id;
+    const summary = document.createElement('summary');
+    summary.textContent = `${group.title}（${meta.keys.length} 项）`;
+    details.append(summary);
+    if (group.note) details.append(el('p', 'mj-group-note', group.note));
+    const rows = new Map();
+    for (const fanKey of meta.keys) {
+      const row = el('div', 'mj-fan-row');
+      row.dataset.field = `${group.table}.${fanKey}`;
+      row.append(el('span', 'mj-fan-name', MAHJONG_RULES_FORM.fanLabels[fanKey] ?? fanKey));
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'mj-num';
+      input.min = String(meta.min);
+      input.max = String(meta.max);
+      input.step = '1';
+      input.value = Object.hasOwn(src, fanKey) ? String(src[fanKey]) : '';
+      if (!Object.hasOwn(src, fanKey)) input.placeholder = '未设置';
+      const errEl = el('p', 'mj-field-err');
+      input.addEventListener('input', () => {
+        errEl.textContent = '';
+        onChange();
+      });
+      row.append(input, errEl);
+      rows.set(fanKey, { input, errEl });
+      details.append(row);
+    }
+    tableRefs.set(group.table, rows);
+    return details;
+  }
+
+  function buildGroups() {
+    const box = el('div', 'mj-groups');
+    for (const group of MAHJONG_RULES_FORM.groups) {
+      box.append(group.table ? buildFanGroup(group) : buildFieldGroup(group));
+    }
+    return box;
+  }
+
+  function readValue() {
+    const out = {};
+    for (const [path, read] of fieldRefs) {
+      out[path] = read();
+    }
+    out.preset = snap.preset ?? 'chengdu';
+    out.rulesVersion = snap.rulesVersion ?? 1;
+    for (const [table, meta] of Object.entries(MAHJONG_RULES_FORM.tables)) {
+      const src =
+        snap[table] && typeof snap[table] === 'object' ? snap[table] : {};
+      const tableOut = {};
+      const rows = tableRefs.get(table);
+      for (const [fanKey, ref] of rows ?? []) {
+        const raw = ref.input.value.trim();
+        if (raw === '') {
+          if (Object.hasOwn(src, fanKey)) tableOut[fanKey] = 0;
+          continue;
+        }
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < meta.min || n > meta.max) {
+          fieldErr(
+            ref.errEl,
+            `「${MAHJONG_RULES_FORM.fanLabels[fanKey] ?? fanKey}」须为 ${meta.min}–${meta.max} 的整数`,
+          );
+        }
+        tableOut[fanKey] = n;
       }
-      return parsed;
-    },
-    () => {
-      box.value = stringify();
-    },
-  );
-  body.append(box);
+      out[table] = tableOut;
+    }
+    return out;
+  }
+
+  function paint() {
+    body.textContent = '';
+    fieldRefs.clear();
+    tableRefs.clear();
+    body.append(buildGroups());
+  }
+
+  ctx.bind(readValue, paint);
+  paint();
 }
 
 /**
@@ -2457,7 +2616,7 @@ function buildStructCard(key) {
   else if (key === 'pay.rechargePackages') buildPackagesEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.skillDistribution') buildDistributionEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.modelBySkill') buildModelEditor(body, ctx);
-  else if (key === 'game.mahjong.rules') buildRulesJsonEditor(body, ctx);
+  else if (key === 'game.mahjong.rules') buildMahjongRulesEditor(body, ctx);
 
   revertBtn.addEventListener('click', () => {
     reset();

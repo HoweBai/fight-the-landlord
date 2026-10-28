@@ -1079,3 +1079,69 @@ input[type="datetime-local"]:focus {
   border-top: 1px solid var(--border);
 }
 .agents-bind { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+/* ── 四川麻将规则表单（2026-10-29）──────────────────────────── */
+.mj-preset-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mj-preset-now { font-size: 13px; font-weight: 600; }
+.mj-ver { font-size: 11px; color: var(--dim); }
+.mj-reset-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+.mj-select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.mj-banners { display: flex; flex-direction: column; gap: 6px; }
+.mj-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(90, 160, 255, 0.1);
+  border: 1px solid rgba(90, 160, 255, 0.35);
+}
+.mj-banner-warn { background: rgba(255, 190, 80, 0.08); border-color: rgba(255, 190, 80, 0.35); }
+.mj-warnings { display: flex; flex-direction: column; gap: 4px; }
+.mj-warn { margin: 0; font-size: 12px; color: var(--warn); }
+.mj-group { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.mj-group-title { margin: 0 0 6px; font-size: 13px; }
+.mj-group-note { margin: 0 0 8px; font-size: 12px; color: var(--dim); }
+.mj-field {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 4px 0;
+}
+.mj-label { font-size: 13px; }
+.mj-key { font-size: 10px; color: var(--dim); }
+.mj-num {
+  width: 120px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.mj-unit { font-size: 12px; color: var(--dim); }
+.mj-note, .mj-field-err { grid-column: 2; margin: 0; font-size: 11px; }
+.mj-note { color: var(--dim); }
+.mj-field-err { color: var(--err); }
+.mj-field-err:empty { display: none; }
+.mj-fan-group summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.mj-fan-row { display: flex; align-items: center; gap: 10px; padding: 3px 0 3px 12px; flex-wrap: wrap; }
+.mj-fan-name { width: 120px; font-size: 13px; }
+.mj-fan-row .mj-field-err { flex-basis: 100%; padding-left: 130px; }
