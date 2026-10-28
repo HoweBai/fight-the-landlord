@@ -31,6 +31,8 @@ import {
   FUND_WIN_REFS_DDZ_SQL,
   FUND_WIN_REFS_PDK_SQL,
   FUND_WINDOW_7D_MS,
+  FundScanCollector,
+  type FundCollection,
 } from '../src/risk/fund-scan';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -172,5 +174,397 @@ describe('C3 SQL 全文（spec §5.3）', () => {
         'ORDER BY o.id ASC ' +
         'LIMIT ?',
     );
+  });
+});
+
+// ─── Task 2：FundScanCollector（四信号判定/窗口/降级/cap）────────────────────────
+
+const T0 = Date.parse('2026-10-28T12:00:00.000Z');
+
+type Row = Record<string, unknown>;
+
+/** 8 条 SQL 的回执面（按常量精确识别；未识别 ⇒ reject，形状漂移当场红）。 */
+class FakeFundDb {
+  sameDeviceDdz: Row[] = [];
+  sameDevicePdk: Row[] = [];
+  pair: Row[] = [];
+  countsDdz: Row[] = [];
+  refsDdz: Row[] = [];
+  countsPdk: Row[] = [];
+  refsPdk: Row[] = [];
+  ops: Row[] = [];
+  failSql = new Set<string>();
+  queries: Array<{ sql: string; params: unknown[] }> = [];
+
+  dataSource = {
+    query: (sql: string, params: unknown[] = []): Promise<unknown> => {
+      this.queries.push({ sql, params });
+      if (this.failSql.has(sql)) return Promise.reject(new Error('db down（仿真）'));
+      switch (sql) {
+        case FUND_SAME_DEVICE_DDZ_SQL:
+          return Promise.resolve(this.sameDeviceDdz);
+        case FUND_SAME_DEVICE_PDK_SQL:
+          return Promise.resolve(this.sameDevicePdk);
+        case FUND_PAIR_PDK_SQL:
+          return Promise.resolve(this.pair);
+        case FUND_RAKE_COUNTS_DDZ_SQL:
+          return Promise.resolve(this.countsDdz);
+        case FUND_WIN_REFS_DDZ_SQL:
+          return Promise.resolve(this.refsDdz);
+        case FUND_RAKE_COUNTS_PDK_SQL:
+          return Promise.resolve(this.countsPdk);
+        case FUND_WIN_REFS_PDK_SQL:
+          return Promise.resolve(this.refsPdk);
+        case FUND_OPS_SQL:
+          return Promise.resolve(this.ops);
+        default:
+          return Promise.reject(new Error(`FakeFundDb 未识别的 SQL：${sql}`));
+      }
+    },
+  };
+}
+
+const collect = (db: FakeFundDb, now = T0, opts = {}) =>
+  new FundScanCollector(db.dataSource as never).collect(now, opts);
+
+const reasonsOf = (result: FundCollection, user: string, check: string) =>
+  (result.reasonsByUser.get(user) ?? []).filter((reason) => reason.check === check);
+
+describe('C3 FundScanCollector（spec §5.4）', () => {
+  it('查询顺序固定 + 窗口参数逐毫秒（DDZ/设备/ops = Date；PDK ended_at = number；LIMIT = cap+1）', async () => {
+    const db = new FakeFundDb();
+
+    await collect(db);
+
+    expect(db.queries.map((q) => q.sql)).toEqual([
+      FUND_SAME_DEVICE_DDZ_SQL,
+      FUND_SAME_DEVICE_PDK_SQL,
+      FUND_PAIR_PDK_SQL,
+      FUND_RAKE_COUNTS_DDZ_SQL,
+      FUND_WIN_REFS_DDZ_SQL,
+      FUND_RAKE_COUNTS_PDK_SQL,
+      FUND_WIN_REFS_PDK_SQL,
+      FUND_OPS_SQL,
+    ]);
+    const from7d = new Date(T0 - FUND_WINDOW_7D_MS);
+    const from26h = new Date(T0 - FUND_SCAN_WINDOW_24H_MS);
+    const from27h = new Date(T0 - FUND_OPS_WINDOW_MS);
+    expect(db.queries[0]!.params).toEqual([
+      from7d,
+      new Date(T0),
+      from7d,
+      from7d,
+      FUND_SAME_DEVICE_MIN_GAMES,
+      FUND_GROUP_CAP + 1,
+    ]);
+    expect(db.queries[1]!.params).toEqual(db.queries[0]!.params);
+    expect(db.queries[2]!.params).toEqual([
+      T0 - FUND_SCAN_WINDOW_24H_MS,
+      T0 - FUND_WINDOW_7D_MS,
+      T0,
+      FUND_PAIR_MIN_GAMES_7D,
+      FUND_GROUP_CAP + 1,
+    ]);
+    expect(db.queries[3]!.params).toEqual([
+      from26h,
+      new Date(T0),
+      FUND_RAKE_MIN_GAMES,
+      FUND_GROUP_CAP + 1,
+    ]);
+    expect(db.queries[4]!.params).toEqual([from26h, new Date(T0), FUND_DETAIL_CAP + 1]);
+    expect(db.queries[5]!.params).toEqual(db.queries[3]!.params);
+    expect(db.queries[6]!.params).toEqual(db.queries[4]!.params);
+    expect(db.queries[7]!.params).toEqual([from27h, new Date(T0), FUND_DETAIL_CAP + 1]);
+  });
+
+  it('空数据 ⇒ 零命中/零降级/零失败/hitUsers=0', async () => {
+    const result = await collect(new FakeFundDb());
+
+    expect(result.reasonsByUser.size).toBe(0);
+    expect(result.hitsByUser.size).toBe(0);
+    expect(result.hitUsers).toBe(0);
+    expect(result.degradedGames).toEqual([]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it('同设备同桌：games=3 命中两侧；games=2 不命中（JS 复核）；字段完整', async () => {
+    const hit = new FakeFundDb();
+    hit.sameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+
+    const result = await collect(hit);
+
+    expect(reasonsOf(result, 'u-A', 'sameDevice')).toEqual([
+      {
+        check: 'sameDevice',
+        detail: { gameType: 'doudizhu', windowHours: 168, pairUserId: 'u-B', deviceId: 'dev-1', games: 3 },
+      },
+    ]);
+    expect(reasonsOf(result, 'u-B', 'sameDevice')).toEqual([
+      {
+        check: 'sameDevice',
+        detail: { gameType: 'doudizhu', windowHours: 168, pairUserId: 'u-A', deviceId: 'dev-1', games: 3 },
+      },
+    ]);
+    expect(result.hitsByUser.get('u-A')).toEqual([{ check: 'sameDevice', gameType: 'doudizhu' }]);
+    expect(result.hitUsers).toBe(2);
+
+    const miss = new FakeFundDb();
+    miss.sameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 2 }];
+    expect((await collect(miss)).hitUsers).toBe(0);
+  });
+
+  it('同设备同桌：同对子两台设备 ⇒ 两条 reason；PDK 行标 paodekuai', async () => {
+    const db = new FakeFundDb();
+    db.sameDeviceDdz = [
+      { user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 5 },
+      { user_a: 'u-A', user_b: 'u-B', device_id: 'dev-2', games: 3 },
+    ];
+    db.sameDevicePdk = [{ user_a: 'u-A', user_b: 'u-C', device_id: 'dev-1', games: 3 }];
+
+    const result = await collect(db);
+
+    const aReasons = reasonsOf(result, 'u-A', 'sameDevice');
+    expect(aReasons).toHaveLength(3);
+    expect(aReasons.map((r) => r.detail.deviceId)).toEqual(['dev-1', 'dev-2', 'dev-1']);
+    expect(aReasons[2]!.detail.gameType).toBe('paodekuai');
+    expect(result.hitsByUser.get('u-A')).toEqual([
+      { check: 'sameDevice', gameType: 'doudizhu' },
+      { check: 'sameDevice', gameType: 'paodekuai' },
+    ]);
+  });
+
+  it('对子胜率：5 局 100% 净赢 1000 命中两侧；net=999 / 4 局不命中；80% 恰好命中', async () => {
+    const base = {
+      user_a: 'u-A',
+      user_b: 'u-B',
+      games_7d: '5',
+      wins_a: '5',
+      wins_b: 0,
+      net_a: '1000',
+      net_b: '-1000',
+      games_24h: '3',
+    };
+    const hitDb = new FakeFundDb();
+    hitDb.pair = [base];
+    const result = await collect(hitDb);
+    expect(reasonsOf(result, 'u-A', 'pairWinRate')).toEqual([
+      {
+        check: 'pairWinRate',
+        detail: {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: 168,
+          pairUserId: 'u-B',
+          dominantUserId: 'u-A',
+          games: 5,
+          wins: 5,
+          winRate: 1,
+          netWin: 1000,
+        },
+      },
+    ]);
+    expect(reasonsOf(result, 'u-B', 'pairWinRate')[0]!.detail).toEqual({
+      gameType: 'paodekuai',
+      playerCount: 2,
+      windowHours: 168,
+      pairUserId: 'u-A',
+      dominantUserId: 'u-A',
+      games: 5,
+      wins: 5,
+      winRate: 1,
+      netWin: 1000,
+    });
+    expect(result.hitsByUser.get('u-A')).toEqual([
+      { check: 'pairWinRate', gameType: 'paodekuai' },
+    ]);
+
+    const lowNet = new FakeFundDb();
+    lowNet.pair = [{ ...base, net_a: '999' }];
+    expect((await collect(lowNet)).hitUsers).toBe(0);
+
+    const fewGames = new FakeFundDb();
+    fewGames.pair = [{ ...base, games_7d: '4' }];
+    expect((await collect(fewGames)).hitUsers).toBe(0);
+
+    const exactRate = new FakeFundDb();
+    exactRate.pair = [{ ...base, wins_a: '4' }];
+    expect(reasonsOf(await collect(exactRate), 'u-A', 'pairWinRate')[0]!.detail.winRate).toBe(0.8);
+  });
+
+  it('对子频次：games_24h=10 命中；9 不命中；与对子胜率同时命中 ⇒ 两条 hit', async () => {
+    const row = {
+      user_a: 'u-A',
+      user_b: 'u-B',
+      games_7d: 10,
+      wins_a: 10,
+      wins_b: 0,
+      net_a: 1500,
+      net_b: -1500,
+      games_24h: 10,
+    };
+    const db = new FakeFundDb();
+    db.pair = [row];
+    const result = await collect(db);
+
+    expect(reasonsOf(result, 'u-A', 'pairFrequency')).toEqual([
+      {
+        check: 'pairFrequency',
+        detail: {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: 26,
+          pairUserId: 'u-B',
+          games: 10,
+        },
+      },
+    ]);
+    expect(result.hitsByUser.get('u-A')).toEqual([
+      { check: 'pairWinRate', gameType: 'paodekuai' },
+      { check: 'pairFrequency', gameType: 'paodekuai' },
+    ]);
+
+    const nine = new FakeFundDb();
+    nine.pair = [{ ...row, games_24h: 9 }];
+    expect(reasonsOf(await collect(nine), 'u-A', 'pairFrequency')).toEqual([]);
+    expect(reasonsOf(await collect(nine), 'u-A', 'pairWinRate')).toHaveLength(1);
+  });
+
+  it('高抽水：20 局 & 5000 命中；4999/19 局不命中；同 ref 取 max；NULL/无 op 按 0', async () => {
+    const db = new FakeFundDb();
+    db.countsDdz = [{ user_id: 'u-C', games: '20' }];
+    db.refsDdz = [
+      { user_id: 'u-C', room_code: 'R1', game_version: 7 },
+      { user_id: 'u-C', room_code: 'R2', game_version: 8 },
+    ];
+    db.ops = [
+      { ref_id: 'R1:7', burned_rake: '3000' },
+      { ref_id: 'R1:7', burned_rake: '7000' }, // 同 ref ⇒ max=7000（不是 10000）
+      { ref_id: 'R2:8', burned_rake: null },
+    ];
+
+    const result = await collect(db);
+
+    expect(reasonsOf(result, 'u-C', 'highRake')).toEqual([
+      {
+        check: 'highRake',
+        detail: { gameType: 'doudizhu', windowHours: 26, games: 20, rakeUpperBound: 7000 },
+      },
+    ]);
+
+    const low = new FakeFundDb();
+    low.countsDdz = [{ user_id: 'u-C', games: 20 }];
+    low.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+    low.ops = [{ ref_id: 'R1:1', burned_rake: 4999 }];
+    expect((await collect(low)).hitUsers).toBe(0);
+
+    const few = new FakeFundDb();
+    few.countsDdz = [{ user_id: 'u-C', games: 19 }];
+    few.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+    few.ops = [{ ref_id: 'R1:1', burned_rake: 9000 }];
+    expect((await collect(few)).hitUsers).toBe(0);
+
+    const noOp = new FakeFundDb();
+    noOp.countsDdz = [{ user_id: 'u-C', games: 20 }];
+    noOp.refsDdz = [{ user_id: 'u-C', room_code: 'R9', game_version: 9 }];
+    expect((await collect(noOp)).hitUsers).toBe(0);
+  });
+
+  it('高抽水：PDK 分桶 + 非获胜局别人的 ref 不计入本用户', async () => {
+    const db = new FakeFundDb();
+    db.countsPdk = [{ user_id: 'u-C', games: 20 }];
+    db.refsPdk = [{ user_id: 'u-D', room_code: 'R1', game_version: 1 }];
+    db.ops = [{ ref_id: 'R1:1', burned_rake: 9000 }];
+
+    expect((await collect(db)).hitUsers).toBe(0); // 抽水只归胜局用户（u-D）
+
+    db.refsPdk.push({ user_id: 'u-C', room_code: 'R2', game_version: 2 });
+    db.ops.push({ ref_id: 'R2:2', burned_rake: 5000 });
+    const result = await collect(db);
+    expect(reasonsOf(result, 'u-C', 'highRake')[0]!.detail).toEqual({
+      gameType: 'paodekuai',
+      windowHours: 26,
+      games: 20,
+      rakeUpperBound: 5000,
+    });
+  });
+
+  it('失败隔离：对子 SQL 抛 ⇒ 降级 paodekuai，其余信号照常', async () => {
+    const db = new FakeFundDb();
+    db.failSql.add(FUND_PAIR_PDK_SQL);
+    db.sameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+
+    const result = await collect(db);
+
+    expect(result.failures).toEqual([{ scope: 'paodekuai', reason: 'sql' }]);
+    expect(result.degradedGames).toEqual(['paodekuai']);
+    expect(result.hitUsers).toBe(2);
+  });
+
+  it('失败隔离：ops SQL 抛 ⇒ 两玩法降级，sameDevice/对子仍产出', async () => {
+    const db = new FakeFundDb();
+    db.failSql.add(FUND_OPS_SQL);
+    db.pair = [
+      { user_a: 'u-A', user_b: 'u-B', games_7d: 5, wins_a: 5, wins_b: 0, net_a: 1500, net_b: -1500, games_24h: 10 },
+    ];
+    db.countsDdz = [{ user_id: 'u-C', games: 20 }];
+    db.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+
+    const result = await collect(db);
+
+    expect(result.failures).toEqual([{ scope: 'ops', reason: 'sql' }]);
+    expect(result.degradedGames).toEqual(['doudizhu', 'paodekuai']);
+    expect(reasonsOf(result, 'u-C', 'highRake')).toEqual([]);
+    expect(result.hitUsers).toBe(2);
+  });
+
+  it('截断：明细超 cap ⇒ truncated + 降级 + 该查询整段丢弃', async () => {
+    const db = new FakeFundDb();
+    db.countsDdz = [{ user_id: 'u-C', games: 20 }];
+    db.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+    db.ops = [
+      { ref_id: 'R1:1', burned_rake: 9000 },
+      { ref_id: 'R2:1', burned_rake: 1 },
+      { ref_id: 'R3:1', burned_rake: 1 },
+    ];
+
+    const result = await collect(db, T0, { detailCap: 2 });
+
+    expect(result.failures).toEqual([{ scope: 'ops', reason: 'truncated' }]);
+    expect(result.degradedGames).toEqual(['doudizhu', 'paodekuai']);
+    expect(reasonsOf(result, 'u-C', 'highRake')).toEqual([]); // ops 结果整段丢弃
+  });
+
+  it('reasons cap：同 (check,game) 至多 3 条且按 games 降序；两玩法证据都保留', async () => {
+    const db = new FakeFundDb();
+    db.sameDeviceDdz = [
+      { user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 4 },
+      { user_a: 'u-A', user_b: 'u-C', device_id: 'dev-1', games: 6 },
+      { user_a: 'u-A', user_b: 'u-D', device_id: 'dev-1', games: 5 },
+      { user_a: 'u-A', user_b: 'u-E', device_id: 'dev-1', games: 3 },
+    ];
+    db.sameDevicePdk = [{ user_a: 'u-A', user_b: 'u-F', device_id: 'dev-9', games: 3 }];
+
+    const result = await collect(db);
+
+    const reasons = reasonsOf(result, 'u-A', 'sameDevice');
+    expect(reasons).toHaveLength(FUND_MAX_REASONS_PER_CHECK_GAME + 1);
+    expect(reasons.slice(0, 3).map((r) => r.detail.games)).toEqual([6, 5, 4]);
+    expect(reasons[3]!.detail.gameType).toBe('paodekuai');
+    expect(result.hitsByUser.get('u-A')).toEqual([
+      { check: 'sameDevice', gameType: 'doudizhu' },
+      { check: 'sameDevice', gameType: 'paodekuai' },
+    ]);
+  });
+
+  it('hitUsers 只算 C3 命中用户（并集去重）', async () => {
+    const db = new FakeFundDb();
+    db.sameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
+    db.countsDdz = [{ user_id: 'u-C', games: 20 }];
+    db.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+    db.ops = [{ ref_id: 'R1:1', burned_rake: 5000 }];
+
+    const result = await collect(db);
+
+    expect(result.hitUsers).toBe(3);
   });
 });

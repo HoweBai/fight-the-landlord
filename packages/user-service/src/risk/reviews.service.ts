@@ -126,8 +126,22 @@ const AUTO_THROTTLE_RELEASE_REASON = '指标回落，自动解除';
  * （每个命中玩法一条）。**旧行缺 `gameType` 时按 `doudizhu` 解释**——当前没有消费方
  * 解析 `reasons`（admin 原样展示 JSON），此规则是给未来消费方的兼容契约。
  */
+/**
+ * 命中项的 check 值域（C3 起扩四值：`sameDevice`/`pairWinRate`/`pairFrequency`/`highRake`）。
+ * 旧行缺 `gameType` 时按 `doudizhu` 解释——当前没有消费方解析 `reasons`（admin 原样展示
+ * JSON），此规则是给未来消费方的兼容契约。
+ */
+export type ScanCheck =
+  | 'winRate'
+  | 'devices'
+  | 'revived'
+  | 'sameDevice'
+  | 'pairWinRate'
+  | 'pairFrequency'
+  | 'highRake';
+
 export interface ScanReason {
-  check: 'winRate' | 'devices' | 'revived';
+  check: ScanCheck;
   detail: Record<string, unknown>;
 }
 

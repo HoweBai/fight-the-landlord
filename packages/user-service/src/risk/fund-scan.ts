@@ -1,4 +1,6 @@
 // packages/user-service/src/risk/fund-scan.ts
+import { Logger } from '@nestjs/common';
+import type { DataSource } from 'typeorm';
 import type { GameType } from '@fight-the-landlord/protocol';
 import type { ScanReason } from './reviews.service';
 
@@ -216,4 +218,369 @@ export interface FundCollection {
   degradedGames: GameType[];
   /** 失败查询清单（gauge 写点用）。 */
   failures: FundFailure[];
+}
+
+/** 采集的可注入面（测试用小窗口/小 cap；生产用默认常量）。 */
+export interface FundScanOptions {
+  window7dMs?: number;
+  scanWindow24hMs?: number;
+  opsWindowMs?: number;
+  groupCap?: number;
+  detailCap?: number;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+const FUND_CHECK_ORDER: Record<FundCheck, number> = {
+  sameDevice: 0,
+  pairWinRate: 1,
+  pairFrequency: 2,
+  highRake: 3,
+};
+const FUND_GAME_ORDER: Record<GameType, number> = { doudizhu: 0, paodekuai: 1 };
+
+/** `Number()` 归一（mysql2 的 COUNT/SUM 可能回字符串）；非有限 ⇒ 0。 */
+function toInt(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+interface SameDeviceRow {
+  user_a: unknown;
+  user_b: unknown;
+  device_id: unknown;
+  games: unknown;
+}
+
+interface PairRow {
+  user_a: unknown;
+  user_b: unknown;
+  games_7d: unknown;
+  wins_a: unknown;
+  wins_b: unknown;
+  net_a: unknown;
+  net_b: unknown;
+  games_24h: unknown;
+}
+
+interface CountRow {
+  user_id: unknown;
+  games: unknown;
+}
+
+interface WinRefRow {
+  user_id: unknown;
+  room_code: unknown;
+  game_version: unknown;
+}
+
+interface OpRow {
+  ref_id: unknown;
+  burned_rake: unknown;
+}
+
+/** 排序/封顶前的中间项。`sortKey` 越大越严重；`tie` 定序。 */
+interface FundEntry {
+  check: FundCheck;
+  gameType: GameType;
+  sortKey: number;
+  tie: string;
+  reason: ScanReason;
+}
+
+/**
+ * C3 四信号的只读采集器（spec §5.4）。
+ *
+ * 单查询失败/超行**不抛**：记 `failures` 并把对应玩法加入 `degradedGames`（ops 失败 ⇒ 两玩法），
+ * 其余查询继续 —— 「部分可用优于整轮失败」；正确性不依赖 SQL 的 `HAVING`（JS 侧全部复核）。
+ * 误释放防线：查询失败的游戏被降级 ⇒ `ScanService` 把 `degradedGames` 传给状态机冻结该玩法。
+ */
+export class FundScanCollector {
+  private readonly logger = new Logger(FundScanCollector.name);
+
+  constructor(private readonly dataSource: DataSource) {}
+
+  async collect(now: number, opts: FundScanOptions = {}): Promise<FundCollection> {
+    const window7dMs = opts.window7dMs ?? FUND_WINDOW_7D_MS;
+    const scanWindow24hMs = opts.scanWindow24hMs ?? FUND_SCAN_WINDOW_24H_MS;
+    const opsWindowMs = opts.opsWindowMs ?? FUND_OPS_WINDOW_MS;
+    const groupCap = opts.groupCap ?? FUND_GROUP_CAP;
+    const detailCap = opts.detailCap ?? FUND_DETAIL_CAP;
+
+    const nowDate = new Date(now);
+    const from7d = new Date(now - window7dMs);
+    const from26h = new Date(now - scanWindow24hMs);
+    const from27h = new Date(now - opsWindowMs);
+    const windowHours7d = Math.round(window7dMs / HOUR_MS);
+    const windowHours24h = Math.round(scanWindow24hMs / HOUR_MS);
+
+    const failures: FundFailure[] = [];
+    const degraded = new Set<GameType>();
+    const degrade = (scope: FundScope): void => {
+      if (scope === 'doudizhu') degraded.add('doudizhu');
+      else if (scope === 'paodekuai') degraded.add('paodekuai');
+      else {
+        degraded.add('doudizhu');
+        degraded.add('paodekuai');
+      }
+    };
+
+    /** 单查询：失败/超行 ⇒ 记录 + 降级 + 返回 null（该查询结果整段丢弃）。 */
+    const run = async <T>(
+      sql: string,
+      params: unknown[],
+      scope: FundScope,
+      cap: number,
+    ): Promise<T[] | null> => {
+      try {
+        const rows = (await this.dataSource.query(sql, params)) as T[];
+        if (rows.length > cap) {
+          failures.push({ scope, reason: 'truncated' });
+          degrade(scope);
+          this.logger.error(
+            `fund scan query truncated: scope=${scope} rows=${rows.length} cap=${cap}（结果整段丢弃）`,
+          );
+          return null;
+        }
+        return rows;
+      } catch (err) {
+        failures.push({ scope, reason: 'sql' });
+        degrade(scope);
+        const reason = err instanceof Error ? err.message : String(err);
+        this.logger.error(`fund scan query failed: scope=${scope} reason=${reason}`);
+        return null;
+      }
+    };
+
+    // 顺序固定（spec §5.4；测试按此钉调用次序）。
+    const sameDeviceDdz = await run<SameDeviceRow>(
+      FUND_SAME_DEVICE_DDZ_SQL,
+      [from7d, nowDate, from7d, from7d, FUND_SAME_DEVICE_MIN_GAMES, groupCap + 1],
+      'doudizhu',
+      groupCap,
+    );
+    const sameDevicePdk = await run<SameDeviceRow>(
+      FUND_SAME_DEVICE_PDK_SQL,
+      [from7d, nowDate, from7d, from7d, FUND_SAME_DEVICE_MIN_GAMES, groupCap + 1],
+      'paodekuai',
+      groupCap,
+    );
+    const pairRows = await run<PairRow>(
+      FUND_PAIR_PDK_SQL,
+      [now - scanWindow24hMs, now - window7dMs, now, FUND_PAIR_MIN_GAMES_7D, groupCap + 1],
+      'paodekuai',
+      groupCap,
+    );
+    const countsDdz = await run<CountRow>(
+      FUND_RAKE_COUNTS_DDZ_SQL,
+      [from26h, nowDate, FUND_RAKE_MIN_GAMES, groupCap + 1],
+      'doudizhu',
+      groupCap,
+    );
+    const refsDdz = await run<WinRefRow>(
+      FUND_WIN_REFS_DDZ_SQL,
+      [from26h, nowDate, detailCap + 1],
+      'doudizhu',
+      detailCap,
+    );
+    const countsPdk = await run<CountRow>(
+      FUND_RAKE_COUNTS_PDK_SQL,
+      [from26h, nowDate, FUND_RAKE_MIN_GAMES, groupCap + 1],
+      'paodekuai',
+      groupCap,
+    );
+    const refsPdk = await run<WinRefRow>(
+      FUND_WIN_REFS_PDK_SQL,
+      [from26h, nowDate, detailCap + 1],
+      'paodekuai',
+      detailCap,
+    );
+    const ops = await run<OpRow>(
+      FUND_OPS_SQL,
+      [from27h, nowDate, detailCap + 1],
+      'ops',
+      detailCap,
+    );
+
+    const entriesByUser = new Map<string, FundEntry[]>();
+    const add = (
+      userId: unknown,
+      check: FundCheck,
+      gameType: GameType,
+      sortKey: number,
+      tie: string,
+      detail: Record<string, unknown>,
+    ): void => {
+      const id = String(userId);
+      if (id.length === 0 || id === 'null' || id === 'undefined') return;
+      let list = entriesByUser.get(id);
+      if (list === undefined) {
+        list = [];
+        entriesByUser.set(id, list);
+      }
+      list.push({ check, gameType, sortKey, tie, reason: { check, detail } });
+    };
+
+    // ── 同设备同桌（① ②）：games 再复核（正确性不依赖 SQL HAVING）───────────────
+    for (const [rows, gameType] of [
+      [sameDeviceDdz, 'doudizhu'],
+      [sameDevicePdk, 'paodekuai'],
+    ] as const) {
+      for (const row of rows ?? []) {
+        const games = toInt(row.games);
+        if (games < FUND_SAME_DEVICE_MIN_GAMES) continue;
+        const deviceId = String(row.device_id);
+        add(row.user_a, 'sameDevice', gameType, games, `${String(row.user_b)}|${deviceId}`, {
+          gameType,
+          windowHours: windowHours7d,
+          pairUserId: String(row.user_b),
+          deviceId,
+          games,
+        });
+        add(row.user_b, 'sameDevice', gameType, games, `${String(row.user_a)}|${deviceId}`, {
+          gameType,
+          windowHours: windowHours7d,
+          pairUserId: String(row.user_a),
+          deviceId,
+          games,
+        });
+      }
+    }
+
+    // ── PDK 2 人对子（③）────────────────────────────────────────────────────
+    for (const row of pairRows ?? []) {
+      const games = toInt(row.games_7d);
+      if (games < FUND_PAIR_MIN_GAMES_7D) continue;
+      const winsA = toInt(row.wins_a);
+      const winsB = toInt(row.wins_b);
+      const netA = toInt(row.net_a);
+      const netB = toInt(row.net_b);
+      const dominantUserId = winsA >= winsB ? String(row.user_a) : String(row.user_b);
+      const wins = Math.max(winsA, winsB);
+      const winRate = wins / games;
+      const netWin = winsA >= winsB ? netA : netB;
+
+      if (winRate >= FUND_PAIR_WIN_RATE && netWin >= FUND_PAIR_MIN_NET_WIN) {
+        add(row.user_a, 'pairWinRate', 'paodekuai', netWin, String(row.user_b), {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: windowHours7d,
+          pairUserId: String(row.user_b),
+          dominantUserId,
+          games,
+          wins,
+          winRate,
+          netWin,
+        });
+        add(row.user_b, 'pairWinRate', 'paodekuai', netWin, String(row.user_a), {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: windowHours7d,
+          pairUserId: String(row.user_a),
+          dominantUserId,
+          games,
+          wins,
+          winRate,
+          netWin,
+        });
+      }
+
+      const games24h = toInt(row.games_24h);
+      if (games24h >= FUND_PAIR_MIN_GAMES_24H) {
+        add(row.user_a, 'pairFrequency', 'paodekuai', games24h, String(row.user_b), {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: windowHours24h,
+          pairUserId: String(row.user_b),
+          games: games24h,
+        });
+        add(row.user_b, 'pairFrequency', 'paodekuai', games24h, String(row.user_a), {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: windowHours24h,
+          pairUserId: String(row.user_a),
+          games: games24h,
+        });
+      }
+    }
+
+    // ── 高抽水（④–⑦ ⑧）：金币局 ≥20 + 胜局抽水上界 ≥5000 ──────────────────────
+    const refRake = new Map<string, number>();
+    for (const row of ops ?? []) {
+      const ref = String(row.ref_id);
+      const rake = toInt(row.burned_rake);
+      const prev = refRake.get(ref);
+      if (prev === undefined || rake > prev) refRake.set(ref, rake); // 同 ref 取 max（防 r2/重试双计）
+    }
+    const rakeByGame: Array<{
+      gameType: GameType;
+      counts: CountRow[] | null;
+      refs: WinRefRow[] | null;
+    }> = [
+      { gameType: 'doudizhu', counts: countsDdz, refs: refsDdz },
+      { gameType: 'paodekuai', counts: countsPdk, refs: refsPdk },
+    ];
+    for (const { gameType, counts, refs } of rakeByGame) {
+      if (counts === null || refs === null || ops === null) continue; // 数据不全 ⇒ 该玩法已降级
+      const qualifying = new Map<string, number>();
+      for (const row of counts) {
+        const games = toInt(row.games);
+        if (games >= FUND_RAKE_MIN_GAMES) qualifying.set(String(row.user_id), games);
+      }
+      if (qualifying.size === 0) continue;
+      const rakeUpper = new Map<string, number>();
+      for (const row of refs) {
+        const userId = String(row.user_id);
+        if (!qualifying.has(userId)) continue;
+        const ref = `${String(row.room_code)}:${String(row.game_version)}`;
+        const rake = refRake.get(ref);
+        if (rake !== undefined) rakeUpper.set(userId, (rakeUpper.get(userId) ?? 0) + rake);
+      }
+      for (const [userId, games] of qualifying) {
+        const rakeUpperBound = rakeUpper.get(userId) ?? 0;
+        if (rakeUpperBound < FUND_RAKE_MIN_AMOUNT) continue;
+        add(userId, 'highRake', gameType, rakeUpperBound, '', {
+          gameType,
+          windowHours: windowHours24h,
+          games,
+          rakeUpperBound,
+        });
+      }
+    }
+
+    // ── 排序 + 每 (check, gameType) 封顶 + 落 Map ─────────────────────────────
+    const reasonsByUser = new Map<string, ScanReason[]>();
+    const hitsByUser = new Map<string, FundHit[]>();
+    for (const [userId, list] of entriesByUser) {
+      list.sort(
+        (a, b) =>
+          FUND_CHECK_ORDER[a.check] - FUND_CHECK_ORDER[b.check] ||
+          FUND_GAME_ORDER[a.gameType] - FUND_GAME_ORDER[b.gameType] ||
+          b.sortKey - a.sortKey ||
+          a.tie.localeCompare(b.tie),
+      );
+      const kept: ScanReason[] = [];
+      const perKey = new Map<string, number>();
+      const hits = new Map<string, FundHit>();
+      for (const entry of list) {
+        const key = `${entry.check}:${entry.gameType}`;
+        hits.set(key, { check: entry.check, gameType: entry.gameType });
+        const keptCount = perKey.get(key) ?? 0;
+        if (keptCount >= FUND_MAX_REASONS_PER_CHECK_GAME) continue;
+        perKey.set(key, keptCount + 1);
+        kept.push(entry.reason);
+      }
+      if (kept.length > 0) {
+        reasonsByUser.set(userId, kept);
+        hitsByUser.set(userId, [...hits.values()]);
+      }
+    }
+
+    return {
+      reasonsByUser,
+      hitsByUser,
+      hitUsers: reasonsByUser.size,
+      degradedGames: (['doudizhu', 'paodekuai'] as const).filter((game) => degraded.has(game)),
+      failures,
+    };
+  }
 }
