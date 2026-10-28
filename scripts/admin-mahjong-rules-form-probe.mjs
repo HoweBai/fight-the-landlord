@@ -244,6 +244,87 @@ ok(footStateOf(w)?.textContent.includes('封顶番数'), '越界错误写到卡�
 ok(fieldOf(w, 'fanCap').querySelector('.mj-field-err')?.textContent.includes('须为'), '字段行内红字');
 setInput(fieldOf(w, 'fanCap').querySelector('input'), '6');
 
+/* ── 护栏（主实例：chengdu）────────────────────────────── */
+setInput(fieldOf(w, 'scoringPolicy').querySelector('select'), 'additive');
+ok(
+  qa(w, '#settings-rows .mj-warn').some((n) => n.textContent.includes('0 番')),
+  '加法番表全 0 时出黄条',
+);
+setInput(fieldOf(w, 'scoringPolicy').querySelector('select'), 'named');
+setInput(fieldOf(w, 'minFanToHu').querySelector('input'), '6');
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '3');
+ok(
+  qa(w, '#settings-rows .mj-warn').some((n) => n.textContent.includes('永远无法胡牌')),
+  '起胡番高于封顶番时出黄条',
+);
+setInput(fieldOf(w, 'minFanToHu').querySelector('input'), '0');
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '6');
+
+/* ── 预设重置 + D3 加强（独立实例）───────────────────────── */
+ok(q(w, '#mj-reset-preset') !== null, '预设重置下拉存在');
+ok(cardOf(w)?.textContent.includes('按预设重置全部规则'), '重置按钮文案');
+setInput(q(w, '#mj-reset-preset'), 'sbr');
+main.state.lastPut = null;
+clickEl(w, saveBtnOf(w));
+await waitVersion(w, 4);
+ok(main.state.lastPut?.body.value.preset === 'chengdu', '切下拉不改变保存的 preset（D3）');
+
+const resetDom = makeDom(baseSnapshot(RULES));
+await openMahjong(resetDom);
+setInput(q(resetDom.window, '#mj-reset-preset'), 'sbr');
+resetDom.state.lastPut = null;
+clickEl(resetDom.window, q(resetDom.window, '#mj-reset-preset').closest('.mj-preset-bar').querySelector('.btn'));
+await waitFor(() => resetDom.state.lastPut !== null);
+ok(
+  same(resetDom.state.lastPut?.body.value, { preset: 'sbr', rulesVersion: 1 }),
+  "重置 body 恰为 {preset:'sbr', rulesVersion:1}",
+);
+await waitFor(() => cardOf(resetDom.window)?.textContent.includes('当前预设：SBR 竞技近似'));
+ok(cardOf(resetDom.window)?.textContent.includes('当前预设：SBR 竞技近似'), '重置后按新预设重渲染');
+ok(resetDom.errors.length === 0, `重置实例零异常（实测 ${resetDom.errors.length}）`);
+
+/* ── sbr 实例：清空加法番表 ⇒ 实时黄条 + D9 写 0 + 不存在的表省略 ── */
+const sbrDom = makeDom(baseSnapshot(SBR_RULES));
+await openMahjong(sbrDom);
+ok(
+  qa(sbrDom.window, '#settings-rows .mj-warn').length === 0,
+  'sbr 初始无黄条',
+);
+for (const fanKey of ['root', 'allPungs', 'goldenWait', 'fullFlush', 'sevenPairs', 'winAfterKong', 'shootAfterKong', 'robbingKong', 'underTheSea']) {
+  const input = q(sbrDom.window, `[data-field="additiveFanTable.${fanKey}"] input`);
+  setInput(input, '');
+}
+ok(
+  qa(sbrDom.window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('0 番')),
+  '清空加法番表后实时出黄条',
+);
+sbrDom.state.lastPut = null;
+clickEl(sbrDom.window, saveBtnOf(sbrDom.window));
+await waitVersion(sbrDom.window, 2);
+ok(
+  same(sbrDom.state.lastPut?.body.value.additiveFanTable, {
+    root: 0, allPungs: 0, goldenWait: 0, fullFlush: 0, sevenPairs: 0,
+    winAfterKong: 0, shootAfterKong: 0, robbingKong: 0, underTheSea: 0,
+  }),
+  'sbr 清空加法番键 ⇒ 全部写 0',
+);
+ok(
+  same(sbrDom.state.lastPut?.body.value.fanTable, {}),
+  '不存在的番表键 + 空输入 ⇒ 省略（不写入任何键）',
+);
+ok(sbrDom.errors.length === 0, `sbr 实例零异常（实测 ${sbrDom.errors.length}）`);
+
+/* ── 全 0 命名表 ⇒ 护栏 2 ─────────────────────────────── */
+const zeroNamed = JSON.parse(JSON.stringify(RULES));
+for (const k of Object.keys(zeroNamed.fanTable)) zeroNamed.fanTable[k] = 0;
+const zeroDom = makeDom(baseSnapshot(zeroNamed));
+await openMahjong(zeroDom);
+ok(
+  qa(zeroDom.window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('命名番表为空')),
+  '命名番表全 0 时出黄条',
+);
+ok(zeroDom.errors.length === 0, `全 0 实例零异常（实测 ${zeroDom.errors.length}）`);
+
 ok(main.errors.length === 0, `主实例零运行时异常（实测 ${main.errors.length}）`);
 ok(unhandled.length === 0, `零未处理 rejection（实测 ${unhandled.length}）`);
 

@@ -2388,10 +2388,12 @@ function buildMahjongRulesEditor(body, ctx) {
   const snap = ctx.snap && typeof ctx.snap === 'object' ? ctx.snap : {};
   const fieldRefs = new Map();
   const tableRefs = new Map();
+  const warnings = el('div', 'mj-warnings');
 
   function onChange() {
     ctx.dirty();
     ctx.state('', '');
+    refreshWarnings();
   }
 
   function fieldErr(errEl, msg) {
@@ -2529,6 +2531,91 @@ function buildMahjongRulesEditor(body, ctx) {
     return box;
   }
 
+  function buildPresetBar() {
+    const bar = el('div', 'mj-preset-bar');
+    bar.append(
+      el(
+        'span',
+        'mj-preset-now',
+        `当前预设：${MAHJONG_PRESET_LABELS[snap.preset] ?? String(snap.preset ?? 'chengdu')}`,
+      ),
+      el('span', 'mj-ver', `rulesVersion ${snap.rulesVersion ?? '?'}`),
+    );
+    const label = el('label', 'mj-reset-label', '重置为');
+    const select = document.createElement('select');
+    select.className = 'mj-select';
+    select.id = 'mj-reset-preset';
+    for (const [value, text] of Object.entries(MAHJONG_PRESET_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.append(opt);
+    }
+    select.value = snap.preset === 'sbr' ? 'sbr' : 'chengdu';
+    label.append(select);
+    const resetBtn = btn('按预设重置全部规则', 'btn');
+    resetBtn.addEventListener('click', async () => {
+      const target = select.value;
+      const targetLabel = MAHJONG_PRESET_LABELS[target] ?? target;
+      if (
+        !confirm(
+          `按「${targetLabel}」预设重置全部规则？\n将立即保存并覆盖当前所有规则字段；未保存的修改会丢失。\n（SBR 的花猪 48× 底在金币场还需 game.mahjong.sbrGoldEnabled=开）`,
+        )
+      ) {
+        return;
+      }
+      resetBtn.disabled = true;
+      const res = await putConfigKey('game.mahjong.rules', {
+        preset: target,
+        rulesVersion: snap.rulesVersion ?? 1,
+      });
+      resetBtn.disabled = false;
+      if (res.ok) await loadAll();
+    });
+    bar.append(
+      label,
+      resetBtn,
+      el('p', 'mj-group-note', '保存只写入表单里显示的字段，不会改变预设；要整口径切换请用重置按钮。'),
+    );
+    return bar;
+  }
+
+  function currentPolicy() {
+    const read = fieldRefs.get('scoringPolicy');
+    return read ? read() : snap.scoringPolicy;
+  }
+
+  function fanTableAllZero(table) {
+    const rows = tableRefs.get(table);
+    if (!rows) return true;
+    for (const ref of rows.values()) {
+      const raw = ref.input.value.trim();
+      if (raw !== '' && Number(raw) > 0) return false;
+    }
+    return true;
+  }
+
+  function refreshWarnings() {
+    warnings.textContent = '';
+    const list = [];
+    if (currentPolicy() === 'additive' && fanTableAllZero('additiveFanTable')) {
+      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」恢复 SBR 默认番表。');
+    }
+    if (currentPolicy() === 'named' && fanTableAllZero('fanTable')) {
+      list.push('命名番表为空：绝大多数牌只按平胡兜底 1 番，请先补齐番值。');
+    }
+    const minHu = fieldRefs.get('minFanToHu');
+    const cap = fieldRefs.get('fanCap');
+    if (minHu && cap) {
+      try {
+        if (minHu() > cap()) list.push('起胡番高于封顶番数：永远无法胡牌。');
+      } catch {
+        /* 输入未填完时不提示（错误由保存拦截） */
+      }
+    }
+    for (const text of list) warnings.append(el('p', 'mj-warn', text));
+  }
+
   function readValue() {
     const out = {};
     for (const [path, read] of fieldRefs) {
@@ -2565,7 +2652,8 @@ function buildMahjongRulesEditor(body, ctx) {
     body.textContent = '';
     fieldRefs.clear();
     tableRefs.clear();
-    body.append(buildGroups());
+    body.append(buildPresetBar(), buildGroups(), warnings);
+    refreshWarnings();
   }
 
   ctx.bind(readValue, paint);
