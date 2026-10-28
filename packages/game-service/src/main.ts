@@ -40,7 +40,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
   // k3s 优雅停机：SIGTERM 时关闭 HTTP/WS/RPC 连接（spec 2026-10-27 D16）
-  app.enableShutdownHooks();
+  // useProcessExit（2026-10-28）：容器里 node 是 PID 1 —— Nest 关停后默认「重发信号」，
+  // 而**无处理器的信号对 PID 1 被内核丢弃** ⇒ 关完也不退（真栈实测 >60s：3002 已关、
+  // 9002 仍应答，compose 靠 SIGKILL、k8s 会吃满 terminationGracePeriod）。显式 exit 才是真停机。
+  app.enableShutdownHooks(undefined, { useProcessExit: true });
   // Task 4（R1106/R1107）：trace 中间件**必须排在最前**（在 `createInternalTokenMiddleware()`
   // 之前）—— 否则更早的中间件（如 401 拒答）打的日志没有 trace 上下文。
   // 下游用缺省：继承网关传来的 `X-Trace-Id`；直连（无该头，如 conformance 探针）自建一条。
