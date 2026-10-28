@@ -236,7 +236,7 @@
 | **Nest `latest` 已指 12（R2-R1）** | 任何 `@latest`/裸包名安装会吃到 12 线且「半套 12」无从从 peer 报错辨认 | D5-A1 逐包 `@^11` 矩阵写死进 spec；§4 本行登记 |
 | Nest 11 配套版本矩阵 | `@nestjs/config`/`axios`/`typeorm`/`jwt`/`passport` 的 11 兼容版已逐一实测存在（R2 §1.2）；`@nestjs-modules/ioredis` 有 2.2.2（**预演：不触发停下上报**） | 实现期以 install 成功 + conformance 为准；若出现矩阵外冲突 ⇒ **停下上报** |
 | uni 工具链 overrides | adm-zip 0.6 / jpeg-js 0.4 的 0.x 跳变可能破 uni-cli-shared 的调用；**vite 5.4.21 违反 vite-plugin-uni 精确 peer（预期 warning）** | H5 链由六阶段阶段 3 的 `uni build` 每次门禁自动检验；mp 链（jpeg-js/ws）无自动面、登记（N3）；破了 ⇒ 回退该条 override 并**报到设计层**（换登记豁免讨论，不静默） |
-| vitest 本地补丁 | 假红④的修复补丁钉在 `vitest@2.1.9`（`patches/vitest@2.1.9.patch`） | 本片**不动 vitest**（dev-only ≥high 不在门槛面，§7-5）；任何升级都必须先过补丁兼容评估 |
+| vitest 本地补丁 | 假红④的修复补丁钉在 `vitest@2.1.9`（`patches/vitest@2.1.9.patch`） | 本片**不动 vitest**（dev-only ≥high 不在门槛面，§7-5）；任何升级都必须先过补丁兼容评估（**2026-10-28 订正**：vitest 已升 4.x，`patchedDependencies` 与补丁文件均已移除） |
 | CI 时长与网络 | gitleaks 全历史 ~25s；trivy 检验束每次下载；audit 依赖 npmjs 可达性 | 三步独立步骤 ⇒ 故障定位到步；形状断言 + 禁用旗标使 **npmjs 故障响亮**（宁可红不可假绿） |
 | 扫描器自身供应链 | 钉版二进制若被替换 | sha256 校验写死在 YAML；版本升级 = 显式 commit（可 review） |
 

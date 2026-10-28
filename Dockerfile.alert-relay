@@ -7,7 +7,7 @@
 # 中段插入会截断 node stage、build 必败；评审 r2-B5）+ `COPY --from= ... /bin/amtool`：
 # am-renderer 落盘前的 `amtool check-config` 预检用（评审 S-Y3；Go 静态二进制，alpine 可运行）。
 #
-# COPY 次序**照 `Dockerfile.user-service` 的模板**（工作区文件 + `patches/` + `tsconfig.base`
+# COPY 次序**照 `Dockerfile.user-service` 的模板**（工作区文件 + `tsconfig.base`
 # 先于 install；被 COPY 的包的 workspace 依赖也必须 COPY —— 两门 Dockerfile 对账闸会抓，
 # 见 packages/shared/test/dockerfile-{patches,workspace}-copy.gate.test.ts）。
 #
@@ -24,9 +24,6 @@ WORKDIR /app
 COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY package.json ./
-# ⚠️ 2026-10-27 起 pnpm.patchedDependencies 为空（vitest 4 已不需要补丁）；
-# COPY patches 暂留（目录仍有历史补丁文件；删除需同步改全部 Dockerfile，另立清理片）
-COPY patches ./patches
 # 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）并在 vitest 的 .d.ts 上报 TS18028
 COPY tsconfig.base.json ./
 

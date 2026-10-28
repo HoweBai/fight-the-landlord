@@ -12,9 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl python3 ma
 COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY package.json ./
-# ⚠️ 2026-10-27 起 pnpm.patchedDependencies 为空（vitest 4 已不需要补丁）；
-# COPY patches 暂留（目录仍有历史补丁文件；删除需同步改全部 Dockerfile，另立清理片）
-COPY patches ./patches
 # 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）并在 vitest 的 .d.ts 上报 TS18028
 COPY tsconfig.base.json ./
 

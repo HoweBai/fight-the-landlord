@@ -42,7 +42,7 @@ A（`--frozen-lockfile` + 新闸）；最后清理已批准的死物。两个 Do
 - Consumes: 无
 - Produces: `dev` 基线 lint 转绿，后续任务的「全量绿」判据成立。
 
-- [ ] **Step 0: 提交 spec/plan 与审查记录**
+- [x] **Step 0: 提交 spec/plan 与审查记录**
 
 ```bash
 git -C D:/Code/ftl-eng-debt add \
@@ -55,7 +55,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 Expected: 新增 docs commit（设计/计划审查记录已回填）。
 
-- [ ] **Step 1: 确认补丁可干净应用（不改工作区）**
+- [x] **Step 1: 确认补丁可干净应用（不改工作区）**
 
 ```bash
 git -C D:/Code/ftl-eng-debt show 0e69dea8 --format= | \
@@ -64,7 +64,7 @@ git -C D:/Code/ftl-eng-debt show 0e69dea8 --format= | \
 
 Expected: exit 0 且打印 `APPLIES_CLEANLY`（不依赖具体补丁措辞）。
 
-- [ ] **Step 2: cherry-pick**
+- [x] **Step 2: cherry-pick**
 
 ```bash
 git -C D:/Code/ftl-eng-debt cherry-pick -x 0e69dea8
@@ -74,7 +74,7 @@ Expected: 新 commit，提交信息保留原文（`fix(room): 修复既有 ws.ga
 该提交把调用点改为 `return realOn(event, listener as never)`——参数类型本已是
 `(...a: never[]) => void`，运行期零变化。
 
-- [ ] **Step 3: 验证 lint**
+- [x] **Step 3: 验证 lint**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/room-service lint
@@ -82,7 +82,7 @@ pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/room-service lint
 
 Expected: exit 0。
 
-- [ ] **Step 4: 验证全量 lint+build**
+- [x] **Step 4: 验证全量 lint+build**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt exec turbo run lint build --force
@@ -114,7 +114,7 @@ Expected: `Tasks: 30 successful, 30 total`、`0 cached`。
   `copiesPackageJson(line): boolean`
 - Produces（gate）：`checkDockerfile(src): string[]`、`stalePatchesCopy(src): string[]`
 
-- [ ] **Step 1: 新建共享扫描助手**
+- [x] **Step 1: 新建共享扫描助手**
 
 Create `packages/shared/test/helpers/dockerfile-scan.ts`：
 
@@ -191,7 +191,7 @@ export function copiesPackageJson(line: string): boolean {
 }
 ```
 
-- [ ] **Step 2: 改写 patches 闸为双向语义（先不删 Dockerfile）**
+- [x] **Step 2: 改写 patches 闸为双向语义（先不删 Dockerfile）**
 
 把 `packages/shared/test/dockerfile-patches-copy.gate.test.ts` **整个文件**替换为：
 
@@ -392,7 +392,7 @@ describe('假红④镜像侧对账闸：patchedDependencies ⇒ 镜像 Dockerfil
 });
 ```
 
-- [ ] **Step 3: 跑门禁确认红**
+- [x] **Step 3: 跑门禁确认红**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dockerfile-patches
@@ -400,7 +400,7 @@ pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dock
 
 Expected: FAIL，10 个 Dockerfile 各报一条 `stale: patchedDependencies 为空…`。
 
-- [ ] **Step 4: 删除 `patches/` 与 10 个 Dockerfile 的固定三行块**
+- [x] **Step 4: 删除 `patches/` 与 10 个 Dockerfile 的固定三行块**
 
 ```bash
 git -C D:/Code/ftl-eng-debt rm -r patches
@@ -420,7 +420,7 @@ console.log("patched 10 Dockerfiles");
 
 Expected: `patched 10 Dockerfiles`。
 
-- [ ] **Step 5: 更新 alert-relay 头部注释**
+- [x] **Step 5: 更新 alert-relay 头部注释**
 
 把：
 
@@ -434,7 +434,7 @@ Expected: `patched 10 Dockerfiles`。
 # COPY 次序**照 `Dockerfile.user-service` 的模板**（工作区文件 + `tsconfig.base`
 ```
 
-- [ ] **Step 6: 跑门禁确认绿**
+- [x] **Step 6: 跑门禁确认绿**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dockerfile-patches
@@ -443,7 +443,7 @@ pnpm --dir D:/Code/ftl-eng-debt --filter @fight-the-landlord/shared test -- dock
 
 Expected: 两个命令都通过；workspace 闸无回归。
 
-- [ ] **Step 7: 全仓确认无残留引用**
+- [x] **Step 7: 全仓确认无残留引用**
 
 ```bash
 rg --hidden -n "COPY patches|patches/" D:/Code/ftl-eng-debt \
@@ -454,7 +454,7 @@ rg --hidden -n "COPY patches|patches/" D:/Code/ftl-eng-debt \
 Expected: 零命中（`docs/superpowers/**` 的历史记录另由 Step 8 订正；
 `packages/shared/test/**` 的门禁自证样本是唯一允许出现 `COPY patches` 字样的地方）。
 
-- [ ] **Step 8: 回填文档**
+- [x] **Step 8: 回填文档**
 
 - `docs/superpowers/plans/2026-10-27-dependabot-fixes.md` 的 patches 注与风险表第 70 行：
   改为「**2026-10-28 已清理**：`patches/` 与 10 个 Dockerfile 的 `COPY patches ./patches`
@@ -468,7 +468,7 @@ Expected: 零命中（`docs/superpowers/**` 的历史记录另由 Step 8 订正�
   `docs/superpowers/specs/2026-10-03-currency-spec.md`（`:61`）、
   `docs/superpowers/specs/2026-10-02-security-scan-spec.md`（`:124` / `:374`）。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git -C D:/Code/ftl-eng-debt add -A
