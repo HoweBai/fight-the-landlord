@@ -314,6 +314,13 @@ export class FundScanCollector {
     const from7d = new Date(now - window7dMs);
     const from26h = new Date(now - scanWindow24hMs);
     const from27h = new Date(now - opsWindowMs);
+    // ⚠️ 时间列口径（2026-10-29 真栈实证）：PDK 记录表 `ended_at` 是 **BIGINT epoch-ms**
+    //（A2/麻将记录迁移），查询 ②⑥⑦ 的时间窗必须绑 `number`；绑 `Date` 会被 MySQL 当字符串
+    // 转数字（只取年份前缀）⇒ 窗口恒空、sameDevice(pdk) / highRake(pdk) 静默不响。
+    // 设备 `last_seen_at` 与 `currency_ops.created_at` 仍是 DATETIME ⇒ 继续绑 `Date`。
+    const nowMs = now;
+    const from7dMs = now - window7dMs;
+    const from26hMs = now - scanWindow24hMs;
     const windowHours7d = Math.round(window7dMs / HOUR_MS);
     const windowHours24h = Math.round(scanWindow24hMs / HOUR_MS);
 
@@ -364,7 +371,8 @@ export class FundScanCollector {
     );
     const sameDevicePdk = await run<SameDeviceRow>(
       FUND_SAME_DEVICE_PDK_SQL,
-      [from7d, nowDate, from7d, from7d, FUND_SAME_DEVICE_MIN_GAMES, groupCap + 1],
+      // 前两参 = PDK BIGINT ended_at（number）；后两参 = user_devices DATETIME last_seen_at（Date）。
+      [from7dMs, nowMs, from7d, from7d, FUND_SAME_DEVICE_MIN_GAMES, groupCap + 1],
       'paodekuai',
       groupCap,
     );
@@ -388,13 +396,13 @@ export class FundScanCollector {
     );
     const countsPdk = await run<CountRow>(
       FUND_RAKE_COUNTS_PDK_SQL,
-      [from26h, nowDate, FUND_RAKE_MIN_GAMES, groupCap + 1],
+      [from26hMs, nowMs, FUND_RAKE_MIN_GAMES, groupCap + 1],
       'paodekuai',
       groupCap,
     );
     const refsPdk = await run<WinRefRow>(
       FUND_WIN_REFS_PDK_SQL,
-      [from26h, nowDate, detailCap + 1],
+      [from26hMs, nowMs, detailCap + 1],
       'paodekuai',
       detailCap,
     );

@@ -257,7 +257,15 @@ describe('C3 FundScanCollector（spec §5.4）', () => {
       FUND_SAME_DEVICE_MIN_GAMES,
       FUND_GROUP_CAP + 1,
     ]);
-    expect(db.queries[1]!.params).toEqual(db.queries[0]!.params);
+    // ② PDK 的 `ended_at` 是 BIGINT epoch-ms ⇒ 前两参 number；设备 last_seen_at 仍是 DATETIME ⇒ Date。
+    expect(db.queries[1]!.params).toEqual([
+      T0 - FUND_WINDOW_7D_MS,
+      T0,
+      from7d,
+      from7d,
+      FUND_SAME_DEVICE_MIN_GAMES,
+      FUND_GROUP_CAP + 1,
+    ]);
     expect(db.queries[2]!.params).toEqual([
       T0 - FUND_SCAN_WINDOW_24H_MS,
       T0 - FUND_WINDOW_7D_MS,
@@ -272,8 +280,14 @@ describe('C3 FundScanCollector（spec §5.4）', () => {
       FUND_GROUP_CAP + 1,
     ]);
     expect(db.queries[4]!.params).toEqual([from26h, new Date(T0), FUND_DETAIL_CAP + 1]);
-    expect(db.queries[5]!.params).toEqual(db.queries[3]!.params);
-    expect(db.queries[6]!.params).toEqual(db.queries[4]!.params);
+    // ⑥⑦ PDK 的 `ended_at` 是 BIGINT epoch-ms ⇒ number（绑 Date 会静默空窗，2026-10-29 真栈实证）。
+    expect(db.queries[5]!.params).toEqual([
+      T0 - FUND_SCAN_WINDOW_24H_MS,
+      T0,
+      FUND_RAKE_MIN_GAMES,
+      FUND_GROUP_CAP + 1,
+    ]);
+    expect(db.queries[6]!.params).toEqual([T0 - FUND_SCAN_WINDOW_24H_MS, T0, FUND_DETAIL_CAP + 1]);
     expect(db.queries[7]!.params).toEqual([from27h, new Date(T0), FUND_DETAIL_CAP + 1]);
   });
 
