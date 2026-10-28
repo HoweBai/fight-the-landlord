@@ -925,10 +925,11 @@ function onMeldPopDone(key: string) {
 }
 .mj__phase {
   color: $ftl-color-gold;
-  font-size: $ftl-font-lg;
+  font-size: 18px;
   font-weight: 700;
   text-shadow: 0 2px 8px rgba($ftl-color-night-deep, 0.6);
   white-space: nowrap;
+  letter-spacing: 2px;
 }
 .mj__claim-tile {
   display: flex;
@@ -1024,7 +1025,7 @@ function onMeldPopDone(key: string) {
   flex: 0 0 auto;
   align-items: flex-end;
   justify-content: center;
-  gap: 0;
+  gap: 2px;
   min-height: 79px;
   padding: $ftl-space-2 0 0;
   overflow-x: auto;
