@@ -325,6 +325,49 @@ ok(
 );
 ok(zeroDom.errors.length === 0, `全 0 实例零异常（实测 ${zeroDom.errors.length}）`);
 
+/* ── 版本错位自救 ─────────────────────────────────────── */
+// A. 未知顶层键：透传 + 移除
+{
+  const rules = JSON.parse(JSON.stringify(RULES));
+  rules.xyzFutureSwitch = true;
+  const dom = makeDom(baseSnapshot(rules));
+  await openMahjong(dom);
+  const cw = dom.window;
+  ok(cardOf(cw).textContent.includes('未认识的新字段'), '未知键信息条出现');
+  ok(cardOf(cw).textContent.includes('xyzFutureSwitch'), '信息条列出未知键名');
+  dom.state.lastPut = null;
+  clickEl(cw, saveBtnOf(cw));
+  await waitVersion(cw, 2);
+  ok(dom.state.lastPut?.body.value.xyzFutureSwitch === true, '未知键原样透传');
+  const dropBtn = [...cardOf(cw).querySelectorAll('.mj-banner .btn')].find(
+    (b) => b.textContent === '移除这些未知字段并保存',
+  );
+  dom.state.lastPut = null;
+  clickEl(cw, dropBtn);
+  await waitVersion(cw, 3);
+  ok(!('xyzFutureSwitch' in (dom.state.lastPut?.body.value ?? {})), '移除后保存 body 不含未知键');
+  ok(dom.errors.length === 0, `未知键实例零异常（实测 ${dom.errors.length}）`);
+}
+
+// B. 快照缺字段：隐藏 + 补齐
+{
+  const rules = JSON.parse(JSON.stringify(RULES));
+  delete rules.claimWindowMs;
+  const dom = makeDom(baseSnapshot(rules));
+  await openMahjong(dom);
+  const cw = dom.window;
+  ok(cardOf(cw).querySelector('[data-field="claimWindowMs"]') === null, '缺失字段不渲染');
+  ok(cardOf(cw).textContent.includes('缺少 1 个规则字段'), '缺失字段信息条出现');
+  const fillBtn = [...cardOf(cw).querySelectorAll('.mj-banner .btn')].find(
+    (b) => b.textContent === '按服务端默认补齐',
+  );
+  dom.state.lastPut = null;
+  clickEl(cw, fillBtn);
+  await waitVersion(cw, 2);
+  ok(dom.state.lastPut?.body.value.claimWindowMs === undefined, '补齐 PUT = 原快照（不含缺失字段）');
+  ok(dom.errors.length === 0, `缺字段实例零异常（实测 ${dom.errors.length}）`);
+}
+
 ok(main.errors.length === 0, `主实例零运行时异常（实测 ${main.errors.length}）`);
 ok(unhandled.length === 0, `零未处理 rejection（实测 ${unhandled.length}）`);
 

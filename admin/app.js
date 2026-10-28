@@ -2386,6 +2386,28 @@ function buildSimpleRow(key) {
  */
 function buildMahjongRulesEditor(body, ctx) {
   const snap = ctx.snap && typeof ctx.snap === 'object' ? ctx.snap : {};
+  const tableNames = new Set(Object.keys(MAHJONG_RULES_FORM.tables));
+  const knownPaths = new Set();
+  for (const g of MAHJONG_RULES_FORM.groups) {
+    for (const f of g.fields ?? []) knownPaths.add(f.path);
+  }
+  const unknownTop = Object.keys(snap).filter(
+    (k) => k !== 'preset' && k !== 'rulesVersion' && !knownPaths.has(k) && !tableNames.has(k),
+  );
+  const unknownFan = {};
+  for (const [table, meta] of Object.entries(MAHJONG_RULES_FORM.tables)) {
+    const src = snap[table] && typeof snap[table] === 'object' ? snap[table] : {};
+    const extra = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (!meta.keys.includes(k)) extra[k] = v;
+    }
+    unknownFan[table] = extra;
+  }
+  const unknownFanNames = Object.entries(unknownFan).flatMap(([t, m]) =>
+    Object.keys(m).map((k) => `${t}.${k}`),
+  );
+  const missingTop = [...knownPaths].filter((p) => !Object.hasOwn(snap, p));
+  let removeUnknown = false;
   const fieldRefs = new Map();
   const tableRefs = new Map();
   const warnings = el('div', 'mj-warnings');
@@ -2580,6 +2602,51 @@ function buildMahjongRulesEditor(body, ctx) {
     return bar;
   }
 
+  function buildBanners() {
+    const box = el('div', 'mj-banners');
+    if (missingTop.length > 0) {
+      const b = el('div', 'mj-banner');
+      b.append(
+        el('span', '', `快照较旧：缺少 ${missingTop.length} 个规则字段（保存时按服务端默认合并补齐）。`),
+      );
+      const fill = btn('按服务端默认补齐', 'btn');
+      fill.addEventListener('click', async () => {
+        fill.disabled = true;
+        const res = await putConfigKey('game.mahjong.rules', snap);
+        fill.disabled = false;
+        if (res.ok) await loadAll();
+      });
+      b.append(fill);
+      box.append(b);
+    }
+    if (unknownTop.length > 0 || unknownFanNames.length > 0) {
+      const names = [...unknownTop, ...unknownFanNames];
+      const b = el('div', 'mj-banner mj-banner-warn');
+      b.append(el('span', '', `快照含本页未认识的新字段：${names.join('、')}（保存时原样保留）。`));
+      const drop = btn('移除这些未知字段并保存', 'btn');
+      drop.addEventListener('click', async () => {
+        if (!confirm(`移除以下字段并保存？\n${names.join('\n')}\n（移除后不可恢复）`)) return;
+        removeUnknown = true;
+        let value;
+        try {
+          value = readValue();
+        } catch (err) {
+          removeUnknown = false;
+          ctx.state(err.message, 'err');
+          return;
+        }
+        drop.disabled = true;
+        const res = await putConfigKey('game.mahjong.rules', value);
+        drop.disabled = false;
+        if (res.ok) await loadAll();
+        else removeUnknown = false;
+      });
+      b.append(drop);
+      box.append(b);
+    }
+    return box;
+  }
+
   function currentPolicy() {
     const read = fieldRefs.get('scoringPolicy');
     return read ? read() : snap.scoringPolicy;
@@ -2618,6 +2685,9 @@ function buildMahjongRulesEditor(body, ctx) {
 
   function readValue() {
     const out = {};
+    if (!removeUnknown) {
+      for (const k of unknownTop) out[k] = snap[k];
+    }
     for (const [path, read] of fieldRefs) {
       out[path] = read();
     }
@@ -2626,7 +2696,7 @@ function buildMahjongRulesEditor(body, ctx) {
     for (const [table, meta] of Object.entries(MAHJONG_RULES_FORM.tables)) {
       const src =
         snap[table] && typeof snap[table] === 'object' ? snap[table] : {};
-      const tableOut = {};
+      const tableOut = removeUnknown ? {} : { ...unknownFan[table] };
       const rows = tableRefs.get(table);
       for (const [fanKey, ref] of rows ?? []) {
         const raw = ref.input.value.trim();
@@ -2652,7 +2722,7 @@ function buildMahjongRulesEditor(body, ctx) {
     body.textContent = '';
     fieldRefs.clear();
     tableRefs.clear();
-    body.append(buildPresetBar(), buildGroups(), warnings);
+    body.append(buildPresetBar(), buildBanners(), buildGroups(), warnings);
     refreshWarnings();
   }
 
