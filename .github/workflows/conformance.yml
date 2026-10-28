@@ -117,14 +117,33 @@ jobs:
           # （`Failed to start game for room …` / `Bot fill failed for …` / 网关的下游断线）
           # 早已被后续日志挤出尾部 ⇒ 红因无从对证。warn/error 量小且有界（tail 兜底），
           # 关键字行补上 info 级的开局/撮合轨迹；两者都远小于整份日志，不会把 job 日志撑爆。
+          #
+          # 2026-10-27 真栈事故（room.matched 全线超时）后再补三个关键词：
+          # `Match scan loop started`（扫描环起没起）、`Subscribed to` / `Failed to subscribe`
+          # （两条 Redis 订阅挂没挂上 —— 事故真因就是订阅被 ioredis 握手竞态吞掉）、
+          # `room.matched sent`（事件到底有没有到 WsGateway）。
           for c in ftl-room-service ftl-api-gateway ftl-game-service ftl-robot-service; do
             echo "=== $c warn/error（近 60 分钟，末 400 行）==="
             docker logs "$c" --since 60m 2>&1 | grep -E '"level":"(warn|error)"' | tail -400 || true
             echo "=== $c 判定链关键字（近 60 分钟，末 400 行）==="
             docker logs "$c" --since 60m 2>&1 \
-              | grep -E 'game\.start|game\.started|Failed to start|Bot fill|utostart|room\.matched|startRoom|startAndAnnounce|disconnected for client' \
+              | grep -E 'game\.start|game\.started|Failed to start|Bot fill|utostart|room\.matched sent for|Match scan loop started|Match scan failed|Subscribed to|Failed to subscribe|Matched [0-9]+ seats to room|Failed to announce|startRoom|startAndAnnounce|disconnected for client' \
               | tail -400 || true
           done
+          # 🔴 2026-10-27 事故的**定因三键**：订阅在不在（NUMSUB=0 ⇒ 没人订阅）、leader 是谁、
+          # 队列里有没有票。少了这三行，同类红只能靠猜（当次事故就是靠「0 条 room.matched sent」
+          # 反推到订阅丢失的）。
+          echo "=== Redis 判定键（订阅数 / leader / 队列深度）==="
+          docker exec ftl-redis redis-cli PUBSUB NUMSUB match:events game:events || true
+          echo "--- ftl:room:leader"
+          docker exec ftl-redis redis-cli GET ftl:room:leader || true
+          echo "--- match:queue:* 深度"
+          for k in $(docker exec ftl-redis redis-cli --scan --pattern 'match:queue:*' 2>/dev/null || true); do
+            printf '%s ' "$k"
+            docker exec ftl-redis redis-cli ZCARD "$k" 2>/dev/null || true
+          done
+          echo "--- match:meta 残留数"
+          docker exec ftl-redis redis-cli --scan --pattern 'match:meta:*' 2>/dev/null | wc -l || true
           echo "=== 近 40 分钟容器事件（die/kill/oom/restart）==="
           docker events --since 40m --until 0m \
             --filter type=container --filter event=die --filter event=kill --filter event=oom --filter event=restart 2>/dev/null | tail -50 || true

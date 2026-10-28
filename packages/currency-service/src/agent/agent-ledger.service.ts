@@ -34,13 +34,21 @@ const EXISTING_REVENUE_SQL =
 const BINDING_SELECT_SQL =
   'SELECT `agent_id`, `phone_hash` FROM `agent_bindings` WHERE `owner_id` = ?';
 // 单条递归 CTE 拉全代理链（最多 AGENT_MAX_DEPTH 级），消除逐级 N+1 查询。
+//
+// 🔴 **方向是契约**（2026-10-27 真栈事故）：`parent_id` 指向**上级** ⇒ 递归项必须
+// `a.id = _chain.parent_id`（沿 parent 向上）。写成 `a.parent_id = _chain.id` 是**向下**
+// 取到「下级」，链里只剩直接代理一人 ⇒ `top_rate_bp` 少算上级比例、上级那几档佣金**不发**。
+// 真栈实测：P(8000bp) ← A(6000bp) 的树，`top_rate_bp` 记成 6000（应为 8000）、
+// `expected_max_micro` 60000（应 80000）、佣金行只写 A（P 的 20000 micro 丢失）。
+// 单测的假 manager 按「语义」走链 ⇒ 方向写反也全绿；本常量由 `agent-ledger.test.ts` 的
+// 方向闸（字符串级）钉住。
 const AGENT_CHAIN_CTE =
   'WITH RECURSIVE _chain AS (' +
   'SELECT `id`, `phone`, `rate_bp`, `status`, `parent_id`, 0 AS `lvl` ' +
   'FROM `agent_accounts` WHERE `id` = ? ' +
   'UNION ALL ' +
   'SELECT a.`id`, a.`phone`, a.`rate_bp`, a.`status`, a.`parent_id`, _chain.`lvl` + 1 ' +
-  'FROM `agent_accounts` a JOIN _chain ON a.`parent_id` = _chain.`id` ' +
+  'FROM `agent_accounts` a JOIN _chain ON a.`id` = _chain.`parent_id` ' +
   'WHERE _chain.`lvl` < ? ' +
   'LIMIT 64' +
   ') SELECT * FROM _chain ORDER BY `lvl`';

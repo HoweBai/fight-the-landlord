@@ -1350,15 +1350,25 @@ export async function runSlice19(): Promise<Checks> {
       lastResult: ReconcileRoundResult | null;
       lastError: string | null;
       running: boolean;
+      /**
+       * C2 加性（2026-10-26，`admin-finance.controller.ts` 的 `reconcileStatus`）：
+       * 记录对账的**独立状态**（同形五字段，由 1h 循环 / 启动 10s 首跑产出）。
+       * 旧字段零变化；旧读方按可选链消费 ⇒ 读口键集由五变六。
+       */
+      records?: Record<string, unknown>;
     }
     const g11Before = await getJson<ReconcileStatus>('/api/admin/wallet/reconcile', s.adminToken);
     expectHttp(checks, g11Before, 200, ErrCode.OK, 'G11 GET reconcile');
     checks.eq(
       Object.keys(g11Before.body?.data ?? {}).sort().join(','),
-      'lastAttemptAt,lastError,lastResult,lastSuccessAt,running',
-      'G11 GET data 键集恰五（四字段 + running）',
+      'lastAttemptAt,lastError,lastResult,lastSuccessAt,records,running',
+      'G11 GET data 键集恰六（四字段 + running + C2 的 records）',
     );
     const g11B = g11Before.body?.data;
+    checks.that(
+      typeof g11B?.records === 'object' && g11B.records !== null,
+      'G11 records = 记录对账状态对象（C2 加性；只钉在场与形状，字段面由 slice-35 覆盖）',
+    );
     checks.that(
       (g11B?.lastAttemptAt === null || typeof g11B?.lastAttemptAt === 'number') &&
         (g11B?.lastSuccessAt === null || typeof g11B?.lastSuccessAt === 'number'),
