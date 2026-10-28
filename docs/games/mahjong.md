@@ -147,6 +147,9 @@
 `chajiaoAllSameState`：代码当前两档（`none` / `pay`）**无可观测差异**，与 §6 第 2 条的描述
 不一致；该差异另立片对账，本表按当前实际行为标注。
 
+`passHuMode`：代码当前把「过胡」记录保持到本局结束（`passedHu` 只入不出），即同一张牌一旦过胡本局不能再胡；
+§3 写的「自己摸牌前不能再胡同一张」未在代码中实现。该差异另立片对账，配置说明按代码实际行为标注。
+
 闸键：`game.mahjong.enabled` / `freeRoomEnabled` / `goldRoomEnabled` / `friendRoomEnabled` /
 `freeBotFillEnabled` / `goldBotFillEnabled` / `entryMultiplier` / `rakePercent` /
 `sbrGoldEnabled` / `rules` / `game.levels.mahjong`。

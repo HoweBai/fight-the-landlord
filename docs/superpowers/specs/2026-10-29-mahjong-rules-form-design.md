@@ -312,6 +312,7 @@ const MAHJONG_RULES_FORM = {
 - `chajiaoAllSameState` 代码与 `docs/games/mahjong.md` §6.2 语义对账（当前死配置）。
 - `refundOnDraw` 两档同义、`selfDrawMode` addBase/addPoint 同义的规则清理。
 - `selfDrawMode=addFan` 在 SBR（加法口径）下读空 `fanTable.ziMo` ⇒ +0 的口径问题。
+- `passHuMode` 过水解禁时机的代码/文档对账（代码为「本局锁死」，文档 §3 为「自己摸牌前」）。
 
 ## 8. 涉及文件
 

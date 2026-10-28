@@ -1347,7 +1347,7 @@ const MAHJONG_RULES_FORM = {
             [0, '0（番从 0 起算：0 番 = 1× 底）'],
           ],
         },
-        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8, note: '封顶番数：结算倍数 = 2^(封顶后番 − 底番)，封顶只夹倍数、不改变能否胡牌。' },
+        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8, note: '封顶番数：结算倍数 = 2^(封顶后番 − 底番)；封顶本身不是起胡门槛，但起胡番高于封顶番数时仍然无法胡牌。' },
         { path: 'minFanToHu', label: '起胡番', type: 'int', min: 0, max: 6, note: '0 = 不设门槛。' },
         {
           path: 'selfDrawMode',
@@ -1414,7 +1414,7 @@ const MAHJONG_RULES_FORM = {
             ['sameTile', '同张不可再胡'],
             ['sameTileOrHigherFan', '同张需番更高'],
           ],
-          note: '过水：off = 过胡后可立即再胡；sameTile = 同一张牌过胡后、自己摸牌前不能再胡同一张；sameTileOrHigherFan = 同上，但番更高可以胡。',
+          note: '过水：off = 过胡后可立即再胡；sameTile = 同一张牌过胡后本局不能再胡同一张；sameTileOrHigherFan = 同上，但番更高可胡。（代码未实现「自己摸牌后解禁」，与文档 §3 有差异，另立片对账。）',
         },
       ],
     },
@@ -1468,7 +1468,7 @@ const MAHJONG_RULES_FORM = {
             ['burn48', '销毁 48× 底（SBR）'],
             ['off', '不罚'],
           ],
-          note: '荒庄时花猪（缺门未打完/未定缺）的处置：payEach = 赔每家封顶分；burn48 = 销毁 48× 底；off = 不罚。',
+          note: '荒庄时花猪（缺门未打完：手牌/副露仍有缺门，或三门俱全）的处置：payEach = 赔每家封顶分；burn48 = 销毁 48× 底；off = 不罚。',
         },
         {
           path: 'huazhuPayees',
