@@ -61,7 +61,7 @@ function onAnimEnd(e: AnimationEvent): void {
   color: $ftl-color-on-primary;
   font-size: $ftl-font-md;
   font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 $ftl-hairline 2px rgba(0, 0, 0, 0.4);
 }
 .mj-hu-banner__fan {
   color: $ftl-color-on-primary;

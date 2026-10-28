@@ -66,8 +66,9 @@ function dirSizeKiB(dir: string): number {
   for (const e of readdirSync(dir)) {
     const full = join(dir, e);
     const st = statSync(full);
-    if (st.isDirectory()) throw new Error(`${dir}/${e} 是子目录：本闸假定素材目录是平的，请改断言`);
-    bytes += st.size;
+    // 2026-10-28：麻将桌上线后 `table/ui/` 出现 `mahjong-table/` 子目录；
+    // 递归计入（预算不放松），而不是把子目录当成「平的」静默漏量。
+    bytes += st.isDirectory() ? dirSizeKiB(full) : st.size;
   }
   return bytes / 1024;
 }

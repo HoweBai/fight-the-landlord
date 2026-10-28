@@ -246,7 +246,7 @@ const hasMeta = computed(
 // Batch 4 C 组：番型 emoji badge
 .mj-seat__badge--fan {
   background: rgba($ftl-color-accent, 0.25);
-  color: #fbbf24;
+  color: $ftl-color-hint-warn;
 }
 .mj-seat__badge--fan-more {
   font-size: 9px;
@@ -254,7 +254,7 @@ const hasMeta = computed(
 }
 .mj-seat__badge--ting {
   background: rgba(74, 222, 128, 0.25);
-  color: #4ade80;
+  color: $ftl-color-hint-safe;
 }
 .mj-seat__badge--out,
 .mj-seat__badge--neg {

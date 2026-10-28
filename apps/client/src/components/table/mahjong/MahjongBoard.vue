@@ -11,7 +11,6 @@
  */
 import { computed, ref, watch, onMounted } from 'vue';
 import {
-  DEFAULT_CHENGDU_RULES,
   MAHJONG_SUIT_NAMES,
   sortTiles,
   tileType,
@@ -22,7 +21,6 @@ import {
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
-import { tingTiles as computeTingTiles } from '@fight-the-landlord/shared';
 import MahjongSeatPanel from './MahjongSeatPanel.vue';
 import MahjongTile from './MahjongTile.vue';
 import MahjongMeld from './MahjongMeld.vue';
@@ -76,26 +74,6 @@ const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
 const myLack = computed(() => props.view?.lackSuits[me.value] ?? null);
 
-// —— Batch 5 C 组：手牌精确听牌关联高亮 ——
-/** 每张手牌打出后的听牌影响。纯客户端调 shared tingTiles（性能已实测 < 1ms）。 */
-const handTileTingImpact = computed<Array<{
-  index: number;
-  lostCount: number;
-  stillTing: boolean;
-}> | null>(() => {
-  if (tingTiles.value.length === 0 || hand.value.length === 0) return null;
-  if (myLack.value === null) return null;
-  const rules = props.view?.mahjongRules ?? DEFAULT_CHENGDU_RULES;
-  return hand.value.map((_tile, i) => {
-    const handWithout = hand.value.filter((_, j) => j !== i);
-    const afterTing = computeTingTiles(handWithout, myMelds.value as MahjongMeldView[], myLack.value!, rules);
-    let lostCount = 0;
-    for (const t of tingTiles.value) {
-      if (!afterTing.some((a) => tileType(a) === tileType(t))) lostCount += 1;
-    }
-    return { index: i, lostCount, stillTing: afterTing.length > 0 };
-  });
-});
 const myPendingDelta = computed(() => pendingDelta(me.value));
 const myHu = computed(() => props.view?.huInfos.find((h) => h.seat === me.value) ?? null);
 
@@ -740,10 +718,6 @@ function onMeldPopDone(key: string) {
           :class="{
             'anim-fly-out': flyingOutIndex === i,
             'anim-deal-in': phase === 'play',
-            // Batch 5 C 组：手牌精确听牌关联高亮
-            'ting-safe': !!handTileTingImpact?.[i] && handTileTingImpact[i].lostCount === 0 && handTileTingImpact[i].stillTing,
-            'ting-warn': !!handTileTingImpact?.[i] && handTileTingImpact[i].lostCount > 0 && handTileTingImpact[i].stillTing,
-            'ting-danger': !!handTileTingImpact?.[i] && !handTileTingImpact[i].stillTing,
           }"
           :style="{ '--ftl-delay': `${i * 30}ms` }"
           @click="onTileClick(i)"
@@ -810,7 +784,7 @@ function onMeldPopDone(key: string) {
   position: relative;
   color: $ftl-color-text;
   // 麻将桌背景（T3 Batch 1）
-  background: linear-gradient(180deg, #0e4f28 0%, #1a7a3a 50%, #0e4f28 100%);
+  background: linear-gradient(180deg, $ftl-color-mahjong-table-deep 0%, $ftl-color-mahjong-table 50%, $ftl-color-mahjong-table-deep 100%);
   box-shadow:
     inset 0 0 120px rgba(0, 30, 15, 0.5),
     inset 0 0 30px rgba(255, 220, 100, 0.08);
@@ -1084,20 +1058,6 @@ function onMeldPopDone(key: string) {
   line-height: 1.4;
 }
 
-// Batch 5 C 组：手牌精确听牌关联高亮（闸纪律：纯 outline 叠加，不碰 box-shadow/transform）
-:deep(.ting-safe) {
-  outline: 1px solid rgba(74, 222, 128, 0.5); // 绿色：打出后听牌不变
-  outline-offset: -1px;
-}
-:deep(.ting-warn) {
-  outline: 1px solid rgba(251, 191, 36, 0.7); // 黄色：丢听牌
-  outline-offset: -1px;
-}
-:deep(.ting-danger) {
-  outline: 2px solid rgba(248, 113, 113, 0.9); // 红色：打出后不听
-  outline-offset: -2px;
-}
-
 .mj__hand-hint {
   position: absolute;
   bottom: -16px;
@@ -1139,8 +1099,8 @@ function onMeldPopDone(key: string) {
   gap: 8px;
 }
 .mj__hand-hint-popup__title { color: rgba(255,255,255,0.9); font-size: 16px; }
-.mj__hand-hint-popup__result--safe { color: #4ade80; font-size: 18px; font-weight: 700; }
-.mj__hand-hint-popup__result--warn { color: #fbbf24; font-size: 18px; font-weight: 700; }
+.mj__hand-hint-popup__result--safe { color: $ftl-color-hint-safe; font-size: 18px; font-weight: 700; }
+.mj__hand-hint-popup__result--warn { color: $ftl-color-hint-warn; font-size: 18px; font-weight: 700; }
 .mj__hand-hint-popup__ting { color: $ftl-color-text-muted; font-size: 12px; }
 
 /* —— 托管遮罩 —— */

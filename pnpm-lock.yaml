@@ -90,9 +90,6 @@ importers:
       '@fight-the-landlord/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@fight-the-landlord/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       pinia:
         specifier: ^2.2.6
         version: 2.3.1(typescript@5.9.3)(vue@3.5.43(typescript@5.9.3))

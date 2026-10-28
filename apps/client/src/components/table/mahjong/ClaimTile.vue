@@ -75,6 +75,9 @@ function optClass(opt: MahjongClaimOption): string {
 <style scoped lang="scss">
 @import '../../../styles/animations.scss'; // 三层 ..，闸纪律
 
+.btn {
+  @include ftl-btn;
+}
 .mj-claim-tile {
   display: flex;
   flex-direction: column;
