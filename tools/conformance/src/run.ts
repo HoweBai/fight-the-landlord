@@ -50,6 +50,7 @@ import { runSlice32 } from './slices/slice-32-agent';
 import { runSlice33 } from './slices/slice-33-pdk-risk-gold';
 import { runSlice34 } from './slices/slice-34-record-outbox';
 import { runSlice35 } from './slices/slice-35-records-reconcile';
+import { runSlice36 } from './slices/slice-36-fund-anomaly';
 
 interface Case {
   title: string;
@@ -141,6 +142,8 @@ const CASES: Record<string, Case> = {
   'slice-34-record-outbox': { title: '记录 outbox（真栈：ok/replayed/corrupt/abandoned/rejected）', run: runSlice34 },
   // C2：资金↔记录对账（三轮：基线/注入/pdk 清零；分页 sentinel + 零写 + GET/gauge 一致）。
   'slice-35-records-reconcile': { title: '记录对账（真栈：GET/gauge/分页/跨界/台费/零写）', run: runSlice35 },
+  // C3：资金异常四信号（真用户 + 直插记录/设备/ops + 重启触发；正负例 + 9001 gauge + 零写）。
+  'slice-36-fund-anomaly': { title: '资金异常（真栈：同设备/对子胜率/对子频次/高抽水）', run: runSlice36 },
 };
 
 function printUsage(): void {
