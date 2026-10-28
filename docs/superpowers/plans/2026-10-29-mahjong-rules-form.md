@@ -2001,3 +2001,24 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 vitest 解析覆盖新文件；默认页签为「玩法规则」；`.struct-foot .btn.primary` 与 `.row-state`
 在卡内唯一；静态闸既有计数（112/96/89/43/44/96 notes）不被触碰；`NAMED_LABELS` 25 键交集
 逐字一致；jsdom/boot 依赖满足。
+
+---
+
+## 代码审查记录（2026-10-29，全分支终审）
+
+**终审结论：Ready to merge = Yes**（0 Critical / 0 Important）。复跑全绿：静态闸 655、探针 40/40、
+protocol 325（门禁 9/9）、shared 440（门禁 1/1）、test-utils 11、lint 干净；7 提交一任务一枚。
+
+**小修波次 1（`6d418133`）**：补 8 条重点说明（9 → 17 条，兑现「约 15–20 条」）；静态闸加
+「按服务端默认补齐」针脚；探针补两条 `lastPut !== null` 防空洞断言。静态闸 656、探针 42。
+
+**小修波次 2（`287d5e96`）**：聚焦复审发现 3 条新说明与代码不符（Important），已核实并修正：
+- `passHuMode`：`passedHu` 全仓只入不出（actions.ts:569 / claims.ts:81），过水是「本局锁死」而非
+  「自己摸牌前」；文档 §3 同错，已登记另立片。
+- `fanCap`：`checkHu` 用封顶后的番比 `minFanToHu`（claims.ts:79），封顶可导致永远不能胡；
+  「不改变能否胡牌」的说法撤销。
+- `huazhuMode`：花猪以 `lackSuit !== null` 为前提（settle.ts:77-85），「未定缺」不是条件。
+
+**终审 Minor 裁决**：全部可接受/后续项（枚举方向盲区、近同义反复断言、提取器未覆盖分支、
+硬编码计数、探针个别等待返回值未断言、未知预设映射、mock 不模拟服务端补默认、网格布局等），
+不阻塞合并；其中「真实浏览器布局」必须在部署前人工冒烟（本机无 Docker/凭据，登记为未执行）。
