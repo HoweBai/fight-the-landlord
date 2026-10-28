@@ -17,7 +17,8 @@
     "verify:shutdown": "node scripts/verify-shutdown-hooks.mjs",
     "clean": "turbo run clean",
     "verify:admin-agents": "node scripts/admin-agents-probe.mjs",
-    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs"
+    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs",
+    "verify:admin-mahjong-rules": "node scripts/admin-mahjong-rules-form-probe.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.13",
