@@ -77,9 +77,10 @@ describe('RecordsService.getMyMahjongRecords', () => {
       endedAt: T0 + 60_000,
     });
     expect(rec.seats).toHaveLength(4);
-    expect(rec.seats[0]).toMatchObject({ seat: 0, nickname: '甲', isRobot: false });
+    expect(rec.seats[0]).toMatchObject({ seat: 0, nickname: '甲' });
     expect(rec.seats[1]).toMatchObject({ seat: 1, isOut: true, fan: 3, delta: 30 });
-    expect(rec.seats[3]).toMatchObject({ seat: 3, isRobot: true });
+    expect(rec.seats[3]).toMatchObject({ seat: 3 });
+    expect(rec.seats[3]).not.toHaveProperty('isRobot');
     for (const seat of rec.seats) {
       expect(seat).not.toHaveProperty('hand');
       expect(seat).not.toHaveProperty('finalHand');
