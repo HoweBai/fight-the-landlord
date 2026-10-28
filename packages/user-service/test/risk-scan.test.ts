@@ -1736,7 +1736,8 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     });
 
     it('指标：hits_total 每用户每 check +1；hit_users 只算 C3；round_failures 成功轮全 0', async () => {
-      vi.setSystemTime(T0);
+      // 审查 M3：**不** setSystemTime —— 注入 now（T0）与真实时钟不同，才能钉住
+      // last_success 用的是 now/1000 而不是轮末 Date.now()/1000。
       db.fundSameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 3 }];
       const hitsBefore = await seriesValue('risk_fund_scan_hits_total', {
         check: 'sameDevice',
@@ -1794,6 +1795,27 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       expect(
         await seriesValue('risk_fund_scan_round_failures', { scope: 'doudizhu', reason: 'sql' }),
       ).toBe(0);
+    });
+
+    it('整轮失败（设备 SQL 抛）⇒ fund runs{fail}+1（审查 M1：C3 未跑到也要记轮次）', async () => {
+      db.failDevice = true;
+      const failBefore = await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}');
+
+      await expect(mkSvc().runScanOnce(T0)).rejects.toThrow();
+
+      expect(await labeledMetric('risk_fund_scan_runs_total', '{result="fail"}')).toBe(
+        failBefore + 1,
+      );
+    });
+
+    it('降级玩法去重：胜率 ddz 失败 + C3 ddz 失败 ⇒ 第 5 参恰 [doudizhu]（审查 M6）', async () => {
+      db.failDdz = true;
+      db.failFundSql.add(FUND_SAME_DEVICE_DDZ_SQL);
+      db.pdkWinRows = [{ user_id: 'u-A', player_count: 2, games: 2, wins: 2 }];
+
+      await mkSvc(makeScanConfig({ pdkMinGames2: 1, pdkWinRate2: 0.5 })).runScanOnce(T0);
+
+      expect(reviews.applyScanResult.mock.calls[0]?.[4]).toEqual(['doudizhu']);
     });
 
     it('boot：fund last_success / hit_users / round_failures 全置 0', async () => {

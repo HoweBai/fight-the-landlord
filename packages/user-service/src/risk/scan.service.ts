@@ -311,6 +311,9 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       return result;
     } catch (err) {
       riskScanRunsTotal.inc({ result: 'fail' });
+      // C3（审查 M1）：整轮在轮末记账前抛错（双玩法 SQL/设备 SQL/apply 全败/自愈抛）时，
+      // fund runs 也要记 fail —— 否则面板看似「C3 仍在跑」，只有 last_success 老化兜底。
+      riskFundScanRunsTotal.inc({ result: 'fail' });
       throw err;
     } finally {
       // ⚙️24：CAD 释放（只有还持有锁才删；释放失败不改变本轮成败 —— EX 是兜底）。
@@ -442,6 +445,9 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     // ── 判定 + 逐用户 upsert（score=0 也进 —— 自动旗回落判定，规格 §2.5-2 括号）──
     let flagged = 0;
     let userFailures = 0;
+    // 审查 M6：胜率失败与 C3 失败可能指向同一玩法 ⇒ 去重后再交给状态机（行为副作用零，
+    // 防未来消费方把重复项当独立信号）。
+    const unavailableGames = [...new Set(degradedGames)];
     for (const [userId, stats] of merged) {
       const ddz = stats.byGame.doudizhu;
       const pdk = stats.byGame.paodekuai;
@@ -495,7 +501,7 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       if (hit3) reasons.push(...fundReasons);
 
       try {
-        await this.reviews.applyScanResult(userId, score, reasons, now, degradedGames);
+        await this.reviews.applyScanResult(userId, score, reasons, now, unavailableGames);
       } catch (err) {
         // 单用户失败隔离：warn 留痕 + 跳过（下一轮收敛）。真库双会话的 1213 形态即由
         // 此退化路径承接（不会把整轮打红、不会丢后续用户）。
@@ -558,7 +564,9 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     // 全量成功才推进 last_success / hit_users（失败/降级轮保持上一轮读数，供告警判读）。
     if (fund.failures.length === 0) {
       riskFundScanRunsTotal.inc({ result: 'ok' });
-      riskFundScanLastSuccessTimestampSeconds.set(Date.now() / 1000);
+      // 审查 M3：用注入时钟（`runScanOnce(now)` 的唯一时间输入），不是轮末真实时钟 ——
+      // 否则以历史 now 复核窗口时，gauge 与轮内窗口口径漂移。
+      riskFundScanLastSuccessTimestampSeconds.set(now / 1000);
       riskFundScanHitUsers.set(fund.hitUsers);
     } else {
       riskFundScanRunsTotal.inc({ result: 'fail' });
@@ -568,7 +576,7 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     riskScanLastSuccessTimestampSeconds.set(Date.now() / 1000);
     const durationMs = Date.now() - startedAtMs;
     this.logger.log(
-      `risk scan done: users=${merged.size} flagged=${flagged} healed=${healed} open=${openCount} fundHits=${fund.hitUsers} fundDegraded=${fund.degradedGames.join(',') || 'none'} fundFailures=${fund.failures.length} durationMs=${durationMs}`,
+      `risk scan done: users=${merged.size} flagged=${flagged} healed=${healed} open=${openCount} fundHits=${fund.hitUsers} fundDropped=${fund.droppedByCap} fundDegraded=${fund.degradedGames.join(',') || 'none'} fundFailures=${fund.failures.length} durationMs=${durationMs}`,
     );
     return { skipped: false, users: merged.size, flagged };
   }

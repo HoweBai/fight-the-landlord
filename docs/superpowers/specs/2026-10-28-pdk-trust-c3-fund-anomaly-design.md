@@ -362,14 +362,20 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
     - 高抽水 uC：20 条 DDZ 金币记录（uC 全胜）+ 20 条 `currency_ops`
       （`action_id, request_hash, source, game_type, ref_id, burned_rake, created_at` 逐列；
       ref=`room:ver`，rake=300）⇒ highRake 6000；
-    - 负例：4 局对子 uF/uG；19 局金币 uH；机器人局；7d 外记录；仅 winRate 命中用户 uI
-      （初始分数全部低于 C3 阈值）⇒ hit_users 不因他变化。
+    - 负例：4 局对子 uF/uG；19 局金币 uH；陈旧设备（`last_seen` 8 个月前）；7d 外记录；
+      **仅 devices 命中**用户 uI（4 台设备 > 阈值 3）⇒ 证明 `hit_users` 不因既有信号变化。
+      （实现说明：winRate-only 需要把全局胜率阈值压到很小，会让全部正例同时命中胜率、
+      破坏 score=25 判据；devices-only 同样覆盖「既有信号不进 hit_users」的口径，且零阈值污染。）
   - **触发**：`PUT risk.scanIntervalMs=5000` → `docker restart ftl-user-service` → 健康 →
-    轮询 `GET /api/admin/risk/reviews`（150s）。
+    **清 `risk:scan:lock`**（旧实例在轮中被杀时 EX 600 会挡窗）→ 轮询
+    `GET /api/admin/risk/reviews`（keyset 翻页最多 3 页；等待**期望 check 集齐**而非仅
+    reasons 非空，防部分快照假红）。
   - **断言**：逐用户精确 reason 集（正例四类详情字段、负例缺具体 check）；score=25；
-    `gameType` 与 `game_type` 过滤；`execCurl('ftl-user-service', 9001, INTERNAL_TOKEN)`：
-    `risk_fund_scan_hit_users` ≥ C3 正例用户数、`hits_total` 四 check 在场、
-    `last_success > 0`、`round_failures` 全 0、`runs{ok}` 增长；
+    `gameType` 与 `game_type` 过滤（paodekuai/doudizhu 各自只回对应+mixed）；
+    `execCurl('ftl-user-service', 9001, INTERNAL_TOKEN)`：
+    `risk_fund_scan_hit_users` ≥ C3 正例用户数且 **≤ 队列中带 C3 reason 的用户数**
+    （口径上界），`hits_total` 四 check 在场、`last_success > 0`、
+    `runs{result="ok"} ≥1`、`round_failures` 全 0；
   - **零写**：注入前后本片 room/action 前缀的记录/ops 行数不变（扫描不改记录/ops）。
   - **清理**：删注入行（记录/players/devices/ops）、dismiss 条目、还原 `risk.scanIntervalMs`；
     注册用户保留（无删除接口；以 RUN_TAG 标记）。
@@ -415,8 +421,12 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
    语义（`risk_actions` 有审计），登记为预期行为。
 9. **整玩法冻结是粗粒度安全取向**：任一 C3 查询持续失败会冻结该玩法所有用户的评分更新（含
    胜率）；由 QueryFailures/Stalled 立即告警；若线上观测到长期冻结，另立「按 check 精确降级」。
-10. **多副本**：C3 告警用 `max_over_time` 抗 ClusterIP 轮询；既有 `RiskScanStalled` 的同类
-    隐患不属本片改动面，另立登记。
+10. **多副本抓取粘滞（与既有 `RiskScanStalled` 共享债务）**：C3 告警用 `max_over_time`
+    抗「抓取在副本间交替」的 series 抖动；但 Prometheus 对 `user-service:9001` 单
+    ClusterIP target 的 HTTP keep-alive 可能**粘在一个未持锁副本**上（该副本
+    `last_success` 恒 0、gauge 恒 0）⇒ Stalled 可能常亮、QueryFailures/HitsHigh 可能失明。
+    根治 = 副本间共享进度（Redis 进度键并由各副本镜像到本地 gauge）或 per-pod 抓取 +
+    `max by` 聚合；**另立项**（同样覆盖既有 RiskScanStalled，不在 C3 单方面改口径）。
 
 ## 7. 迁移与回滚
 
@@ -487,3 +497,20 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
 | L9 | 低 | 窗口衰减 ⇒ 自动解除/再武装循环 | D20-8：登记为既有状态机预期行为 |
 | L10 | 低 | 每 check 3 条上限可能丢某玩法证据 | D10：改为每 **(check, gameType)** 3 条 |
 | L11 | 低 | 整玩法冻结过宽（可选优化） | D11/D20-9：保留安全取向并登记；长期另立按 check 精确降级 |
+
+### 10.2 代码对抗审查（2026-10-28，独立 reviewer 审 `13ac394f..HEAD`）
+
+结论：**Critical 0 / Important 0 / Minor 7 / PLAUSIBLE 3**。处置（全部已修或登记）：
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| M1 | Minor | C3 runs/round_failures 在整轮失败路径（双玩法 SQL/设备 SQL/apply 全败/自愈抛）跳过，与 HELP「每轮结束 +1」矛盾 | 已修：`runScanInner` 的 catch 记 `risk_fund_scan_runs_total{fail}`；补「设备 SQL 抛 ⇒ fund runs fail+1」用例 |
+| M2 | Minor | D10「被截断条数进轮末聚合日志」未实现 | 已修：`FundCollection.droppedByCap` + 轮末日志 `fundDropped=`；cap 用例断言 |
+| M3 | Minor | last_success 用 `Date.now()` 而非注入 `now`；单测被 setSystemTime 掩盖 | 已修：改 `now / 1000`；测试移除 setSystemTime（真实时钟≠T0） |
+| M4 | Minor | slice-36 uI 用 devices-only（spec 原写 winRate-only），且 hit_users≥5 无法发现口径污染 | 已修：uI 用 devices-only（阈值污染说明入 spec）；新增 `hit_users ≤ 队列中带 C3 reason 用户数` 上界 |
+| M5 | Minor | slice-36 未断言 runs{ok}、缺 game_type 过滤断言 | 已修：断言 `runs{result="ok"}≥1`；补 paodekuai/doudizhu 过滤的 6 条断言 |
+| M6 | Minor | degradedGames 可含重复玩法 | 已修：交状态机前 `[...new Set()]`；补「胜率+C3 同玩法失败」用例 |
+| M7 | Minor | 边界缺口：B 支配分支 / 分组截断 scope / 非法回执 | 已修：三条用例 |
+| P1 | PLAUSIBLE | 多副本 + ClusterIP keep-alive 粘滞 → 新告警可能常亮/失明（与既有 RiskScanStalled 同病） | 登记 §6.1-10：`max_over_time` 只解交替抖动；根治（Redis 进度镜像 / per-pod + max 聚合）另立项，覆盖既有告警 |
+| P2 | PLAUSIBLE | slice-36 真栈时序：部分快照受理 / 首页找不到命中 / 锁残留 | 已修：等待**期望 check 集齐**、keyset 翻页 3 页、触发后清 `risk:scan:lock` |
+| P3 | PLAUSIBLE | plan 参数次序笔误（⑤⑦ 写成 from27h） | 已修 plan |

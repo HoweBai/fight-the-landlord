@@ -283,6 +283,7 @@ describe('C3 FundScanCollector（spec §5.4）', () => {
     expect(result.reasonsByUser.size).toBe(0);
     expect(result.hitsByUser.size).toBe(0);
     expect(result.hitUsers).toBe(0);
+    expect(result.droppedByCap).toBe(0);
     expect(result.degradedGames).toEqual([]);
     expect(result.failures).toEqual([]);
   });
@@ -389,6 +390,78 @@ describe('C3 FundScanCollector（spec §5.4）', () => {
     const exactRate = new FakeFundDb();
     exactRate.pair = [{ ...base, wins_a: '4' }];
     expect(reasonsOf(await collect(exactRate), 'u-A', 'pairWinRate')[0]!.detail.winRate).toBe(0.8);
+  });
+
+  it('对子胜率：B 支配（wins_b > wins_a）⇒ dominantUserId=uB、netWin=net_b（审查 M7a）', async () => {
+    const db = new FakeFundDb();
+    db.pair = [
+      {
+        user_a: 'u-A',
+        user_b: 'u-B',
+        games_7d: 5,
+        wins_a: 0,
+        wins_b: 5,
+        net_a: -1500,
+        net_b: 1500,
+        games_24h: 5,
+      },
+    ];
+
+    const result = await collect(db);
+    const detailA = reasonsOf(result, 'u-A', 'pairWinRate')[0]!.detail;
+    const detailB = reasonsOf(result, 'u-B', 'pairWinRate')[0]!.detail;
+
+    expect(detailA.dominantUserId).toBe('u-B');
+    expect(detailA.wins).toBe(5);
+    expect(detailA.netWin).toBe(1500);
+    expect(detailB.pairUserId).toBe('u-A');
+    expect(result.hitUsers).toBe(2);
+  });
+
+  it('截断：对子分组超 cap ⇒ truncated + 仅 paodekuai 降级（审查 M7b）', async () => {
+    const row = {
+      user_a: 'u-A',
+      user_b: 'u-B',
+      games_7d: 10,
+      wins_a: 10,
+      wins_b: 0,
+      net_a: 1500,
+      net_b: -1500,
+      games_24h: 10,
+    };
+    const db = new FakeFundDb();
+    db.pair = [row, { ...row, user_b: 'u-C' }];
+
+    const result = await collect(db, T0, { groupCap: 1 });
+
+    expect(result.failures).toEqual([{ scope: 'paodekuai', reason: 'truncated' }]);
+    expect(result.degradedGames).toEqual(['paodekuai']);
+    expect(result.hitUsers).toBe(0); // 对子结果整段丢弃
+  });
+
+  it('非法回执（字符串/NaN/负数字符串）⇒ Number() 归零，不命中也不抛（审查 M7c）', async () => {
+    const db = new FakeFundDb();
+    db.sameDeviceDdz = [{ user_a: 'u-A', user_b: 'u-B', device_id: 'dev-1', games: 'oops' }];
+    db.pair = [
+      {
+        user_a: 'u-A',
+        user_b: 'u-B',
+        games_7d: 'abc',
+        wins_a: 'x',
+        wins_b: null,
+        net_a: 'NaN',
+        net_b: undefined,
+        games_24h: '--',
+      },
+    ];
+    db.countsDdz = [{ user_id: 'u-C', games: 'NaN' }];
+    db.refsDdz = [{ user_id: 'u-C', room_code: 'R1', game_version: 1 }];
+    db.ops = [{ ref_id: 'R1:1', burned_rake: 'oops' }];
+
+    const result = await collect(db);
+
+    expect(result.hitUsers).toBe(0);
+    expect(result.failures).toEqual([]);
   });
 
   it('对子频次：games_24h=10 命中；9 不命中；与对子胜率同时命中 ⇒ 两条 hit', async () => {
@@ -548,6 +621,7 @@ describe('C3 FundScanCollector（spec §5.4）', () => {
 
     const reasons = reasonsOf(result, 'u-A', 'sameDevice');
     expect(reasons).toHaveLength(FUND_MAX_REASONS_PER_CHECK_GAME + 1);
+    expect(result.droppedByCap).toBe(1); // 4 条 ddz 证据只留 3 条
     expect(reasons.slice(0, 3).map((r) => r.detail.games)).toEqual([6, 5, 4]);
     expect(reasons[3]!.detail.gameType).toBe('paodekuai');
     expect(result.hitsByUser.get('u-A')).toEqual([

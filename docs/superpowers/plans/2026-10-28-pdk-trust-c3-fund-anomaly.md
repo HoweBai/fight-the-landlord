@@ -69,7 +69,7 @@
     `ORDER BY`、`MAX_EXECUTION_TIME`）；
   - 参数占位次序：① ② `[from7d, now, deviceFrom, deviceFrom, min, limit]`；
     ③ `[cutoff26h, from7d, now, min7d, limit]`；④ ⑥ `[from26h, now, min, limit]`；
-    ⑤ ⑦ ⑧ `[from27h, now, limit]`；
+    ⑤ ⑦ `[from26h, now, limit]`；⑧ `[from27h, now, limit]`；
   - 常量逐值：7d / 26h / 27h / 3 / 5 / 0.8 / 1000 / 10 / 20 / 5000 / 3 / 5000 / 200000 / 30000。
 - `metrics-game-type-invariant.test.ts`：TARGETS 增 `'riskFundScanHitsTotal'`。
 - 跑红。

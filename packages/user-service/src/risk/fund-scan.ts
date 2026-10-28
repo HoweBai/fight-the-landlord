@@ -214,6 +214,8 @@ export interface FundCollection {
   hitsByUser: Map<string, FundHit[]>;
   /** C3 命中用户数（只算 C3）。 */
   hitUsers: number;
+  /** 被 `(check, gameType)` 封顶丢弃的 reason 条数（可观测性；spec D10）。 */
+  droppedByCap: number;
   /** 需要冻结的玩法（查询失败/截断）。 */
   degradedGames: GameType[];
   /** 失败查询清单（gauge 写点用）。 */
@@ -550,6 +552,7 @@ export class FundScanCollector {
     // ── 排序 + 每 (check, gameType) 封顶 + 落 Map ─────────────────────────────
     const reasonsByUser = new Map<string, ScanReason[]>();
     const hitsByUser = new Map<string, FundHit[]>();
+    let droppedByCap = 0;
     for (const [userId, list] of entriesByUser) {
       list.sort(
         (a, b) =>
@@ -565,7 +568,10 @@ export class FundScanCollector {
         const key = `${entry.check}:${entry.gameType}`;
         hits.set(key, { check: entry.check, gameType: entry.gameType });
         const keptCount = perKey.get(key) ?? 0;
-        if (keptCount >= FUND_MAX_REASONS_PER_CHECK_GAME) continue;
+        if (keptCount >= FUND_MAX_REASONS_PER_CHECK_GAME) {
+          droppedByCap += 1;
+          continue;
+        }
         perKey.set(key, keptCount + 1);
         kept.push(entry.reason);
       }
@@ -579,6 +585,7 @@ export class FundScanCollector {
       reasonsByUser,
       hitsByUser,
       hitUsers: reasonsByUser.size,
+      droppedByCap,
       degradedGames: (['doudizhu', 'paodekuai'] as const).filter((game) => degraded.has(game)),
       failures,
     };

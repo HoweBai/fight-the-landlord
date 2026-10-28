@@ -35,9 +35,11 @@ import {
   postJson,
   registerUser,
   type HarnessUser,
+  type HttpResult,
 } from '../lib/http';
 import { mysqlExec, mysqlNum } from '../lib/mysql';
-import { execCurl, parseProm, seriesValueExact, sumMetric } from '../lib/prom-text';
+import { execCurl, parseProm, seriesValueExact } from '../lib/prom-text';
+import { redisRaw } from '../lib/redis';
 
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const TAG = Date.now().toString(36).toUpperCase().slice(-5);
@@ -78,6 +80,11 @@ interface ReviewItem {
   status: string;
   gameType: string;
   reasons: Array<{ check: string; detail: Record<string, unknown> }>;
+}
+
+interface ReviewPage {
+  items: ReviewItem[];
+  nextCursor: number | null;
 }
 
 interface InjectedCounts {
@@ -137,15 +144,50 @@ async function pollUntil<T>(
   }
 }
 
-async function latestReview(admin: string, userId: string): Promise<ReviewItem | null> {
-  const res = await getJson<{ items: ReviewItem[] }>('/api/admin/risk/reviews?limit=100', admin);
-  const items = Array.isArray(res.body?.data?.items) ? res.body.data.items : [];
-  return items.find((item) => item.userId === userId) ?? null;
+/** C3 四 check（用于「队列里带 C3 reason 的用户数」口径上界断言）。 */
+const C3_CHECKS = new Set(['sameDevice', 'pairWinRate', 'pairFrequency', 'highRake']);
+
+/**
+ * 队列查找（keyset 翻页，最多 3 页）：残留审核行多时命中行可能不在首页；
+ * 只取 `limit=100` 首页会超时假红（代码审查 P2）。
+ */
+async function findReview(admin: string, userId: string): Promise<ReviewItem | null> {
+  let cursor: number | null = null;
+  for (let page = 0; page < 3; page += 1) {
+    const query = cursor === null ? '?limit=100' : `?limit=100&cursor=${cursor}`;
+    const res: HttpResult<ReviewPage> = await getJson<ReviewPage>(
+      `/api/admin/risk/reviews${query}`,
+      admin,
+    );
+    const items = Array.isArray(res.body?.data?.items) ? res.body.data.items : [];
+    const hit = items.find((item) => item.userId === userId);
+    if (hit !== undefined) return hit;
+    cursor = res.body?.data?.nextCursor ?? null;
+    if (cursor === null) return null;
+  }
+  return null;
+}
+
+/** 队列前 3 页（C3 口径上界断言用）。 */
+async function fetchReviews(admin: string): Promise<ReviewItem[]> {
+  const out: ReviewItem[] = [];
+  let cursor: number | null = null;
+  for (let page = 0; page < 3; page += 1) {
+    const query = cursor === null ? '?limit=100' : `?limit=100&cursor=${cursor}`;
+    const res: HttpResult<ReviewPage> = await getJson<ReviewPage>(
+      `/api/admin/risk/reviews${query}`,
+      admin,
+    );
+    out.push(...(Array.isArray(res.body?.data?.items) ? res.body.data.items : []));
+    cursor = res.body?.data?.nextCursor ?? null;
+    if (cursor === null) break;
+  }
+  return out;
 }
 
 async function cleanupReview(admin: string, item: ReviewItem | null): Promise<void> {
   if (item === null) return;
-  const current = (await latestReview(admin, item.userId)) ?? item;
+  const current = (await findReview(admin, item.userId)) ?? item;
   if (current.status === 'throttled') {
     await postJson(
       '/api/admin/risk/actions',
@@ -413,23 +455,36 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
 
     step('③ 触发：重启 user-service ⇒ 启动 30s 首跑（扫描 5s 后续轮）');
     await restartUserService();
+    // 审查 P2：旧实例若在扫描轮中被 SIGKILL，`risk:scan:lock`（EX 600）会挡满 waitReview 窗；
+    // 显式清锁（新实例唯一持有者）。
+    redisRaw(['DEL', 'risk:scan:lock']);
+    info('slice-36 已清 risk:scan:lock');
 
-    const waitReview = async (user: HarnessUser, label: string): Promise<ReviewItem> => {
+    const waitReview = async (
+      user: HarnessUser,
+      label: string,
+      expectedChecks: readonly string[],
+    ): Promise<ReviewItem> => {
       const polled = await pollUntil(
-        () => latestReview(admin, user.id),
-        (item) => item !== null && Array.isArray(item.reasons) && item.reasons.length > 0,
+        () => findReview(admin, user.id),
+        (item) =>
+          item !== null &&
+          Array.isArray(item.reasons) &&
+          expectedChecks.every((check) => item.reasons.some((reason) => reason.check === check)),
         180_000,
         2000,
       );
       if (!polled.ok || polled.last === null) {
-        throw new ConformanceError(`③ ${label} 180s 内未进入审核队列`);
+        throw new ConformanceError(
+          `③ ${label} 180s 内未进入审核队列（期望 checks=${expectedChecks.join(',')}）`,
+        );
       }
       createdReviews.push(polled.last);
       return polled.last;
     };
 
     step('④ 四信号正例：uA/uB（同设备+对子）、uC（高抽水）、uD/uE（仅胜率）、uI（仅设备）');
-    const a = await waitReview(uA, 'uA');
+    const a = await waitReview(uA, 'uA', ['sameDevice', 'pairWinRate', 'pairFrequency']);
     checks.eq(a.score, 25, '④ uA score=25（四信号合并为一项）');
     checks.eq(a.gameType, 'mixed', '④ uA gameType=mixed（ddz+pdk 同设备 + pdk 对子）');
     const aSameDdz = a.reasons.find(
@@ -452,7 +507,7 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
     checks.eq(aFreq?.detail.games, 10, '④ uA pairFrequency games=10');
     checks.eq(aFreq?.detail.windowHours, 26, '④ uA pairFrequency windowHours=26');
 
-    const b = await waitReview(uB, 'uB');
+    const b = await waitReview(uB, 'uB', ['pairWinRate']);
     checks.eq(b.score, 25, '④ uB score=25（对子两侧都记）');
     checks.eq(
       reviewOf(b, 'pairWinRate')?.detail.dominantUserId,
@@ -460,7 +515,7 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
       '④ uB pairWinRate 仍指向胜方 uA（送钱方也入队）',
     );
 
-    const c = await waitReview(uC, 'uC');
+    const c = await waitReview(uC, 'uC', ['highRake']);
     checks.eq(c.score, 25, '④ uC score=25');
     checks.eq(c.gameType, 'doudizhu', '④ uC gameType=doudizhu');
     const cRake = reviewOf(c, 'highRake');
@@ -469,20 +524,60 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
     checks.eq(cRake?.detail.windowHours, 26, '④ uC highRake windowHours=26');
     checks.that(reviewOf(c, 'pairWinRate') === undefined, '④ uC 无对子 reason');
 
-    const d = await waitReview(uD, 'uD');
+    const d = await waitReview(uD, 'uD', ['pairWinRate']);
     checks.eq(d.score, 25, '④ uD score=25');
     checks.eq(d.gameType, 'paodekuai', '④ uD gameType=paodekuai');
     checks.that(reviewOf(d, 'pairWinRate') !== undefined, '④ uD 有 pairWinRate（7d 窗）');
     checks.that(reviewOf(d, 'pairFrequency') === undefined, '④ uD 无 pairFrequency（全在 26h 外）');
 
-    const e = await waitReview(uE, 'uE');
+    const e = await waitReview(uE, 'uE', ['pairWinRate']);
     checks.that(reviewOf(e, 'pairWinRate') !== undefined, '④ uE 有 pairWinRate（对子另一侧）');
 
-    const iReview = await waitReview(uI, 'uI');
+    const iReview = await waitReview(uI, 'uI', ['devices']);
     checks.eq(iReview.score, 25, '④ uI score=25（既有 devices 信号）');
     checks.eq(iReview.gameType, 'platform', '④ uI gameType=platform');
     checks.eq(iReview.reasons.length, 1, '④ uI 只有 devices reason（无 C3 reason）');
     checks.eq(iReview.reasons[0]?.check, 'devices', '④ uI reason check=devices');
+
+    step('④b game_type 过滤：paodekuai 只回 pdk/mixed；doudizhu 只回 ddz/mixed');
+    const pdkFiltered = await getJson<{ items: ReviewItem[] }>(
+      '/api/admin/risk/reviews?gameType=paodekuai&limit=100',
+      admin,
+    );
+    const pdkItems = Array.isArray(pdkFiltered.body?.data?.items)
+      ? pdkFiltered.body.data.items
+      : [];
+    checks.that(
+      pdkItems.every((item) => item.gameType === 'paodekuai' || item.gameType === 'mixed'),
+      '④b gameType=paodekuai 只回 pdk/mixed',
+    );
+    checks.that(
+      pdkItems.some((item) => item.userId === uA.id),
+      '④b gameType=paodekuai 含 uA（mixed）',
+    );
+    checks.that(
+      pdkItems.some((item) => item.userId === uD.id),
+      '④b gameType=paodekuai 含 uD（纯 pdk）',
+    );
+    const ddzFiltered = await getJson<{ items: ReviewItem[] }>(
+      '/api/admin/risk/reviews?gameType=doudizhu&limit=100',
+      admin,
+    );
+    const ddzItems = Array.isArray(ddzFiltered.body?.data?.items)
+      ? ddzFiltered.body.data.items
+      : [];
+    checks.that(
+      ddzItems.every((item) => item.gameType === 'doudizhu' || item.gameType === 'mixed'),
+      '④b gameType=doudizhu 只回 ddz/mixed',
+    );
+    checks.that(
+      ddzItems.some((item) => item.userId === uC.id),
+      '④b gameType=doudizhu 含 uC',
+    );
+    checks.that(
+      !ddzItems.some((item) => item.userId === uD.id),
+      '④b gameType=doudizhu 不含纯 pdk uD',
+    );
 
     step('⑤ 负例：4 局对子 / 19 局金币 / 陈旧设备 / 7d 外 ⇒ 均无条目');
     for (const [label, user] of [
@@ -495,7 +590,7 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
       ['uM', uM],
     ] as const) {
       checks.that(
-        (await latestReview(admin, user.id)) === null,
+        (await findReview(admin, user.id)) === null,
         `⑤ ${label} 未进入审核队列（阈值/窗口/陈旧设备过滤）`,
       );
     }
@@ -505,6 +600,18 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
     checks.eq(metrics.status, 200, '⑥ user-service /metrics HTTP 200');
     const hitUsers = seriesValueExact(metrics.body, 'risk_fund_scan_hit_users', {}) ?? 0;
     checks.that(hitUsers >= 5, `⑥ hit_users ≥5（实际 ${hitUsers}；uI 仅 devices 不计入）`);
+    // 审查 M4：下界断言无法发现「口径混入 devices/winRate」⇒ 用队列里带 C3 reason 的用户数
+    // 作上界（我们的 5 个 C3 用户必在其中；混入非 C3 用户会让 hit_users 越过上界）。
+    const queue = await fetchReviews(admin);
+    const c3Users = new Set(
+      queue
+        .filter((item) => item.reasons.some((reason) => C3_CHECKS.has(reason.check)))
+        .map((item) => item.userId),
+    );
+    checks.that(
+      hitUsers <= c3Users.size,
+      `⑥ hit_users(${hitUsers}) ≤ 队列中带 C3 reason 的用户数(${c3Users.size})（口径只算 C3）`,
+    );
     const sumByCheck = (check: string): number =>
       parseProm(metrics.body)
         .filter((sample) => sample.name === 'risk_fund_scan_hits_total' && sample.labels.check === check)
@@ -516,7 +623,10 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
     const lastSuccess =
       seriesValueExact(metrics.body, 'risk_fund_scan_last_success_timestamp_seconds', {}) ?? 0;
     checks.that(lastSuccess > 0, `⑥ last_success >0（实际 ${lastSuccess}）`);
-    checks.that(sumMetric(metrics.body, 'risk_fund_scan_runs_total') >= 1, '⑥ runs_total ≥1');
+    checks.that(
+      (seriesValueExact(metrics.body, 'risk_fund_scan_runs_total', { result: 'ok' }) ?? 0) >= 1,
+      '⑥ runs{result="ok"} ≥1（全量成功轮）',
+    );
     for (const scope of ['doudizhu', 'paodekuai', 'ops']) {
       for (const reason of ['sql', 'truncated']) {
         checks.eq(
