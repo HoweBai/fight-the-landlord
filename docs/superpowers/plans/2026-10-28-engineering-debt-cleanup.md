@@ -776,7 +776,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   `scripts/integration-test.sh`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: 删除前复核零引用**
+- [x] **Step 1: 删除前复核零引用**
 
 ```bash
 rg --hidden -n "test-game|test-results|dev-local\.sh|integration-test\.sh" D:/Code/ftl-eng-debt \
@@ -787,7 +787,7 @@ Expected: 只允许 `.dockerignore`、`tools/conformance/src/slices/slice-07.4-p
 的两处跳过清单、`docs/design.md` 的历史叙事、`scripts/integration-test.sh` 自身的头注释、
 本计划与 spec 自述；不得有 package.json / workflow / 脚本调用。
 
-- [ ] **Step 2: 删除并加 gitignore**
+- [x] **Step 2: 删除并加 gitignore**
 
 ```bash
 git -C D:/Code/ftl-eng-debt rm test-game.ts test-results/.last-run.json scripts/dev-local.sh scripts/integration-test.sh
@@ -800,7 +800,7 @@ git -C D:/Code/ftl-eng-debt rm test-game.ts test-results/.last-run.json scripts/
 test-results/
 ```
 
-- [ ] **Step 3: 全量验证**
+- [x] **Step 3: 全量验证**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt exec turbo run test lint --force
@@ -809,7 +809,7 @@ node D:/Code/ftl-eng-debt/scripts/verify-k8s-manifests.mjs
 
 Expected: 测试 30/30、lint 30/30；k8s 闸通过。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git -C D:/Code/ftl-eng-debt add -A
