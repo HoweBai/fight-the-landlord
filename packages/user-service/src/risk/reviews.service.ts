@@ -128,8 +128,8 @@ const AUTO_THROTTLE_RELEASE_REASON = '指标回落，自动解除';
  */
 /**
  * 命中项的 check 值域（C3 起扩四值：`sameDevice`/`pairWinRate`/`pairFrequency`/`highRake`）。
- * 旧行缺 `gameType` 时按 `doudizhu` 解释——当前没有消费方解析 `reasons`（admin 原样展示
- * JSON），此规则是给未来消费方的兼容契约。
+ * 旧行/新行缺 `gameType` 时按 `doudizhu` 解释；消费方 = 本文件的 `reviewInvolvedGames`
+ *（降级冻结涉及面）与 `deriveReviewGameType`（审核行玩法列），admin 仍原样展示 JSON。
  */
 export type ScanCheck =
   | 'winRate'
@@ -167,17 +167,31 @@ function parseReasonsValue(value: unknown): ScanReason[] {
   }
 }
 
+/** 带玩法维度的 check（C3 起同类扩展；`revived`/`devices` 不参与玩法集合）。 */
+const GAME_SCOPED_CHECKS: ReadonlySet<ScanCheck> = new Set<ScanCheck>([
+  'winRate',
+  'sameDevice',
+  'pairWinRate',
+  'pairFrequency',
+  'highRake',
+]);
+
+/** reason 的玩法（缺省/未知 ⇒ doudizhu；与 §4.1 玩法归一同口径）。 */
+function reasonGameType(reason: ScanReason): 'doudizhu' | 'paodekuai' {
+  return reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu';
+}
+
 /**
  * 由**本次** reasons 推导审核行的 game_type：
- * winRate 的 gameType 集合（缺省/未知 ⇒ doudizhu）；两玩法 ⇒ mixed；
- * 无 winRate 但有 devices ⇒ platform；无 reasons ⇒ null（调用方保留最新行值）。
+ * 带玩法的 check（winRate / C3 四信号）的 gameType 集合（缺省/未知 ⇒ doudizhu）；两玩法 ⇒ mixed；
+ * 无玩法 check 但有 devices ⇒ platform；无 reasons ⇒ null（调用方保留最新行值）。
  */
 function deriveReviewGameType(reasons: readonly ScanReason[]): ReviewGameType | null {
   const games = new Set<'doudizhu' | 'paodekuai'>();
   let hasDevices = false;
   for (const reason of reasons) {
-    if (reason.check === 'winRate') {
-      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
+    if (GAME_SCOPED_CHECKS.has(reason.check)) {
+      games.add(reasonGameType(reason));
     } else if (reason.check === 'devices') {
       hasDevices = true;
     }
@@ -195,9 +209,7 @@ function reviewInvolvedGames(latest: LatestReviewRow): Set<GameType> {
   if (column === 'doudizhu' || column === 'mixed') games.add('doudizhu');
   if (column === 'paodekuai' || column === 'mixed') games.add('paodekuai');
   for (const reason of parseReasonsValue(latest.reasons)) {
-    if (reason.check === 'winRate') {
-      games.add(reason.detail.gameType === 'paodekuai' ? 'paodekuai' : 'doudizhu');
-    }
+    if (GAME_SCOPED_CHECKS.has(reason.check)) games.add(reasonGameType(reason));
   }
   return games;
 }

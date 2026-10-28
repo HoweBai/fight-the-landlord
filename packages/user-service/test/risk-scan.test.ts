@@ -507,6 +507,12 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
         [R_MIX, 'mixed'],
         [R_DEV, 'platform'],
         [R_LEGACY, 'doudizhu'],
+        [R_SAME_DDZ, 'doudizhu'],
+        [R_PAIR_PDK, 'paodekuai'],
+        [R_FREQ_PDK, 'paodekuai'],
+        [R_RAKE_DDZ, 'doudizhu'],
+        [R_C3_MIX, 'mixed'],
+        [[...R_RAKE_DDZ, ...R_DEV], 'doudizhu'], // devices 不改变玩法集合
       ] as const) {
         db = new FakeRiskDb();
         await mkSvc().applyScanResult('u-A', 25, reasons, T0);
@@ -547,6 +553,39 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
     const R_LEGACY_PDK: ScanReason[] = [
       { check: 'winRate', detail: { gameType: 'paodekuai', games: 101, wins: 90, winRate: 90 / 101 } },
     ];
+    // C3（2026-10-28）：新 check 的玩法维度必须与 winRate 同口径参与推导/冻结涉及面。
+    const R_SAME_DDZ: ScanReason[] = [
+      {
+        check: 'sameDevice',
+        detail: { gameType: 'doudizhu', windowHours: 168, pairUserId: 'u-B', deviceId: 'dev-1', games: 3 },
+      },
+    ];
+    const R_PAIR_PDK: ScanReason[] = [
+      {
+        check: 'pairWinRate',
+        detail: {
+          gameType: 'paodekuai',
+          playerCount: 2,
+          windowHours: 168,
+          pairUserId: 'u-B',
+          dominantUserId: 'u-A',
+          games: 5,
+          wins: 5,
+          winRate: 1,
+          netWin: 1500,
+        },
+      },
+    ];
+    const R_FREQ_PDK: ScanReason[] = [
+      {
+        check: 'pairFrequency',
+        detail: { gameType: 'paodekuai', playerCount: 2, windowHours: 26, pairUserId: 'u-B', games: 10 },
+      },
+    ];
+    const R_RAKE_DDZ: ScanReason[] = [
+      { check: 'highRake', detail: { gameType: 'doudizhu', windowHours: 26, games: 20, rakeUpperBound: 6000 } },
+    ];
+    const R_C3_MIX: ScanReason[] = [...R_SAME_DDZ, ...R_PAIR_PDK];
 
     it('PDK 自动限流线：pdkScore=25 + PDK 25 ⇒ open 武装；26/49/50 ⇒ 不武装', async () => {
       for (const [pdkScore, shouldThrottle] of [
@@ -665,6 +704,46 @@ describe('风控片 T5：检测链核心（C16·C17·C18）', () => {
       await mkSvc().applyScanResult('u-A', 25, R_LEGACY_PDK, T0, ['paodekuai']);
       expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
       expect(db.actions).toHaveLength(0);
+    });
+
+    it('冻结①：涉及面含 C3 check——最新行只有 pdk 对子 reason 也会在 pdk 降级时冻结', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'doudizhu', // 列值故意不一致：reasons 兜底必须仍识别 pdk
+          reasons: JSON.stringify([
+            {
+              check: 'pairWinRate',
+              detail: { gameType: 'paodekuai', playerCount: 2, games: 5, wins: 5, winRate: 1, netWin: 1500 },
+            },
+          ]),
+        }),
+      );
+
+      await mkSvc().applyScanResult('u-A', 25, R_PAIR_PDK, T0, ['paodekuai']);
+
+      expect(db.queries).toEqual([{ sql: SPEC_RISK_UPSERT_LOCK_SQL, params: ['u-A'] }]);
+      expect(db.actions).toHaveLength(0);
+      expect(redis.calls).toHaveLength(0);
+    });
+
+    it('冻结①：C3 命中行不涉及失败玩法 ⇒ 正常更新（paodekuai 行 + doudizhu 不可用）', async () => {
+      db.reviews.push(
+        mkReview({
+          id: 9,
+          status: 'open',
+          score: 25,
+          game_type: 'paodekuai',
+          reasons: JSON.stringify([{ check: 'pairFrequency', detail: { gameType: 'paodekuai', games: 10 } }]),
+        }),
+      );
+
+      await mkSvc().applyScanResult('u-A', 25, R_PAIR_PDK, T0, ['doudizhu']);
+
+      expect(db.queries.length).toBeGreaterThan(1);
+      expect(db.reviews[0]!.score).toBe(25);
     });
 
     it('冻结②：任一玩法失败 + throttled(auto) ⇒ 不解除，仅续旗 EX 7d，零 DB 写/审计', async () => {
