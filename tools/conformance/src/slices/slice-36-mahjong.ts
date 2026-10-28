@@ -11,7 +11,7 @@
  */
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { assertNoLeak, Checks, ConformanceError, info, sleep, step } from '../lib/assert';
-import { adminLogin, adminPutConfig, getJson, registerUser } from '../lib/http';
+import { adminGetConfig, adminLogin, adminPutConfig, getJson, registerUser } from '../lib/http';
 import { HarnessClient } from '../lib/client';
 import {
   currentMahjongView,
@@ -36,6 +36,17 @@ async function putOrThrow(admin: string, key: string, value: unknown): Promise<v
  */
 async function enableMahjong(): Promise<{ disable: () => Promise<void> }> {
   const admin = await adminLogin();
+  /**
+   * 风险谓词：种子默认 false，但测试服可能被其他片/人工改开（sameIp/sameDevice 开时
+   * 同机 4 个 conformance 账号无法成桌）。本片显式保存原值、临时关闭，收尾还原。
+   */
+  const cfg = await adminGetConfig<{ config: Record<string, { value: unknown }> }>(admin);
+  const prevPredicates = {
+    sameIp: cfg.body?.data?.config?.['risk.predicate.sameIp']?.value === true,
+    sameDevice: cfg.body?.data?.config?.['risk.predicate.sameDevice']?.value === true,
+  };
+  await putOrThrow(admin, 'risk.predicate.sameIp', false);
+  await putOrThrow(admin, 'risk.predicate.sameDevice', false);
   await putOrThrow(admin, MAHJONG_FREE_KEY, true);
   await putOrThrow(admin, MAHJONG_ENABLED_KEY, true);
 
@@ -69,6 +80,9 @@ async function enableMahjong(): Promise<{ disable: () => Promise<void> }> {
 
   return {
     disable: async () => {
+      // 先还原风险谓词（与本片开关互不依赖；即使下面失败也要还原）。
+      await adminPutConfig('risk.predicate.sameIp', prevPredicates.sameIp, admin);
+      await adminPutConfig('risk.predicate.sameDevice', prevPredicates.sameDevice, admin);
       const freeOff = await adminPutConfig(MAHJONG_FREE_KEY, false, admin);
       if (freeOff.body?.code !== ErrCode.OK) {
         throw new ConformanceError(`还原麻将免费场失败：${JSON.stringify(freeOff.body)}`);

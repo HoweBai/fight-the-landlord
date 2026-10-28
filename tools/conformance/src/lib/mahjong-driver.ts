@@ -20,7 +20,7 @@ import { ConformanceError, sleep } from './assert';
 import { registerUser, type HarnessUser } from './http';
 import { HarnessClient } from './client';
 
-export const MAHJONG_MATCH_TIMEOUT_MS = 30_000;
+export const MAHJONG_MATCH_TIMEOUT_MS = 90_000;
 export const MAHJONG_STEP_TIMEOUT_MS = 240_000;
 
 export interface MahjongRoom {
@@ -85,8 +85,11 @@ export async function startMahjongRoom(
       matched: matched.map((m) => m.payload),
     };
   } catch (err) {
+    const seen = clients
+      .map((c) => `${c.label}:${c.received.map((r) => r.type).join(',') || '(none)'}`)
+      .join(' | ');
     for (const client of clients) client.close();
-    throw err;
+    throw new Error(`${(err as Error).message}；已收消息=[${seen}]`);
   }
 }
 

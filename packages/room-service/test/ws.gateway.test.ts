@@ -2911,7 +2911,7 @@ describe('Redis 订阅生命周期（ioredis 握手竞态的永久丢订阅）',
     const restore = swapSubscriber(gateway, 'matchEventsRedis', sub);
     const order: string[] = [];
     const realOn = sub.on.bind(sub);
-    vi.spyOn(sub, 'on').mockImplementation(((event: string, listener: (...a: never[]) => void) => {
+    vi.spyOn(sub, 'on').mockImplementation(((event: string, listener: (...a: any[]) => void) => {
       if (event === 'message') order.push('on:message');
       return realOn(event, listener);
     }) as never);
