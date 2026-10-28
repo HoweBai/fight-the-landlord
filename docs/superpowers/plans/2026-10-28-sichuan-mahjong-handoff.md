@@ -28,10 +28,16 @@
 | `8233d6df` | 客户端自家缺门/庄/番/临时分展示 + 整局自动推进回归 |
 | `6e72a89b` | admin 麻将配置域（11 键 + 规则 JSON 编辑器）、麻将历史接口/页面、风控 mahjong 桶、房间 gauge、财务标签 |
 | `098569cc` | **第 2 轮对抗审查修复**：抢杠多响/缺门暗杠/杠上炮番/退税顺序/`game.finished` 出站校验等 10 项 |
+| `8ca573fc` | 麻将 11 条音频全部接线 |
+| `9b5becf9` | conformance `slice-36-mahjong` + 独立 mahjong oracle + 记录查询 |
+| `237542de` | 采纳 dev 的 Redis 订阅 ready 门控/重订修复（基线早于该修复，真栈匹配事件无法下发） |
+| `f4a06f4e` | 麻将记录时间列 BIGINT（epoch ms）+ 记录 DTO 去掉 isRobot + 泄漏检查精确键 |
+| `69a49e40` | slice-36 去掉探针票、固定等待配置广播 |
+| `2ae923fd` | 记录测试适配 isRobot 不下发 |
 
 ## 最近绿灯（2026-10-28 03:18）
 
-- 全仓 `pnpm exec turbo run test --concurrency=1`：**30/30 tasks successful**。
+- 全仓 `pnpm exec turbo run test --concurrency=1`：**30/30 tasks successful**（最终 `2ae923fd` 复跑）。
   - protocol 316、shared 439、game 280、room 1014、currency 590、user 412、client 1553、robot 145、config 492。
 - 全仓 `pnpm lint`：18/18 tasks 绿。
 - `pnpm verify:admin`：633 checks passed。
