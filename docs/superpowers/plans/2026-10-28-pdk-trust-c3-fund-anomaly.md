@@ -295,3 +295,5 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
 - 已知边界：spec §6.1（含 P1 多副本抓取粘滞、`money_delta` 晚到 NULL、>26h 晚到、
   rake=0、整玩法冻结粗粒度、窗口衰减自动解除循环）。
 - 工作区：干净；diff 无迁移/配置键/协议/客户端/admin 代码。
+- 推送（2026-10-28 用户裁决）：只推 `origin/feature/pdk-trust-c3`（**零 CI**）；
+  slice-36 留给下次 master 权威轮，C3 保持「待权威轮」状态，不合 dev。
