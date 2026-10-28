@@ -77,8 +77,19 @@ export class HarnessClient {
   }
 
   /** 发一条 C→S 请求并等 ack。超时返回 `code: -1`（契约里没有 -1，只表示没拿到回执）。 */
-  send(type: ClientMessageType, payload: Record<string, unknown> = {}, baseVersion = 0): Promise<AckResult> {
-    const body = { reqId: randomUUID(), baseVersion, timestamp: Date.now(), payload };
+  send(
+    type: ClientMessageType,
+    payload: Record<string, unknown> = {},
+    baseVersion = 0,
+    windowId?: string,
+  ): Promise<AckResult> {
+    const body = {
+      reqId: randomUUID(),
+      baseVersion,
+      timestamp: Date.now(),
+      ...(windowId === undefined ? {} : { windowId }),
+      payload,
+    };
     return new Promise<AckResult>((resolve) => {
       const timer = setTimeout(() => resolve({ code: -1, message: 'ack timeout' }), ACK_TIMEOUT_MS);
       this.socket.emit(type, body, (res: AckResult) => {

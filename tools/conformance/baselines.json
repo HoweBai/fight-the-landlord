@@ -55,6 +55,7 @@
     "slice-32-agent": 137,
     "slice-33-pdk-risk-gold": 60,
     "slice-34-record-outbox": 19,
-    "slice-35-records-reconcile": 89
+    "slice-35-records-reconcile": 89,
+    "slice-36-mahjong": 1
   }
 }

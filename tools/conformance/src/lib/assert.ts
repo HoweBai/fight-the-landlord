@@ -36,6 +36,10 @@ export const LEAK_KEYS = [
   'unusedCards',
   'lastPlayedHand',
   'initialHands',
+  // 麻将（T12）：RNG/内部过水结构永不出站（wall 用切片里的精确键断言）。
+  'rngSeed',
+  'passedHu',
+  'exchangePick',
   'botIds',
   'botSkillLevels',
   'botThinkingSpeeds',
