@@ -310,5 +310,21 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
   `GAME_SCOPED_CHECKS`/`reasonGameType` 放行 `mahjong`（否则麻将 reason 会被错标 doudizhu）；
   `FUND_GAME_ORDER` 补 `mahjong` 键（`Record<GameType, number>` 穷尽性）。
 - 基线：slice-18 152 / slice-24 226 / slice-36-mahjong 68 / slice-37-fund-anomaly 64。
-- 权威轮：GitHub conformance 全序在 `integration/c3-dev` 上执行（run 号与读数回填于交付报告）。
+- **权威轮（GitHub conformance 全序；`only` 留空）**：
+  - run `40726351491`（`cd6bfb7e`）：**红 3 片** —— slice-17（`currency_ops` 漏
+    `burned_penalty:int`）、slice-36（WS 限流 10006「Too many messages」重发风暴）、
+    slice-37（`④ uA sameDevice(pdk) games=10` 实际 undefined）。
+  - 修复（各独立提交）：`e0af6547` slice-17 列断言补 `burned_penalty`；`e84c2aa3` PDK
+    记录 `ended_at`（BIGINT epoch-ms）查询 ②⑥⑦ 由 `Date` 改绑 `number`（`Date` 被 MySQL
+    按字符串前缀截断 ⇒ 窗口恒空，sameDevice(pdk)/highRake(pdk) 静默不响）；`e084f294`
+    麻将驱动对 `RATE_LIMITED` 按 5.1s 限流窗口退避重试（限流语义仍由 room-service 单测钉住）。
+  - run `40734901264`（`e084f294`）：slice-36-mahjong **68** ✓、slice-37-fund-anomaly **64** ✓；
+    红 1 片 —— slice-17 `migrations_currency 恰 8 行` 实际 9（麻将 `BurnPenalty`）。
+  - `e7f438ef` slice-17 迁移计数 8→9 + 名集补 `BurnPenalty1798300000000`（精确全等不放宽）。
+  - **run `40742614040`（`e7f438ef`）：全序 40 片全绿** —— slice-17 **187**、
+    slice-36-mahjong **68**、slice-37-fund-anomaly **64**，`check-baselines full` 全过。
+  - 定向轮 run `40745381090`（`bcb429bb`，`only=slice-17-currency`）：187 ✓（仅定因，非权威）。
+  - 能力：`conformance.yml` 的 `workflow_dispatch` 增加可选 `only`（定向轮跳过 baselines
+    全量校验并在日志标注「不是权威轮」）；权威轮必须留空。
+
 
