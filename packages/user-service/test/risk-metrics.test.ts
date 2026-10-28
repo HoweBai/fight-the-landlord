@@ -14,6 +14,11 @@ import {
   riskActionsTotal,
   riskScanHitsTotal,
   riskScanSqlFailuresTotal,
+  riskFundScanHitsTotal,
+  riskFundScanHitUsers,
+  riskFundScanRunsTotal,
+  riskFundScanLastSuccessTimestampSeconds,
+  riskFundScanRoundFailures,
 } from '../src/risk/risk.metrics';
 
 describe('风控指标定义（T4 只建文件；写点 T5/T6/A1/B）', () => {
@@ -61,5 +66,55 @@ describe('风控指标定义（T4 只建文件；写点 T5/T6/A1/B）', () => {
     // 两个 gauge 无标签（裸 `名字 值` 行；带标签的话这两条会红）。
     expect(text, 'reviews_open 无标签').toMatch(/^risk_reviews_open \d+(\.\d+)?$/m);
     expect(text, 'last_success 无标签').toMatch(/^risk_scan_last_success_timestamp_seconds \d+(\.\d+)?$/m);
+  });
+
+  it('C3 五指标名逐字进 shared registry（hits / hit_users / runs / last_success / round_failures）', () => {
+    for (const name of [
+      'risk_fund_scan_hits_total',
+      'risk_fund_scan_hit_users',
+      'risk_fund_scan_runs_total',
+      'risk_fund_scan_last_success_timestamp_seconds',
+      'risk_fund_scan_round_failures',
+    ]) {
+      expect(metricsRegistry().getSingleMetric(name), `registry 里没有 ${name}`).toBeDefined();
+    }
+  });
+
+  it('C3 标签面逐字：hits 按 check+game_type、round_failures 按 scope+reason、两 gauge 无标签', async () => {
+    expect(metricsRegistry().getSingleMetric('risk_fund_scan_hits_total')).toBe(
+      riskFundScanHitsTotal,
+    );
+    expect(metricsRegistry().getSingleMetric('risk_fund_scan_hit_users')).toBe(
+      riskFundScanHitUsers,
+    );
+    expect(metricsRegistry().getSingleMetric('risk_fund_scan_runs_total')).toBe(
+      riskFundScanRunsTotal,
+    );
+    expect(metricsRegistry().getSingleMetric('risk_fund_scan_last_success_timestamp_seconds')).toBe(
+      riskFundScanLastSuccessTimestampSeconds,
+    );
+    expect(metricsRegistry().getSingleMetric('risk_fund_scan_round_failures')).toBe(
+      riskFundScanRoundFailures,
+    );
+
+    riskFundScanHitsTotal.inc({ check: 'sameDevice', game_type: 'doudizhu' });
+    riskFundScanHitUsers.set(3);
+    riskFundScanRunsTotal.inc({ result: 'ok' });
+    riskFundScanLastSuccessTimestampSeconds.set(1234);
+    riskFundScanRoundFailures.set({ scope: 'ops', reason: 'truncated' }, 1);
+
+    const text = await metricsRegistry().metrics();
+    expect(text, 'hits 两维').toMatch(
+      /^risk_fund_scan_hits_total\{check="sameDevice",game_type="doudizhu"\} \d+$/m,
+    );
+    expect(text, 'round_failures 两维').toMatch(
+      /^risk_fund_scan_round_failures\{scope="ops",reason="truncated"\} \d+$/m,
+    );
+    expect(text, 'runs result 维').toMatch(/^risk_fund_scan_runs_total\{result="ok"\} \d+$/m);
+    // 两个 gauge 无标签（带标签的话这两条会红）。
+    expect(text, 'hit_users 无标签').toMatch(/^risk_fund_scan_hit_users \d+(\.\d+)?$/m);
+    expect(text, 'fund last_success 无标签').toMatch(
+      /^risk_fund_scan_last_success_timestamp_seconds \d+(\.\d+)?$/m,
+    );
   });
 });
