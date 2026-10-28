@@ -196,7 +196,6 @@ export interface MahjongRecordView {
   seats: Array<{
     seat: number;
     nickname?: string;
-    isRobot?: boolean;
     melds: MahjongMeldView[];
     discards: Tile[];
     lackSuit: MahjongSuit | null;

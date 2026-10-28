@@ -23,8 +23,8 @@ export class MahjongRecords1798200000000 implements MigrationInterface {
         '`events` json NOT NULL, ' +
         '`burn` json NOT NULL, ' +
         '`rake_total` int NOT NULL DEFAULT 0, ' +
-        '`started_at` datetime(3) NOT NULL, ' +
-        '`ended_at` datetime(3) NOT NULL, ' +
+        '`started_at` bigint NOT NULL, ' +
+        '`ended_at` bigint NOT NULL, ' +
         '`created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), ' +
         'PRIMARY KEY (`id`), ' +
         'UNIQUE KEY `uk_mahjong_room_version` (`room_code`, `game_version`), ' +
@@ -51,7 +51,7 @@ export class MahjongRecords1798200000000 implements MigrationInterface {
         '`score_change` int NOT NULL DEFAULT 0, ' +
         '`money_delta` int NULL, ' +
         '`won` tinyint NOT NULL DEFAULT 0, ' +
-        '`ended_at` datetime(3) NOT NULL, ' +
+        '`ended_at` bigint NOT NULL, ' +
         'PRIMARY KEY (`id`), ' +
         'UNIQUE KEY `uk_mahjong_record_seat` (`record_id`, `seat`), ' +
         'KEY `idx_mahjong_user_ended` (`user_id`, `ended_at`), ' +

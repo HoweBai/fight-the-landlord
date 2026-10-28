@@ -131,7 +131,8 @@ export class Checks {
  */
 export function assertNoLeak(raw: unknown, where: string): void {
   const text = JSON.stringify(raw ?? null);
-  const hits = LEAK_KEYS.filter((key) => text.includes(key));
+  // 只匹配**恰好**的 JSON 键名（`"rules"` 不得误伤 `"rulesVersion"` / `"mahjongRules"`）。
+  const hits = LEAK_KEYS.filter((key) => text.includes(`"${key}"`));
   if (hits.length > 0) {
     throw new ConformanceError(`${where} 出站载荷泄漏：${hits.join(', ')}（§6.4 规则 4）`);
   }

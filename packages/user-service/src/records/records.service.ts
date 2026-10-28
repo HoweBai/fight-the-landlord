@@ -474,7 +474,6 @@ export class RecordsService {
       seats: players.map((p) => ({
         seat: Number(p.seat),
         ...(p.nickname === null ? {} : { nickname: p.nickname }),
-        isRobot: Number(p.is_robot) === 1,
         melds: jsonOf(p.melds, []),
         discards: jsonOf(p.discards, []),
         lackSuit: p.lack_suit === null ? null : (Number(p.lack_suit) as 0 | 1 | 2),

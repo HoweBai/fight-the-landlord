@@ -224,7 +224,7 @@ export async function playMahjongToEnd(room: MahjongRoom): Promise<MahjongOutcom
     for (const client of room.clients) {
       const msg = client.last('game.settlement');
       if (msg) {
-        settlement = msg;
+        settlement = msg.payload;
         break;
       }
     }
