@@ -24,8 +24,8 @@
   - `pnpm verify:admin`
   - `pnpm -C tools/conformance lint`
   - 全量：`pnpm exec turbo run test lint --force --concurrency=1`（0 cached；flake 单跑复证）
-- 真栈：本机 Docker **不可用**（`docker` 命令不存在）⇒ slice-36 只做 tsc，**待权威轮**；
-  slice-36 未过权威轮不得称 C3 完成/不得合 dev。
+- 真栈：本机 Docker **不可用**（`docker` 命令不存在）⇒ slice-37 只做 tsc，**待权威轮**；
+  slice-37 未过权威轮不得称 C3 完成/不得合 dev。
 
 ---
 
@@ -203,10 +203,10 @@
 
 ---
 
-## Task 6：conformance slice-36 + baselines
+## Task 6：conformance slice-37 + baselines
 
 **Files**
-- Create: `tools/conformance/src/slices/slice-36-fund-anomaly.ts`
+- Create: `tools/conformance/src/slices/slice-37-fund-anomaly.ts`
 - Modify: `tools/conformance/src/run.ts`
 - Modify: `tools/conformance/baselines.json`（若基线格式要求）
 
@@ -216,8 +216,8 @@ gauges → 零写 → 清理）。覆盖：四信号正例；负例独立用户�
 hit_users 不变）；`currency_ops` 逐列 NOT NULL；`user_devices` 走 `uk_user_device`；
 reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check + `hit_users≥正例数` +
 `round_failures` 全 0 + `last_success>0` + 注入行数不变（零写）。
-**Step 2**：`run.ts` 注册 `slice-36-fund-anomaly`；baselines 增 full 基线；
-`pnpm -C tools/conformance lint` 绿；提交 `test(conformance): C3 资金异常真栈切片（slice-36）`。
+**Step 2**：`run.ts` 注册 `slice-37-fund-anomaly`；baselines 增 full 基线；
+`pnpm -C tools/conformance lint` 绿；提交 `test(conformance): C3 资金异常真栈切片（slice-37）`。
 **Step 3**：本机无 Docker ⇒ 真栈登记「待权威轮」（spec/交付报告双处），并写明当前种子下
 仅 sameDevice/DDZ highRake 可响（PDK 2 人/金币场关闭、rake=0）。
 
@@ -230,7 +230,7 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
 2. `node scripts/verify-monitoring.mjs`；`pnpm verify:admin`；`pnpm -C tools/conformance lint`；
 3. 全量 `pnpm exec turbo run test lint --force --concurrency=1`（0 cached；flake 单跑复证）；
 4. 独立 reviewer 审 `BASE..HEAD`（spec/plan 逐条核对；Critical/Important 必修）；
-5. 修复后复跑 1–3；工作区干净；交付报告（含 slice-36 待权威轮硬闸、默认种子可响面）；
+5. 修复后复跑 1–3；工作区干净；交付报告（含 slice-37 待权威轮硬闸、默认种子可响面）；
 6. 提交审查修复（可多条）；spec/plan 填执行记录。
 
 ## 回滚
@@ -247,14 +247,14 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
 | H2 | 高 | hit_users 口径未钉死 ⇒ 告警常亮 | Task 4：仅 C3 hitUsers；winRate-only 轮次 hit_users=0 用例 |
 | H3 | 高 | 25h 不覆盖周期+相位 | Task 1：扫窗 26h、ops 窗 27h；spec D20-7 登记非硬保证 |
 | H4 | 高 | money_delta 永久 NULL 盲区未登记 | spec D20-4 登记（不放宽阈值） |
-| H5 | 高 | 设备关联无 last_seen 窗 ⇒ 陈旧误报 | Task 1/2 + slice-36 陈旧设备负例 |
+| H5 | 高 | 设备关联无 last_seen 窗 ⇒ 陈旧误报 | Task 1/2 + slice-37 陈旧设备负例 |
 | H6 | 高 | 种子下三信号不响 | spec D20-5/6 登记；交付报告如实说明；不开开关 |
 | H7 | 高 | 多副本 gauge/counter 告警失效 | Task 1/5：round_failures 改 gauge + 三条 max_over_time |
-| H8 | 高 | slice-36 假 id / ops NOT NULL 缺列 | Task 6：真用户、ops 逐列、devices uk、清理策略 |
+| H8 | 高 | slice-37 假 id / ops NOT NULL 缺列 | Task 6：真用户、ops 逐列、devices uk、清理策略 |
 | L1 | 低 | ScanCheck 不存在 | Task 3 真加别名 |
 | L2 | 低 | fundScan/fundCollector 漂移 | Task 4 统一 `this.fundScan` |
 | L3 | 低 | 假测试 vs SQL HAVING | Task 2：JS 复核全部阈值 |
-| L4 | 低 | slice-36 负例矛盾 | Task 6：每负例独立用户、精确 reason 集 |
+| L4 | 低 | slice-37 负例矛盾 | Task 6：每负例独立用户、精确 reason 集 |
 | L5 | 低 | ⑥/⑦ 未逐字；p.won 误判 | Task 1：逐字 + `p.won = 1` |
 | L6 | 低 | LIMIT 无 ORDER BY/非成本上限 | Task 1/2：ORDER BY；截断整段丢弃；30s 成本上限 |
 | L7 | 低 | 超时/截断标签矛盾 | 超时=sql、超行=truncated |
@@ -276,7 +276,7 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
 - 分支：`feature/pdk-trust-c3`（自 `dev@13ac394f` 开出）。
 - 提交（按序）：`0afac76a` 文档 v2 → `b10e8370` 指标/SQL → `595ebca4` 采集判定 →
   `58462c47` reason 玩法维度 → `2fb7f21d` 扫描接入 → `47f3c25c` 告警 41/38 →
-  `44fc67a1` slice-36 → `0e69dea8` 既有 lint 修复 → `e7355ce2` 代码审查修复。
+  `44fc67a1` slice-37 → `0e69dea8` 既有 lint 修复 → `e7355ce2` 代码审查修复。
 - 本机验证（最终树）：
   - `pnpm -C packages/user-service test`：29 文件 / **452 tests** 全绿；
     `lint`（tsc 双配置）通过。
@@ -287,13 +287,28 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
     `RiskFundScanStalled` 的 severity 移出 labels ⇒ 1 FAILED）执行并恢复。
   - `pnpm verify:admin`：**620 checks**；`tools/conformance` tsc 双配置通过；
     `check-baselines.mjs --self-test` 4/4；`baselines.json` JSON 校验通过。
-  - 基线：slice-18 152 / slice-24 226（各 +1 名集断言）；slice-36 = **64**（静态计数）。
-- **真栈：本机 Docker 不可用（`docker` 命令不存在）⇒ slice-36 仅 tsc，未跑；登记
-  「待权威轮」**。按 spec §8.7：slice-36 未过权威轮不得称 C3 完成/不得合 dev。
+  - 基线：slice-18 152 / slice-24 226（各 +1 名集断言）；slice-37 = **64**（静态计数）。
+- **真栈：本机 Docker 不可用（`docker` 命令不存在）⇒ slice-37 仅 tsc，未跑；登记
+  「待权威轮」**。按 spec §8.7：slice-37 未过权威轮不得称 C3 完成/不得合 dev。
   当前种子下仅 sameDevice 与 DDZ highRake 可响（PDK 2 人/金币场关闭、rake=0；
   本片不改开关）。
 - 已知边界：spec §6.1（含 P1 多副本抓取粘滞、`money_delta` 晚到 NULL、>26h 晚到、
   rake=0、整玩法冻结粗粒度、窗口衰减自动解除循环）。
 - 工作区：干净；diff 无迁移/配置键/协议/客户端/admin 代码。
 - 推送（2026-10-28 用户裁决）：只推 `origin/feature/pdk-trust-c3`（**零 CI**）；
-  slice-36 留给下次 master 权威轮，C3 保持「待权威轮」状态，不合 dev。
+  slice-37 留给下次 master 权威轮，C3 保持「待权威轮」状态，不合 dev。
+
+## 集成记录（2026-10-29）
+
+- 集成分支 `integration/c3-dev`（自 `dev@cb09ad6e`）合入 `feature/pdk-trust-c3`（`0fdf7dcf`）。
+- **改号**：dev 侧已占用 `slice-36-mahjong`（四川麻将）⇒ 本片 `slice-36-fund-anomaly` 顺延为
+  `slice-37-fund-anomaly`（`runSlice36`→`runSlice37`、baselines 键、源内 `S36`/`s36` 前缀同步）；
+  断言集与基线 **64 不变**；`slice-36-mahjong = 68` 保留。历史提交 `44fc67a1` 的提交信息仍写
+  slice-36，以本记录与代码为准。
+- 合并语义并集：`scan.service.ts` 保留麻将胜率 scope + C3 四信号（查询序
+  SQL1 → SQL1b → 麻将 → SQL2 → C3 八条 → 自愈 → open）；`reviews.service.ts` 的
+  `GAME_SCOPED_CHECKS`/`reasonGameType` 放行 `mahjong`（否则麻将 reason 会被错标 doudizhu）；
+  `FUND_GAME_ORDER` 补 `mahjong` 键（`Record<GameType, number>` 穷尽性）。
+- 基线：slice-18 152 / slice-24 226 / slice-36-mahjong 68 / slice-37-fund-anomaly 64。
+- 权威轮：GitHub conformance 全序在 `integration/c3-dev` 上执行（run 号与读数回填于交付报告）。
+

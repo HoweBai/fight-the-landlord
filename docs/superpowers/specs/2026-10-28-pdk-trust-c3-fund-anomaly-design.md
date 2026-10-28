@@ -44,7 +44,7 @@ U8 同 IP 不做；U9 命中参与现有自动限流（score +25），不自动�
    `RiskFundScanStalled`(warning)、`RiskFundHitsHigh`(warning)；表达式用 `max_over_time` 抗
    ClusterIP 轮询多副本。
 5. 单测（SQL 全文/阈值边界/降级/指标/评分/排队 + 真实 `ReviewsService` 端到端落库）+ 真栈片
-   `slice-36-fund-anomaly`。
+   `slice-37-fund-anomaly`。
 
 ### 2.2 不做
 
@@ -86,7 +86,7 @@ U8 同 IP 不做；U9 命中参与现有自动限流（score +25），不自动�
 | D16 | 告警 3 条，表达式全部 `max_over_time(...[15m])`：查询失败（首轮可见）、停滞（>2h 未全量成功）、命中集中（单轮命中用户 >10 持续 2h） | 抗多副本 series 抖动；单条命中不告警（进审核队列，避免噪声）。既有 `RiskScanStalled` 同类隐患另立（不属 C3 改动面） |
 | D17 | 零 DB 迁移 / 零配置键 / 零协议 / 零客户端 / 零 admin 代码；回滚 = revert | 最小面；reasons JSON 前端已原样展示 |
 | D18 | 管理端展示沿用 reasons JSON；`game_type` 过滤器随推导扩展自动生效 | 审核人可按 pairUserId/deviceId/games/windowHours 解释；不新增面板字段 |
-| D19 | 真栈片 `slice-36` 用**注册用户** + `mysqlExec` 注入记录/设备/ops + 重启 user-service 触发首跑；断言 reasons/score/game_type/9001 gauges/零写/清理 | slice-33 的触发 + slice-35 的注入；fake id 会被 `JOIN users … active` 全过滤（权威轮必红），必须真用户 |
+| D19 | 真栈片 `slice-37` 用**注册用户** + `mysqlExec` 注入记录/设备/ops + 重启 user-service 触发首跑；断言 reasons/score/game_type/9001 gauges/零写/清理 | slice-33 的触发 + slice-35 的注入；fake id 会被 `JOIN users … active` 全过滤（权威轮必红），必须真用户 |
 | D20 | 已知边界登记（见 §6.1）：记录无 `device_id`；旧客户端无 deviceId；设备保留期清理；`money_delta` 晚到 >1h 永久 NULL；rake=0 信号静默；PDK 2 人/金币场种子关闭；TTL 修复可越过扫窗；窗口衰减 ⇒ 自动解除/再武装循环；整玩法冻结的粗粒度 | 诚实登记，不伪装精确；不擅自打开开关 |
 
 ## 5. 实现设计
@@ -350,7 +350,7 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
   `game_type='paodekuai'`**。
 - `test/risk-metrics.test.ts`（扩）：5 个指标名/标签面。
 - `room-service/test/metrics-game-type-invariant.test.ts`：TARGETS + `riskFundScanHitsTotal`。
-- `tools/conformance/src/slices/slice-36-fund-anomaly.ts`（新）：
+- `tools/conformance/src/slices/slice-37-fund-anomaly.ts`（新）：
   - **用户**：`registerUser` 注册全部测试用户（`JOIN users … active` 承重；fake id 会被全过滤）。
     RUN_TAG 前缀用于清理标记。
   - **注入**（`mysqlExec`，逐列写全）：
@@ -379,7 +379,7 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
   - **零写**：注入前后本片 room/action 前缀的记录/ops 行数不变（扫描不改记录/ops）。
   - **清理**：删注入行（记录/players/devices/ops）、dismiss 条目、还原 `risk.scanIntervalMs`；
     注册用户保留（无删除接口；以 RUN_TAG 标记）。
-  - baselines 只进 full；本机 Docker 不可用 ⇒ 只做 `tsc`；**slice-36 未过权威轮不得称 C3 完成/
+  - baselines 只进 full；本机 Docker 不可用 ⇒ 只做 `tsc`；**slice-37 未过权威轮不得称 C3 完成/
     不得合 dev**。
 
 ## 6. 错误处理与边界
@@ -440,10 +440,10 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
 2. `pnpm -C packages/room-service test -- metrics-game-type-invariant` 绿（TARGETS 增量）。
 3. `node scripts/verify-monitoring.mjs` 绿（41/38 + 结构断言）；判别力自证（把 severity 移出
    labels ⇒ 红）执行并恢复。
-4. `pnpm -C tools/conformance lint`（tsc）绿；slice-36 注册/baseline 可检。
+4. `pnpm -C tools/conformance lint`（tsc）绿；slice-37 注册/baseline 可检。
 5. 全量 `pnpm exec turbo run test lint --force --concurrency=1`（0 cached；环境 flake 单跑复证）。
 6. `pnpm verify:admin`（零 admin 改动，防回归）。
-7. **真栈 slice-36 必须在权威轮通过**（本机 Docker 不可用 ⇒ 待权威轮；未过不得称完成）。
+7. **真栈 slice-37 必须在权威轮通过**（本机 Docker 不可用 ⇒ 待权威轮；未过不得称完成）。
 8. 工作区干净；diff 不含协议/迁移/配置键/客户端/slice-29/PdkSettlement.vue。
 
 ## 9. 涉及文件
@@ -466,7 +466,7 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
 - `packages/user-service/test/risk-scan.test.ts`
 - `packages/user-service/test/risk-metrics.test.ts`
 - `packages/room-service/test/metrics-game-type-invariant.test.ts`
-- `tools/conformance/src/slices/slice-36-fund-anomaly.ts`（新）
+- `tools/conformance/src/slices/slice-37-fund-anomaly.ts`（新）
 - `tools/conformance/src/run.ts`、`baselines.json`
 - `slice-16-monitoring.ts`、`slice-18-gold-room.ts`、`slice-24-ads-relief.ts`
 
@@ -479,17 +479,17 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
 | # | 级别 | 发现 | v2 处置 |
 |---|---|---|---|
 | H1 | 高 | pairWinRate/pairFrequency 的 reason 无 `detail.gameType` ⇒ 审核行玩法错标 + 降级冻结失效 + 自动限流误释放 | D2/§5.4：四类 reason 恒带 `gameType`；§5.5 增真实 `ReviewsService` 端到端落库用例；fund-scan 测试断言每条 reason |
-| H2 | 高 | `hit_users` 口径未钉死（若含 winRate/devices ⇒ RiskFundHitsHigh 常亮） | §5.4-6/§5.6：`hit_users := FundCollection.hitUsers`（仅 C3）；单测「仅 winRate/devices ⇒ hit_users 0」；slice-36 加仅 winRate 用户 |
+| H2 | 高 | `hit_users` 口径未钉死（若含 winRate/devices ⇒ RiskFundHitsHigh 常亮） | §5.4-6/§5.6：`hit_users := FundCollection.hitUsers`（仅 C3）；单测「仅 winRate/devices ⇒ hit_users 0」；slice-37 加仅 winRate 用户 |
 | H3 | 高 | 25h 在「周期 1h+d」与 TTL 修复下不保证覆盖 | D3：24h 信号扫窗改 **26h**；D13 ops 窗 **27h**；D20-7 登记「非硬保证 + 不自动补偿（C1 告警兜底）」 |
 | H4 | 高 | 记录晚到 >1h ⇒ `money_delta` 永久 NULL，pairWinRate 净赢门槛失效未登记 | D20-4：显式登记（按 0 假阴性；频次仍覆盖；不放宽阈值） |
-| H5 | 高 | `user_devices` 无 `last_seen_at` 窗口 ⇒ 陈旧绑定误报 | D6/§5.3：① ② 加 `d/e.last_seen_at >= ?`（绑 from7d）；slice-36 加陈旧设备负例 |
+| H5 | 高 | `user_devices` 无 `last_seen_at` 窗口 ⇒ 陈旧绑定误报 | D6/§5.3：① ② 加 `d/e.last_seen_at >= ?`（绑 from7d）；slice-37 加陈旧设备负例 |
 | H6 | 高 | 默认/种子下 PDK 2 人、PDK 金币、rake=0 ⇒ 四信号实际只响一个 | D20-5/6：登记三前置；不打开开关（父 spec 红线）；交付报告如实说明可响面 |
 | H7 | 高 | 裸 gauge + ClusterIP 多副本 ⇒ 新告警 `for:` 失效/抖动；counter `increase` 假放大 | D15/D16/§5.7：失败面改 gauge `round_failures`（每轮 6 组合 set，含 0）；三条表达式全用 `max_over_time`；既有 RiskScanStalled 隐患另立登记 |
-| H8 | 高 | slice-36 未说明真用户与 `currency_ops` NOT NULL 列 ⇒ 权威轮必红 | D19/§5.8：`registerUser` 真用户、ops 逐列写全、devices 走 `uk_user_device`、清理/保留策略写明 |
+| H8 | 高 | slice-37 未说明真用户与 `currency_ops` NOT NULL 列 ⇒ 权威轮必红 | D19/§5.8：`registerUser` 真用户、ops 逐列写全、devices 走 `uk_user_device`、清理/保留策略写明 |
 | L1 | 低 | `ScanCheck` 类型不存在 | §5.1/§5.5：在 `reviews.service.ts` 真加别名 |
 | L2 | 低 | `fundScan` / `fundCollector` 字段名漂移 | §5.1/§5.6 统一 `this.fundScan` |
 | L3 | 低 | 假测试与 SQL HAVING 矛盾 | §5.4：采集器 JS 侧复核全部阈值（SQL HAVING 只降行数）；测试用 fake 行覆盖边界 |
-| L4 | 低 | slice-36 负例清单自相矛盾 | §5.8：每负例独立用户、逐用户精确 reason 集 |
+| L4 | 低 | slice-37 负例清单自相矛盾 | §5.8：每负例独立用户、逐用户精确 reason 集 |
 | L5 | 低 | ⑥/⑦ 未逐字；「PDK 无 p.won」错误 | §5.3 逐字给出 ⑥/⑦；改用 `p.won = 1`（A2 迁移已回填） |
 | L6 | 低 | LIMIT 无 ORDER BY、不构成成本上限 | D12/§5.3：8 条全加确定性 ORDER BY；LIMIT=结果上限、30s 提示=成本上限；截断结果整段丢弃 |
 | L7 | 低 | 超时/截断 reason 标签矛盾 | D12/§6：超时=`sql`、超行=`truncated` |
@@ -507,10 +507,10 @@ ALERT_PREDICATES +3、GLOBAL_ALERTS +3、结构断言 +3）、`Dockerfile.promet
 | M1 | Minor | C3 runs/round_failures 在整轮失败路径（双玩法 SQL/设备 SQL/apply 全败/自愈抛）跳过，与 HELP「每轮结束 +1」矛盾 | 已修：`runScanInner` 的 catch 记 `risk_fund_scan_runs_total{fail}`；补「设备 SQL 抛 ⇒ fund runs fail+1」用例 |
 | M2 | Minor | D10「被截断条数进轮末聚合日志」未实现 | 已修：`FundCollection.droppedByCap` + 轮末日志 `fundDropped=`；cap 用例断言 |
 | M3 | Minor | last_success 用 `Date.now()` 而非注入 `now`；单测被 setSystemTime 掩盖 | 已修：改 `now / 1000`；测试移除 setSystemTime（真实时钟≠T0） |
-| M4 | Minor | slice-36 uI 用 devices-only（spec 原写 winRate-only），且 hit_users≥5 无法发现口径污染 | 已修：uI 用 devices-only（阈值污染说明入 spec）；新增 `hit_users ≤ 队列中带 C3 reason 用户数` 上界 |
-| M5 | Minor | slice-36 未断言 runs{ok}、缺 game_type 过滤断言 | 已修：断言 `runs{result="ok"}≥1`；补 paodekuai/doudizhu 过滤的 6 条断言 |
+| M4 | Minor | slice-37 uI 用 devices-only（spec 原写 winRate-only），且 hit_users≥5 无法发现口径污染 | 已修：uI 用 devices-only（阈值污染说明入 spec）；新增 `hit_users ≤ 队列中带 C3 reason 用户数` 上界 |
+| M5 | Minor | slice-37 未断言 runs{ok}、缺 game_type 过滤断言 | 已修：断言 `runs{result="ok"}≥1`；补 paodekuai/doudizhu 过滤的 6 条断言 |
 | M6 | Minor | degradedGames 可含重复玩法 | 已修：交状态机前 `[...new Set()]`；补「胜率+C3 同玩法失败」用例 |
 | M7 | Minor | 边界缺口：B 支配分支 / 分组截断 scope / 非法回执 | 已修：三条用例 |
 | P1 | PLAUSIBLE | 多副本 + ClusterIP keep-alive 粘滞 → 新告警可能常亮/失明（与既有 RiskScanStalled 同病） | 登记 §6.1-10：`max_over_time` 只解交替抖动；根治（Redis 进度镜像 / per-pod + max 聚合）另立项，覆盖既有告警 |
-| P2 | PLAUSIBLE | slice-36 真栈时序：部分快照受理 / 首页找不到命中 / 锁残留 | 已修：等待**期望 check 集齐**、keyset 翻页 3 页、触发后清 `risk:scan:lock` |
+| P2 | PLAUSIBLE | slice-37 真栈时序：部分快照受理 / 首页找不到命中 / 锁残留 | 已修：等待**期望 check 集齐**、keyset 翻页 3 页、触发后清 `risk:scan:lock` |
 | P3 | PLAUSIBLE | plan 参数次序笔误（⑤⑦ 写成 from27h） | 已修 plan |
