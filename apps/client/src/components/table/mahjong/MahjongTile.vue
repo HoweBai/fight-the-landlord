@@ -2,11 +2,17 @@
 /**
  * 单张麻将牌（哑组件）。只把 `Tile` 翻译成牌面素材路径。
  *
- * 素材：幼麟棋牌 `Z_my`/`Z_bottom` 图集提取（75×113，万/筒/条 1–9 共 27 张 + 牌背），
- * 见 `THIRD-PARTY-NOTICES.md`。牌面路径是**纯展示映射**，不含任何规则判定。
+ * 素材：幼麟棋牌 4 方向 Atlas 提取——
+ *   my (75×113 正), top (55×84 倒置), left/right (49×40 横置),
+ *   共享牌背 (83×125)。
+ * 不传 `direction` → 用平铺旧资源（向后兼容）。
+ * 牌面路径是**纯展示映射**，不含任何规则判定。
+ * 见 `THIRD-PARTY-NOTICES.md`。
  */
 import { computed } from 'vue';
 import { MAHJONG_SUIT_NAMES, type Tile } from '@fight-the-landlord/protocol';
+
+type Direction = 'my' | 'top' | 'left' | 'right';
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +24,8 @@ const props = withDefaults(
     disabled?: boolean;
     /** 置灰（已出局/已胡座位）。 */
     dim?: boolean;
+    /** 方向：my=自己 / top=对家 / left=左家 / right=右家。不传则用平铺旧资源。 */
+    direction?: Direction;
   }>(),
   { size: 'md', selected: false, disabled: false, dim: false },
 );
@@ -27,9 +35,11 @@ const emit = defineEmits<{ (e: 'click'): void }>();
 const SUIT_FILES = ['wan', 'tong', 'tiao'] as const;
 
 const src = computed(() => {
-  if (props.back || !props.tile) return '/pages/table/static/mahjong/back.png';
+  const base = '/pages/table/static/mahjong/';
+  const dir = props.direction ? `${props.direction}/` : '';
+  if (props.back || !props.tile) return `${base}${dir}back.png`;
   const suit = SUIT_FILES[props.tile.s];
-  return `/pages/table/static/mahjong/${suit}-${props.tile.r}.png`;
+  return `${base}${dir}${suit}-${props.tile.r}.png`;
 });
 
 const label = computed(() => {
@@ -43,6 +53,7 @@ const label = computed(() => {
     class="mj-tile"
     :class="[
       `mj-tile--${size}`,
+      direction ? `mj-tile--dir-${direction}` : null,
       {
         'mj-tile--selected': selected,
         'mj-tile--disabled': disabled,
@@ -87,5 +98,12 @@ const label = computed(() => {
 .mj-tile--dim {
   opacity: 0.5;
   filter: grayscale(0.6);
+}
+/** left/right 方向的牌面是横置（49×40，宽>高），容器需按横牌比例调整 */
+.mj-tile--dir-left,
+.mj-tile--dir-right {
+  &.mj-tile--sm { width: 39px; height: 32px; }
+  &.mj-tile--md { width: 51px; height: 42px; }
+  &.mj-tile--lg { width: 68px; height: 55px; }
 }
 </style>

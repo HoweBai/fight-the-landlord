@@ -13,6 +13,7 @@ import {
   canPeng,
   checkHu,
   isForcedHu,
+  isTing,
   tingResult,
 } from '@fight-the-landlord/shared';
 
@@ -30,6 +31,17 @@ function pendingSeats(session: MahjongSession): number[] {
   }
   if (session.state === 'play') return [session.currentPlayer];
   return [];
+}
+
+/** Batch 5：收集所有听牌座位。零作弊风险——只广播座位号。 */
+function tingSeatsOf(session: MahjongSession): number[] {
+  const out: number[] = [];
+  for (const p of session.players) {
+    if (!p || p.isOut) continue;
+    if (p.lackSuit === null) continue; // 未定缺不可能听
+    if (isTing(p.hand, p.melds, p.lackSuit, session.rules)) out.push(p.seat);
+  }
+  return out;
 }
 
 function claimsForMe(session: MahjongSession, seat: number): MahjongClaimOption[] {
@@ -120,6 +132,7 @@ export function buildMahjongView(session: MahjongSession, seat: number): Mahjong
     recentActions: [],
     turnDeadlineAt: session.turnDeadlineAt,
     activeSeats: pendingSeats(session),
+    tingSeats: tingSeatsOf(session),
     dealerSeat: session.dealerSeat,
     wallCount: session.wall.length,
     lackSuits: session.players.map((p) => p.lackSuit),

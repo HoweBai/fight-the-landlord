@@ -110,6 +110,8 @@ export interface MahjongPlayerView extends GameViewBase<Tile> {
   huInfos: MahjongHuInfo[];
   /** 当前窗口待决策座位。 */
   activeSeats: number[];
+  /** Batch 5：当前听牌的座位（含自己）。零作弊风险——只广播座位号。 */
+  tingSeats: number[];
   /** 仅接收者可用的候选动作；服务端算好，客户端只展示。 */
   claimsForMe: MahjongClaimOption[];
   tingTiles?: Tile[];

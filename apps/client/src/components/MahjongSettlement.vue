@@ -40,7 +40,18 @@ function goldCell(seat: number): string {
     const value = balances[seat];
     return value === undefined ? '—' : String(value);
   }
-  return goldFrozen.value ? '—' : '结算中…';
+  // Batch 3：金币冻结时加锁 emoji + 淡灰视觉（只改展示，不改 useGoldColumnFreeze 逻辑）
+  if (goldFrozen.value) return '🔒 结算中…';
+  return '结算中…';
+}
+
+/** Batch 3：番型 emoji 映射表（纯展示，不改 fanDetails 数据）。 */
+const FAN_EMOJI: Record<string, string> = {
+  清一色: '🎴', 七对: '👯', 大对: '🔶', 根: '🌳', 杠上开花: '💥',
+  海底捞月: '🌙', 十三幺: '👻', 对对胡: '🃏', 平胡: '✨', 抢杠胡: '⚡',
+};
+function fanEmoji(name: string): string {
+  return FAN_EMOJI[name] ?? '';
 }
 
 const rows = computed(() =>
@@ -51,7 +62,8 @@ const huazhu = computed(() => new Set(props.settlement.huazhuSeats));
 const fanBySeat = computed(() => {
   const map = new Map<number, string>();
   for (const d of props.settlement.fanDetails) {
-    map.set(d.seat, d.items.length > 0 ? d.items.join('+') : `${d.fan} 番`);
+    // 阻断 B2 修法：join 里加 emoji 前缀（fanBySeat 是 computed 不是模板 map）
+    map.set(d.seat, d.items.length > 0 ? d.items.map(item => fanEmoji(item) + item).join('+') : `${d.fan} 番`);
   }
   return map;
 });
@@ -89,7 +101,7 @@ const eventLines = computed<string[]>(() => {
         break;
       case 'hu':
         lines.push(
-          `胡：${nameOf(e.seat)} ${e.items.length > 0 ? e.items.join('+') : `${e.fan} 番`}${e.fromSeat === null ? '（自摸）' : `（点炮 ${nameOf(e.fromSeat)}）`}`,
+          `胡：${nameOf(e.seat)} ${e.items.length > 0 ? e.items.map(item => fanEmoji(item) + item).join('+') : `${e.fan} 番`}${e.fromSeat === null ? '（自摸）' : `（点炮 ${nameOf(e.fromSeat)}）`}`,
         );
         break;
       case 'transfer':
@@ -119,7 +131,7 @@ const endText = computed(() =>
 </script>
 
 <template>
-  <Panel class="mj-settlement anim-settlement-in" variant="blue">
+  <Panel class="mj-settlement anim-mj-settlement-in" variant="blue">
     <view class="mj-settlement__head">
       <view class="mj-settlement__ribbon">
         <text class="mj-settlement__title">结算</text>

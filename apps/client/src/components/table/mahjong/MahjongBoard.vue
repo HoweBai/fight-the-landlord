@@ -9,8 +9,9 @@
  * 多行动者窗口：`activeSeats` 含我 ⇒ 本窗口轮到我；动作原样回传 `view.windowId`
  *（服务端用它接受窗口内的过期 baseVersion）。
  */
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import {
+  DEFAULT_CHENGDU_RULES,
   MAHJONG_SUIT_NAMES,
   sortTiles,
   tileType,
@@ -21,8 +22,12 @@ import {
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
+import { tingTiles as computeTingTiles } from '@fight-the-landlord/shared';
 import MahjongSeatPanel from './MahjongSeatPanel.vue';
 import MahjongTile from './MahjongTile.vue';
+import MahjongMeld from './MahjongMeld.vue';
+import MahjongHuBanner from './MahjongHuBanner.vue';
+import ClaimTile from './ClaimTile.vue';
 import TurnTimer from '../../TurnTimer.vue';
 import { haptic } from '../../../feedback/haptics';
 
@@ -70,6 +75,28 @@ const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
 const myLack = computed(() => props.view?.lackSuits[me.value] ?? null);
+
+// —— Batch 5 C 组：手牌精确听牌关联高亮 ——
+/** 每张手牌打出后的听牌影响。纯客户端调 shared tingTiles（性能已实测 < 1ms）。 */
+const handTileTingImpact = computed<Array<{
+  index: number;
+  lostCount: number;
+  stillTing: boolean;
+}> | null>(() => {
+  if (tingTiles.value.length === 0 || hand.value.length === 0) return null;
+  if (myLack.value === null) return null;
+  const rules = props.view?.mahjongRules ?? DEFAULT_CHENGDU_RULES;
+  const tingSet = new Set(tingTiles.value.map(tileType));
+  return hand.value.map((tile, i) => {
+    const handWithout = hand.value.filter((_, j) => j !== i);
+    const afterTing = computeTingTiles(handWithout, [], myMelds.value as MahjongMeldView[], myLack.value!, rules);
+    let lostCount = 0;
+    for (const t of tingTiles.value) {
+      if (!afterTing.some((a) => tileType(a) === tileType(t))) lostCount += 1;
+    }
+    return { index: i, lostCount, stillTing: afterTing.length > 0 };
+  });
+});
 const myPendingDelta = computed(() => pendingDelta(me.value));
 const myHu = computed(() => props.view?.huInfos.find((h) => h.seat === me.value) ?? null);
 
@@ -82,26 +109,70 @@ const handSelectable = computed(() => {
 });
 
 const selected = ref<number[]>([]);
+// 双击出牌需要的追踪状态（T4 Batch 1）
+const lastClickIndex = ref<number>(-1);
+const lastClickTime = ref<number>(0);
+// T6 Batch 2：出牌 fly-out 追踪（B2 阻断修法：watch hand 变化时 reset）
+const flyingOutIndex = ref(-1);
+// T4 Batch 2：胡牌 banner 增量判定 + FIFO queue（H3 修法 + B2 跨局 reset）
+const seenHuSeats = new Set<number>();
+const bannerQueue = ref<Array<{ seat: number; fan: number; selfDraw: boolean }>>([]);
+const currentBanner = ref<typeof bannerQueue.value[0] | null>(null);
+// T7 Batch 2：副露 pop 增量判定防中途进入爆炸（B3 阻断修法）
+const initialBootDone = ref(false);
+const seenMeldKeys = new Set<string>();
+const newMeldKeySet = ref<Set<string>>(new Set());
+
+function meldKey(m: MahjongMeldView): string {
+  return `${m.kind}:${m.tiles.map(tileType).join('_')}`;
+}
 // 只在**手牌内容**变化时清空选择：换三张阶段别人提交也会 bump version，
 // 若把 version 纳入 watch 源，我正在选的第 2/3 张会被别人的动作清掉。
 watch(
   () => hand.value.map(tileType).join(','),
   () => {
     selected.value = [];
+    lastClickIndex.value = -1;
+    // T6 Batch 2：fly-out 追踪在手牌变化时 reset（B2 阻断修法）
+    flyingOutIndex.value = -1;
   },
 );
 
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
+  haptic('light');
+
   if (phase.value === 'exchange') {
+    // 换三张：保持原多选逻辑，不触发双击出牌
     const at = selected.value.indexOf(index);
     if (at >= 0) selected.value.splice(at, 1);
     else if (selected.value.length < 3) selected.value.push(index);
-  } else {
-    selected.value =
-      selected.value.length === 1 && selected.value[0] === index ? [] : [index];
+    lastClickIndex.value = -1;
+    return;
   }
-  haptic('light');
+
+  // 出牌窗口内：单击 = 选中高亮；双击（400ms 内同一张）= 直接出牌
+  const now = Date.now();
+  const isDoubleClick =
+    lastClickIndex.value === index && now - lastClickTime.value < 400;
+
+  if (isDoubleClick) {
+    const tile = hand.value[index];
+    if (tile && !props.busy) {
+      // T6 Batch 2：fly-out 追踪在 submit 前赋值（B2+H4 修法）
+      flyingOutIndex.value = index;
+      submit({ type: 'discard', tile });
+      selected.value = [];
+      lastClickIndex.value = -1;
+    }
+    return;
+  }
+
+  // 单击：切换选中
+  selected.value =
+    selected.value.length === 1 && selected.value[0] === index ? [] : [index];
+  lastClickIndex.value = index;
+  lastClickTime.value = now;
 }
 
 const selectedTiles = computed<Tile[]>(() =>
@@ -142,7 +213,10 @@ function selfGangAction(tile: Tile): MahjongAction {
     : { type: 'addedGang', tile };
 }
 function claimLabel(opt: MahjongClaimOption): string {
-  if (opt.claim === 'hu') return phase.value === 'play' ? '自摸胡' : '胡';
+  if (opt.claim === 'hu') {
+    const fanPart = opt.fan ? `${opt.fan} 番` : '';
+    return `${fanPart}${phase.value === 'play' ? '自摸胡' : '胡'}`;
+  }
   if (opt.claim === 'gang') {
     if (phase.value === 'play' && opt.tile) {
       return selfGangAction(opt.tile).type === 'concealedGang' ? '暗杠' : '补杠';
@@ -152,6 +226,18 @@ function claimLabel(opt: MahjongClaimOption): string {
   if (opt.claim === 'peng') return '碰';
   return '过';
 }
+
+// —— Batch 3 新增：ClaimTile 组件用的 submit 函数（阻断 B1 修法）——
+function submitClaim(opt: MahjongClaimOption) {
+  submit({ type: 'claim', claim: opt.claim, tile: opt.tile });
+}
+function submitPass() {
+  // pass 是 MahjongClaim 四值之一（不是 MahjongAction type）
+  submit({ type: 'claim', claim: 'pass' });
+}
+const canPass = computed(() =>
+  (phase.value === 'claim' || phase.value === 'play') && myClaims.value.length > 0,
+);
 function onClaimOption(opt: MahjongClaimOption): void {
   if (props.busy) return;
   if (phase.value === 'play') {
@@ -180,6 +266,84 @@ function seatBalance(seat: number): number | null {
 function pendingDelta(seat: number): number {
   return props.view?.pendingScoreChanges?.find((p) => p.seat === seat)?.delta ?? 0;
 }
+
+/** 座位 → MahjongTile.direction 映射（T5 Batch 1）。
+ *  Atlas 4 方向牌面已预旋转，直接按视觉方位选对应目录。 */
+const SEAT_DIRECTIONS = ['my', 'top', 'left', 'right'] as const;
+type Direction = (typeof SEAT_DIRECTIONS)[number];
+function directionOf(seat: number): Direction {
+  if (seat === me.value) return 'my';
+  if (seat === topSeat.value) return 'top';
+  if (seat === leftSeat.value) return 'left';
+  if (seat === rightSeat.value) return 'right';
+  return 'my'; // 兜底
+}
+
+// —— Batch 4 D 组：claim 窗口多家 active 差异化发光 ——
+/** claim 窗口最早 active = strong，其余 weak；其他窗口统一 strong。 */
+function seatActiveLevel(seat: number): 'strong' | 'weak' | null {
+  const idx = activeSeats.value.indexOf(seat);
+  if (idx === -1) return null;
+  if (phase.value === 'claim') {
+    return idx === 0 ? 'strong' : 'weak';
+  }
+  return 'strong';
+}
+
+// —— Batch 4 A 组：弃牌点击过滤 ——
+const discardClickTarget = ref<Tile | null>(null);
+
+/** SeatPanel 弃牌点击 handler：只在 claim 窗口 + 我 active 时响应。 */
+function onSeatDiscardClick(seat: number, tile: Tile) {
+  if (phase.value !== 'claim' || !amActive.value) return;
+  if (props.settlementArrived) return;
+  // 再次点击同一张 → 取消过滤
+  if (discardClickTarget.value && tileType(discardClickTarget.value) === tileType(tile)) {
+    discardClickTarget.value = null;
+    return;
+  }
+  discardClickTarget.value = tile;
+}
+
+/** 过滤 claimsForMe：只保留 tileType 匹配的选项。
+ *  阻断 B2 修法：game-service 任何 hu 都填 tile（自摸胡=lastDraw，点炮胡=弃牌），
+ *  所以不写 opt.tile === undefined —— claim 窗口的 hu 就是点炮胡（tile=弃牌）。 */
+const filteredClaimsForDiscard = computed<MahjongClaimOption[]>(() => {
+  if (!discardClickTarget.value) return myClaims.value; // 未选中 → 全量
+  const tt = tileType(discardClickTarget.value);
+  return myClaims.value.filter(opt => !!opt.tile && tileType(opt.tile) === tt);
+});
+
+// 高项 H1：discardClickTarget reset 时机
+watch(phase, (to) => { if (to !== 'claim') discardClickTarget.value = null; });
+watch(myClaims, () => { discardClickTarget.value = null; }, { deep: true });
+
+// —— Batch 4 B 组：长按手牌看牌型 ——
+const handHintIndex = ref<number | null>(null);
+
+function onTileLongPress(index: number) {
+  if (!handSelectable.value || phase.value !== 'play') return;
+  if (props.settlementArrived) return;
+  handHintIndex.value = index;
+}
+function closeHandHint() { handHintIndex.value = null; }
+
+// handHintIndex reset
+watch(phase, () => { handHintIndex.value = null; });
+watch(() => hand.value.length, () => { handHintIndex.value = null; });
+
+/** 高项 H4：纯布尔判断（不做牌库搜索）。
+ *  手牌打完这张就没了 → ting 不变 → stillSafe=true
+ *  手牌还有同款 → ting 可能变 → stillSafe=false */
+const handHintAffected = computed(() => {
+  if (handHintIndex.value === null) return null;
+  const hintTile = hand.value[handHintIndex.value];
+  if (!hintTile) return null;
+  const handWithout = hand.value.filter((_, i) => i !== handHintIndex.value!);
+  const stillHas = handWithout.some(t => tileType(t) === tileType(hintTile));
+  return { tile: hintTile, stillSafe: !stillHas };
+});
+
 function seatPanelProps(seat: number) {
   const v = props.view;
   return {
@@ -193,7 +357,8 @@ function seatPanelProps(seat: number) {
     revealed: v?.revealedHands.find((r) => r.seat === seat) ?? null,
     isOut: v?.isOut[seat] ?? false,
     trustee: v?.trustees[seat] ?? false,
-    active: activeSeats.value.includes(seat),
+    activeLevel: seatActiveLevel(seat), // Batch 4 D 组：替换旧 active: boolean
+    ting: (v?.tingSeats ?? []).includes(seat), // Batch 5 B 组：对手听牌徽标
     isMe: seat === me.value,
     isDealer: seat === dealerSeat.value,
     balance: seatBalance(seat),
@@ -219,10 +384,123 @@ const phaseText = computed(() => {
   }
 });
 const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
+
+// —— Batch 2 新增逻辑 ——
+
+/**
+ * T5 Batch 2：定缺推荐。
+ * 找出手牌里唯一最少花色，给对应按钮加呼吸高亮。
+ * hand.length < 10（加载中）、counts 全相等（没有最少）、某花色=0（绝张）都不推荐。
+ */
+const lackRecommendation = computed<MahjongSuit | null>(() => {
+  if (phase.value !== 'lack' || !amActive.value) return null;
+  if (hand.value.length < 10) return null;
+  const counts = [0, 0, 0];
+  for (const t of hand.value) counts[t.s]++;
+  let minIdx = 0, minCount = counts[0];
+  let hasUniqueMin = true;
+  for (let i = 1; i < 3; i++) {
+    if (counts[i] < minCount) { minCount = counts[i]; minIdx = i; hasUniqueMin = true; }
+    else if (counts[i] === minCount) { hasUniqueMin = false; }
+  }
+  if (!hasUniqueMin) return null;
+  if (minCount === 0) return null;
+  return minIdx as MahjongSuit;
+});
+
+/** T4 Batch 2：座位位置百分比（Hu banner 定位用）。 */
+function bannerPosition(seat: number): { leftPct: number; topPct: number } {
+  if (seat === me.value) return { leftPct: 50, topPct: 90 };
+  if (seat === topSeat.value) return { leftPct: 50, topPct: 10 };
+  if (seat === leftSeat.value) return { leftPct: 8, topPct: 50 };
+  return { leftPct: 92, topPct: 50 };
+}
+
+/** T4 Batch 2 + T7 Batch 2：新局开始时 reset 所有跨局 Set（B2 阻断修法）。 */
+watch(
+  () => props.view?.state,
+  (to, from) => {
+    const newRound =
+      (from === 'ended' && to === 'exchange') ||
+      (from === null && to === 'exchange') ||
+      (!!from && from !== 'exchange' && to === 'exchange');
+    if (newRound) {
+      seenHuSeats.clear();
+      bannerQueue.value = [];
+      currentBanner.value = null;
+      seenMeldKeys.clear();
+      newMeldKeySet.value.clear();
+      initialBootDone.value = false;
+      // onMounted 已跑过，手动标记初始为 true（已由上面 clear 重置）
+      // 新局第一次服务端推 melds 时会触发 watch，从空数组开始算增量
+      initialBootDone.value = true;
+    }
+  },
+);
+
+/** T4 Batch 2：胡牌 banner FIFO —— diff Set 找新增 seat（H3 修法）。 */
+watch(
+  () => props.view?.huInfos ?? [],
+  (infos) => {
+    const newlyAdded: typeof bannerQueue.value = [];
+    for (const info of infos) {
+      if (!seenHuSeats.has(info.seat)) {
+        seenHuSeats.add(info.seat);
+        newlyAdded.push({ seat: info.seat, fan: info.fan, selfDraw: info.selfDraw });
+      }
+    }
+    if (newlyAdded.length > 0) {
+      bannerQueue.value.push(...newlyAdded);
+      if (!currentBanner.value) showNextBanner();
+    }
+  },
+  { deep: true },
+);
+
+function showNextBanner() {
+  currentBanner.value = bannerQueue.value.shift() ?? null;
+}
+
+/** T7 Batch 2：防中途进入 mount 爆炸（B3 阻断修法）。 */
+onMounted(() => {
+  // 记录所有玩家的所有已有副露 key —— 中途进入房/重连时已有副露不播 pop
+  for (const seatMelds of props.view?.melds ?? []) {
+    for (const m of seatMelds) {
+      seenMeldKeys.add(meldKey(m));
+    }
+  }
+  initialBootDone.value = true;
+});
+
+/** T7 Batch 2：watch melds 变化，标记增量（新局 started 时已由 cross-round reset 清空）。 */
+watch(
+  () => props.view?.melds ?? [],
+  (allMelds) => {
+    if (!initialBootDone.value) return;
+    for (const seatMelds of allMelds) {
+      for (const m of seatMelds) {
+        const k = meldKey(m);
+        if (!seenMeldKeys.has(k)) {
+          seenMeldKeys.add(k);
+          newMeldKeySet.value.add(k);
+        }
+      }
+    }
+  },
+  { deep: true },
+);
+
+/** T7 Batch 2：MahjongMeld animationend 清理临时标记。 */
+function onMeldPopDone(key: string) {
+  newMeldKeySet.value.delete(key);
+}
 </script>
 
 <template>
   <view class="mj">
+    <!-- 麻将桌底部两个角落装饰（T3 Batch 1） -->
+    <view class="mj__corner-bot mj__corner-bot--l" aria-hidden="true" />
+    <view class="mj__corner-bot mj__corner-bot--r" aria-hidden="true" />
     <view class="mj__bar">
       <view class="mj__bar-left">
         <button
@@ -264,17 +542,27 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
     <view v-if="waitingForDeal" class="mj__waiting">已进房，等待服务端发牌…</view>
     <template v-else>
       <view class="mj__top">
-        <MahjongSeatPanel v-bind="seatPanelProps(topSeat)" compact />
+        <MahjongSeatPanel
+          v-bind="seatPanelProps(topSeat)"
+          :direction="directionOf(topSeat)"
+          compact
+          @discard-click="onSeatDiscardClick(topSeat, $event)"
+        />
       </view>
 
       <view class="mj__mid">
         <view class="mj__side">
-          <MahjongSeatPanel v-bind="seatPanelProps(leftSeat)" compact />
+          <MahjongSeatPanel
+            v-bind="seatPanelProps(leftSeat)"
+            :direction="directionOf(leftSeat)"
+            compact
+            @discard-click="onSeatDiscardClick(leftSeat, $event)"
+          />
         </view>
         <view class="mj__center">
           <text class="mj__phase">{{ phaseText }}</text>
           <view v-if="claimTile" class="mj__claim-tile">
-            <MahjongTile :tile="claimTile" size="md" />
+            <MahjongTile :tile="claimTile" size="md" direction="my" />
           </view>
           <text v-if="endReason > 0 && phase !== 'ended'" class="mj__muted">
             已胡 {{ endReason }} 家
@@ -283,11 +571,22 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
             <text class="mj__ting-label">
               听<template v-if="view?.maxFanForMe !== undefined">（{{ view.maxFanForMe }} 番）</template>
             </text>
-            <MahjongTile v-for="(tile, i) in tingTiles" :key="`ting-${i}`" :tile="tile" size="sm" />
+            <MahjongTile
+              v-for="(tile, i) in tingTiles"
+              :key="`ting-${i}`"
+              :tile="tile"
+              size="sm"
+              direction="my"
+            />
           </view>
         </view>
         <view class="mj__side">
-          <MahjongSeatPanel v-bind="seatPanelProps(rightSeat)" compact />
+          <MahjongSeatPanel
+            v-bind="seatPanelProps(rightSeat)"
+            :direction="directionOf(rightSeat)"
+            compact
+            @discard-click="onSeatDiscardClick(rightSeat, $event)"
+          />
         </view>
       </view>
 
@@ -308,20 +607,29 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
             {{ myPendingDelta > 0 ? `+${myPendingDelta}` : myPendingDelta }}
           </text>
         </view>
-        <view v-for="(meld, i) in myMelds" :key="`my-meld-${i}`" class="mj__my-meld">
-          <text class="mj__my-meld-label">
-            {{ meld.kind === 'peng' ? '碰' : meld.kind === 'gang' ? '杠' : '暗杠' }}
-          </text>
+        <!-- T5 Batch 1: 用 MahjongMeld 独立组件渲染副露；T7 Batch 2: :key 改稳定标识 + :pop 增量动画 -->
+        <MahjongMeld
+          v-for="meld in myMelds"
+          :key="meldKey(meld)"
+          :meld="meld"
+          direction="my"
+          size="sm"
+          :pop="newMeldKeySet.has(meldKey(meld))"
+          @pop-done="onMeldPopDone(meldKey(meld))"
+        />
+        <view v-if="myDiscards.length > 0" class="mj__my-river mj-river">
           <MahjongTile
-            v-for="(tile, j) in meld.tiles"
-            :key="`my-meld-${i}-${j}`"
+            v-for="(tile, i) in myDiscards"
+            :key="`my-discard-${i}`"
             :tile="tile"
-            :back="meld.kind === 'angang'"
             size="sm"
+            direction="my"
+            :class="{
+              'mj__discard--latest': i === myDiscards.length - 1 && myDiscards.length > 0,
+              'mj__discard--selected': discardClickTarget && i === myDiscards.length - 1
+            }"
+            @click="onSeatDiscardClick(me, tile)"
           />
-        </view>
-        <view v-if="myDiscards.length > 0" class="mj__my-river">
-          <MahjongTile v-for="(tile, i) in myDiscards" :key="`my-discard-${i}`" :tile="tile" size="sm" />
         </view>
         <view v-if="myRevealed" class="mj__my-revealed">
           <text class="mj__my-meld-label">已胡</text>
@@ -330,6 +638,7 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
             :key="`my-revealed-${i}`"
             :tile="tile"
             size="sm"
+            direction="my"
             dim
           />
         </view>
@@ -359,10 +668,15 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
             :key="`lack-${suit}`"
             type="button"
             class="btn mj__lack"
+            :class="{
+              'anim-lack-pulse': lackRecommendation === suit,
+              'mj__lack--recommend': lackRecommendation === suit,
+            }"
             :disabled="busy"
             @click="onLack(suit)"
           >
             缺{{ MAHJONG_SUIT_NAMES[suit] }}
+            <text v-if="lackRecommendation === suit" class="mj__lack--hint">推荐</text>
           </button>
         </template>
 
@@ -388,19 +702,15 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
           </button>
         </template>
 
-        <template v-else-if="!settlementArrived && phase === 'claim' && amActive">
-          <button
-            v-for="(opt, i) in myClaims"
-            :key="claimKey(opt, i)"
-            type="button"
-            class="btn mj__claim"
-            :class="{ 'btn--primary': opt.claim === 'hu' }"
-            :disabled="busy"
-            @click="onClaimOption(opt)"
-          >
-            {{ claimLabel(opt) }}
-          </button>
-        </template>
+        <ClaimTile
+          v-else-if="!settlementArrived && phase === 'claim' && amActive"
+          :options="myClaims"
+          :filtered-options="discardClickTarget ? filteredClaimsForDiscard : undefined"
+          :busy="busy"
+          :show-pass="canPass"
+          @claim="submitClaim"
+          @pass="submitPass"
+        />
 
         <text v-else-if="settlementArrived || phase === 'ended'" class="mj__ended">本局结束</text>
         <text v-else class="mj__muted">{{ phaseText }}</text>
@@ -414,18 +724,74 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
         </button>
       </view>
 
-      <view class="mj__hand" :class="{ 'mj__hand--selectable': handSelectable }">
+      <view
+        class="mj__hand mj__hand--relative"
+        :class="{
+          'mj__hand--selectable': handSelectable,
+          'mj__hand--ting': tingTiles.length > 0,
+        }"
+      >
         <MahjongTile
           v-for="(tile, i) in hand"
-          :key="`hand-${i}`"
+          :key="`hand-${phase}-${i}`"
           :tile="tile"
           size="lg"
           :selected="selected.includes(i)"
           :disabled="!handSelectable"
+          :class="{
+            'anim-fly-out': flyingOutIndex === i,
+            'anim-deal-in': phase === 'play',
+            // Batch 5 C 组：手牌精确听牌关联高亮
+            'ting-safe': !!handTileTingImpact?.[i] && handTileTingImpact[i].lostCount === 0 && handTileTingImpact[i].stillTing,
+            'ting-warn': !!handTileTingImpact?.[i] && handTileTingImpact[i].lostCount > 0 && handTileTingImpact[i].stillTing,
+            'ting-danger': !!handTileTingImpact?.[i] && !handTileTingImpact[i].stillTing,
+          }"
+          :style="{ '--ftl-delay': `${i * 30}ms` }"
           @click="onTileClick(i)"
+          @longpress="onTileLongPress(i)"
         />
+        <!-- T3c Batch 3：play 窗口双击等待提示（阻断 B3：已加 position: relative） -->
+        <view
+          v-if="phase === 'play' && handSelectable && selected.length === 1"
+          class="mj__hand-hint"
+        >
+          <text>再点一次出牌（或点"出牌"按钮）</text>
+        </view>
       </view>
     </template>
+
+    <!-- T4 Batch 2：胡牌 banner 浮动 view（position: absolute 相对于 .mj 根元素） -->
+    <MahjongHuBanner
+      v-if="currentBanner"
+      :seat="currentBanner.seat"
+      :fan="currentBanner.fan"
+      :self-draw="currentBanner.selfDraw"
+      :left-pct="bannerPosition(currentBanner.seat).leftPct"
+      :top-pct="bannerPosition(currentBanner.seat).topPct"
+      @done="showNextBanner"
+    />
+
+    <!-- Batch 4 B 组：长按手牌弹层 -->
+    <view
+      v-if="handHintIndex !== null && handHintAffected"
+      class="mj__hand-hint-popup"
+      @click="closeHandHint"
+    >
+      <view class="mj__hand-hint-popup__card" @click.stop>
+        <text class="mj__hand-hint-popup__title">
+          打出 {{ MAHJONG_SUIT_NAMES[handHintAffected.tile.s] }}{{ handHintAffected.tile.r }}
+        </text>
+        <text class="mj__hand-hint-popup__result" :class="{
+          'mj__hand-hint-popup__result--safe': handHintAffected.stillSafe,
+          'mj__hand-hint-popup__result--warn': !handHintAffected.stillSafe,
+        }">
+          {{ handHintAffected.stillSafe ? '✓ 仍能听牌' : '⚠ 可能影响听牌' }}
+        </text>
+        <text v-if="tingTiles.length > 0" class="mj__hand-hint-popup__ting">
+          听 {{ tingTiles.length }} 张
+        </text>
+      </view>
+    </view>
 
     <slot name="overlays" />
   </view>
@@ -444,7 +810,52 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
   padding: $ftl-space-2 $ftl-space-5;
   position: relative;
   color: $ftl-color-text;
+  // 麻将桌背景（T3 Batch 1）
+  background: linear-gradient(180deg, #0e4f28 0%, #1a7a3a 50%, #0e4f28 100%);
+  box-shadow:
+    inset 0 0 120px rgba(0, 30, 15, 0.5),
+    inset 0 0 30px rgba(255, 220, 100, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
 }
+
+// —— 麻将桌角落装饰（T3 Batch 1）——
+.mj::before,
+.mj::after {
+  content: '';
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  z-index: 0;
+  @include ftl-img-contain;
+  opacity: 0.85;
+}
+.mj::before {
+  top: 2px;
+  left: 2px;
+  background: url('/pages/table/static/ui/mahjong-table/Z_corner_ltop.png') no-repeat;
+}
+.mj::after {
+  top: 2px;
+  right: 2px;
+  transform: scaleX(-1);
+  background: url('/pages/table/static/ui/mahjong-table/Z_corner_rtop.png') no-repeat;
+}
+.mj__corner-bot {
+  position: absolute;
+  bottom: 2px;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  z-index: 0;
+  @include ftl-img-contain;
+  opacity: 0.85;
+}
+.mj__corner-bot--l { left: 2px; transform: scaleY(-1);
+  background: url('/pages/table/static/ui/mahjong-table/Z_corner_lbottom.png') no-repeat; }
+.mj__corner-bot--r { right: 2px; transform: scale(-1, -1);
+  background: url('/pages/table/static/ui/mahjong-table/Z_corner_rbottom.png') no-repeat; }
 
 /* —— 顶栏 —— */
 .mj__bar {
@@ -642,6 +1053,7 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
   min-height: 79px;
   padding: $ftl-space-2 0 0;
   overflow-x: auto;
+  position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
 }
 .mj__hand :deep(.mj-tile) {
   margin-left: -18px;
@@ -655,6 +1067,80 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
 .mj__hand--selectable :deep(.mj-tile) {
   cursor: pointer;
 }
+
+/* —— Batch 3：手牌 ting 高亮 + hand hint + 弃牌最新标记 —— */
+.mj__hand--ting::after {
+  content: '听牌中';
+  position: absolute;
+  top: -18px;
+  right: 0;
+  font-size: 10px;
+  color: $ftl-color-gold;
+  font-weight: 700;
+  background: rgba($ftl-color-gold, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+// Batch 5 C 组：手牌精确听牌关联高亮（闸纪律：纯 outline 叠加，不碰 box-shadow/transform）
+:deep(.ting-safe) {
+  outline: 1px solid rgba(74, 222, 128, 0.5); // 绿色：打出后听牌不变
+  outline-offset: -1px;
+}
+:deep(.ting-warn) {
+  outline: 1px solid rgba(251, 191, 36, 0.7); // 黄色：丢听牌
+  outline-offset: -1px;
+}
+:deep(.ting-danger) {
+  outline: 2px solid rgba(248, 113, 113, 0.9); // 红色：打出后不听
+  outline-offset: -2px;
+}
+
+.mj__hand-hint {
+  position: absolute;
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: $ftl-color-gold-light;
+  opacity: 0.8;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.mj__discard--latest {
+  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.5);
+}
+// Batch 4 A 组：弃牌点击选中态 — 用 outline 避免和 .mj__discard--latest 金色 box-shadow 叠加
+.mj__discard--selected {
+  outline: 2px solid $ftl-color-blue;
+  outline-offset: -2px;
+}
+
+// Batch 4 B 组：长按手牌弹层
+.mj__hand-hint-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mj__hand-hint-popup__card {
+  padding: 16px 24px;
+  border-radius: 12px;
+  background: rgba(20, 50, 30, 0.92);
+  border: 2px solid rgba($ftl-color-gold, 0.6);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mj__hand-hint-popup__title { color: rgba(255,255,255,0.9); font-size: 16px; }
+.mj__hand-hint-popup__result--safe { color: #4ade80; font-size: 18px; font-weight: 700; }
+.mj__hand-hint-popup__result--warn { color: #fbbf24; font-size: 18px; font-weight: 700; }
+.mj__hand-hint-popup__ting { color: $ftl-color-text-muted; font-size: 12px; }
 
 /* —— 托管遮罩 —— */
 .mj__trustee-mask {
@@ -753,5 +1239,19 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
   min-width: 40px;
   width: 40px;
   padding: 0;
+}
+
+/* —— Batch 2：定缺推荐高亮 —— */
+.mj__lack--recommend {
+  border-color: $ftl-color-gold-deep !important;
+  background: linear-gradient(180deg, rgba(255, 200, 80, 0.45), rgba(200, 130, 30, 0.5)) !important;
+  color: $ftl-color-on-primary !important;
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.5) !important;
+}
+.mj__lack--hint {
+  margin-left: 4px;
+  font-size: 10px;
+  color: $ftl-color-gold-light;
+  font-weight: 700;
 }
 </style>
