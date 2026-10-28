@@ -826,7 +826,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ### Task 4: 全量验证 + 镜像 + 部署冒烟
 
-- [ ] **Step 1: 本地全量（含 canonical CI 入口）**
+- [x] **Step 1: 本地全量（含 canonical CI 入口）**
 
 ```bash
 pnpm --dir D:/Code/ftl-eng-debt exec turbo run lint build --force
@@ -846,7 +846,7 @@ bcrypt 二进制丢失，从主 worktree 复制同版本 N-API 二进制（仅 n
 `pnpm --dir D:/Code/ftl-eng-debt install --frozen-lockfile --store-dir D:/Code/fight-the-landlord/.pnpm-store`
 预先填充；本机实测默认 store 可用。
 
-- [ ] **Step 2: 工作区干净与提交清单**
+- [x] **Step 2: 工作区干净与提交清单**
 
 ```bash
 git -C D:/Code/ftl-eng-debt status --porcelain
@@ -855,7 +855,7 @@ git -C D:/Code/ftl-eng-debt log --oneline dev..HEAD
 
 Expected: 干净；5 个 commit（docs / Task 0 / B / A / 死物）。
 
-- [ ] **Step 3: 推分支并打临时 tag（用户已批准）**
+- [x] **Step 3: 推分支并打临时 tag（用户已批准）**
 
 ```bash
 git -C D:/Code/ftl-eng-debt push origin chore/eng-debt
@@ -867,7 +867,7 @@ git -C D:/Code/ftl-eng-debt push origin "$TAG"
 
 Expected: `dev-` 前缀只触发 images workflow。
 
-- [ ] **Step 4: 等 images workflow 14/14**
+- [x] **Step 4: 等 images workflow 14/14**
 
 ```bash
 TAG="dev-$(git -C D:/Code/ftl-eng-debt rev-parse --short=7 HEAD)"
@@ -886,7 +886,7 @@ gh run watch "$RUN_ID" --exit-status
 
 Expected: 成功；构建 14 个镜像。
 
-- [ ] **Step 5: 部署测试服 + 冒烟**
+- [x] **Step 5: 部署测试服 + 冒烟**
 
 ```bash
 # ⚠️ 从主工作区执行：`.env.deploy.local` 是 gitignored 的，只存在于主工作区。
@@ -901,12 +901,36 @@ room-service 两条订阅在、`PUBSUB NUMSUB match:events game:events` = 1/1、
 3 人实时探针（room.match → room.matched → game.deal）全收到（测试服 sameIp/sameDevice
 开着，等待 ≥75s）。
 
-- [ ] **Step 6: 交付报告**
+- [x] **Step 6: 交付报告**
 
 报告：5 个 commit SHA、验证证据、镜像 run ID、部署 tag、冒烟结果、回滚目标
 `dev-d064da1`、未做事项（Node20/digest/qs 等）。
 
 ---
+
+## 执行记录（2026-10-28）
+
+- 分支 `chore/eng-debt`，worktree `D:/Code/ftl-eng-debt`；5 个实现 commit：
+  `97cb74f0`（docs/spec+plan）、`f4d99a07`（cherry-pick 0e69dea8）、`24181d1f`（B）、
+  `3f44ba84`（A）、`be8e7fdc`（死物）。
+- Task 0：cherry-pick 后 `turbo run lint build --force` = 30/30，0 cached。
+- B：patches 闸红（10 条 stale）→ 删除后绿；workspace 闸绿；shared 404/404。
+- A：frozen 闸红（10 条 forbidden）→ 改后绿；`turbo lint build` 30/30；
+  安装上下文：room-service frozen 0 / drift 1（`ERR_PNPM_OUTDATED_LOCKFILE`）/ edge frozen 0；
+  frozen 安装 lockfile 逐字节不变。
+- 死物：`turbo run test --force` 30/30，`turbo run lint --force` 18/18，k8s 绿。
+- 最终本地验证：`turbo run test --force --concurrency=1` = **30/30，0 cached**；
+  coverage 行 **96.71%**（407 tests）；verify:shutdown / verify:k8s / check-audit 全绿。
+- `scripts/ci.sh` 两次在阶段 4 遇到既有环境 flake（`fetch failed / bad port`；一次 api-gateway，
+  一次 config-service；两包单跑分别 505/505、492/492，api-gateway 连跑 5 次全绿）。
+  同一 30/30 的 turbo 全量在串行下稳定通过 ⇒ 判定为并行环境 flake，不计本次改动。
+- 镜像：tag `dev-be8e7fd` → images run `40692537476` **success（14/14，4m45s）**。
+- 部署：`deploy.sh dev-be8e7fd` → `✅ 部署完成`（冒烟三条第 2 次尝试通过）。
+- 测试服冒烟：钉 IP `119.28.232.11` `/api/health` **200**；edge 内 APK sha
+  `41878645…` = Release 资产；`/admin/app.js` sha `9db6b1f9…` = tag 工作树；
+  room-service 日志 `Subscribed to match:events/game:events` + `Match scan loop started`；
+  `PUBSUB NUMSUB match:events game:events` = **1/1**；`dev-be8e7fd` 镜像容器 15 个。
+- 回滚目标：`dev-d064da1`。
 
 ## Self-Review
 
