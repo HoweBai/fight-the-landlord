@@ -262,3 +262,36 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
 | L9 | 低 | 窗口衰减自动解除循环 | spec D20-8 登记 |
 | L10 | 低 | 每 check 3 条丢玩法证据 | 每 (check,gameType) 3 条 |
 | L11 | 低 | 整玩法冻结过宽 | spec D11/D20-9 登记安全取向 |
+
+## 代码审查记录（2026-10-28，独立 reviewer 审 `13ac394f..HEAD`）
+
+**Critical 0 / Important 0 / Minor 7 / PLAUSIBLE 3**。逐条处置见 spec §10.2；修复提交
+`e7355ce2`（含 M1–M7、P2、P3；P1 登记为与既有 `RiskScanStalled` 共享的多副本抓取债务）。
+另有一条**与本片无关的既有 lint 红**在首轮全量 turbo 暴露：
+`packages/room-service/test/ws.gateway.test.ts:2916` TS2345（`62d5bbd3` 订阅修复后遗症，
+文件与 dev 逐字相同）⇒ 最小修复独立提交 `0e69dea8`，运行期零变化。
+
+## 执行记录（2026-10-28）
+
+- 分支：`feature/pdk-trust-c3`（自 `dev@13ac394f` 开出）。
+- 提交（按序）：`0afac76a` 文档 v2 → `b10e8370` 指标/SQL → `595ebca4` 采集判定 →
+  `58462c47` reason 玩法维度 → `2fb7f21d` 扫描接入 → `47f3c25c` 告警 41/38 →
+  `44fc67a1` slice-36 → `0e69dea8` 既有 lint 修复 → `e7355ce2` 代码审查修复。
+- 本机验证（最终树）：
+  - `pnpm -C packages/user-service test`：29 文件 / **452 tests** 全绿；
+    `lint`（tsc 双配置）通过。
+  - 全量 `pnpm exec turbo run test lint --force --concurrency=1`：**45/45 successful，
+    0 cached**（3m41s）。关键读数：user 452 · room 1009 · currency 592 · config 492 ·
+    game 278 · payment 465 · gateway 505 · robot 146 · client 1541。
+  - `node scripts/verify-monitoring.mjs`：**288 checks**；判别力自证（
+    `RiskFundScanStalled` 的 severity 移出 labels ⇒ 1 FAILED）执行并恢复。
+  - `pnpm verify:admin`：**620 checks**；`tools/conformance` tsc 双配置通过；
+    `check-baselines.mjs --self-test` 4/4；`baselines.json` JSON 校验通过。
+  - 基线：slice-18 152 / slice-24 226（各 +1 名集断言）；slice-36 = **64**（静态计数）。
+- **真栈：本机 Docker 不可用（`docker` 命令不存在）⇒ slice-36 仅 tsc，未跑；登记
+  「待权威轮」**。按 spec §8.7：slice-36 未过权威轮不得称 C3 完成/不得合 dev。
+  当前种子下仅 sameDevice 与 DDZ highRake 可响（PDK 2 人/金币场关闭、rake=0；
+  本片不改开关）。
+- 已知边界：spec §6.1（含 P1 多副本抓取粘滞、`money_delta` 晚到 NULL、>26h 晚到、
+  rake=0、整玩法冻结粗粒度、窗口衰减自动解除循环）。
+- 工作区：干净；diff 无迁移/配置键/协议/客户端/admin 代码。
