@@ -50,7 +50,7 @@ export const NAMED_PRIORITY = [
   'shiBaLuoHan',
 ] as const;
 
-const NAMED_LABELS: Record<string, string> = {
+export const NAMED_LABELS: Record<string, string> = {
   pingHu: '平胡',
   duiDuiHu: '对对胡',
   qingYiSe: '清一色',

@@ -131,6 +131,7 @@ npm run verify:admin
 npm run verify:admin-players
 npm run verify:admin-agents
 npm run verify:admin-config-tabs
+npm run verify:admin-mahjong-rules
 npm run verify:agent
 npm run verify:monitoring
 finish_stage

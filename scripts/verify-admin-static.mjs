@@ -128,6 +128,7 @@ for (const id of [
   'settings-rows',
   'nav-cfg-ddz-btn',
   'nav-cfg-pdk-btn',
+  'nav-cfg-mahjong-btn',
   'nav-cfg-economy-btn',
   'nav-cfg-paycfg-btn',
   'nav-cfg-riskcfg-btn',
@@ -949,6 +950,19 @@ for (const id of htmlCfgLeaves) {
   ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
 }
 
+/* 2026-10-28 麻将片回归：麻将域进了 CONFIG_IA（含备注/控件/JSON 编辑器），却漏了左树叶。
+ * 键在 IA_KEY_SET 里 ⇒ 也不落「未分组」兜底桶 ⇒ 刷新后配置页除搜索框外无任何入口。
+ * 防回潮：每个玩法域（headerKeys 非空）都必须有同名域的 CFG_NAV 叶。 */
+const cfgNavDomainIds = [...cfgNavBlock.matchAll(/domain:\s*'([^']+)'/g)].map((m) => m[1]);
+const iaGameDomainIds = iaDomainsForTabs
+  .flatMap((g) => g.domains ?? [])
+  .filter((d) => (d.headerKeys ?? []).length > 0)
+  .map((d) => d.id);
+ok(iaGameDomainIds.length > 0, 'CONFIG_IA 含玩法域（headerKeys 非空）');
+for (const id of iaGameDomainIds) {
+  ok(cfgNavDomainIds.includes(id), `玩法域 '${id}' 已登记左树叶（CFG_NAV.domain）`);
+}
+
 const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];
 for (const id of AGENT_TAB_IDS) {
   ok(html.includes(`id="agent-tab-${id}"`), `index.html 含页签按钮 #agent-tab-${id}`);
@@ -1021,6 +1035,19 @@ const buildSimpleRowBlock = functionBody(app, 'function buildSimpleRow');
 ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色收权');
 ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
 ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
+
+/* ── 12. 四川麻将规则表单（2026-10-29）────────────────────────── */
+const mjFormBlock = balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}');
+ok(mjFormBlock.length > 500, `麻将规则描述表块可提取且非空（实测 ${mjFormBlock.length} 字符）`);
+for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
+  ok(mjFormBlock.includes(`title: '${title}'`), `麻将表单分组：${title}`);
+}
+ok(app.includes('function buildMahjongRulesEditor'), '麻将规则表单渲染器存在');
+ok(!app.includes('function buildRulesJsonEditor'), 'raw JSON 编辑器已移除');
+ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
+ok(app.includes('按预设重置全部规则'), '预设重置按钮文案');
+ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮文案');
+ok(app.includes('按服务端默认补齐'), '缺字段补齐按钮文案');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {

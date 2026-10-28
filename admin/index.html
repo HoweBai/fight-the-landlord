@@ -79,7 +79,7 @@
         左 #side-nav = 全站一棵树（玩法 / 通用设置（含动态「未分组」叶）/ 渠道与凭据 /
           运营 / 安全与审计）。11 个既有 nav-*-btn 原样保 id（显隐仍是角色门面，
           app.js 的 applyRoleNav；广告回调已并入广告配置页，其按钮改为 hidden 锚点）；
-          配置域 5 叶为新 id nav-cfg-*-btn（app.js openCfgDomain 驱动）；
+          配置域叶为新 id nav-cfg-*-btn（app.js openCfgDomain 驱动）；
           nav-config-btn 无叶可挂但 VIEWS.config.nav 运行时引用，以 hidden 锚点保留。
         右 #content-host = 一次只显一个内容：#settings-host（配置域内联设置行（广告域含
           广告回调面板）/ 凭据两页）或 8 个整页 view（钱包/财务/订单/退款/提现/风控/审计/账号）。
@@ -96,6 +96,7 @@
         <p class="nav-group-title">玩法</p>
         <button id="nav-cfg-ddz-btn" type="button" class="nav-leaf">斗地主<span class="nav-count" id="nav-count-ddz"></span></button>
         <button id="nav-cfg-pdk-btn" type="button" class="nav-leaf">跑得快<span class="nav-count" id="nav-count-pdk"></span></button>
+        <button id="nav-cfg-mahjong-btn" type="button" class="nav-leaf">四川麻将<span class="nav-count" id="nav-count-mahjong"></span></button>
 
         <p class="nav-group-title">通用设置</p>
         <button id="nav-cfg-economy-btn" type="button" class="nav-leaf">货币经济<span class="nav-count" id="nav-count-economy"></span></button>

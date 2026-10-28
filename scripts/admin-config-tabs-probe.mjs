@@ -53,6 +53,9 @@ const SNAPSHOT = {
   'game.paodekuai.enabled': false,
   'game.paodekuai.twoPlayerEnabled': false,
   'game.paodekuai.freeRoomEnabled': true,
+  'game.mahjong.enabled': false,
+  'game.mahjong.freeRoomEnabled': false,
+  'game.mahjong.entryMultiplier': 10,
   'ad.reliefAdpid': 'adunit-1',
 };
 
@@ -190,6 +193,21 @@ ok(
     q(window, '#settings-rows .cfg-tabs') === stripBefore &&
     activeBtn() === btnBefore,
   '重复点 active 页签不重建 DOM',
+);
+
+// 麻将域叶（2026-10-28 回归）：域进了 CONFIG_IA 但曾漏 CFG_NAV/HTML 叶 ⇒
+// 刷新后配置页除搜索框外无任何麻将入口。此处按用户路径自证：叶可见 + 点击可切域渲染。
+ok($(window, 'nav-cfg-mahjong-btn') !== null, '存在麻将域叶 #nav-cfg-mahjong-btn');
+ok($(window, 'nav-cfg-mahjong-btn')?.hidden === false, '麻将域叶可见（快照含麻将键）');
+ok(clickIf(window, 'nav-cfg-mahjong-btn'), '点击麻将域叶');
+await sleep(40);
+ok(tabs().length === 3, `四川麻将 3 个页签（实测 ${tabs().length}）`);
+ok(activeTabText() === '场次开关', `麻将默认=第一个有键页签（实测 ${activeTabText()}）`);
+ok(keyCard('game.mahjong.enabled') !== null, '麻将总开关键卡存在');
+ok(keyCard('game.mahjong.freeRoomEnabled') !== null, '麻将免费场键卡存在');
+ok(
+  $(window, 'nav-cfg-mahjong-btn')?.classList.contains('active'),
+  '麻将域叶高亮（cfgUI.domainId=mahjong）',
 );
 
 // 单页签域：无页签条
