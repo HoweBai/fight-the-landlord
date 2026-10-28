@@ -240,7 +240,11 @@ loadHapticsPrefs();
 preheatCues(PREHEAT_CUES);
 /** T11：麻将用自己的两首 BGM（大厅/对局），其余玩法沿用斗地主牌桌 BGM。 */
 const tableBgm = computed<string>(() =>
-  store.gameType === 'mahjong' ? CUES.BgmMahjong : CUES.BgmTable,
+  store.gameType === 'mahjong'
+    ? store.mahjongView?.state === 'play'
+      ? CUES.BgmMahjongFight
+      : CUES.BgmMahjong
+    : CUES.BgmTable,
 );
 playBgm(tableBgm.value);
 useTableSound();
