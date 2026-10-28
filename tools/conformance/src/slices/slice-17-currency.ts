@@ -641,8 +641,8 @@ export async function runSlice17(): Promise<Checks> {
       mysqlText(
         `SELECT GROUP_CONCAT(CONCAT(column_name,':',column_type) ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='currency_ops'`,
       ),
-      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16)',
-      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 两列 + A2 game_type 尾追）',
+      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16),burned_penalty:int',
+      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 三列（含麻将花猪 burned_penalty）+ A2 game_type 尾追）',
     );
     checks.eq(
       mysqlText(
