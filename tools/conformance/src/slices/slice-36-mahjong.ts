@@ -11,8 +11,7 @@
  */
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { assertNoLeak, Checks, ConformanceError, info, sleep, step } from '../lib/assert';
-import { adminGetConfig, adminLogin, adminPutConfig, getJson, registerUser } from '../lib/http';
-import { HarnessClient } from '../lib/client';
+import { adminGetConfig, adminLogin, adminPutConfig, getJson } from '../lib/http';
 import {
   currentMahjongView,
   playMahjongToEnd,
@@ -50,35 +49,9 @@ async function enableMahjong(): Promise<{ disable: () => Promise<void> }> {
   await putOrThrow(admin, MAHJONG_FREE_KEY, true);
   await putOrThrow(admin, MAHJONG_ENABLED_KEY, true);
 
-  const probeUser = await registerUser(130);
-  const probe = await HarnessClient.connect('S36-probe', probeUser);
-  const deadline = Date.now() + 60_000;
-  try {
-    for (;;) {
-      const ack = await probe.send('room.match', {
-        mode: 'random',
-        baseScore: 15,
-        gameType: 'mahjong',
-        playerCount: 4,
-      });
-      if (ack.code === ErrCode.OK) break;
-      if (Date.now() >= deadline) {
-        throw new ConformanceError(
-          `麻将开关 60s 内未生效（最后一次 room.match code=${ack.code} ${JSON.stringify(ack.message)}）`,
-        );
-      }
-      await sleep(1000);
-    }
-    const off = await probe.send('room.unmatch', {});
-    if (off.code !== ErrCode.OK) {
-      throw new ConformanceError(`探针 room.unmatch 失败：code=${off.code}`);
-    }
-    // 等一个配置广播周期：room-service 的匹配扫描器每 5s 一轮，且本片刚改了 4 个键。
-    await sleep(2000);
-    info('麻将开关已开启（enabled + freeRoomEnabled）');
-  } finally {
-    probe.close();
-  }
+  // 配置广播 + 匹配扫描器各 5s 一轮：等一个完整周期再入队（不造探针票，避免第 5 张票干扰匹配）。
+  await sleep(5000);
+  info('麻将开关已开启（enabled + freeRoomEnabled）');
 
   return {
     disable: async () => {
