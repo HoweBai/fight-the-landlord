@@ -70,7 +70,7 @@ const wallCount = computed(() => props.view?.wallCount ?? 0);
 const dealerSeat = computed(() => props.view?.dealerSeat ?? 0);
 const activeSeats = computed<readonly number[]>(() => props.view?.activeSeats ?? []);
 const amActive = computed(() => activeSeats.value.includes(me.value));
-const myClaims = computed<readonly MahjongClaimOption[]>(() => props.view?.claimsForMe ?? []);
+const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsForMe ?? [])]);
 const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
@@ -86,10 +86,9 @@ const handTileTingImpact = computed<Array<{
   if (tingTiles.value.length === 0 || hand.value.length === 0) return null;
   if (myLack.value === null) return null;
   const rules = props.view?.mahjongRules ?? DEFAULT_CHENGDU_RULES;
-  const tingSet = new Set(tingTiles.value.map(tileType));
-  return hand.value.map((tile, i) => {
+  return hand.value.map((_tile, i) => {
     const handWithout = hand.value.filter((_, j) => j !== i);
-    const afterTing = computeTingTiles(handWithout, [], myMelds.value as MahjongMeldView[], myLack.value!, rules);
+    const afterTing = computeTingTiles(handWithout, myMelds.value as MahjongMeldView[], myLack.value!, rules);
     let lostCount = 0;
     for (const t of tingTiles.value) {
       if (!afterTing.some((a) => tileType(a) === tileType(t))) lostCount += 1;
@@ -229,7 +228,7 @@ function claimLabel(opt: MahjongClaimOption): string {
 
 // —— Batch 3 新增：ClaimTile 组件用的 submit 函数（阻断 B1 修法）——
 function submitClaim(opt: MahjongClaimOption) {
-  submit({ type: 'claim', claim: opt.claim, tile: opt.tile });
+  submit({ type: 'claim', claim: opt.claim });
 }
 function submitPass() {
   // pass 是 MahjongClaim 四值之一（不是 MahjongAction type）
@@ -294,7 +293,7 @@ function seatActiveLevel(seat: number): 'strong' | 'weak' | null {
 const discardClickTarget = ref<Tile | null>(null);
 
 /** SeatPanel 弃牌点击 handler：只在 claim 窗口 + 我 active 时响应。 */
-function onSeatDiscardClick(seat: number, tile: Tile) {
+function onSeatDiscardClick(_seat: number, tile: Tile) {
   if (phase.value !== 'claim' || !amActive.value) return;
   if (props.settlementArrived) return;
   // 再次点击同一张 → 取消过滤
@@ -828,7 +827,8 @@ function onMeldPopDone(key: string) {
   height: 72px;
   pointer-events: none;
   z-index: 0;
-  @include ftl-img-contain;
+  background-size: contain;
+  background-position: center;
   opacity: 0.85;
 }
 .mj::before {
@@ -849,7 +849,8 @@ function onMeldPopDone(key: string) {
   height: 72px;
   pointer-events: none;
   z-index: 0;
-  @include ftl-img-contain;
+  background-size: contain;
+  background-position: center;
   opacity: 0.85;
 }
 .mj__corner-bot--l { left: 2px; transform: scaleY(-1);
@@ -1113,7 +1114,7 @@ function onMeldPopDone(key: string) {
 }
 // Batch 4 A 组：弃牌点击选中态 — 用 outline 避免和 .mj__discard--latest 金色 box-shadow 叠加
 .mj__discard--selected {
-  outline: 2px solid $ftl-color-blue;
+  outline: 2px solid $ftl-color-primary;
   outline-offset: -2px;
 }
 

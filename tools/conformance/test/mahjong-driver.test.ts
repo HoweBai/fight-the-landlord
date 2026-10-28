@@ -26,6 +26,7 @@ function view(over: Partial<MahjongPlayerView> = {}): MahjongPlayerView {
     recentActions: [],
     turnDeadlineAt: 0,
     activeSeats: [0],
+    tingSeats: [],
     dealerSeat: 0,
     wallCount: 40,
     lackSuits: [null, null, null, null],

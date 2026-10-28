@@ -25,6 +25,7 @@ function baseView(): MahjongPlayerView {
     recentActions: [],
     turnDeadlineAt: Date.now() + 5000,
     activeSeats: [0],
+    tingSeats: [],
     dealerSeat: 0,
     wallCount: 40,
     lackSuits: [null, null, null, null],
