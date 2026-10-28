@@ -14,10 +14,13 @@
 - 单键不变：`game.mahjong.rules` 仍是整对象原子保存；`preset` 永不进入普通保存路径（D3）。
 - 番表读写语义（D9）：**快照中存在的番键，输入为空 ⇒ 写 0**；快照中不存在的番键，输入为空 ⇒ 省略。未知顶层键/番种键原样保留（D6）。
 - 文案以 `docs/games/mahjong.md` + 代码实际行为为准；`refundOnDraw` 两档、`selfDrawMode` 的 `addBase/addPoint`、`chajiaoAllSameState` 两档**当前同义**，表单必须如实写明。
-- 每个任务 TDD：先红 → 最小实现 → 绿 → 提交；提交信息末尾：
+- **每个任务结束时的提交都必须可部署**：不允许「保存会丢编辑」的中间态进入任何一次提交。
+- 每个任务 TDD：先红 → 最小实现 → 绿 → 提交（**一致性闸**除外——见 Task 6，首跑预期即绿，若红先对齐文案）。提交信息末尾：
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+- 卡片内**不得**出现 `.row-state`（`setRowState` 取卡内第一个 `.row-state`，`admin/app.js:2600-2605`）；字段错误用 `.mj-field-err`。
 - 验证命令（Windows 优先）：
   - `pnpm --filter @fight-the-landlord/test-utils build`
+  - `pnpm -C packages/test-utils test`
   - `pnpm -C packages/protocol test -- admin-rules-form.gate`
   - `pnpm -C packages/shared test -- admin-mahjong-labels.gate`
   - `node scripts/verify-admin-static.mjs`（期望 `admin static verify: N checks passed`）
@@ -32,9 +35,9 @@
 | `admin/app.js` | 描述表 `MAHJONG_RULES_FORM`、预设名表、渲染器、`CONFIG_NOTES` / `STRUCT_META` 文案 |
 | `admin/style.css` | `.mj-*` 分组/番表/信息条/护栏样式 |
 | `scripts/admin-mahjong-rules-form-probe.mjs` | 新 jsdom 探针（渲染/保存/重置/护栏/自救） |
-| `scripts/verify-admin-static.mjs` | 新增表单针脚 |
+| `scripts/verify-admin-static.mjs` | 新增表单针脚（块级） |
 | `scripts/ci.sh`、`package.json` | 探针接线（stage 7 + `verify:admin-mahjong-rules`） |
-| `packages/test-utils/src/extract-js-literal.ts`、`index.ts` | 跨包测试工具：从源码提取纯对象字面量 |
+| `packages/test-utils/src/extract-js-literal.ts`、`index.ts`、`test/extract-js-literal.test.ts` | 跨包测试工具 + 单测 |
 | `packages/protocol/src/mahjong/admin-rules-form.gate.test.ts` | 行为级门禁（真解析器验证描述表） |
 | `packages/shared/src/mahjong/scoring.ts` | `NAMED_LABELS` 加 `export`（无行为变化） |
 | `packages/shared/test/admin-mahjong-labels.gate.test.ts` | 番名一致性门禁 |
@@ -49,7 +52,7 @@
 - Modify: `admin/app.js`、`admin/index.html`、`scripts/verify-admin-static.mjs`、`scripts/admin-config-tabs-probe.mjs`（cherry-pick 带来）
 
 **Interfaces:**
-- Consumes: `majiang` 分支上的 `053a63a1`（已 `git apply --check` 通过）。
+- Consumes: `majiang` 分支上的 `053a63a1`（已实测可干净应用）。
 - Produces: `#nav-cfg-mahjong-btn` / `#nav-count-mahjong` 左树叶；`CFG_NAV` 含 mahjong 域。
 
 - [ ] **Step 1: cherry-pick**
@@ -59,7 +62,7 @@ cd d:/Code/pokergame
 git cherry-pick 053a63a1
 ```
 
-Expected: 无冲突（若冲突，保留本仓当前内容 + 只补 CFG_NAV 的 mahjong 项与 index.html 按钮）。
+Expected: 无冲突。
 
 - [ ] **Step 2: 跑既有闸**
 
@@ -68,17 +71,17 @@ node scripts/verify-admin-static.mjs
 node scripts/admin-config-tabs-probe.mjs
 ```
 
-Expected: 两个脚本均 `all checks passed` / `checks passed`。
+Expected: 两个脚本均 `checks passed` / `all checks passed`。
 
 - [ ] **Step 3: 验证入口可达**
 
 ```bash
-node -e "const s=require('fs').readFileSync('admin/app.js','utf8');console.log(/nav-cfg-mahjong-btn/.test(s), /\{ leaf: 'nav-cfg-mahjong-btn'/.test(s))"
+node -e "const s=require('fs').readFileSync('admin/app.js','utf8');console.log(/\{ leaf: 'nav-cfg-mahjong-btn'/.test(s), require('fs').readFileSync('admin/index.html','utf8').includes('nav-cfg-mahjong-btn'))"
 ```
 
 Expected: `true true`。
 
-- [ ] **Step 4: 提交（cherry-pick 已生成提交，此步仅确认）**
+- [ ] **Step 4: 确认提交**
 
 ```bash
 git log -1 --oneline
@@ -89,28 +92,80 @@ Expected: 顶部为 `fix(admin): 四川麻将配置域补左树叶…`；工作�
 
 ---
 
-### Task 1: 描述表 + 提取工具 + protocol 行为级门禁
+### Task 1: 提取工具（含注释态）+ 描述表 + protocol 行为级门禁
 
 **Files:**
 - Create: `packages/test-utils/src/extract-js-literal.ts`
+- Create: `packages/test-utils/test/extract-js-literal.test.ts`
 - Modify: `packages/test-utils/src/index.ts`
 - Create: `packages/protocol/src/mahjong/admin-rules-form.gate.test.ts`
 - Modify: `admin/app.js`（新增 `MAHJONG_RULES_FORM` 与 `MAHJONG_PRESET_LABELS`，放在 `STRUCT_META` 之后）
 
 **Interfaces:**
-- Produces: `extractJsLiteral(source: string, constName: string): unknown`（test-utils 导出，找不到/不平衡直接 throw）。
-- Produces: `MAHJONG_RULES_FORM = { fanLabels, tables, groups }`（admin 全局常量，纯字面量）。
+- Produces: `extractJsLiteral(source: string, constName: string): unknown`（test-utils 导出；找不到/不平衡直接 throw；感知 `' " \`` 与 `//`、`/* */` 注释；**不感知正则字面量**，README 注释里声明）。
+- Produces: `MAHJONG_RULES_FORM = { fanLabels, tables, groups }`（admin 全局常量，纯字面量，可含注释）。
 - Produces: `MAHJONG_PRESET_LABELS = { chengdu: '成都血战到底', sbr: 'SBR 竞技近似' }`。
 
-- [ ] **Step 1: 先写提取工具与门禁（失败测试）**
+- [ ] **Step 1: 先写单测（红）**
+
+`packages/test-utils/test/extract-js-literal.test.ts`：
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { extractJsLiteral } from '../src/extract-js-literal';
+
+describe('extractJsLiteral', () => {
+  it('提取嵌套字面量，忽略字符串与注释里的括号/引号', () => {
+    const src = `
+const OTHER = { a: 1 };
+const TARGET = {
+  // it's a 'line' comment with { braces } and a quote
+  /* block 'comment' with } and "quotes" */
+  a: { b: 'x}y', c: "q{z", d: \`t{w\` },
+  e: true,
+};
+const AFTER = 1;
+`;
+    expect(extractJsLiteral(src, 'TARGET')).toEqual({
+      a: { b: 'x}y', c: 'q{z', d: 't{w' },
+      e: true,
+    });
+  });
+
+  it('找不到 const ⇒ 抛错（绝不静默）', () => {
+    expect(() => extractJsLiteral('const A = {};', 'MISSING')).toThrow(/未找到/);
+  });
+
+  it('括号不平衡 ⇒ 抛错', () => {
+    expect(() => extractJsLiteral('const A = { a: 1;', 'A')).toThrow(/不平衡/);
+  });
+
+  it('处理转义引号', () => {
+    const src = String.raw`const A = { s: 'it\'s ok' };`;
+    expect(extractJsLiteral(src, 'A')).toEqual({ s: "it's ok" });
+  });
+});
+```
+
+- [ ] **Step 2: 跑单测确认红**
+
+```bash
+pnpm -C packages/test-utils test -- extract-js-literal
+```
+
+Expected: FAIL —— 模块不存在。
+
+- [ ] **Step 3: 实现并导出**
 
 `packages/test-utils/src/extract-js-literal.ts`：
 
 ```ts
 /**
  * 从 JS/TS 源码文本里提取 `const <name> = { … };` 的**纯字面量**并求值。
- * 字符串感知（跳过 ' / " / ` 内的括号与转义）；找不到或括号不平衡 ⇒ 抛错。
- * 纪律：绝不静默返回 undefined —— 门禁提取失败必须是响亮的红。
+ *
+ * 扫描器感知：单/双/反引号字符串（含转义）、`//` 行注释、`/* *\/` 块注释。
+ * **不感知正则字面量**（`/…/`）——被测字面量里不应出现正则；写入新用例时注意。
+ * 纪律：找不到 / 括号不平衡 ⇒ 抛错，绝不静默返回 undefined（门禁提取失败必须是响亮的红）。
  */
 export function extractJsLiteral(source: string, constName: string): unknown {
   const marker = `const ${constName} =`;
@@ -120,14 +175,38 @@ export function extractJsLiteral(source: string, constName: string): unknown {
   if (open < 0) throw new Error(`${marker} 后没有对象字面量`);
   let depth = 0;
   let quote = '';
+  let lineComment = false;
+  let blockComment = false;
   for (let i = open; i < source.length; i += 1) {
     const ch = source[i];
+    const next = source[i + 1];
+    if (lineComment) {
+      if (ch === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (ch === '*' && next === '/') {
+        blockComment = false;
+        i += 1;
+      }
+      continue;
+    }
     if (quote) {
       if (ch === '\\') {
         i += 1;
         continue;
       }
       if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      lineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      blockComment = true;
+      i += 1;
       continue;
     }
     if (ch === "'" || ch === '"' || ch === '`') {
@@ -152,6 +231,17 @@ export function extractJsLiteral(source: string, constName: string): unknown {
 ```ts
 export { extractJsLiteral } from './extract-js-literal';
 ```
+
+- [ ] **Step 4: 跑单测确认绿**
+
+```bash
+pnpm --filter @fight-the-landlord/test-utils build
+pnpm -C packages/test-utils test -- extract-js-literal
+```
+
+Expected: 4/4 PASS。
+
+- [ ] **Step 5: 写 protocol 门禁（红）**
 
 `packages/protocol/src/mahjong/admin-rules-form.gate.test.ts`：
 
@@ -327,20 +417,19 @@ describe('MAHJONG_RULES_FORM ⇄ protocol', () => {
 });
 ```
 
-- [ ] **Step 2: 跑门禁确认红**
+- [ ] **Step 6: 跑门禁确认红**
 
 ```bash
-pnpm --filter @fight-the-landlord/test-utils build
 pnpm -C packages/protocol test -- admin-rules-form.gate
 ```
 
-Expected: FAIL — `未找到 const MAHJONG_RULES_FORM =`。
+Expected: FAIL —— `未找到 const MAHJONG_RULES_FORM =`。
 
-- [ ] **Step 3: 写描述表（admin/app.js，`STRUCT_META` 之后）**
+- [ ] **Step 7: 写描述表（admin/app.js，`STRUCT_META` 之后）**
 
 ```js
 /* ── 四川麻将规则表单（2026-10-29）────────────────────────────────
- * 描述表是**纯字面量**（无外部标识符、无函数）：protocol 门禁
+ * 描述表是**纯字面量**（无外部标识符、无函数，可含注释）：protocol 门禁
  * packages/protocol/src/mahjong/admin-rules-form.gate.test.ts 会从本文件提取它，
  * 用真 parseMahjongRules 验证枚举/范围/番键等价——改这里必须同步协议。 */
 
@@ -592,7 +681,7 @@ const MAHJONG_RULES_FORM = {
 };
 ```
 
-- [ ] **Step 4: 跑门禁确认绿**
+- [ ] **Step 8: 跑门禁确认绿**
 
 ```bash
 pnpm -C packages/protocol test -- admin-rules-form.gate
@@ -600,18 +689,18 @@ pnpm -C packages/protocol test -- admin-rules-form.gate
 
 Expected: 9 个用例全 PASS。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
-git add admin/app.js packages/test-utils/src packages/protocol/src/mahjong/admin-rules-form.gate.test.ts
-git commit -m "feat(admin): 四川麻将规则表单描述表 + protocol 行为级门禁
+git add admin/app.js packages/test-utils/src packages/test-utils/test packages/protocol/src/mahjong/admin-rules-form.gate.test.ts
+git commit -m "feat(admin): 四川麻将规则表单描述表 + 提取工具 + protocol 行为级门禁
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 2: 渲染器骨架（分组/控件/番表）+ 样式 + 探针骨架
+### Task 2: 渲染器 + 读取/校验/保存语义 + 样式 + 探针（渲染/保存/D9/越界）
 
 **Files:**
 - Modify: `admin/app.js`（`buildStructCard` 分支 + 新函数 `buildMahjongRulesEditor`，删除 `buildRulesJsonEditor`）
@@ -620,9 +709,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `MAHJONG_RULES_FORM`、`MAHJONG_PRESET_LABELS`（Task 1）。
-- Produces: `buildMahjongRulesEditor(body, ctx)`；DOM 约定 `[data-field]`、`.mj-field`、`.mj-fan-row`、`[data-group]`。
+- Produces: `buildMahjongRulesEditor(body, ctx)`，含完整 `readValue`：控件字段 + `preset`/`rulesVersion`（取快照）+ 三张番表按 D9 组装。
+- Produces: DOM 约定 `[data-field]`、`.mj-field`、`.mj-fan-row`、`.mj-group`、`.mj-field-err`、`.struct-ver` 版本徽标。
 
-- [ ] **Step 1: 写探针（渲染断言，失败）**
+- [ ] **Step 1: 写探针（失败）**
 
 `scripts/admin-mahjong-rules-form-probe.mjs`：
 
@@ -631,9 +721,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 /**
  * 四川麻将规则表单探针（2026-10-29）。
  * jsdom 加载真实 admin/index.html + app.js，桩 fetch/sessionStorage/confirm；
- * fetch 是**有状态**的：PUT 更新内存快照，GET 返回最新值（否则验证不了保存后的重渲染）。
+ * fetch 是**有状态**的：PUT 把**原始值**写回内存快照（版本另存），GET 返回最新值——
+ * 否则验证不了保存后的重渲染，且双重包裹会让表单塌缩。
  * 运行：node scripts/admin-mahjong-rules-form-probe.mjs（仓库根）。
  */
+import { deepStrictEqual } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -653,8 +745,16 @@ const ok = (cond, label) => {
     console.log(`✗ ${label}`);
   }
 };
+const same = (a, b) => {
+  try {
+    deepStrictEqual(a, b);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function waitFor(fn, ms = 1500, step = 20) {
+async function waitFor(fn, ms = 2000, step = 20) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     if (fn()) return true;
@@ -672,7 +772,7 @@ const clickEl = (w, node) => {
 };
 const json = (status, body) => ({ status, json: async () => body });
 
-/** 测试夹具：与 protocol DEFAULT_CHENGDU_RULES 同形（探针专用，不参与门禁）。 */
+/** 夹具与 protocol DEFAULT_CHENGDU_RULES 同形（探针专用；计数真源 = protocol 门禁）。 */
 const RULES = {
   preset: 'chengdu',
   rulesVersion: 1,
@@ -708,6 +808,40 @@ const RULES = {
   lackWindowMs: 15000,
 };
 
+const SBR_RULES = {
+  preset: 'sbr',
+  rulesVersion: 1,
+  scoringPolicy: 'additive',
+  fanBase: 0,
+  fanCap: 3,
+  fanTable: {},
+  additiveFanTable: {
+    root: 1, allPungs: 1, goldenWait: 1, fullFlush: 2, sevenPairs: 2,
+    winAfterKong: 1, shootAfterKong: 1, robbingKong: 1, underTheSea: 1,
+  },
+  rootIncludesKong: true,
+  selfDrawMode: 'addPoint',
+  minFanToHu: 0,
+  exchangeThreeEnabled: false,
+  exchangeDirection: 'random',
+  lastFourForcedHu: true,
+  passHuMode: 'sameTile',
+  directGangMode: 'contract',
+  gangTransfer: 'none',
+  refundOnDraw: 'kongDeclarerOnly',
+  huazhuMode: 'burn48',
+  huazhuPayees: 'active',
+  chajiaoEnabled: true,
+  chajiaoAllSameState: 'none',
+  optionalFans: {
+    duanYaoJiu: 0, haiDi: 0, perGang: 0, shuangLong: 0,
+    sanLong: 0, shiBaLuoHan: 0, tianHu: 0, diHu: 0,
+  },
+  claimWindowMs: 5000,
+  exchangeWindowMs: 15000,
+  lackWindowMs: 15000,
+};
+
 function baseSnapshot(rules) {
   return {
     'game.doudizhu.enabled': true,
@@ -734,7 +868,7 @@ function makeDom(snapshot) {
   const { window } = dom;
   window.addEventListener('error', (e) => errors.push(String(e.message)));
   window.confirm = () => true;
-  const state = { snapshot: JSON.parse(JSON.stringify(snapshot)), lastPut: null };
+  const state = { snapshot: JSON.parse(JSON.stringify(snapshot)), versions: {}, lastPut: null };
   window.fetch = async (url, opts = {}) => {
     const u = String(url);
     const method = (opts.method ?? 'GET').toUpperCase();
@@ -742,13 +876,14 @@ function makeDom(snapshot) {
       const key = decodeURIComponent(u.slice('/api/admin/config/'.length));
       const body = JSON.parse(opts.body);
       state.lastPut = { key, body };
-      state.snapshot[key] = { value: body.value, version: (state.snapshot[key]?.version ?? 1) + 1 };
-      return json(200, { code: 0, data: { version: state.snapshot[key].version, announced: true } });
+      state.snapshot[key] = body.value;
+      state.versions[key] = (state.versions[key] ?? 1) + 1;
+      return json(200, { code: 0, data: { version: state.versions[key], announced: true } });
     }
     if (u.startsWith('/api/admin/config')) {
       const config = {};
       for (const [k, v] of Object.entries(state.snapshot)) {
-        config[k] = { value: v, version: 1 };
+        config[k] = { value: v, version: state.versions[k] ?? 1 };
       }
       return json(200, { code: 0, data: { config, version: 1 } });
     }
@@ -761,28 +896,71 @@ function makeDom(snapshot) {
   return { window, state, errors };
 }
 
-const { window, state, errors } = makeDom(baseSnapshot(RULES));
-const card = () => q(window, '[data-key="game.mahjong.rules"]');
-const fieldEl = (p) => card()?.querySelector(`[data-field="${p}"]`);
-/** 同时发 input + change：文本/数字控件听 input，select 听 change（两者都发最稳）。 */
+async function openMahjong(dom) {
+  await waitFor(() => $(dom.window, 'nav-cfg-mahjong-btn'));
+  clickEl(dom.window, $(dom.window, 'nav-cfg-mahjong-btn'));
+  await waitFor(() => q(dom.window, '[data-key="game.mahjong.rules"]'));
+}
+const cardOf = (w) => q(w, '[data-key="game.mahjong.rules"]');
+const fieldOf = (w, p) => cardOf(w)?.querySelector(`[data-field="${p}"]`);
+const saveBtnOf = (w) => cardOf(w)?.querySelector('.struct-foot .btn.primary');
+const footStateOf = (w) => cardOf(w)?.querySelector('.row-state');
+/** 保存成功的判据：版本徽标变成 v<N>（loadAll 重渲染落定）。 */
+const waitVersion = (w, v) =>
+  waitFor(() => cardOf(w)?.querySelector('.struct-ver')?.textContent === `v${v}`);
+/** 文本/数字控件听 input，select 听 change——两个事件都发。 */
 const setInput = (node, value) => {
   node.value = String(value);
-  node.dispatchEvent(new window.Event('input', { bubbles: true }));
-  node.dispatchEvent(new window.Event('change', { bubbles: true }));
+  node.dispatchEvent(new node.ownerDocument.defaultView.Event('input', { bubbles: true }));
+  node.dispatchEvent(new node.ownerDocument.defaultView.Event('change', { bubbles: true }));
 };
 
-ok(await waitFor(() => $(window, 'nav-cfg-mahjong-btn')), '左树麻将叶存在');
-clickEl(window, $(window, 'nav-cfg-mahjong-btn'));
-ok(await waitFor(() => card() !== null), '麻将域「玩法规则」出现规则卡');
-ok(qa(window, '#settings-rows .mj-group').length === 8, `8 个分组（实测 ${qa(window, '#settings-rows .mj-group').length}）`);
-ok(qa(window, '#settings-rows .mj-field').length === 20, `20 个字段控件（实测 ${qa(window, '#settings-rows .mj-field').length}）`);
-ok(qa(window, '#settings-rows .mj-fan-row').length === 34, `34 个番表输入（实测 ${qa(window, '#settings-rows .mj-fan-row').length}）`);
-ok(fieldEl('fanCap')?.querySelector('input')?.value === '6', 'fanCap 初值 6');
-ok(fieldEl('huazhuMode')?.querySelector('select')?.value === 'payEach', 'huazhuMode 初值 payEach');
-ok(fieldEl('fanTable.pingHu')?.querySelector('input')?.value === '1', '番表 pingHu 初值 1');
-ok(q(window, '#settings-rows .mj-fan-group')?.tagName === 'DETAILS', '番表组是折叠 details');
+/* ── 主实例：渲染 + 保存 + D9 + 越界 ─────────────────────── */
+const main = makeDom(baseSnapshot(RULES));
+await openMahjong(main);
+const w = main.window;
 
-ok(errors.length === 0, `零运行时异常（实测 ${errors.length}）`);
+ok(qa(w, '#settings-rows .mj-group').length === 8, `8 个分组（实测 ${qa(w, '#settings-rows .mj-group').length}）`);
+ok(qa(w, '#settings-rows .mj-field').length === 20, `20 个字段控件（实测 ${qa(w, '#settings-rows .mj-field').length}）`);
+ok(qa(w, '#settings-rows .mj-fan-row').length === 34, `34 个番表输入（实测 ${qa(w, '#settings-rows .mj-fan-row').length}）`);
+ok(fieldOf(w, 'fanCap')?.querySelector('input')?.value === '6', 'fanCap 初值 6');
+ok(fieldOf(w, 'huazhuMode')?.querySelector('select')?.value === 'payEach', 'huazhuMode 初值 payEach');
+ok(fieldOf(w, 'fanTable.pingHu')?.querySelector('input')?.value === '1', '番表 pingHu 初值 1');
+ok(q(w, '#settings-rows .mj-fan-group')?.tagName === 'DETAILS', '番表组是折叠 details');
+
+// 保存 1：只改三处
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '7');
+setInput(fieldOf(w, 'huazhuMode').querySelector('select'), 'burn48');
+setInput(fieldOf(w, 'fanTable.pingHu').querySelector('input'), '2');
+main.state.lastPut = null;
+clickEl(w, saveBtnOf(w));
+await waitVersion(w, 2);
+const expected1 = JSON.parse(JSON.stringify(RULES));
+expected1.fanCap = 7;
+expected1.huazhuMode = 'burn48';
+expected1.fanTable.pingHu = 2;
+ok(main.state.lastPut?.key === 'game.mahjong.rules', 'PUT 命中规则键');
+ok(same(main.state.lastPut?.body.value, expected1), '保存 body = 快照 + 三处改动');
+ok(main.state.lastPut?.body.value.preset === 'chengdu', '保存不改变 preset（D3）');
+
+// D9：存在的番键清空 ⇒ 写 0
+setInput(fieldOf(w, 'fanTable.pingHu').querySelector('input'), '');
+main.state.lastPut = null;
+clickEl(w, saveBtnOf(w));
+await waitVersion(w, 3);
+ok(main.state.lastPut?.body.value.fanTable.pingHu === 0, '清空已存在的番键 ⇒ 写 0');
+
+// 越界 ⇒ 行内红字、不发请求（v3 已落定，无在途重渲染）
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '9');
+main.state.lastPut = null;
+clickEl(w, saveBtnOf(w));
+await sleep(50);
+ok(main.state.lastPut === null, '越界不发请求');
+ok(footStateOf(w)?.textContent.includes('封顶番数'), '越界错误写到卡片状态行');
+ok(fieldOf(w, 'fanCap').querySelector('.mj-field-err')?.textContent.includes('须为'), '字段行内红字');
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '6');
+
+ok(main.errors.length === 0, `主实例零运行时异常（实测 ${main.errors.length}）`);
 ok(unhandled.length === 0, `零未处理 rejection（实测 ${unhandled.length}）`);
 
 if (failures.length) {
@@ -798,9 +976,9 @@ console.log('admin mahjong rules form probe: all checks passed');
 node scripts/admin-mahjong-rules-form-probe.mjs
 ```
 
-Expected: FAIL —— 规则卡里还是 `textarea.json-box`，`.mj-group` 数为 0。
+Expected: FAIL —— 规则卡里仍是 `textarea.json-box`，`.mj-group` 数为 0。
 
-- [ ] **Step 3: 写渲染器 + 切换分支**
+- [ ] **Step 3: 实现渲染器 + 完整 readValue + 切换分支**
 
 `admin/app.js`：删除 `buildRulesJsonEditor` 整个函数（含其上方注释），把 `buildStructCard` 里的
 
@@ -821,6 +999,7 @@ Expected: FAIL —— 规则卡里还是 `textarea.json-box`，`.mj-group` 数�
  * 四川麻将规则表单（2026-10-29）：描述表驱动；整对象原子保存。
  * 与其它结构化卡共用行内协议：ctx.bind(read, reset)；read 抛错 ⇒ saveRow 行内拦截。
  * 番表语义（D9）：快照中存在的番键清空 ⇒ 写 0；不存在的番键清空 ⇒ 省略。
+ * 保存永不改写 preset（D3）：preset/rulesVersion 直接取快照值。
  */
 function buildMahjongRulesEditor(body, ctx) {
   const snap = ctx.snap && typeof ctx.snap === 'object' ? ctx.snap : {};
@@ -968,188 +1147,6 @@ function buildMahjongRulesEditor(body, ctx) {
   }
 
   function readValue() {
-    return snap;
-  }
-
-  function paint() {
-    body.textContent = '';
-    fieldRefs.clear();
-    tableRefs.clear();
-    body.append(buildGroups());
-  }
-
-  ctx.bind(readValue, paint);
-  paint();
-}
-```
-
-- [ ] **Step 4: 加样式（`admin/style.css` 末尾）**
-
-```css
-/* ── 四川麻将规则表单（2026-10-29）──────────────────────────── */
-.mj-preset-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.mj-preset-now { font-size: 13px; font-weight: 600; }
-.mj-ver { font-size: 11px; color: var(--dim); }
-.mj-reset-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
-.mj-select {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 13px;
-}
-.mj-banners { display: flex; flex-direction: column; gap: 6px; }
-.mj-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(90, 160, 255, 0.1);
-  border: 1px solid rgba(90, 160, 255, 0.35);
-}
-.mj-banner-warn { background: rgba(255, 190, 80, 0.08); border-color: rgba(255, 190, 80, 0.35); }
-.mj-warnings { display: flex; flex-direction: column; gap: 4px; }
-.mj-warn { margin: 0; font-size: 12px; color: var(--warn); }
-.mj-group { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
-.mj-group-title { margin: 0 0 6px; font-size: 13px; }
-.mj-group-note { margin: 0 0 8px; font-size: 12px; color: var(--dim); }
-.mj-field {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 4px 10px;
-  align-items: center;
-  padding: 4px 0;
-}
-.mj-label { font-size: 13px; }
-.mj-key { font-size: 10px; color: var(--dim); }
-.mj-num {
-  width: 120px;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 8px;
-}
-.mj-unit { font-size: 12px; color: var(--dim); }
-.mj-note, .mj-field-err { grid-column: 2; margin: 0; font-size: 11px; }
-.mj-note { color: var(--dim); }
-.mj-field-err { color: var(--err); }
-.mj-field-err:empty { display: none; }
-.mj-fan-group summary { cursor: pointer; font-size: 13px; font-weight: 600; }
-.mj-fan-row { display: flex; align-items: center; gap: 10px; padding: 3px 0 3px 12px; flex-wrap: wrap; }
-.mj-fan-name { width: 120px; font-size: 13px; }
-.mj-fan-row .mj-field-err { flex-basis: 100%; padding-left: 130px; }
-```
-
-- [ ] **Step 5: 跑探针确认绿**
-
-```bash
-node scripts/admin-mahjong-rules-form-probe.mjs
-```
-
-Expected: `admin mahjong rules form probe: all checks passed`。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add admin/app.js admin/style.css scripts/admin-mahjong-rules-form-probe.mjs
-git commit -m "feat(admin): 四川麻将规则分组表单渲染（替换 raw JSON 编辑器）
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
----
-
-### Task 3: 读取 / 本地校验 / 保存语义（D3 + D9）
-
-**Files:**
-- Modify: `admin/app.js`（替换 `readValue`）
-- Modify: `scripts/admin-mahjong-rules-form-probe.mjs`（追加保存断言）
-
-**Interfaces:**
-- Produces: `readValue()` 输出完整规则对象：控件字段 + `preset`/`rulesVersion` 取快照 + 三张番表按 D9 组装。
-
-- [ ] **Step 1: 先追加探针断言（失败）**
-
-在探针 `ok(errors.length === 0, …)` 之前插入：
-
-```js
-/* ── 保存语义（D3 / D9 / 越界）──────────────────────────── */
-const saveBtn = () => card()?.querySelector('.struct-foot .btn.primary');
-const footState = () => card()?.querySelector('.row-state');
-
-// 1) 正常保存：只改三处
-setInput(fieldEl('fanCap').querySelector('input'), '7');
-setInput(fieldEl('huazhuMode').querySelector('select'), 'burn48');
-setInput(fieldEl('fanTable.pingHu').querySelector('input'), '2');
-state.lastPut = null;
-clickEl(window, saveBtn());
-await waitFor(() => state.lastPut !== null);
-await sleep(60); // 等 saveRow → loadAll 重渲染落定
-const expected1 = JSON.parse(JSON.stringify(RULES));
-expected1.fanCap = 7;
-expected1.huazhuMode = 'burn48';
-expected1.fanTable.pingHu = 2;
-ok(state.lastPut?.key === 'game.mahjong.rules', 'PUT 命中规则键');
-ok(JSON.stringify(state.lastPut?.body.value) === JSON.stringify(expected1), '保存 body = 快照 + 三处改动');
-ok(state.lastPut?.body.value.preset === 'chengdu', '保存不改变 preset（D3）');
-
-// 2) D9：存在的番键清空 ⇒ 写 0
-await waitFor(() => card() !== null);
-setInput(fieldEl('fanTable.pingHu').querySelector('input'), '');
-state.lastPut = null;
-clickEl(window, saveBtn());
-await waitFor(() => state.lastPut !== null);
-await sleep(60); // 等 saveRow → loadAll 重渲染落定
-ok(state.lastPut?.body.value.fanTable.pingHu === 0, '清空已存在的番键 ⇒ 写 0');
-
-// 3) 越界 ⇒ 行内红字、不发请求
-setInput(fieldEl('fanCap').querySelector('input'), '9');
-state.lastPut = null;
-clickEl(window, saveBtn());
-await sleep(80);
-ok(state.lastPut === null, '越界不发请求');
-ok(footState()?.textContent.includes('封顶番数'), '越界错误写到卡片状态行');
-ok(fieldEl('fanCap').querySelector('.mj-field-err')?.textContent.includes('1–8'), '字段行内红字');
-setInput(fieldEl('fanCap').querySelector('input'), '6');
-```
-
-注意：`JSON.stringify` 比较依赖同键序——表单 `readValue` 的输出顺序是描述表顺序 + preset/rulesVersion + 三张表，与 `RULES` 字面量顺序不同。改为深比较：
-
-```js
-import { deepStrictEqual } from 'node:assert';
-...
-let deepOk = true;
-try { deepStrictEqual(state.lastPut?.body.value, expected1); } catch { deepOk = false; }
-ok(deepOk, '保存 body = 快照 + 三处改动');
-```
-
-（探针顶部加 `import { deepStrictEqual } from 'node:assert';`）
-
-- [ ] **Step 2: 跑探针确认红**
-
-```bash
-node scripts/admin-mahjong-rules-form-probe.mjs
-```
-
-Expected: FAIL —— `readValue` 目前原样返回快照，三处改动不会出现，且越界不会被拦截。
-
-- [ ] **Step 3: 实现 `readValue`（替换 Task 2 的最小版）**
-
-```js
-  function readValue() {
     const out = {};
     for (const [path, read] of fieldRefs) {
       out[path] = read();
@@ -1180,88 +1177,203 @@ Expected: FAIL —— `readValue` 目前原样返回快照，三处改动不会�
     }
     return out;
   }
+
+  function paint() {
+    body.textContent = '';
+    fieldRefs.clear();
+    tableRefs.clear();
+    body.append(buildGroups());
+  }
+
+  ctx.bind(readValue, paint);
+  paint();
+}
 ```
 
-- [ ] **Step 4: 跑探针确认绿**
+- [ ] **Step 4: 加样式（`admin/style.css` 末尾；变量名用已定义的 `--border`/`--panel`/`--text`/`--dim`/`--warn`/`--err`）**
+
+```css
+/* ── 四川麻将规则表单（2026-10-29）──────────────────────────── */
+.mj-preset-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mj-preset-now { font-size: 13px; font-weight: 600; }
+.mj-ver { font-size: 11px; color: var(--dim); }
+.mj-reset-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+.mj-select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.mj-banners { display: flex; flex-direction: column; gap: 6px; }
+.mj-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(90, 160, 255, 0.1);
+  border: 1px solid rgba(90, 160, 255, 0.35);
+}
+.mj-banner-warn { background: rgba(255, 190, 80, 0.08); border-color: rgba(255, 190, 80, 0.35); }
+.mj-warnings { display: flex; flex-direction: column; gap: 4px; }
+.mj-warn { margin: 0; font-size: 12px; color: var(--warn); }
+.mj-group { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.mj-group-title { margin: 0 0 6px; font-size: 13px; }
+.mj-group-note { margin: 0 0 8px; font-size: 12px; color: var(--dim); }
+.mj-field {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 4px 0;
+}
+.mj-label { font-size: 13px; }
+.mj-key { font-size: 10px; color: var(--dim); }
+.mj-num {
+  width: 120px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.mj-unit { font-size: 12px; color: var(--dim); }
+.mj-note, .mj-field-err { grid-column: 2; margin: 0; font-size: 11px; }
+.mj-note { color: var(--dim); }
+.mj-field-err { color: var(--err); }
+.mj-field-err:empty { display: none; }
+.mj-fan-group summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.mj-fan-row { display: flex; align-items: center; gap: 10px; padding: 3px 0 3px 12px; flex-wrap: wrap; }
+.mj-fan-name { width: 120px; font-size: 13px; }
+.mj-fan-row .mj-field-err { flex-basis: 100%; padding-left: 130px; }
+```
+
+- [ ] **Step 5: 跑探针确认绿**
 
 ```bash
 node scripts/admin-mahjong-rules-form-probe.mjs
 ```
 
-Expected: all checks passed（含 7 条新断言）。
+Expected: `admin mahjong rules form probe: all checks passed`。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
-git add admin/app.js scripts/admin-mahjong-rules-form-probe.mjs
-git commit -m "feat(admin): 麻将规则表单读取/校验/保存语义（清空番键写 0，preset 不进保存路径）
+git add admin/app.js admin/style.css scripts/admin-mahjong-rules-form-probe.mjs
+git commit -m "feat(admin): 四川麻将规则分组表单（渲染 + 读取/校验/保存，替换 raw JSON）
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: 预设栏 + 一键重置 + 实时护栏
+### Task 3: 预设栏 + 一键重置 + 实时护栏（含 sbr / 全 0 命名表覆盖）
 
 **Files:**
 - Modify: `admin/app.js`（新增 `buildPresetBar`、`refreshWarnings`、`currentPolicy`、`fanTableAllZero`；`onChange`/`paint` 接线）
 - Modify: `scripts/admin-mahjong-rules-form-probe.mjs`
 
 **Interfaces:**
-- Produces: `#mj-reset-preset`（select）、文案「按预设重置全部规则」按钮；重置 PUT `{preset, rulesVersion}`。
+- Produces: `#mj-reset-preset`（select）、按钮文案「按预设重置全部规则」；重置 PUT `{preset, rulesVersion}`。
 - Produces: `.mj-warn` 三条护栏。
 
 - [ ] **Step 1: 追加探针断言（失败）**
 
-在 Task 3 的越界断言之后、`errors.length` 之前插入：
+在 `ok(main.errors.length === 0, …)` 之前插入：
 
 ```js
-/* ── 预设重置 + 护栏 ───────────────────────────────────── */
-ok(q(window, '#mj-reset-preset') !== null, '预设重置下拉存在');
-ok(card()?.textContent.includes('按预设重置全部规则'), '重置按钮文案');
-
-// 护栏 1：chengdu 快照切 additive（加法表为空）⇒ 黄条
-setInput(fieldEl('scoringPolicy').querySelector('select'), 'additive');
+/* ── 护栏（主实例：chengdu）────────────────────────────── */
+setInput(fieldOf(w, 'scoringPolicy').querySelector('select'), 'additive');
 ok(
-  qa(window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('0 番')),
+  qa(w, '#settings-rows .mj-warn').some((n) => n.textContent.includes('0 番')),
   '加法番表全 0 时出黄条',
 );
-setInput(fieldEl('scoringPolicy').querySelector('select'), 'named');
-
-// 护栏 3：起胡番 > 封顶番
-setInput(fieldEl('minFanToHu').querySelector('input'), '6');
-setInput(fieldEl('fanCap').querySelector('input'), '3');
+setInput(fieldOf(w, 'scoringPolicy').querySelector('select'), 'named');
+setInput(fieldOf(w, 'minFanToHu').querySelector('input'), '6');
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '3');
 ok(
-  qa(window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('永远无法胡牌')),
+  qa(w, '#settings-rows .mj-warn').some((n) => n.textContent.includes('永远无法胡牌')),
   '起胡番高于封顶番时出黄条',
 );
+setInput(fieldOf(w, 'minFanToHu').querySelector('input'), '0');
+setInput(fieldOf(w, 'fanCap').querySelector('input'), '6');
 
-// D3 加强：下拉切 sbr 后普通保存仍带快照原 preset
-setInput(q(window, '#mj-reset-preset'), 'sbr');
-state.lastPut = null;
-clickEl(window, saveBtn());
-await waitFor(() => state.lastPut !== null);
-await sleep(60); // 等 saveRow → loadAll 重渲染落定
-ok(state.lastPut?.body.value.preset === 'chengdu', '切下拉不改变保存的 preset（D3）');
+/* ── 预设重置 + D3 加强（独立实例）───────────────────────── */
+ok(q(w, '#mj-reset-preset') !== null, '预设重置下拉存在');
+ok(cardOf(w)?.textContent.includes('按预设重置全部规则'), '重置按钮文案');
+setInput(q(w, '#mj-reset-preset'), 'sbr');
+main.state.lastPut = null;
+clickEl(w, saveBtnOf(w));
+await waitVersion(w, 4);
+ok(main.state.lastPut?.body.value.preset === 'chengdu', '切下拉不改变保存的 preset（D3）');
 
-// 重置：PUT 恰为 {preset, rulesVersion}
-await waitFor(() => card() !== null);
-const resetBtn = [...card().querySelectorAll('.mj-preset-bar .btn')].find(
-  (b) => b.textContent === '按预设重置全部规则',
+const resetDom = makeDom(baseSnapshot(RULES));
+await openMahjong(resetDom);
+setInput(q(resetDom.window, '#mj-reset-preset'), 'sbr');
+resetDom.state.lastPut = null;
+clickEl(q(resetDom.window, '#mj-reset-preset').closest('.mj-preset-bar').querySelector('.btn'));
+await waitFor(() => resetDom.state.lastPut !== null);
+ok(
+  same(resetDom.state.lastPut?.body.value, { preset: 'sbr', rulesVersion: 1 }),
+  "重置 body 恰为 {preset:'sbr', rulesVersion:1}",
 );
-state.lastPut = null;
-clickEl(window, resetBtn);
-await waitFor(() => state.lastPut !== null);
-await sleep(60); // 等 saveRow → loadAll 重渲染落定
-let resetOk = true;
-try {
-  deepStrictEqual(state.lastPut?.body.value, { preset: 'sbr', rulesVersion: 1 });
-} catch {
-  resetOk = false;
+await waitFor(() => cardOf(resetDom.window)?.textContent.includes('当前预设：SBR 竞技近似'));
+ok(cardOf(resetDom.window)?.textContent.includes('当前预设：SBR 竞技近似'), '重置后按新预设重渲染');
+ok(resetDom.errors.length === 0, `重置实例零异常（实测 ${resetDom.errors.length}）`);
+
+/* ── sbr 实例：清空加法番表 ⇒ 实时黄条 + D9 写 0 + 不存在的表省略 ── */
+const sbrDom = makeDom(baseSnapshot(SBR_RULES));
+await openMahjong(sbrDom);
+ok(
+  qa(sbrDom.window, '#settings-rows .mj-warn').length === 0,
+  'sbr 初始无黄条',
+);
+for (const fanKey of ['root', 'allPungs', 'goldenWait', 'fullFlush', 'sevenPairs', 'winAfterKong', 'shootAfterKong', 'robbingKong', 'underTheSea']) {
+  const input = sbrDom.window.querySelector(`[data-field="additiveFanTable.${fanKey}"] input`);
+  setInput(input, '');
 }
-ok(resetOk, "重置 body 恰为 {preset:'sbr', rulesVersion:1}");
-await waitFor(() => card()?.textContent.includes('当前预设：SBR 竞技近似'));
-ok(card()?.textContent.includes('当前预设：SBR 竞技近似'), '重置后按新预设重渲染');
+ok(
+  qa(sbrDom.window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('0 番')),
+  '清空加法番表后实时出黄条',
+);
+sbrDom.state.lastPut = null;
+clickEl(sbrDom.window, saveBtnOf(sbrDom.window));
+await waitVersion(sbrDom.window, 2);
+ok(
+  same(sbrDom.state.lastPut?.body.value.additiveFanTable, {
+    root: 0, allPungs: 0, goldenWait: 0, fullFlush: 0, sevenPairs: 0,
+    winAfterKong: 0, shootAfterKong: 0, robbingKong: 0, underTheSea: 0,
+  }),
+  'sbr 清空加法番键 ⇒ 全部写 0',
+);
+ok(
+  same(sbrDom.state.lastPut?.body.value.fanTable, {}),
+  '不存在的番表键 + 空输入 ⇒ 省略（不写入任何键）',
+);
+ok(sbrDom.errors.length === 0, `sbr 实例零异常（实测 ${sbrDom.errors.length}）`);
+
+/* ── 全 0 命名表 ⇒ 护栏 2 ─────────────────────────────── */
+const zeroNamed = JSON.parse(JSON.stringify(RULES));
+for (const k of Object.keys(zeroNamed.fanTable)) zeroNamed.fanTable[k] = 0;
+const zeroDom = makeDom(baseSnapshot(zeroNamed));
+await openMahjong(zeroDom);
+ok(
+  qa(zeroDom.window, '#settings-rows .mj-warn').some((n) => n.textContent.includes('命名番表为空')),
+  '命名番表全 0 时出黄条',
+);
+ok(zeroDom.errors.length === 0, `全 0 实例零异常（实测 ${zeroDom.errors.length}）`);
 ```
 
 - [ ] **Step 2: 跑探针确认红**
@@ -1361,7 +1473,7 @@ Expected: FAIL —— 无 `#mj-reset-preset`、无 `.mj-warn`。
     warnings.textContent = '';
     const list = [];
     if (currentPolicy() === 'additive' && fanTableAllZero('additiveFanTable')) {
-      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置」恢复 SBR 默认番表。');
+      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」恢复 SBR 默认番表。');
     }
     if (currentPolicy() === 'named' && fanTableAllZero('fanTable')) {
       list.push('命名番表为空：绝大多数牌只按平胡兜底 1 番，请先补齐番值。');
@@ -1397,7 +1509,7 @@ Expected: FAIL —— 无 `#mj-reset-preset`、无 `.mj-warn`。
 node scripts/admin-mahjong-rules-form-probe.mjs
 ```
 
-Expected: all checks passed。
+Expected: all checks passed（含护栏/重置/D3/sbr/全 0 新断言）。
 
 - [ ] **Step 5: 提交**
 
@@ -1410,19 +1522,19 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 5: 版本错位自救（缺字段补齐 / 未知键移除）
+### Task 4: 版本错位自救（缺字段补齐 / 未知键移除）
 
 **Files:**
 - Modify: `admin/app.js`（顶部常量 + `buildBanners` + `readValue` + `paint`）
 - Modify: `scripts/admin-mahjong-rules-form-probe.mjs`
 
 **Interfaces:**
-- Consumes: Task 3 的 `readValue`、Task 4 的 `paint`。
+- Consumes: Task 2 的 `readValue`、Task 3 的 `paint`。
 - Produces: `.mj-banner` 两条 + 按钮「按服务端默认补齐」「移除这些未知字段并保存」。
 
 - [ ] **Step 1: 追加探针断言（失败）**
 
-在 `errors.length` 断言之前插入：
+在 `ok(main.errors.length === 0, …)` 之前插入：
 
 ```js
 /* ── 版本错位自救 ─────────────────────────────────────── */
@@ -1430,45 +1542,42 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 {
   const rules = JSON.parse(JSON.stringify(RULES));
   rules.xyzFutureSwitch = true;
-  const dom2 = makeDom(baseSnapshot(rules));
-  await waitFor(() => $(dom2.window, 'nav-cfg-mahjong-btn'));
-  clickEl(dom2.window, $(dom2.window, 'nav-cfg-mahjong-btn'));
-  await waitFor(() => q(dom2.window, '[data-key="game.mahjong.rules"]'));
-  const c2 = () => q(dom2.window, '[data-key="game.mahjong.rules"]');
-  ok(c2().textContent.includes('未认识的新字段'), '未知键信息条出现');
-  ok(c2().textContent.includes('xyzFutureSwitch'), '信息条列出未知键名');
-  clickEl(dom2.window, c2().querySelector('.struct-foot .btn.primary'));
-  await waitFor(() => dom2.state.lastPut !== null);
-  ok(dom2.state.lastPut?.body.value.xyzFutureSwitch === true, '未知键原样透传');
-  const dropBtn = [...c2().querySelectorAll('.mj-banner .btn')].find(
+  const dom = makeDom(baseSnapshot(rules));
+  await openMahjong(dom);
+  const cw = dom.window;
+  ok(cardOf(cw).textContent.includes('未认识的新字段'), '未知键信息条出现');
+  ok(cardOf(cw).textContent.includes('xyzFutureSwitch'), '信息条列出未知键名');
+  dom.state.lastPut = null;
+  clickEl(cw, saveBtnOf(cw));
+  await waitVersion(cw, 2);
+  ok(dom.state.lastPut?.body.value.xyzFutureSwitch === true, '未知键原样透传');
+  const dropBtn = [...cardOf(cw).querySelectorAll('.mj-banner .btn')].find(
     (b) => b.textContent === '移除这些未知字段并保存',
   );
-  dom2.state.lastPut = null;
-  clickEl(dom2.window, dropBtn);
-  await waitFor(() => dom2.state.lastPut !== null);
-  ok(!('xyzFutureSwitch' in (dom2.state.lastPut?.body.value ?? {})), '移除后保存 body 不含未知键');
-  ok(dom2.errors.length === 0, '未知键实例零运行时异常');
+  dom.state.lastPut = null;
+  clickEl(cw, dropBtn);
+  await waitVersion(cw, 3);
+  ok(!('xyzFutureSwitch' in (dom.state.lastPut?.body.value ?? {})), '移除后保存 body 不含未知键');
+  ok(dom.errors.length === 0, `未知键实例零异常（实测 ${dom.errors.length}）`);
 }
 
 // B. 快照缺字段：隐藏 + 补齐
 {
   const rules = JSON.parse(JSON.stringify(RULES));
   delete rules.claimWindowMs;
-  const dom3 = makeDom(baseSnapshot(rules));
-  await waitFor(() => $(dom3.window, 'nav-cfg-mahjong-btn'));
-  clickEl(dom3.window, $(dom3.window, 'nav-cfg-mahjong-btn'));
-  await waitFor(() => q(dom3.window, '[data-key="game.mahjong.rules"]'));
-  const c3 = () => q(dom3.window, '[data-key="game.mahjong.rules"]');
-  ok(c3().querySelector('[data-field="claimWindowMs"]') === null, '缺失字段不渲染');
-  ok(c3().textContent.includes('缺少 1 个规则字段'), '缺失字段信息条出现');
-  const fillBtn = [...c3().querySelectorAll('.mj-banner .btn')].find(
+  const dom = makeDom(baseSnapshot(rules));
+  await openMahjong(dom);
+  const cw = dom.window;
+  ok(cardOf(cw).querySelector('[data-field="claimWindowMs"]') === null, '缺失字段不渲染');
+  ok(cardOf(cw).textContent.includes('缺少 1 个规则字段'), '缺失字段信息条出现');
+  const fillBtn = [...cardOf(cw).querySelectorAll('.mj-banner .btn')].find(
     (b) => b.textContent === '按服务端默认补齐',
   );
-  dom3.state.lastPut = null;
-  clickEl(dom3.window, fillBtn);
-  await waitFor(() => dom3.state.lastPut !== null);
-  ok(dom3.state.lastPut?.body.value.claimWindowMs === undefined, '补齐 PUT = 原快照（不含缺失字段）');
-  ok(dom3.errors.length === 0, '缺字段实例零运行时异常');
+  dom.state.lastPut = null;
+  clickEl(cw, fillBtn);
+  await waitVersion(cw, 2);
+  ok(dom.state.lastPut?.body.value.claimWindowMs === undefined, '补齐 PUT = 原快照（不含缺失字段）');
+  ok(dom.errors.length === 0, `缺字段实例零异常（实测 ${dom.errors.length}）`);
 }
 ```
 
@@ -1558,7 +1667,7 @@ Expected: FAIL —— 无 `.mj-banner`。
   }
 ```
 
-`readValue` 改为（新增未知键透传与番种透传）：
+`readValue` 改为（新增未知键/番种透传）：
 
 ```js
   function readValue() {
@@ -1629,7 +1738,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 6: 静态闸 + 文案 + 文档
+### Task 5: 静态闸 + 文案 + 文档
 
 **Files:**
 - Modify: `scripts/verify-admin-static.mjs`
@@ -1638,7 +1747,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: 全部 admin 实现。
-- Produces: 静态闸新针脚；`STRUCT_META` 标题「四川麻将规则」。
+- Produces: 静态闸块级针脚；`STRUCT_META` 标题「四川麻将规则」。
 
 - [ ] **Step 1: 先加静态闸断言（失败）**
 
@@ -1646,13 +1755,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ```js
 /* ── 12. 四川麻将规则表单（2026-10-29）────────────────────────── */
-ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
-ok(app.includes('const MAHJONG_RULES_FORM'), '麻将规则描述表存在');
+const mjFormBlock = balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}');
+ok(mjFormBlock.length > 500, `麻将规则描述表块可提取且非空（实测 ${mjFormBlock.length} 字符）`);
+for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
+  ok(mjFormBlock.includes(`title: '${title}'`), `麻将表单分组：${title}`);
+}
 ok(app.includes('function buildMahjongRulesEditor'), '麻将规则表单渲染器存在');
 ok(!app.includes('function buildRulesJsonEditor'), 'raw JSON 编辑器已移除');
-for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
-  ok(app.includes(`title: '${title}'`), `麻将表单分组：${title}`);
-}
+ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
 ok(app.includes('按预设重置全部规则'), '预设重置按钮文案');
 ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮文案');
 ```
@@ -1663,7 +1773,7 @@ ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮�
 node scripts/verify-admin-static.mjs
 ```
 
-Expected: FAIL —— 标题仍是「四川麻将规则 JSON」、raw JSON 函数仍在（Task 2 已删，但标题未改）。
+Expected: FAIL —— **唯一红因 = 标题子串仍是「四川麻将规则 JSON」**（描达表/渲染器/按钮在 Task 1–4 已就位）。
 
 - [ ] **Step 3: 改文案（admin/app.js）**
 
@@ -1718,7 +1828,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 7: 番名一致性门禁 + CI 接线 + 全量回归
+### Task 6: 番名一致性门禁 + CI 接线 + 全量回归
 
 **Files:**
 - Modify: `packages/shared/src/mahjong/scoring.ts`（`NAMED_LABELS` 加 `export`）
@@ -1729,7 +1839,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: `extractJsLiteral`（Task 1）、`MAHJONG_RULES_FORM.fanLabels`。
 - Produces: `verify:admin-mahjong-rules` 脚本；CI stage 7 新探针。
 
-- [ ] **Step 1: 写门禁（失败）**
+- [ ] **Step 1: 写门禁（一致性闸，预期首跑即绿；若红 = 文案漂移，先对齐 `fanLabels` 再继续）**
 
 `packages/shared/src/mahjong/scoring.ts` 的 `const NAMED_LABELS` 改为：
 
@@ -1744,6 +1854,7 @@ export const NAMED_LABELS: Record<string, string> = {
  * 四川麻将番名一致性门禁（2026-10-29）。
  * admin 规则表单的 fanLabels 与对局内展示（shared scoring.ts 的 NAMED_LABELS）是两份拷贝；
  * 本闸保证**有交集的键**标签逐字一致，防止后台中文名与牌桌展示名漂移。
+ * 这是补偿性一致性闸：现状应绿；若红，先对齐文案（不要放宽断言）。
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -1789,14 +1900,15 @@ describe('admin 番名 ⇄ 对局展示名', () => {
 - [ ] **Step 2: 跑门禁确认绿**
 
 ```bash
-pnpm --filter @fight-the-landlord/shared test -- admin-mahjong-labels.gate
+pnpm --filter @fight-the-landlord/test-utils build
+pnpm -C packages/shared test -- admin-mahjong-labels.gate
 ```
 
-Expected: 1/1 PASS。
+Expected: 1/1 PASS（25 键交集逐字一致）。
 
 - [ ] **Step 3: CI 接线**
 
-`package.json` scripts 追加：
+`package.json` scripts 追加（**注意上一行补逗号**）：
 
 ```json
 "verify:admin-mahjong-rules": "node scripts/admin-mahjong-rules-form-probe.mjs"
@@ -1811,6 +1923,7 @@ npm run verify:admin-mahjong-rules
 - [ ] **Step 4: 全量回归**
 
 ```bash
+pnpm -C packages/test-utils test
 pnpm -C packages/protocol test
 pnpm -C packages/shared test
 node scripts/verify-admin-static.mjs
@@ -1852,7 +1965,39 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ## 计划自查（写完后）
 
-- **Spec 覆盖**：D1–D17 全部有任务承接：D1/D2→T1/T2；D3→T3/T4；D4→T4；D5→T2（删除 raw JSON）；D6/D15→T5（两条信息条与自救按钮）；D7→T1（说明文案）；D8→T2（details 折叠）；D9→T3；D10→T1；D11→T3；D12→T3/T4；D13 既有语义；D14→T1/T6；D16→T1；D17→T1。
+- **Spec 覆盖**：D1/D2→T1/T2；D3→T2/T3；D4→T3；D5→T2；D6/D15→T4；D7→T1；D8→T2；D9→T2/T3（sbr 覆盖）；D10→T1；D11→T2；D12→T2/T3；D13 既有语义；D14→T1/T5；D16→T1；D17→T1。
 - **占位符扫描**：无 TBD/TODO；每个代码步骤给出完整代码。
-- **类型/命名一致性**：`MAHJONG_RULES_FORM`、`MAHJONG_PRESET_LABELS`、`buildMahjongRulesEditor`、`readValue`、`refreshWarnings`、`buildPresetBar`、`buildBanners`、`buildGroups`、`buildFieldGroup`、`buildFanGroup` 在各任务中名称一致；探针选择器 `[data-field]`、`.mj-field`、`.mj-fan-row`、`#mj-reset-preset`、`.mj-banner`、`.mj-warn` 前后一致。
-- **已知偏差**：spec §4.2 提到 `.mj-field-err` 行内红字——计划保留该元素（字段行内），同时 `saveRow` 仍会把同一错误写到卡片脚注 `.row-state`（既有协议），属预期冗余。
+- **类型/命名一致性**：`MAHJONG_RULES_FORM`、`MAHJONG_PRESET_LABELS`、`buildMahjongRulesEditor`、`readValue`、`refreshWarnings`、`buildPresetBar`、`buildBanners`、`buildGroups`、`buildFieldGroup`、`buildFanGroup` 在各任务中名称一致；探针选择器 `[data-field]`、`.mj-field`、`.mj-fan-row`、`#mj-reset-preset`、`.mj-banner`、`.mj-warn`、`.struct-ver` 前后一致。
+- **已登记偏差**：spec §5.1 写「balancedBlock + vm」提取；计划改用 test-utils 的 `extractJsLiteral`（注释感知、`new Function`）+ 单测，spec 同步修改。
+
+---
+
+## 计划审查记录（2026-10-29，独立 reviewer）
+
+结论：**修订后可以开工**。1 轮审查共 2 阻断 / 6 高 / 9 低，全部已落到本计划正文。
+
+| 级别 | 发现 | 处置 |
+|---|---|---|
+| 阻断 | 探针 mock 的 PUT 存「包装对象」、GET 再包一层 ⇒ 双重包裹，首存后表单整卡塌缩、后续断言崩 | fetch mock 改为：PUT 把**原始值**写回 `state.snapshot`，版本另存 `state.versions`；GET 再包 `{value, version}`（Task 2 探针 `makeDom`） |
+| 阻断 | 重置下拉在 save→loadAll 后被重渲染复位成 chengdu，重置目标断言必红/偶然绿 | 重置改到**独立实例** `resetDom` 验证；主实例只保留 D3「切下拉不改保存的 preset」（Task 3） |
+| 高 | Task 3 同时给了 `JSON.stringify` 与 `deepStrictEqual` 两版互斥断言（键序不同必红） | 删除字符串比较版，只用 `same()`（`deepStrictEqual` 包一层） |
+| 高 | 提取器不感知注释（描述表字面量内有 `//`），且无单测 | 扫描器加行/块注释态；新增 `packages/test-utils/test/extract-js-literal.test.ts`（4 用例）；在计划自查登记「提取形态与 spec §5.1 不一致，spec 已同步」 |
+| 高 | `sleep(60/80)` 等待重渲染是时钟依赖，慢 CI 假红/假绿 | 一律改为 `.struct-ver` 版本徽标 `v<N>` 的 `waitFor`；越界测试在版本落定后再改值 |
+| 高 | Task 2 中间提交删了 raw JSON 而 `readValue` 是空桩 ⇒ 保存静默丢弃编辑，不可部署 | 把完整 `readValue` 并入 Task 2 提交；任务改为「渲染 + 读取/校验/保存」，删除原 Task 3 的测试-only 形态 |
+| 高 | sbr 清空加法番表、命名番表全 0 护栏、D9「不存在 + 空 ⇒ 省略」无覆盖 | Task 3 新增 sbr 实例（9 键清空全写 0、`fanTable` 保持 `{}`）与全 0 命名表实例；spec §5.3 同步 |
+| 高 | Task 7（现 Task 6）一致性闸没有红→绿叙述，违背 Global Constraints | 明确定位为「补偿性一致性闸，首跑预期即绿；若红先对齐文案」，不硬造红 |
+| 低 | CSS 用了未定义的 `var(--line)` | 全部改 `var(--border)`（`admin/style.css:3-14` 实证） |
+| 低 | 静态闸 `app.includes('title: …')` 无边界 | 用 `balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}')` 圈定后断言 |
+| 低 | Task 6 Step 2 的 Expected 文案自相矛盾 | 改为「唯一红因 = 标题子串」 |
+| 低 | 护栏文案「按预设重置」与实际按钮「按预设重置全部规则」不一致 | 统一为完整按钮名（实现 + 探针 + spec §4.5） |
+| 低 | 断言依赖 en-dash「1–8」 | 改为 `includes('须为')` |
+| 低 | 探针 20/34 计数是第二真源 | 探针注释标注「计数真源 = protocol 门禁」 |
+| 低 | spec 与计划共享门禁路径不一致 | spec 同步为 `packages/shared/test/admin-mahjong-labels.gate.test.ts`（放 `test/` 避免被编进 dist） |
+| 低 | `package.json` 追加脚本需补上一行逗号 | Task 6 Step 3 已注明 |
+
+**已核对无问题**（reviewer 实测）：`053a63a1` 可干净应用且其探针断言与本片夹具互不干扰；
+`buildRulesJsonEditor` 仅两处引用、删除安全；描述表与协议逐项等价（枚举/范围/布尔 4 键/番键
+17+9+8）；`TOP_PATHS` 排除三表后恰 20 个标量字段；test-utils/protocol/shared 的 tsconfig 与
+vitest 解析覆盖新文件；默认页签为「玩法规则」；`.struct-foot .btn.primary` 与 `.row-state`
+在卡内唯一；静态闸既有计数（112/96/89/43/44/96 notes）不被触碰；`NAMED_LABELS` 25 键交集
+逐字一致；jsdom/boot 依赖满足。

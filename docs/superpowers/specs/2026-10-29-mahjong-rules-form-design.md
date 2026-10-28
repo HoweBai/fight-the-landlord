@@ -195,7 +195,7 @@ const MAHJONG_RULES_FORM = {
 ### 4.5 实时护栏（黄条，表单顶部，随输入刷新；按 D9 的「空 = 0」计算生效值）
 
 1. `scoringPolicy === 'additive'` 且加法番表生效值全为 0 ⇒
-   「当前所有牌型都是 0 番，只按底分结算。可点「按预设重置」恢复 SBR 默认番表。」
+   「当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」恢复 SBR 默认番表。」
 2. `scoringPolicy === 'named'` 且命名番表生效值全为 0 ⇒
    「命名番表为空：绝大多数牌只按平胡兜底 1 番，请先补齐番值。」
 3. `minFanToHu > fanCap` ⇒ 「起胡番高于封顶番数：永远无法胡牌。」
@@ -221,10 +221,11 @@ const MAHJONG_RULES_FORM = {
 
 ### 5.1 protocol 行为级门禁（新文件 `packages/protocol/src/mahjong/admin-rules-form.gate.test.ts`）
 
-从 `admin/app.js` 用 `balancedBlock` + `vm` 提取 `MAHJONG_RULES_FORM`（必须纯字面量；
-提取失败/结果为空 ⇒ 直接失败，**不得** catch 后继续），断言：
+从 `admin/app.js` 用 test-utils 的 `extractJsLiteral`（字符串/注释感知的括号扫描，找不到或
+不平衡直接抛错；工具本身有单测 `packages/test-utils/test/extract-js-literal.test.ts`）提取
+`MAHJONG_RULES_FORM` 字面量，断言：
 
-1. 顶层字段集合 = `Object.keys(DEFAULT_CHENGDU_RULES) − {preset, rulesVersion}`，无重复 `path`、无未知 `path`。
+1. 顶层**标量**字段集合 = `Object.keys(DEFAULT_CHENGDU_RULES) − {preset, rulesVersion} − 三张表`，无重复 `path`、无未知 `path`。
 2. `bool` 字段集合 = 默认值为 `typeof 'boolean'` 的顶层键（4 个）。
 3. 每个 `enum`：每个选项值都被 `parseMahjongRules({...默认, [path]: value})` 接受；
    一个合成非法值被拒；`valueType:'number'` 的选项喂数值。
@@ -233,7 +234,7 @@ const MAHJONG_RULES_FORM = {
    `MAHJONG_OPTIONAL_FAN_KEYS`；`fanLabels` 全覆盖、无多余。
 6. 用描述表字段组装完整对象（含 D9 的 0 语义）经 `parseMahjongRules` 往返不变。
 
-### 5.2 shared 标签一致性门禁（新文件 `packages/shared/src/mahjong/admin-labels.gate.test.ts`）
+### 5.2 shared 标签一致性门禁（新文件 `packages/shared/test/admin-mahjong-labels.gate.test.ts`）
 
 提取 `MAHJONG_RULES_FORM.fanLabels`，与 `scoring.ts` 的 `NAMED_LABELS` 交叉比对：
 键有交集处标签文本必须一致（防止 admin 中文名与对局内展示名漂移）。
@@ -241,27 +242,32 @@ const MAHJONG_RULES_FORM = {
 ### 5.3 jsdom 探针（新文件 `scripts/admin-mahjong-rules-form-probe.mjs`）
 
 照 `admin-config-tabs-probe.mjs`：真实 `index.html` + `app.js`，桩 `fetch`/`sessionStorage`/`confirm`；
-**fetch 必须有状态**（PUT 更新内存快照，GET 返回最新值），否则验证不了保存后的重渲染。
+**fetch 必须有状态且不得双重包裹**：PUT 把原始值写回内存快照、版本另存；GET 再包成
+`{value, version}`。重渲染落定一律用 `.struct-ver` 版本徽标 `v<N>` 等待，不用 `sleep` 猜时钟。
 
 1. 麻将域可见（左树叶在）、点进「玩法规则」页签出现表单；控件精确计数：
    20 个字段控件 + 34 个番表输入 + 预设控件；`data-field` 齐全。
 2. 改 `fanCap=7`、`huazhuMode=burn48`、`fanTable.pingHu=2` → 保存 → `body.value` 完整且仅这三处变化。
-3. D3：把重置下拉切到 sbr、再改一个字段保存 ⇒ `body.value.preset` 仍为快照原值。
-4. D9：chengdu 快照清空 `fanTable.pingHu` → 保存 ⇒ `body.value.fanTable.pingHu === 0`，
-   重载后仍为 0；sbr 快照清空 `additiveFanTable.fullFlush` ⇒ 0。
-5. 越界（`fanCap=9`）→ 行内红字、无请求。
-6. 护栏：sbr 快照（加法表非空）清空加法表并切 additive → 黄条 1 出现。
-7. 重置：`confirm` 桩为真 → `body.value` 恰为 `{preset:'sbr', rulesVersion:<原值>}`。
-8. 未知顶层键透传：快照塞 `xyz` → 保存 body 保留；点「移除并保存」→ body 不含 `xyz`。
-9. 快照缺字段：删除 `claimWindowMs` → 该字段不渲染、信息条出现；点「按服务端默认补齐」→
-   PUT body = 原快照。
+3. D3：把重置下拉切到 sbr、再保存 ⇒ `body.value.preset` 仍为快照原值（重置在独立实例验证）。
+4. D9 chengdu：清空 `fanTable.pingHu` → 保存 ⇒ `body.value.fanTable.pingHu === 0`（重载后仍 0）。
+5. D9 sbr：清空全部 9 项 `additiveFanTable` → 保存 ⇒ 9 键全部为 0；且 `fanTable`（快照中不存在）
+   保持 `{}`（不存在 + 空 ⇒ 省略）。
+6. 越界（`fanCap=9`）→ 行内红字 + 卡片状态行、无请求。
+7. 护栏 1：chengdu 切 additive（空加法表）⇒ 黄条；sbr 清空加法表（非空→空）⇒ 实时黄条。
+8. 护栏 2：命名番表全 0 的快照 ⇒ 「命名番表为空」黄条。护栏 3：`minFanToHu=6` + `fanCap=3` ⇒
+   「永远无法胡牌」黄条。
+9. 重置（独立实例）：`confirm` 桩为真 → `body.value` 恰为 `{preset:'sbr', rulesVersion:<原值>}`；
+   重渲染后徽标显示「SBR 竞技近似」。
+10. 未知顶层键透传：快照塞 `xyz` → 保存 body 保留；点「移除这些未知字段并保存」→ body 不含 `xyz`。
+11. 快照缺字段：删除 `claimWindowMs` → 该字段不渲染、信息条出现；点「按服务端默认补齐」→
+    PUT body = 原快照。
 
 ### 5.4 静态闸 `verify-admin-static.mjs`
 
 - `STRUCT_META` label 更新；`STRUCT_KEYS` 仍 7 项、`CONFIG_CONTROLS` 仍 89 项、
   `CONFIG_NOTES` 仍 96 条（本片只改一条的内容）。
-- 新针脚：`MAHJONG_RULES_FORM`、`buildMahjongRulesEditor`、8 个分组标题、
-  「按预设重置」按钮文案、「移除这些未知字段并保存」。
+- 新针脚：`MAHJONG_RULES_FORM` 块（用 `balancedBlock` 圈定后断言非空 + 8 个分组标题）、
+  `buildMahjongRulesEditor`、「按预设重置全部规则」按钮文案、「移除这些未知字段并保存」。
 - 移除 `buildRulesJsonEditor` 的旧针脚（若有）。
 
 ### 5.5 回归与 CI
@@ -318,7 +324,7 @@ const MAHJONG_RULES_FORM = {
 - `scripts/admin-config-tabs-probe.mjs`（随 `053a63a1`）
 - `scripts/ci.sh`、`package.json`（探针接线）
 - `packages/protocol/src/mahjong/admin-rules-form.gate.test.ts`（新）
-- `packages/shared/src/mahjong/admin-labels.gate.test.ts`（新）
+- `packages/shared/test/admin-mahjong-labels.gate.test.ts`（新）
 - `docs/games/mahjong.md`（配置入口小节 + 差异标注）
 - 本文件
 
