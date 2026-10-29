@@ -1129,8 +1129,8 @@ const Probe = defineComponent({
   },
 });
 
-function probeText(w: number, h: number): string {
-  setWindowSize(w, h);
+function probeText(w: number, height: number): string {
+  setWindowSize(w, height);
   const wrapper = mount(LandscapeStage, {
     slots: { default: () => h(Probe) },
   });

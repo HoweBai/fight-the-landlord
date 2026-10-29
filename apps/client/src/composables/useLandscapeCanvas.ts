@@ -30,14 +30,14 @@
  * setTimeout/setInterval（牌桌区「不新造时钟」纪律），组件里不得出现时钟。
  */
 
+import type { ComputedRef, InjectionKey } from 'vue';
+
 /**
  * 设计坐标的**最小**尺寸（16:9）。视口恰为 16:9 时画布正好等于这个尺寸；
  * 更宽/更高的视口只会让对应方向的设计尺寸变大（全出血），永不缩小。
  */
 export const CANVAS_W = 1334;
-export const CANVAS_H = 750;
-
-/** 安全区（刘海 / 挖孔），单位为逻辑 px。 */
+export const CANVAS_H = 750;/** 安全区（刘海 / 挖孔），单位为逻辑 px。 */
 export interface Insets {
   top: number;
   right: number;
@@ -77,6 +77,13 @@ export interface LayoutMetrics {
   /** 画布的**设计高**（px）；缩放后恰好等于安全区高，且恒 ≥ `CANVAS_H`。 */
   height: number;
 }
+
+/**
+ * 画布尺寸的注入键：`LandscapeStage` provide，牌桌类组件 inject。
+ * 纯类型 + Symbol，无运行时依赖；独立挂载时调用方用缺省 1334×750 兜底。
+ */
+export const CANVAS_METRICS_KEY: InjectionKey<ComputedRef<LayoutMetrics>> =
+  Symbol('ftl-canvas-metrics');
 
 /**
  * 计算舞台的**全出血**布局：
