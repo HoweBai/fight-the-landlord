@@ -197,7 +197,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
   gap: 4px;
   min-width: 0;
   max-width: 100%;
-  min-height: 64px; // P1b 防 exchange/lack 阶段塌缩成一条线
+  min-height: 80px; // 放大后副露 sm 牌高 51px + badge + margin 需要更多垂直空间
   padding: 6px 8px;
   border-radius: $ftl-radius-sm;
   background: rgba(0, 0, 0, 0.28);
@@ -312,7 +312,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
   max-height: none;
 }
 .mj-seat__row--dark :deep(.mj-tile) {
-  margin-left: -12px;
+  margin-left: -16px; // 放大后 sm 宽 34px，overlap -16px ≈ 47%
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 .mj-seat__row--dark :deep(.mj-tile:first-child) {
@@ -378,6 +378,6 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
 }
 // P0 修复：compact 面板副露/暗牌行从 60px 提到 80px，给副露 label + meld + overflow +N 留足空间
 .mj-seat--compact .mj-seat__row:not(.mj-seat__row--river):not(.mj-seat__row--revealed) {
-  max-height: 80px;
+  max-height: 95px; // sm 放大后副露行需要更多高度
 }
 </style>

@@ -77,17 +77,23 @@ const label = computed(() => {
   background: transparent;
   transition: transform 0.08s, box-shadow 0.08s;
 }
+/**
+ * 所有档位等比例放大 1.3×（方案：2026-10-29 牌面尺寸升级）。
+ * 原始素材 my=75×113 (0.664), top=55×84 (0.655), l/r=49×40 (1.225)。
+ * 放大后容器撑满素材利用率 ~80%，改善当前手牌/弃牌/对手牌都偏小的问题。
+ * 所有档位保持素材原始比例，仅缩放倍率不同档。
+ */
 .mj-tile--sm {
-  width: 26px;
-  height: 39px;
-}
-.mj-tile--md {
   width: 34px;
   height: 51px;
 }
-.mj-tile--lg {
+.mj-tile--md {
   width: 46px;
   height: 69px;
+}
+.mj-tile--lg {
+  width: 60px;
+  height: 90px;
 }
 .mj-tile--selected {
   transform: translateY(-10px);
@@ -104,11 +110,12 @@ const label = computed(() => {
  * top 方向素材 55×84 (0.655) 与 my 方向 75×113 (0.664) 比例有差，
  * 竖置牌（非横置）需要独立容器尺寸避免 aspectFit letterbox。
  * 牌背同样跳过（四个方向同一张 83×125 图）。
+ * 放大后保持各自素材原始比例。
  */
 .mj-tile--dir-top:not(.mj-tile--back) {
-  &.mj-tile--sm { width: 25px; height: 38px; }
-  &.mj-tile--md { width: 33px; height: 50px; }
-  &.mj-tile--lg { width: 45px; height: 69px; }
+  &.mj-tile--sm { width: 33px; height: 50px; }
+  &.mj-tile--md { width: 45px; height: 69px; }
+  &.mj-tile--lg { width: 59px; height: 90px; }
 }
 /**
  * left/right 方向的牌面素材是横置（49×40，宽>高），容器需按横牌比例调整。
@@ -117,8 +124,8 @@ const label = computed(() => {
  */
 .mj-tile--dir-left:not(.mj-tile--back),
 .mj-tile--dir-right:not(.mj-tile--back) {
-  &.mj-tile--sm { width: 39px; height: 32px; }
-  &.mj-tile--md { width: 51px; height: 42px; }
-  &.mj-tile--lg { width: 68px; height: 55px; }
+  &.mj-tile--sm { width: 51px; height: 42px; }
+  &.mj-tile--md { width: 66px; height: 54px; }
+  &.mj-tile--lg { width: 88px; height: 72px; }
 }
 </style>

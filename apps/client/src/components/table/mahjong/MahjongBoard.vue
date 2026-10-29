@@ -1053,8 +1053,8 @@ function onMeldPopDone(key: string) {
   backdrop-filter: blur(2px);
 }
 .mj__wall-pile :deep(.mj-tile) {
-  // P3 和其他组件统一：sm tile 一律 -12px overlap
-  margin-left: -12px;
+  // 放大后 sm tile 宽 34px，overlap -16px ≈ 47% （和手牌保持一致重叠率）
+  margin-left: -16px;
 }
 .mj__wall-pile :deep(.mj-tile:first-child) {
   margin-left: 0;
@@ -1150,13 +1150,13 @@ function onMeldPopDone(key: string) {
   // 避免两侧延伸到 action bar 倒计时徽章和桌面边缘
   padding: $ftl-space-2 $ftl-space-10 0;
   gap: 0; // P1-1: gap 改 0，完全由负 margin 控制 overlap，避免 flex gap 在 margin 之外多撑开 2px
-  min-height: 79px;
+  min-height: 95px; // lg 牌从 69px 放大到 90px + padding 适配
   overflow-x: auto;
   position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
 }
 .mj__hand :deep(.mj-tile) {
-  // P1-1: -12 → -16：原 overlap 26% 太松，新 overlap ~35%，13 张手牌紧凑不散
-  margin-left: -16px;
+  // lg 宽 60px，overlap -20px ≈ 33% （13 张手牌紧凑不散，总宽 = 60 + 12×40 = 540px）
+  margin-left: -20px;
 }
 .mj__hand :deep(.mj-tile:first-child) {
   margin-left: 0;

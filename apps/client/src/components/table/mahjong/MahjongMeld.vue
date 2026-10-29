@@ -106,10 +106,9 @@ function onAnimEnd(e: AnimationEvent): void {
   line-height: 0; // 消除 image inline 间隙
 }
 
-/** 3 张横向叠加：后两张往左负 margin */
-// P3：sm tile 统一 -12px（和手牌/暗牌堆/牌墙堆一致）；md/lg 保持 -18px / -22px
+/** 3 张横向叠加：后两张往左负 margin。放大后所有档位等比增加。 */
 .mj-meld :deep(.mj-tile) {
-  margin-left: -12px;
+  margin-left: -16px; // sm 宽 34px，overlap -16px ≈ 47%
   position: relative;
 }
 .mj-meld :deep(.mj-tile:first-child) {
@@ -119,7 +118,7 @@ function onAnimEnd(e: AnimationEvent): void {
 /** 杠的第 4 张：叠在中间那张（index 1）的正上方 */
 .mj-meld__cap {
   position: absolute;
-  left: calc(50% - 14px); // 中间那张正上方
+  left: calc(50% - 17px); // sm tile 宽 34px 的一半
   bottom: 100%;
   z-index: 3;
   margin-left: 0 !important;
@@ -133,10 +132,10 @@ function onAnimEnd(e: AnimationEvent): void {
 /** 大尺寸时负 margin 跟着调 */
 .mj-meld--md :deep(.mj-tile),
 .mj-meld--lg :deep(.mj-tile) {
-  margin-left: -18px;
+  margin-left: -22px;
 }
 .mj-meld--md .mj-meld__cap,
 .mj-meld--lg .mj-meld__cap {
-  left: calc(50% - 18px);
+  left: calc(50% - 23px); // md tile 宽 46px 的一半（lg=60 也够用，略偏左 7px 视觉不明显）
 }
 </style>
