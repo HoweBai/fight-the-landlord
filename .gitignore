@@ -37,6 +37,8 @@ resources/
 .hbuilderx/
 # Trae（另一 AI 工具）的会话工作区文档（过程产物；2026-10-11 曾随批捎带进过一次提交）
 .trae/
+# Playwright/test-results 产物（test-results/.last-run.json 曾入库；失败状态不得跟仓库走）
+test-results/
 
 # 备份产物（片③-B）：`users-<ts>.sql.gz` / `caddy-data-<ts>.tgz` 由 backup.sh 在**服务器**上生成，
 # 只在开发机/CI 演练时会落到工作区里。⚠️ 这两行与判据 l（`slice-07.5-backup`：仓库里不得有被

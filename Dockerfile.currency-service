@@ -11,9 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY package.json ./
-# ⚠️ 2026-10-27 起 pnpm.patchedDependencies 为空（vitest 4 已不需要补丁）；
-# COPY patches 暂留（目录仍有历史补丁文件；删除需同步改全部 Dockerfile，另立清理片）
-COPY patches ./patches
 # 每个包的 tsconfig.json 都 extends 它；缺了它 tsc 会退回默认 target（ES5）并在 vitest 的 .d.ts 上报 TS18028
 COPY tsconfig.base.json ./
 
@@ -31,7 +28,10 @@ COPY packages/currency-service ./packages/currency-service
 # `docker compose build`（用户先例：本机实测卡了 50 分钟，连带其余镜像永远轮不到重建）。
 # ⚠️ currency-service **没有**原生依赖（mysql2/ioredis 均纯 JS）⇒ 没有 user-service
 # 「再重建 bcrypt」那一步；装完即可用。
-RUN npm install -g pnpm@9.15.0 && pnpm install --no-frozen-lockfile --ignore-scripts
+# --frozen-lockfile：容器只 COPY 所需 workspace 子集，pnpm 按盘上实际存在的包对账；
+# 同一 commit 的依赖解析必须与已提交 pnpm-lock.yaml 完全一致（no-frozen 会静默改写 lockfile，
+# 实测会装出不同的 peer 布局）。2026-10-28 复刻容器上下文实验通过。
+RUN npm install -g pnpm@9.15.0 && pnpm install --frozen-lockfile --ignore-scripts
 
 # Build the service（必须按依赖顺序：test-utils 是 protocol 测试文件的 import，先于 protocol；缺 protocol 时 shared 的 tsc 解析不到 @fight-the-landlord/protocol）
 RUN pnpm --filter @fight-the-landlord/test-utils build \

@@ -622,7 +622,7 @@ export async function runSlice17(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // ③ C2：三表逐列（列名+类型完整串）/逐索引 + migrations_currency 行
     // ══════════════════════════════════════════════════════════════════════
-    step('③ C2：`compose exec mysql` 三表逐列（列名+类型完整串）/逐索引/`migrations_currency` 恰 2 行');
+    step('③ C2：`compose exec mysql` 三表逐列（列名+类型完整串）/逐索引/`migrations_currency` 恰 9 行');
     checks.eq(
       mysqlCount(
         `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('currency_accounts','currency_ops','currency_flows')`,
@@ -641,8 +641,8 @@ export async function runSlice17(): Promise<Checks> {
       mysqlText(
         `SELECT GROUP_CONCAT(CONCAT(column_name,':',column_type) ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='currency_ops'`,
       ),
-      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16)',
-      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 两列 + A2 game_type 尾追）',
+      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16),burned_penalty:int',
+      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 三列（含麻将花猪 burned_penalty）+ A2 game_type 尾追）',
     );
     checks.eq(
       mysqlText(
@@ -686,11 +686,11 @@ export async function runSlice17(): Promise<Checks> {
       'game_type,created_at',
       '③ C2：idx_ops_game_created = (game_type,created_at)（A2）',
     );
-    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 8, '③ C2：migrations_currency 恰 8 行（AgentDomain 迁移 +1；真库读过）');
+    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 9, '③ C2：migrations_currency 恰 9 行（AgentDomain + 麻将 BurnPenalty 各 +1；真库读过）');
     checks.eq(
       mysqlText(`SELECT GROUP_CONCAT(name ORDER BY id) FROM migrations_currency`),
-      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002,AgentDomain1798000000000',
-      '③ C2：八行 = 既有四行 + A2 三条 + 代理 AgentDomain（顺序=执行序）',
+      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002,AgentDomain1798000000000,BurnPenalty1798300000000',
+      '③ C2：九行 = 既有四行 + A2 三条 + 代理 AgentDomain + 麻将 BurnPenalty（顺序=执行序）',
     );
 
     // ══════════════════════════════════════════════════════════════════════

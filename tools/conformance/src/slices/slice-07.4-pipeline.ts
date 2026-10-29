@@ -789,12 +789,15 @@ export async function runSlice074Pipeline(): Promise<Checks> {
     `images.yml 必须有 workflow_dispatch（dev/测试服手动出包入口）—— 实际 ${imagesOn.dispatch}`,
   );
 
-  // ── conformance.yml：push→master **且** 可被 release.yml 复用 ────────
+  // ── conformance.yml：push→master **且**可被 release.yml 复用 **且**有集成分支权威轮入口 ──
   const conf = readWorkflow('conformance.yml');
   const confOn = onShape(conf.on);
   checks.that(
-    JSON.stringify(confOn.events) === JSON.stringify(['push', 'workflow_call']),
-    `conformance.yml 触发恰为 {push, workflow_call}（后者供 release.yml 复用 —— R1314⑤ 少一次全量构建）` +
+    JSON.stringify(confOn.events) ===
+      JSON.stringify(['push', 'workflow_call', 'workflow_dispatch']),
+    `conformance.yml 触发恰为 {push, workflow_call, workflow_dispatch}` +
+      `（workflow_call 供 release.yml 复用 —— R1314⑤ 少一次全量构建；` +
+      `workflow_dispatch = feature 集成分支的权威轮入口，2026-10-29 新增）` +
       ` —— 实际 ${JSON.stringify(confOn.events)}`,
   );
   // ⚠️ B4 复评补：本文件此前**没有**任何闸看它自己的 `push.branches`（`images.yml` 的同款断言早有）。
@@ -804,14 +807,14 @@ export async function runSlice074Pipeline(): Promise<Checks> {
       `少了这条，给本文件加 feature 分支触发不会有任何东西响）` +
       ` —— 实际 push.branches = ${JSON.stringify(confOn.pushBranches)}`,
   );
-  // ⚠️ B4 复评补：`onShape` 算出来的 `dispatch` 此前**从没被断言**（死字段）。这里给它语义：
-  //    conformance 的**唯一**手动入口是 release.yml 的 dispatch（= 回滚），那条路径上本 job 靠
-  //    `if` 整条跳过 ⇒ 本文件自己**不得**再开一个手动入口。
+  // ⚠️ B4 复评补：`onShape` 算出来的 `dispatch` 此前**从没被断言**（死字段）。语义在 2026-10-29
+  //    改写：release 回滚的 dispatch 仍只打 `release.yml`（那条路径上本 job 靠 `if` 整条跳过）；
+  //    本文件自己的 `workflow_dispatch` 是 **feature 集成分支的权威轮入口**，只跑 conformance、
+  //    不触发部署 ⇒ 允许且必须存在。
   checks.that(
-    confOn.dispatch === false,
-    `conformance.yml **不得**声明 workflow_dispatch（手动入口只有 release.yml 的 dispatch = 回滚，` +
-      `它会用 \`if\` 把 conformance 整条跳过 —— 那正是回滚快的原因）` +
-      ` —— 实际 workflow_dispatch = ${JSON.stringify(confOn.dispatch)}`,
+    confOn.dispatch === true,
+    `conformance.yml **必须**声明 workflow_dispatch（feature 集成分支权威轮入口；` +
+      `C3 硬闸要求 slice 过权威轮才可合 dev）—— 实际 workflow_dispatch = ${JSON.stringify(confOn.dispatch)}`,
   );
 
   // ── release.yml：**tag `v*`** + `workflow_dispatch`（回滚入口）────────
@@ -901,9 +904,10 @@ export async function runSlice074Pipeline(): Promise<Checks> {
   step('B1 判别力自证：合成输入喂同一个谓词 ⇒ 必须红');
   const syntheticPush = onShape({ push: {} });
   checks.eq(
-    JSON.stringify(syntheticPush.events) === JSON.stringify(['push', 'workflow_call']),
+    JSON.stringify(syntheticPush.events) ===
+      JSON.stringify(['push', 'workflow_call', 'workflow_dispatch']),
     false,
-    '负对照：`on: push`（无 workflow_call）喂 conformance 的谓词 ⇒ **必须不相等**' +
+    '负对照：`on: push`（无 workflow_call / workflow_dispatch）喂 conformance 的谓词 ⇒ **必须不相等**' +
       '（若这条绿了，说明谓词恒真 —— 上面的断言全是空测）',
   );
   const wrongNeeds = needsOf({ needs: ['images'] });

@@ -24,7 +24,13 @@ import {
   RISK_USER_STATUS_SQL,
   type ScanReason,
 } from './reviews.service';
+import { FundScanCollector } from './fund-scan';
 import {
+  riskFundScanHitUsers,
+  riskFundScanHitsTotal,
+  riskFundScanLastSuccessTimestampSeconds,
+  riskFundScanRoundFailures,
+  riskFundScanRunsTotal,
   riskReviewsOpen,
   riskScanHitsTotal,
   riskScanLastSuccessTimestampSeconds,
@@ -174,6 +180,11 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
   private shuttingDown = false;
   /** 本实例的锁值（⚙️24 CAD 的比对基准；随进程一次性生成）。 */
   private readonly instanceId = randomUUID();
+  /**
+   * C3 资金异常采集器（spec D1）：无 Nest 生命周期；在本轮内同步跑完 8 条只读查询。
+   * ⚠️ 必须在**构造体**赋值（`useDefineForClassFields` 下字段初始化器早于参数属性）。
+   */
+  private readonly fundScan: FundScanCollector;
 
   constructor(
     /** ⚠️ `DataSource` 是**值导入** + 显式 `@Inject`（DI 陷阱纪律；本仓既有惯例）。 */
@@ -182,12 +193,23 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     @Inject(REDIS) private readonly redis: Redis,
     private readonly configCache: ConfigCacheService,
     private readonly reviews: ReviewsService,
-  ) {}
+  ) {
+    this.fundScan = new FundScanCollector(dataSource);
+  }
 
   onModuleInit(): void {
     // 🔴 **先置 0**（「从未成功」语义 —— 首启 / 一直失败都要被 RiskScanStalled 命中）
     // **再**进首排动作（本片 ⚙️5；排首轮在其内）。顺序即语义，别对调（照 records-cleanup 先例）。
     riskScanLastSuccessTimestampSeconds.set(0);
+    // C3（spec §5.6）：失败面是 gauge（多副本告警安全）⇒ 6 个组合显式置 0，
+    // 保证未跑过轮次的实例也暴露序列（ClusterIP 轮询时不出现「序列消失」）。
+    riskFundScanLastSuccessTimestampSeconds.set(0);
+    riskFundScanHitUsers.set(0);
+    for (const scope of ['doudizhu', 'paodekuai', 'ops'] as const) {
+      for (const reason of ['sql', 'truncated'] as const) {
+        riskFundScanRoundFailures.set({ scope, reason }, 0);
+      }
+    }
     this.bootFirstScheduling();
   }
 
@@ -296,6 +318,9 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       return result;
     } catch (err) {
       riskScanRunsTotal.inc({ result: 'fail' });
+      // C3（审查 M1）：整轮在轮末记账前抛错（双玩法 SQL/设备 SQL/apply 全败/自愈抛）时，
+      // fund runs 也要记 fail —— 否则面板看似「C3 仍在跑」，只有 last_success 老化兜底。
+      riskFundScanRunsTotal.inc({ result: 'fail' });
       throw err;
     } finally {
       // ⚙️24：CAD 释放（只有还持有锁才删；释放失败不改变本轮成败 —— EX 是兜底）。
@@ -378,6 +403,11 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       throw err;
     }
 
+    // ── C3 资金异常采集（spec §5.4）：8 条只读查询；单查询失败/截断 ⇒ 该玩法冻结，
+    //    整体仍继续（部分可用优于整轮失败）。窗口/阈值由 `now` 注入（同一轮同一时刻）。
+    const fund = await this.fundScan.collect(now);
+    degradedGames.push(...fund.degradedGames);
+
     // ── 并集合并：设备-only ⇒ 两玩法均无、hit1=false；玩法间/人数间不合并样本 ─────
     const merged = new Map<string, MergedRiskStat>();
     const ensure = (userId: string): MergedRiskStat => {
@@ -387,6 +417,14 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       merged.set(userId, created);
       return created;
     };
+    // C3 命中用户并入并集（可能只有对子/同设备行，没有胜率/设备数行）。
+    for (const userId of fund.hitsByUser.keys()) ensure(userId);
+    // C3 命中指标：每用户每 (check, gameType) 恰 +1（与 reason cap 无关）。
+    for (const hits of fund.hitsByUser.values()) {
+      for (const hit of hits) {
+        incGame(riskFundScanHitsTotal, hit.gameType, 1, { check: hit.check });
+      }
+    }
     for (const row of winRows ?? []) {
       ensure(String(row.user_id)).byGame.doudizhu = {
         games: Number(row.games),
@@ -431,6 +469,9 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     // ── 判定 + 逐用户 upsert（score=0 也进 —— 自动旗回落判定，规格 §2.5-2 括号）──
     let flagged = 0;
     let userFailures = 0;
+    // 审查 M6：胜率失败与 C3 失败可能指向同一玩法 ⇒ 去重后再交给状态机（行为副作用零，
+    // 防未来消费方把重复项当独立信号）。
+    const unavailableGames = [...new Set(degradedGames)];
     for (const [userId, stats] of merged) {
       const ddz = stats.byGame.doudizhu;
       const pdk = stats.byGame.paodekuai;
@@ -449,10 +490,16 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
       // 两玩法同时命中只算“胜率命中项”一项（不叠分）；PDK 多人数命中同样不叠分。
       const hit1 = ddzHit || pdkHits.length > 0 || mjHit;
       const hit2 = stats.devices > deviceLimit;
+      const fundReasons = fund.reasonsByUser.get(userId) ?? [];
+      // C3 四信号合并为**一项**命中（U9「score +25」；多信号不叠分，reasons 仍逐条可解释）。
+      const hit3 = fundReasons.length > 0;
       if (ddzHit) incGame(riskScanHitsTotal, 'doudizhu');
       if (pdkHits.length > 0) incGame(riskScanHitsTotal, 'paodekuai');
       if (mjHit) incGame(riskScanHitsTotal, 'mahjong');
-      const score = (hit1 ? SINGLE_HIT_SCORE : 0) + (hit2 ? SINGLE_HIT_SCORE : 0);
+      const score =
+        (hit1 ? SINGLE_HIT_SCORE : 0) +
+        (hit2 ? SINGLE_HIT_SCORE : 0) +
+        (hit3 ? SINGLE_HIT_SCORE : 0);
       if (score >= SINGLE_HIT_SCORE) flagged += 1;
       const reasons: ScanReason[] = [];
       if (ddzHit && ddz !== undefined) {
@@ -490,9 +537,10 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
         });
       }
       if (hit2) reasons.push({ check: 'devices', detail: { devices: stats.devices } });
+      if (hit3) reasons.push(...fundReasons);
 
       try {
-        await this.reviews.applyScanResult(userId, score, reasons, now, degradedGames);
+        await this.reviews.applyScanResult(userId, score, reasons, now, unavailableGames);
       } catch (err) {
         // 单用户失败隔离：warn 留痕 + 跳过（下一轮收敛）。真库双会话的 1213 形态即由
         // 此退化路径承接（不会把整轮打红、不会丢后续用户）。
@@ -537,11 +585,37 @@ export class ScanService implements OnModuleInit, OnApplicationShutdown {
     const openCount = Number(openRows[0]?.cnt ?? 0);
     if (Number.isFinite(openCount)) riskReviewsOpen.set(openCount);
 
+    // ── C3 指标（spec §5.6）─────────────────────────────────────────────────
+    // 失败面 = gauge（多副本告警安全）：每轮把 6 个组合全部置值（成功为 0）。
+    const fundFailureCounts = new Map<string, number>();
+    for (const failure of fund.failures) {
+      const key = `${failure.scope}:${failure.reason}`;
+      fundFailureCounts.set(key, (fundFailureCounts.get(key) ?? 0) + 1);
+    }
+    for (const scope of ['doudizhu', 'paodekuai', 'ops'] as const) {
+      for (const reason of ['sql', 'truncated'] as const) {
+        riskFundScanRoundFailures.set(
+          { scope, reason },
+          fundFailureCounts.get(`${scope}:${reason}`) ?? 0,
+        );
+      }
+    }
+    // 全量成功才推进 last_success / hit_users（失败/降级轮保持上一轮读数，供告警判读）。
+    if (fund.failures.length === 0) {
+      riskFundScanRunsTotal.inc({ result: 'ok' });
+      // 审查 M3：用注入时钟（`runScanOnce(now)` 的唯一时间输入），不是轮末真实时钟 ——
+      // 否则以历史 now 复核窗口时，gauge 与轮内窗口口径漂移。
+      riskFundScanLastSuccessTimestampSeconds.set(now / 1000);
+      riskFundScanHitUsers.set(fund.hitUsers);
+    } else {
+      riskFundScanRunsTotal.inc({ result: 'fail' });
+    }
+
     // 成功轮设时间戳（失败轮不擦 —— 由外层 catch 保证不走到这里）。
     riskScanLastSuccessTimestampSeconds.set(Date.now() / 1000);
     const durationMs = Date.now() - startedAtMs;
     this.logger.log(
-      `risk scan done: users=${merged.size} flagged=${flagged} healed=${healed} open=${openCount} durationMs=${durationMs}`,
+      `risk scan done: users=${merged.size} flagged=${flagged} healed=${healed} open=${openCount} fundHits=${fund.hitUsers} fundDropped=${fund.droppedByCap} fundDegraded=${fund.degradedGames.join(',') || 'none'} fundFailures=${fund.failures.length} durationMs=${durationMs}`,
     );
     return { skipped: false, users: merged.size, flagged };
   }

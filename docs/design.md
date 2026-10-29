@@ -2028,14 +2028,14 @@ pnpm lint                                        # tsc --noEmit
 | 工作流                              | 触发                                                                                                | 做什么                                                                                                       |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `.github/workflows/images.yml`      | push→**master**                                                                                     | 构建 14 个自建镜像 → 推私有 GHCR 包 `ghcr.io/howebai/fight-the-landlord-<svc>:{sha-<短7>, latest}`           |
-| `.github/workflows/conformance.yml` | push→**master** · `workflow_call`（被 `release.yml` 复用时**拉**刚推好的 tag 镜像，省一次全量构建） | 起真栈跑**全部 conformance 切片**（Linux 侧验证的自动化答案），条数下限在 `tools/conformance/baselines.json` |
+| `.github/workflows/conformance.yml` | push→**master** · `workflow_call`（被 `release.yml` 复用时**拉**刚推好的 tag 镜像，省一次全量构建） · `workflow_dispatch`（feature 集成分支权威轮入口；只跑 conformance、不部署） | 起真栈跑**全部 conformance 切片**（Linux 侧验证的自动化答案），条数下限在 `tools/conformance/baselines.json` |
 | `.github/workflows/release.yml`     | tag `v*` · `workflow_dispatch`（回滚入口）                                                          | `images → conformance → deploy` **三个 job 用 `needs` 串行**（并行会让部署抢在镜像推送之前 ⇒ 竞态型假红）    |
 
 `ci.yml` 另有第二个 job **`render-gate`**（每次 push 跑纯渲染判据 —— 不需要 docker daemon、≈2.8s）：它关掉的是片① 登记的 **R2**（「新增的生产形态保证没有任何自动闸」）。
 
 `ci.yml` 另有第三个 job **`security-scan`**（M0.1，每次 push 与 PR 跑）：三路全阻断——依赖漏洞（`scripts/security/check-audit.mjs`，`pnpm audit --prod` 的 critical/high 必须清零，机器可读豁免 = `scripts/security/audit-exceptions.json`，2026-10-27 起为**空集**）· 密钥泄露（gitleaks v8.30.1 钉版全历史）· 配置误配（trivy v0.75.0 钉版 config）。它与 `render-gate` 同理由**不进六阶段**（六阶段真源在 `scripts/ci.sh`）。判据 = `slice-07.4-pipeline` 的 C1–C25。
 
-**成本控制**（R1314，与具体额度数字无关）：① 构建走 buildx + GHA 缓存 ② 触发分级（**三个工作流表**）③ **额度吃紧时的降级路径**：把 `conformance.yml` 的 `on.push.branches` 删掉 ⇒ 真栈 conformance 只在 tag 上跑（`render-gate` 不受影响，仍在每次 push 跑）；⚠️ **但已不是「一行改动」**（2026-09-25 订正）：`slice-07.4-pipeline` 把触发集合钉成恰好 {push, workflow_call} ⇒ 删 `on.push` 会让它红 —— **得分两处一起改** ④ CI runner 侧允许 `docker image prune -af`，**服务器侧只许 `-f`** ⑤ tag 路径的构建次数 = **2**（`images` + `conformance` 复用拉取）。
+**成本控制**（R1314，与具体额度数字无关）：① 构建走 buildx + GHA 缓存 ② 触发分级（**三个工作流表**）③ **额度吃紧时的降级路径**：把 `conformance.yml` 的 `on.push.branches` 删掉 ⇒ 真栈 conformance 只在 tag 上跑（`render-gate` 不受影响，仍在每次 push 跑）；⚠️ **但已不是「一行改动」**（2026-09-25 订正）：`slice-07.4-pipeline` 把触发集合钉成恰好 {push, workflow_call, workflow_dispatch} ⇒ 删 `on.push` 会让它红 —— **得分两处一起改** ④ CI runner 侧允许 `docker image prune -af`，**服务器侧只许 `-f`** ⑤ tag 路径的构建次数 = **2**（`images` + `conformance` 复用拉取）。
 
 ### 13.5 当前达标状况 `[已修复]`
 

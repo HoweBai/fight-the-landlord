@@ -121,7 +121,7 @@
 | F3 | 文档 | `docs/superpowers/plans/2026-10-02-post-mvp-roadmap.md` | 收口时：M0.1 状态 + vite 豁免**复查触发**登记（`vite-plugin-uni` peer 放宽到含 6 / uni 官方支持 vite 6） | D6/§5.1 |
 | G1 | （条件） | 根 `Dockerfile.*` ×7 + `douzero/Dockerfile` | **若 trivy 首跑命中「能修」桶** ⇒ 微调（D4 规则）；超一页规模 ⇒ **停下上报** | D4/§8 |
 
-**不在改动面（有意）**：`scripts/ci.sh`（六阶段单真源，安全扫描不是六阶段之一）；其余三个 workflow；`docker-compose*.yml`——**本片默认无容器变更**（trivy 支线除外，见 G1）；`patches/vitest@2.1.9.patch`；`admin/`（无依赖）。
+**不在改动面（有意）**：`scripts/ci.sh`（六阶段单真源，安全扫描不是六阶段之一）；其余三个 workflow；`docker-compose*.yml`——**本片默认无容器变更**（trivy 支线除外，见 G1）；`patches/vitest@2.1.9.patch`（**2026-10-28 订正**：已删除）；`admin/`（无依赖）。
 
 ---
 
@@ -371,7 +371,7 @@ paths = ['''tools/conformance/fixtures/ad-callback/''']
 | uni 工具链 overrides | H5 链由 `uni build` 每次门禁检验；**mp 链（jpeg-js/ws）无自动面**（mp 冻结）——登记；**若破 ⇒ 回退该条 override 并报到设计层**（换登记豁免讨论，不静默） | 阶段 3 全绿 / 否则停报 |
 | 扫描器钉版升级 | = 显式改 URL+sha256（可 review）；识别形态（C2/C6）**同提交**同步 | 静态断言 |
 | npmjs 可达性 | 故障 = 形状断言红（响亮） | 首跑读数 |
-| vitest 补丁 | `patches/vitest@2.1.9.patch` **不动** | 六阶段阶段 4 全绿 |
+| vitest 补丁 | `patches/vitest@2.1.9.patch`（**2026-10-28 订正**：已删除） | 六阶段阶段 4 全绿 |
 
 ## 8. 明确不做（同设计 §7）
 

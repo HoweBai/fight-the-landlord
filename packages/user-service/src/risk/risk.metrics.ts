@@ -66,3 +66,46 @@ export const riskScanSqlFailuresTotal: ReturnType<typeof createCounter> = create
   '风控扫描 SQL 失败次数（scope=doudizhu|paodekuai|device；单玩法失败按玩法隔离，设备 SQL 失败仍整轮失败）。',
   ['scope'],
 );
+
+/**
+ * C3 资金异常信号命中次数（`check` 四值；每用户每信号每玩法每轮最多 +1）。
+ * ⚠️ 带 `game_type` ⇒ 写点必须经 `incGame`（A1 源码闸 TARGETS 已收录本名）。
+ */
+export const riskFundScanHitsTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_fund_scan_hits_total',
+  '资金异常信号命中次数（check=sameDevice|pairWinRate|pairFrequency|highRake；每用户每信号每玩法每轮最多 +1）。',
+  ['check', 'game_type'],
+);
+
+/** C3 本轮命中用户数（仅 C3；不含胜率/设备；仅全量采集成功的轮次刷新；启动置 0）。 */
+export const riskFundScanHitUsers: ReturnType<typeof createGauge> = createGauge(
+  'risk_fund_scan_hit_users',
+  '本轮资金异常（C3）命中用户数（任一信号；仅全量采集成功的轮次刷新；启动置 0）。',
+);
+
+/** C3 采集轮次（result=ok|fail；每轮结束 +1；全量成功=ok）。 */
+export const riskFundScanRunsTotal: ReturnType<typeof createCounter> = createCounter(
+  'risk_fund_scan_runs_total',
+  '资金异常采集轮次（result=ok|fail；每轮结束 +1；全量成功=ok）。',
+  ['result'],
+);
+
+/**
+ * C3 最近一次全量成功的 Unix 时间戳（秒）；启动置 0；失败/降级轮不推进。
+ * 告警表达式用 `max_over_time`（ClusterIP 多副本 series 抖动安全）。
+ */
+export const riskFundScanLastSuccessTimestampSeconds: ReturnType<typeof createGauge> = createGauge(
+  'risk_fund_scan_last_success_timestamp_seconds',
+  '资金异常采集最近一次全量成功的 Unix 时间戳（秒）；启动置 0；失败/降级轮不推进。',
+);
+
+/**
+ * C3 本轮失败查询数（gauge，非 counter）：`scope` 三值 × `reason` 两值，每轮全 6 组合置值
+ * （成功为 0）。用 gauge 而非 counter 是**多副本告警安全**的裁决：ClusterIP 单 target 轮询
+ * 多副本时 counter 会被 Prometheus 当成 reset ⇒ `increase` 假放大（spec D15）。
+ */
+export const riskFundScanRoundFailures: ReturnType<typeof createGauge> = createGauge(
+  'risk_fund_scan_round_failures',
+  '资金异常采集本轮失败查询数（scope=doudizhu|paodekuai|ops；reason=sql|truncated；每轮全 6 组合置值，成功为 0）。',
+  ['scope', 'reason'],
+);

@@ -204,9 +204,17 @@ export async function playMahjongToEnd(room: MahjongRoom): Promise<MahjongOutcom
           actions += 1;
           return;
         }
-        if (ack.code === ErrCode.VERSION_CONFLICT || ack.code === ErrCode.NOT_YOUR_TURN) {
+        if (
+          ack.code === ErrCode.VERSION_CONFLICT ||
+          ack.code === ErrCode.NOT_YOUR_TURN ||
+          ack.code === ErrCode.RATE_LIMITED
+        ) {
           sent.delete(key);
-          await sleep(80);
+          // WS 限流档 = 20 条/5s（按 socket）。状态回推慢时驱动会对同一窗口快速重发，
+          // 触发 10006「Too many messages」—— 那是**测试自己的重发风暴**，不是对局缺陷
+          //（限流语义由 room-service 单测钉住）⇒ 退避到限流窗口（5s）外再试，不判红。
+          // 2026-10-29 权威轮实证：merged 栈上 discard 首次发送即被 10006 拒绝。
+          await sleep(ack.code === ErrCode.RATE_LIMITED ? 5_100 : 80);
           return;
         }
         throw new ConformanceError(

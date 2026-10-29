@@ -1285,6 +1285,7 @@ https://<你的域名>/grafana/
 **B 组（2026-10-26）**：新增 `RiskScanSqlFailures`（`scope=doudizhu|paodekuai|device`，10m 任意失败即 warning）。单玩法 SQL 失败时该玩法本轮冻结、其他玩法继续；device SQL 失败会整轮失败。先查 scope 对应表/权限，再看 user-service 扫描 ERROR 日志与 `risk_scan_last_success_timestamp_seconds`。
 **C1（2026-10-26）**：新增 `RecordOutboxStuck`（warning，记录补偿队列最老 >10m）、`RecordOutboxAbandoned`（critical，24h 内 TTL 超龄/坏条目/确定性拒收 >0）、`RecordLost`（critical，15m 内 `record_write_failures_total{kind="record_lost"}` >0）。`RecordWriteFailuresHigh` 的 `kind=record` 表示「首次失败但已入箱待重投」，先看前两条；`record_lost` 才是永久丢失。
 **C2（2026-10-26）**：新增 3 条资金↔记录对账告警（每 1h 一轮、启动 10s 首跑；只报不改）—— `RecordsReconcileMismatch`（warning，金额不一致/记录缺失/全 NULL/疑似 NULL/台费疑似/台费孤儿合计 >0）、`RecordsReconcileOrphanOps`（critical，结算 op 无记录 ≥25h）、`RecordsReconcileStalled`（warning，>2h 未成功，含从未成功）。面板：管理页「财务 → 对账」的「记录对账」三行 + `GET /api/admin/wallet/reconcile` 的 `data.records`；按 room/version 人工核对，**不自动补记录/不改钱**。
+**C3（2026-10-28）**：新增 3 条资金异常告警（随既有风控扫描每 1h 一轮；四信号 = 同设备同桌 / 对子胜率集中 / 24h 高频对子 / 高抽水）—— `RiskFundScanQueryFailures`（warning，采集查询失败/截断，按 `scope=doudizhu|paodekuai|ops`）、`RiskFundScanStalled`（warning，>2h 未全量成功，含从未成功）、`RiskFundHitsHigh`（warning，单轮命中用户 >10 持续 2h）。命中会进管理端「风控 → 审核队列」（reasons 含 `pairUserId`/`deviceId`/`games`/`windowHours`，可解释）；**只限流不封禁**，封禁恒为人工动作。⚠️ 当前种子下 PDK 2 人场 / PDK 金币场默认关闭且 `rakePercent=0` ⇒ 只有同设备同桌与斗地主高抽水可响；开启对应开关后才覆盖全部四信号。三条表达式用 `max_over_time`，多副本抓取安全。
 
 ⚠️ **心跳邮件（「监控活着」）**：邮箱配好之后，大约**每 24 小时**你会收到一封「监控活着」的邮件（内容里带 `Watchdog` 字样）—— 它证明**整条告警链**（收数据 → 判规则 → 发通知）活着。判读口径 = **「多久没收到」**：
 
