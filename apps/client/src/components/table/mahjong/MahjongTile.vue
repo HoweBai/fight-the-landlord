@@ -3,9 +3,9 @@
  * 单张麻将牌（哑组件）。只把 `Tile` 翻译成牌面素材路径。
  *
  * 素材：幼麟棋牌 4 方向 Atlas 提取——
- *   my (75×113 正), top (55×84 倒置), left/right (49×40 横置),
- *   共享牌背 (83×125)。
- * 不传 `direction` → 用平铺旧资源（向后兼容）。
+ *   my (75×113 正), top (55×84 倒置), left/right (49×40 横置)，
+ *   每个方向目录自带牌背。
+ * 不传 `direction` → 默认 `my/`（根目录平铺旧资源已于 2026-10-29 清理）。
  * 牌面路径是**纯展示映射**，不含任何规则判定。
  * 见 `THIRD-PARTY-NOTICES.md`。
  */
@@ -36,7 +36,7 @@ const SUIT_FILES = ['wan', 'tong', 'tiao'] as const;
 
 const src = computed(() => {
   const base = '/pages/table/static/mahjong/';
-  const dir = props.direction ? `${props.direction}/` : '';
+  const dir = `${props.direction ?? 'my'}/`;
   if (props.back || !props.tile) return `${base}${dir}back.png`;
   const suit = SUIT_FILES[props.tile.s];
   return `${base}${dir}${suit}-${props.tile.r}.png`;

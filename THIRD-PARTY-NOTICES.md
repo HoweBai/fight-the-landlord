@@ -45,9 +45,11 @@ recorded license. Their terms are unknown; they are not covered by the root
 
 四川麻将专用素材另记来源：
 
-- `apps/client/src/pages/table/static/mahjong/*.png`（万/筒/条 1–9 牌面与牌背）
-  从 **幼麟棋牌** `babykylin/babykylin_scmj` 的 Cocos 图集 `Z_my` / `Z_bottom`
-  中按 plist 坐标裁切得到；同名衍生仓库 `zhaozhifei/scmj`、
+- `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/*.png`（四个方向的万/筒/条
+  1–9 牌面与牌背）
+  从 **幼麟棋牌** `babykylin/babykylin_scmj` 的 Cocos 图集 `Z_my` / `Z_bottom` / `Z_left` /
+  `Z_right` / `mjEmpty` 中按 plist 坐标裁切得到（脚本
+  `scripts/extract-mahjong-tiles.mjs`）；同名衍生仓库 `zhaozhifei/scmj`、
   `copperlib/majiang-cocos-creator` 的素材与本仓库所取文件逐字节一致。
 - `apps/client/src/pages/table/static/audio/mahjong/*.mp3`（碰/杠/胡/刮风/下雨/
   发牌/洗牌/理牌/倒计时/两首 BGM）同出该仓库的音频目录。
