@@ -309,7 +309,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftZone.height).toBeCloseTo(445, 3);
     expect(l.leftChip.left).toBeCloseTo(12, 3);
     expect(l.leftChip.top).toBeCloseTo(128.5, 3);
-    expect(l.leftChip.width).toBeCloseTo(140, 3);
+    expect(l.leftChip.width).toBeCloseTo(168, 3);
     expect(l.leftChip.height).toBeCloseTo(56, 3);
     expect(l.leftBacks.rect.left).toBeCloseTo(12, 3);
     expect(l.leftBacks.rect.top).toBeCloseTo(192.5, 3);
@@ -321,7 +321,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftRiver.rect.height).toBeCloseTo(334, 3);
 
     expect(l.rightZone.left).toBeCloseTo(1133.1327, 3);
-    expect(l.rightChip.left).toBeCloseTo(1182, 3);
+    expect(l.rightChip.left).toBeCloseTo(1154, 3);
     expect(l.rightBacks.rect.left).toBeCloseTo(1292.1327, 3);
     expect(l.rightRiver.rect.left).toBeCloseTo(1133.1327, 3);
 
@@ -586,7 +586,7 @@ export const MAHJONG_TABLE_TOKENS = {
   meldOverlap: 8,
   sideMeldGap: 4,
   chip: 56,
-  sideChipW: 140,
+  sideChipW: 168, // 头像 56 + 名字/分/徽标列 112
   selfChipW: 56,
   selfChipH: 76,
   barChipW: 40,
@@ -1281,6 +1281,12 @@ describe('MahjongSeatChip', () => {
     expect(hu.text()).not.toContain('已出局');
   });
 
+  it('bar 变体不显示张数，只显示分数', () => {
+    const w = mount(MahjongSeatChip, { props: { ...base, variant: 'bar' } });
+    expect(w.text()).toContain('15500');
+    expect(w.text()).not.toContain('13 张');
+  });
+
   it('self 变体：不渲染名字，显示分数', () => {
     const w = mount(MahjongSeatChip, { props: { ...base, isMe: true, variant: 'self' } });
     expect(w.find('.mj-chip__name').exists()).toBe(false);
@@ -1380,6 +1386,12 @@ const fanLabel = computed(() => {
   const more = (props.hu?.items.length ?? 0) > 1 ? `等${props.hu!.items.length}种` : '';
   return `${FAN_EMOJI[first] ?? '🏆'}${first}${more}`;
 });
+const metaText = computed(() => {
+  const parts: string[] = [];
+  if (!props.isMe && props.variant !== 'bar') parts.push(`${props.cardCount} 张`);
+  if (props.balance !== null) parts.push(`${props.balance}`);
+  return parts.join(' · ');
+});
 </script>
 
 <template>
@@ -1405,10 +1417,7 @@ const fanLabel = computed(() => {
 
     <view v-if="variant !== 'self'" class="mj-chip__info">
       <text class="mj-chip__name">{{ name }}</text>
-      <text class="mj-chip__meta">
-        <template v-if="!isMe && variant !== 'bar'">{{ cardCount }} 张</template>
-        <template v-if="balance !== null"> · {{ balance }}</template>
-      </text>
+      <text class="mj-chip__meta">{{ metaText }}</text>
       <view v-if="trustee || isOut || hu || deltaLabel || fanLabel" class="mj-chip__badges">
         <text v-if="trustee" class="mj-chip__badge">托管</text>
         <text v-if="isOut && !hu" class="mj-chip__badge mj-chip__badge--neg">已出局</text>

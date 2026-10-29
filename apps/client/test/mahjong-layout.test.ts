@@ -255,7 +255,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftZone.height).toBeCloseTo(445, 3);
     expect(l.leftChip.left).toBeCloseTo(12, 3);
     expect(l.leftChip.top).toBeCloseTo(128.5, 3);
-    expect(l.leftChip.width).toBeCloseTo(140, 3);
+    expect(l.leftChip.width).toBeCloseTo(168, 3);
     expect(l.leftChip.height).toBeCloseTo(56, 3);
     expect(l.leftBacks.rect.left).toBeCloseTo(12, 3);
     expect(l.leftBacks.rect.top).toBeCloseTo(192.5, 3);
@@ -267,7 +267,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftRiver.rect.height).toBeCloseTo(334, 3);
 
     expect(l.rightZone.left).toBeCloseTo(1133.1327, 3);
-    expect(l.rightChip.left).toBeCloseTo(1182, 3);
+    expect(l.rightChip.left).toBeCloseTo(1154, 3);
     expect(l.rightBacks.rect.left).toBeCloseTo(1292.1327, 3);
     expect(l.rightRiver.rect.left).toBeCloseTo(1133.1327, 3);
 

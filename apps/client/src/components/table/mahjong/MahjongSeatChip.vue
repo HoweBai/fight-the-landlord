@@ -60,6 +60,12 @@ const fanLabel = computed(() => {
   const more = (props.hu?.items.length ?? 0) > 1 ? `等${props.hu!.items.length}种` : '';
   return `${FAN_EMOJI[first] ?? '🏆'}${first}${more}`;
 });
+const metaText = computed(() => {
+  const parts: string[] = [];
+  if (!props.isMe && props.variant !== 'bar') parts.push(`${props.cardCount} 张`);
+  if (props.balance !== null) parts.push(`${props.balance}`);
+  return parts.join(' · ');
+});
 </script>
 
 <template>
@@ -85,10 +91,7 @@ const fanLabel = computed(() => {
 
     <view v-if="variant !== 'self'" class="mj-chip__info">
       <text class="mj-chip__name">{{ name }}</text>
-      <text class="mj-chip__meta">
-        <template v-if="!isMe && variant !== 'bar'">{{ cardCount }} 张</template>
-        <template v-if="balance !== null"> · {{ balance }}</template>
-      </text>
+      <text class="mj-chip__meta">{{ metaText }}</text>
       <view v-if="trustee || isOut || hu || deltaLabel || fanLabel" class="mj-chip__badges">
         <text v-if="trustee" class="mj-chip__badge">托管</text>
         <text v-if="isOut && !hu" class="mj-chip__badge mj-chip__badge--neg">已出局</text>

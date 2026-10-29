@@ -120,7 +120,7 @@ export const MAHJONG_TABLE_TOKENS = {
   meldOverlap: 8,
   sideMeldGap: 4,
   chip: 56,
-  sideChipW: 140,
+  sideChipW: 168, // 头像 56 + 名字/分/徽标列 112
   selfChipW: 56,
   selfChipH: 76,
   barChipW: 40,

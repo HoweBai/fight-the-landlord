@@ -51,6 +51,12 @@ describe('MahjongSeatChip', () => {
     expect(hu.text()).not.toContain('已出局');
   });
 
+  it('bar 变体不显示张数，只显示分数', () => {
+    const w = mount(MahjongSeatChip, { props: { ...base, variant: 'bar' } });
+    expect(w.text()).toContain('15500');
+    expect(w.text()).not.toContain('13 张');
+  });
+
   it('self 变体：不渲染名字，显示分数', () => {
     const w = mount(MahjongSeatChip, { props: { ...base, isMe: true, variant: 'self' } });
     expect(w.find('.mj-chip__name').exists()).toBe(false);
