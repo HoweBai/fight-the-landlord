@@ -118,9 +118,11 @@ function cutFrame(atlas, info, outPath) {
   const { w: srcW, h: srcH } = info.sourceSize;
 
   if (info.rotated) {
-    // Atlas 上横着存的图，先横着裁再旋转 90°
+    // Atlas 上横着存的图，先横着裁再**逆时针**旋转 90° 还原
     // TexturePacker rotated=true 时 frame 里的 {w,h} 仍是原始尺寸 {srcW,srcH}
     // 但 atlas 上存储的矩形是交换后的：宽=srcH, 高=srcW
+    // ⚠️ 方向：canvas 的 y 轴朝下，`rotate(+PI/2)` 视觉上是顺时针 ⇒ 剥出来会上下颠倒；
+    //   正确做法是 `rotate(-PI/2)`（视觉逆时针）。像素比对见 2026-10-29 修复提交。
     const tmpCanvas = createCanvas(srcH, srcW);
     const tmpCtx = tmpCanvas.getContext('2d');
     tmpCtx.drawImage(atlas, x, y, srcH, srcW, 0, 0, srcH, srcW);
@@ -129,7 +131,7 @@ function cutFrame(atlas, info, outPath) {
     const ctx = out.getContext('2d');
     ctx.save();
     ctx.translate(srcW / 2, srcH / 2);
-    ctx.rotate(Math.PI / 2);
+    ctx.rotate(-Math.PI / 2);
     ctx.translate(-srcH / 2, -srcW / 2);
     ctx.drawImage(tmpCanvas, 0, 0);
     ctx.restore();
