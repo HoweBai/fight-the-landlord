@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
-> Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把四川麻将牌桌从「纵向堆叠面板」改成主流麻将的四家围桌比例布局：手牌贴边、
 对手牌背、牌河围中央井、副露贴牌河、动作浮层；跨设备按高度基准 + 宽度兜底。
@@ -29,7 +29,7 @@
   - `pnpm -C apps/client test`
   - `pnpm -C apps/client run lint`
   - 基线（2026-10-30 开工前）：119 个测试文件 / 1553 tests 通过、2 skipped；
-    实现后新增 7 个测试文件，全量以实际输出为准（约 123 files / 1660+ tests）。
+    实现后实测：126 files passed + 2 skipped（128 总计）/ 1695 tests passed + 2 skipped（1697 总计）。
 
 ---
 
@@ -47,7 +47,7 @@
   - 类型：`MahjongSeatLoad` / `MahjongTableInput` / `Rect` / `TileSize` / `RiverLayout` /
     `MahjongTableLayout` / `MeldPlacement`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-layout.test.ts`：
 
@@ -309,7 +309,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftZone.height).toBeCloseTo(445, 3);
     expect(l.leftChip.left).toBeCloseTo(12, 3);
     expect(l.leftChip.top).toBeCloseTo(128.5, 3);
-    expect(l.leftChip.width).toBeCloseTo(168, 3);
+    expect(l.leftChip.width).toBeCloseTo(180, 3);
     expect(l.leftChip.height).toBeCloseTo(56, 3);
     expect(l.leftBacks.rect.left).toBeCloseTo(12, 3);
     expect(l.leftBacks.rect.top).toBeCloseTo(192.5, 3);
@@ -321,7 +321,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
     expect(l.leftRiver.rect.height).toBeCloseTo(334, 3);
 
     expect(l.rightZone.left).toBeCloseTo(1133.1327, 3);
-    expect(l.rightChip.left).toBeCloseTo(1154, 3);
+    expect(l.rightChip.left).toBeCloseTo(1142, 3);
     expect(l.rightBacks.rect.left).toBeCloseTo(1292.1327, 3);
     expect(l.rightRiver.rect.left).toBeCloseTo(1133.1327, 3);
 
@@ -454,12 +454,12 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-layout`
 Expected: FAIL —— `Cannot find module '../src/game/mahjong-layout'`（或 0 tests）。
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 新建 `apps/client/src/game/mahjong-layout.ts`：
 
@@ -586,7 +586,7 @@ export const MAHJONG_TABLE_TOKENS = {
   meldOverlap: 8,
   sideMeldGap: 4,
   chip: 56,
-  sideChipW: 168, // 头像 56 + 名字/分/徽标列 112
+  sideChipW: 180, // 头像 56 + 名字/分/徽标列 124
   selfChipW: 56,
   selfChipH: 76,
   barChipW: 40,
@@ -877,17 +877,17 @@ export function mahjongTableLayout(
 }
 ```
 
-- [ ] **Step 4: 跑绿**
+- [x] **Step 4: 跑绿**
 
 Run: `pnpm -C apps/client test mahjong-layout`
 Expected: PASS（测试文件全绿；若精确值有 0.001 级偏差，按实现输出的真实值修正测试，**不得放宽比例/不重叠判据**）。
 
-- [ ] **Step 5: 类型检查**
+- [x] **Step 5: 类型检查**
 
 Run: `pnpm -C apps/client run lint`
 Expected: PASS（`vue-tsc --noEmit` 无错误）。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/client/src/game/mahjong-layout.ts apps/client/test/mahjong-layout.test.ts
@@ -913,7 +913,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   - `MahjongMeld` 渲染 `meld.tiles` 的**全部**张数（碰 3、杠/暗杠 4），不再有绝对定位 cap；
     `kind === 'angang'` 时 4 张全部 `back`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-tile-meld.test.ts`：
 
@@ -998,12 +998,12 @@ describe('MahjongMeld 可变尺寸与杠/暗杠', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-tile-meld`
 Expected: FAIL —— `MahjongTile` 无 `w/h` 尺寸断言 / `MahjongMeld` 仍渲染 cap。
 
-- [ ] **Step 3: 改 `MahjongTile.vue`**
+- [x] **Step 3: 改 `MahjongTile.vue`**
 
 在 props 里加：
 
@@ -1042,7 +1042,7 @@ const tileStyle = computed(() =>
 
 （手牌区的 `handStyle` 会设置 `--mj-tile-lift: 10s px`。）
 
-- [ ] **Step 4: 改 `MahjongMeld.vue`**
+- [x] **Step 4: 改 `MahjongMeld.vue`**
 
 props 加：
 
@@ -1073,7 +1073,7 @@ props 加：
 样式里删除 `.mj-meld__cap` / `.mj-meld__cap` 相关规则；保留默认 `.mj-meld :deep(.mj-tile) { margin-left: -14px }`
 （inline `marginLeft` 会覆盖它）。
 
-- [ ] **Step 5: 跑绿 + 类型检查**
+- [x] **Step 5: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-tile-meld`
 Expected: PASS
@@ -1081,7 +1081,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongTile.vue \
@@ -1107,7 +1107,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   - `LandscapeStage` 在 setup 里 `provide(CANVAS_METRICS_KEY, metrics)`；
     插槽内容可通过 `inject(CANVAS_METRICS_KEY, null)` 拿到同一份响应式 metrics。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/landscape-metrics-provide.test.ts`：
 
@@ -1156,12 +1156,12 @@ describe('LandscapeStage 画布尺寸 provide', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test landscape-metrics-provide`
 Expected: FAIL —— `CANVAS_METRICS_KEY` 未导出 / probe 文本为 `none`。
 
-- [ ] **Step 3: 加 key + provide**
+- [x] **Step 3: 加 key + provide**
 
 `useLandscapeCanvas.ts` 顶部加：
 
@@ -1189,7 +1189,7 @@ export const CANVAS_METRICS_KEY: InjectionKey<ComputedRef<LayoutMetrics>> =
 provide(CANVAS_METRICS_KEY, metrics);
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查**
+- [x] **Step 4: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test landscape-metrics-provide`
 Expected: PASS
@@ -1197,7 +1197,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/client/src/composables/useLandscapeCanvas.ts \
@@ -1223,7 +1223,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   根元素 class `mj-chip`，变体类 `mj-chip--self/side/bar`，发光类
   `mj-chip--active-strong/weak`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-seat-chip.test.ts`：
 
@@ -1314,12 +1314,12 @@ describe('MahjongSeatChip', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-seat-chip`
 Expected: FAIL —— 组件不存在。
 
-- [ ] **Step 3: 写组件**
+- [x] **Step 3: 写组件**
 
 新建 `apps/client/src/components/table/mahjong/MahjongSeatChip.vue`：
 
@@ -1598,7 +1598,7 @@ const metaText = computed(() => {
 </style>
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查**
+- [x] **Step 4: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-seat-chip`
 Expected: PASS
@@ -1606,7 +1606,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongSeatChip.vue \
@@ -1630,7 +1630,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   根 class `mj-backs`；`direction=left/right` 加 `mj-backs--vertical`。
   `revealed` 非空时渲染 `revealed.tiles` 牌面（`dim`），否则渲染 `min(max(count,0),14)` 张牌背。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-hand-backs.test.ts`：
 
@@ -1695,12 +1695,12 @@ describe('MahjongHandBacks', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-hand-backs`
 Expected: FAIL —— 组件不存在。
 
-- [ ] **Step 3: 写组件**
+- [x] **Step 3: 写组件**
 
 新建 `apps/client/src/components/table/mahjong/MahjongHandBacks.vue`：
 
@@ -1791,7 +1791,7 @@ const overlapTop = computed(() =>
 </style>
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查**
+- [x] **Step 4: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-hand-backs`
 Expected: PASS
@@ -1799,7 +1799,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongHandBacks.vue \
@@ -1824,7 +1824,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   根 class `mj-river`；弃牌网格 `.mj-river__grid`；副露条 `.mj-river__melds`。
   `revealed` 非空时（左右家已胡）用 3 列亮牌网格替换 discards，不响应点击。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-river.test.ts`：
 
@@ -1959,12 +1959,12 @@ describe('MahjongRiver', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-river`
 Expected: FAIL —— 组件不存在。
 
-- [ ] **Step 3: 写组件**
+- [x] **Step 3: 写组件**
 
 新建 `apps/client/src/components/table/mahjong/MahjongRiver.vue`：
 
@@ -2156,7 +2156,7 @@ function isFiltered(t: Tile): boolean {
 </style>
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查**
+- [x] **Step 4: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-river`
 Expected: PASS
@@ -2164,7 +2164,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongRiver.vue \
@@ -2187,7 +2187,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   `wallCount, phaseText, claimTile?, claimW?, claimH?, tingTiles?, tingW?, tingH?, maxFan?, seconds, active?, compact?, endedText?`。
   根 class `mj-center`；紧凑类 `mj-center--compact`；倒计时紧急类 `mj-center__clock--urgent`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-center.test.ts`：
 
@@ -2261,12 +2261,12 @@ describe('MahjongCenter', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-center`
 Expected: FAIL —— 组件不存在。
 
-- [ ] **Step 3: 写组件**
+- [x] **Step 3: 写组件**
 
 新建 `apps/client/src/components/table/mahjong/MahjongCenter.vue`：
 
@@ -2438,7 +2438,7 @@ const claimLabel = computed(() =>
 </style>
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查**
+- [x] **Step 4: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-center`
 Expected: PASS
@@ -2446,7 +2446,7 @@ Expected: PASS
 Run: `pnpm -C apps/client run lint`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongCenter.vue \
@@ -2473,7 +2473,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   - 四个牌河槽 `.mj-river-slot--top/left/right/self`，内部根 `.mj-river--...`。
   - 中央 `.mj-center`；手牌 `.mj__hand`；动作浮层 `.mj__actions`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `apps/client/test/mahjong-board.test.ts` 末尾追加：
 
@@ -2573,12 +2573,12 @@ describe('T12：四家分区重排', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-board`
 Expected: FAIL —— 没有 `.mj-chip` / `.mj-river` / `.mj-center` / `.mj-backs-slot--*`。
 
-- [ ] **Step 3: 脚本区改动**
+- [x] **Step 3: 脚本区改动**
 
 在 `MahjongBoard.vue` 的 `<script setup>` 中：
 
@@ -2781,7 +2781,7 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
 }
 ```
 
-- [ ] **Step 4: 模板区改动**
+- [x] **Step 4: 模板区改动**
 
 把 `MahjongBoard.vue` 模板中 **从 `<view v-if="waitingForDeal">` 到旧手牌块 `</view>` 的整段**
 （含旧 `template v-else`、旧的 `myTrustee` 掩码、旧 `.mj__hand`）整体替换为下列代码块
@@ -2982,7 +2982,7 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
         />
 ```
 
-- [ ] **Step 5: 样式区改动（只做不破坏新布局的部分）**
+- [x] **Step 5: 样式区改动（只做不破坏新布局的部分）**
 
 - `.mj` 的 `padding` 改为 `0`（绝对分区自己留 12s）。
 - `.mj__hand` 删除 `overflow-x: auto` / `min-height: 79px` / `:deep(.mj-tile) margin-left:-18px`；
@@ -3058,7 +3058,7 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
 - 保留 `.btn` / `.mj__lack--recommend` / `.mj__trustee-mask` / `.mj__hand-hint-popup` /
   `.mj__waiting` 等现有规则；Task 10 再删旧分区样式。
 
-- [ ] **Step 6: 跑绿**
+- [x] **Step 6: 跑绿**
 
 Run: `pnpm -C apps/client test mahjong-board`
 Expected: PASS（现有 6 条 + 新增 4 条）。
@@ -3066,7 +3066,7 @@ Expected: PASS（现有 6 条 + 新增 4 条）。
 Run: `pnpm -C apps/client run lint`
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongBoard.vue \
@@ -3088,7 +3088,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Produces: 手牌 display 模型 `displayTiles: Array<{ tile: Tile; drawn: boolean }>`；
   所有选择/点击/出牌/提示/交换一律用 display 下标；根类 `mj__hand-tile--drawn`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `mahjong-board.test.ts`：
 
@@ -3148,12 +3148,12 @@ describe('T13：摸牌分离与 display 下标', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C apps/client test mahjong-board`
 Expected: FAIL —— 无 `drawn` 类；点行尾出牌 emit 错牌。
 
-- [ ] **Step 3: 改脚本**
+- [x] **Step 3: 改脚本**
 
 在 `const hand = computed(...)` 之后加：
 
@@ -3234,7 +3234,7 @@ const handHintAffected = computed(() => {
 - `watch(() => hand.value.map(tileType).join(','))` 继续清 `selected` / `lastClickIndex` / `flyingOutIndex`。
 - 所有 `hand[i]` 取牌改为 `displayTiles[i]?.tile`（全局搜 `hand.value[` / `hand[`）。
 
-- [ ] **Step 4: 改模板手牌循环**
+- [x] **Step 4: 改模板手牌循环**
 
 把 Task 8 的 `<MahjongTile v-for="(tile, i) in hand" ...>` 改为：
 
@@ -3264,7 +3264,7 @@ const handHintAffected = computed(() => {
           />
 ```
 
-- [ ] **Step 5: 跑绿 + 类型检查**
+- [x] **Step 5: 跑绿 + 类型检查**
 
 Run: `pnpm -C apps/client test mahjong-board`
 Expected: PASS（Task 8 的 4 条 + 本次 4 条 + 现有 6 条）。
@@ -3272,7 +3272,7 @@ Expected: PASS（Task 8 的 4 条 + 本次 4 条 + 现有 6 条）。
 Run: `pnpm -C apps/client run lint`
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongBoard.vue \
@@ -3293,20 +3293,20 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: Task 8/9 的新分区。
 - Produces: 无旧座位面板引用；无死 CSS；无未使用 computed/import。
 
-- [ ] **Step 1: 删除文件**
+- [x] **Step 1: 删除文件**
 
 ```bash
 git rm apps/client/src/components/table/mahjong/MahjongSeatPanel.vue
 ```
 
-- [ ] **Step 2: 删旧脚本/case**
+- [x] **Step 2: 删旧脚本/case**
 
 - 删 `myDiscards` / `myMelds` / `myHu` / `myLack` / `myPendingDelta`（若已无引用）。
 - 删 `import MahjongSeatPanel` / `import MahjongMeld` / `import TurnTimer`。
 - 全局 grep：`myDiscards|myMelds|myHu|myLack|myPendingDelta|MahjongSeatPanel|TurnTimer`，只允许
   注释/历史文档命中。
 
-- [ ] **Step 3: 删旧样式**
+- [x] **Step 3: 删旧样式**
 
 删除 `MahjongBoard.vue` 的 `<style>` 中这些块（新组件已各自持有）：
 
@@ -3323,7 +3323,7 @@ git rm apps/client/src/components/table/mahjong/MahjongSeatPanel.vue
 `.mj__trustee*`、`.mj__hand-hint-popup*`、`.btn*`、`.mj__lack--*`、`.mj__back*`、`.mj__waiting`、
 `.mj__muted`（若仍用）。
 
-- [ ] **Step 4: 跑闸**
+- [x] **Step 4: 跑闸**
 
 Run: `pnpm -C apps/client test`
 Expected: PASS（全量测试文件，含本片新增；无红）。
@@ -3334,7 +3334,7 @@ Expected: PASS（无未使用变量/导入）。
 Run: `git grep -n "MahjongSeatPanel\|TurnTimer" -- apps/client/src/components/table/mahjong`
 Expected: 空（或仅注释）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add -A apps/client/src/components/table/mahjong
@@ -3350,7 +3350,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - 本机临时夹具：`apps/client/.tmp-mjpreview/**`（**不是** gitignored；Task 11 Step 5 必须删除，不入库）
 - 证据目录：`.superpowers/mahjong-layout-research/**`（gitignored，不入库）
 
-- [ ] **Step 1: 夹具支持注入画布尺寸**
+- [x] **Step 1: 夹具支持注入画布尺寸**
 
 把 `.tmp-mjpreview/preview.ts` 改成：
 
@@ -3371,7 +3371,7 @@ app.mount('#app');
 
 `index.html` 的 `#app` 改为 `width: ${W}px; height: ${H}px`（可在 main.ts 里设置 inline style）。
 
-- [ ] **Step 2: 三档截图**
+- [x] **Step 2: 三档截图**
 
 Run（Vite dev server + Chrome headless，脚本同上一轮）：
 
@@ -3386,7 +3386,7 @@ node apps/client/node_modules/vite/bin/vite.js --config apps/client/.tmp-mjprevi
 
 Expected：截图里能看到四家牌背、四块牌河、中央井、手牌无裁切、左右家不再消失。
 
-- [ ] **Step 3: 视觉核对清单**
+- [x] **Step 3: 视觉核对清单**
 
 - 手牌 14 张完整、行尾摸牌有间隔；
 - 对家/左右家牌背数量与方向正确；
@@ -3396,7 +3396,7 @@ Expected：截图里能看到四家牌背、四块牌河、中央井、手牌无
 - 动作浮层不盖右家区；托管遮罩不压手牌；
 - 4:3 上侧区在竖向居中，不是只挤在上半段。
 
-- [ ] **Step 4: 全量验证**
+- [x] **Step 4: 全量验证**
 
 Run:
 
@@ -3408,14 +3408,14 @@ pnpm -C apps/client run build:h5
 
 Expected：全绿；`build:h5` 成功（验证 SCSS/uni 编译）。
 
-- [ ] **Step 5: 清理临时夹具**
+- [x] **Step 5: 清理临时夹具**
 
 ```bash
 rm -rf apps/client/.tmp-mjpreview
 git status --short   # 必须干净
 ```
 
-- [ ] **Step 6: 提交（如有视觉修复）**
+- [x] **Step 6: 提交（如有视觉修复）**
 
 ```bash
 git add apps/client/src apps/client/test
@@ -3513,3 +3513,23 @@ git push origin dev
 L3 手牌根保留 `mj__hand--selectable` 类；L4 侧背 45 槽高注释（素材 49×40，aspectFit 后约 24 高）；
 L5 `huTile` 不特殊标记登记；L6 `hasActions` 的 `interactive` 门槛登记为等价；L7 紧凑卡高
 `min(160s, 井高−8s)`；L8 `rows` 仅布局契约/测试；L9 Task 12 仅在有修复时提交。
+
+---
+
+## 代码审查记录
+
+### 2026-10-30（独立 reviewer，sonnet，1abd2bec..2387f11e）
+
+**结论：需修后交付**（1 Critical + 3 Important + Minor）。全部 Critical/Important 已修，并补回归测试。
+
+| # | 发现 | 处置 |
+|---|---|---|
+| C1 | 同手牌同内容的新 version 包（别人托管/resync）清掉 drawnType，display 从「13+摸牌」退回「14 sorted」；selected 不重置 → 出牌/长按指向隔壁牌 | **已修**：`sameTypes` 判定，同 multiset 直接保留摸牌标记；内容变化才重算。新增 2 条回归：选中摸牌/非摸牌后同内容新包仍出同一张；「13→14 标出后丢非摸牌→标记消失」替换旧弱用例 |
+| I1 | 侧区 4 组副露布局按 4px 组距预留 116s，River 实际按 8px 渲染 128s；标签侵入牌河 5px | **已修**：`meld.groupGap` 输出（左右 4s、对家/自己 8s），River 拆 `meldGap`/`meldGroupGap`；标签移到条带内部；布局测试加 groupGap 与 meld.rect 越界断言 |
+| I2 | 紧凑中央卡没降字号/没有 `·` 分隔，且未登记「听牌列表整块消失」 | **已修**：compact 内 wall/phase/clock 11px + `·` 分隔；听牌整块不显示写入 D8/§5.7；补源码闸（11px）与分隔符测试；结束态 `本局结束` 去重 |
+| I3 | 四块牌河全量可点，点自家/已胡/非来源弃牌可把 claim 过滤成只剩「过」 | **已修**：claim 来源座 = 窗口 `currentPlayer`；只有该河 `interactive`，`onSeatDiscardClick` 再校验 seat；River 点击按 interactive 早退。补「自家点击不过滤」「interactive=false 不 emit」用例；spec §5.6 写死 |
+| Minor | 自己卡无胡番/托管徽标、0 张显示、侧卡 168 名字余量 2px、侧背与牌河不齐、跨座位副露 key 碰撞、亮牌透明度不一致、托管遮罩用未消毒画布高、字号不随 s 缩放、spec/测试偏差 | **已处置**：自己卡胡角标带番数；`cardCount>0` 才显示；侧卡 180；侧背顶部对齐；meldKey 带 seat + 跨座位 pop 用例；三种亮牌统一 dim；canvasH 消毒；D1 改为「几何尺寸 ×s、字号固定」；补 direction/摸牌 margin/自己亮牌/暗杠/无绝对定位/结束态用例；其余（Board 1235 行、rows/huTile 死字段、侧卡 4 徽标极端高度）登记为维护债 |
+
+**修复后验证**：`pnpm -C apps/client test` = 126 files passed + 2 skipped /
+**1703 tests passed + 2 skipped**；`run lint` 通过；`run build:h5` = Build complete。
+

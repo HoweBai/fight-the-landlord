@@ -62,7 +62,9 @@ const fanLabel = computed(() => {
 });
 const metaText = computed(() => {
   const parts: string[] = [];
-  if (!props.isMe && props.variant !== 'bar') parts.push(`${props.cardCount} 张`);
+  if (!props.isMe && props.variant !== 'bar' && props.cardCount > 0) {
+    parts.push(`${props.cardCount} 张`);
+  }
   if (props.balance !== null) parts.push(`${props.balance}`);
   return parts.join(' · ');
 });
@@ -85,7 +87,9 @@ const metaText = computed(() => {
       <image class="mj-chip__avatar" src="/static/ui/default.png" mode="aspectFit" />
       <text v-if="isDealer" class="mj-chip__corner mj-chip__corner--dealer">庄</text>
       <text v-if="lackLabel" class="mj-chip__corner mj-chip__corner--lack">{{ lackLabel }}</text>
-      <text v-if="hu" class="mj-chip__corner mj-chip__corner--hu">胡</text>
+      <text v-if="hu" class="mj-chip__corner mj-chip__corner--hu">
+        胡{{ hu.fan > 0 ? ` ${hu.fan}` : '' }}
+      </text>
       <text v-else-if="ting && !isOut" class="mj-chip__corner mj-chip__corner--ting">听</text>
     </view>
 

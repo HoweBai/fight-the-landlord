@@ -36,6 +36,12 @@ describe('MahjongMeld 可变尺寸与杠/暗杠', () => {
     });
     expect(gang.findAll('.mj-tile')).toHaveLength(4);
     expect(gang.find('.mj-meld__cap').exists()).toBe(false);
+    for (const t of gang.findAll('.mj-tile')) {
+      const style = t.attributes('style') ?? '';
+      expect(style).not.toContain('position');
+      expect(style).not.toContain('top');
+      expect(style).not.toContain('bottom');
+    }
   });
 
   it('暗杠 4 张全部是牌背', () => {

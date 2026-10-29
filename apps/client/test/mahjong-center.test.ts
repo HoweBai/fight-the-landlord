@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import MahjongCenter from '../src/components/table/mahjong/MahjongCenter.vue';
@@ -50,9 +51,15 @@ describe('MahjongCenter', () => {
       props: { ...base, compact: true, claimTile: { s: 0, r: 5 } },
     });
     expect(w.classes()).toContain('mj-center--compact');
+    expect(w.findAll('.mj-center__sep')).toHaveLength(2);
     expect(w.findAll('image')).toHaveLength(0);
     expect(w.text()).toContain('可响应');
     expect(w.text()).toContain('万5');
+  });
+
+  it('紧凑模式字号降到 11px（源码闸）', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
+    expect(src).toMatch(/\.mj-center--compact \.mj-center__wall,[\s\S]*?font-size: 11px/);
   });
 
   it('已胡家数文案', () => {

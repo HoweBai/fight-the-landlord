@@ -23,6 +23,7 @@ function props(over: Record<string, unknown> = {}) {
     meldOverlap: 8,
     meldPlacement: 'above' as const,
     meldGap: 8,
+    meldGroupGap: 4,
     meldHeight: 0,
     filterTileType: null,
     interactive: false,
@@ -42,10 +43,16 @@ describe('MahjongRiver', () => {
     expect(grid.attributes('style')).toContain('gap: 2px');
   });
 
-  it('点击弃牌 emit discard-click', async () => {
-    const w = mount(MahjongRiver, { props: props() });
+  it('点击弃牌 emit discard-click（interactive=true）', async () => {
+    const w = mount(MahjongRiver, { props: props({ interactive: true }) });
     await w.findAll('.mj-tile')[0]!.trigger('click');
     expect(w.emitted('discard-click')?.[0]).toEqual([wan1]);
+  });
+
+  it('interactive=false 时点击不 emit', async () => {
+    const w = mount(MahjongRiver, { props: props() });
+    await w.findAll('.mj-tile')[0]!.trigger('click');
+    expect(w.emitted('discard-click')).toBeUndefined();
   });
 
   it('filterTileType 命中加 outline 类', () => {
@@ -73,10 +80,30 @@ describe('MahjongRiver', () => {
     const strip = w.find('.mj-river__melds');
     expect(strip.attributes('style')).toContain('bottom: calc(100% + 8px)');
     expect(strip.attributes('style')).toContain('height: 60px');
+    expect(strip.attributes('style')).toContain('gap: 4px');
     const meldComps = w.findAllComponents(MahjongMeld);
     expect(meldComps).toHaveLength(2);
     // 第二个是 pop:true 的杠（第一个是 pop:false 的碰）
     expect(meldComps[1]!.classes()).toContain('anim-meld-pop');
+  });
+
+  it('暗杠副露 4 张全牌背', () => {
+    const w = mount(MahjongRiver, {
+      props: props({
+        discards: [],
+        melds: [
+          {
+            key: 'angang',
+            meld: { kind: 'angang', tiles: [wan1, wan1, wan1, wan1] },
+            pop: false,
+          },
+        ],
+        meldHeight: 60,
+      }),
+    });
+    const srcs = w.findAll('image').map((i) => i.attributes('src') ?? '');
+    expect(srcs).toHaveLength(4);
+    expect(srcs.every((src) => src.endsWith('/back.png'))).toBe(true);
   });
 
   it('meldPlacement=below 时条带在下方', () => {

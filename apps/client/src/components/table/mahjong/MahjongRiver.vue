@@ -30,13 +30,15 @@ const props = withDefaults(
     meldOverlap: number;
     meldPlacement: 'above' | 'below';
     meldGap: number;
+    /** 副露组之间的间距；左右家 4s，对家/自己 8s。 */
+    meldGroupGap?: number;
     meldHeight: number;
     filterTileType?: number | null;
     interactive?: boolean;
     /** 左右家已胡：亮牌网格替换 discards。 */
     revealed?: { tiles: Tile[]; huTile: Tile } | null;
   }>(),
-  { filterTileType: null, interactive: false, revealed: null },
+  { filterTileType: null, interactive: false, revealed: null, meldGroupGap: 8 },
 );
 
 const emit = defineEmits<{
@@ -68,12 +70,17 @@ const meldStripStyle = computed<Record<string, string>>(() => ({
   flexDirection: vertical.value ? 'column' : 'row',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: `${props.meldGap}px`,
+  gap: `${props.meldGroupGap}px`,
   [props.meldPlacement === 'above' ? 'bottom' : 'top']: `calc(100% + ${props.meldGap}px)`,
 }));
 
 function isFiltered(t: Tile): boolean {
   return props.filterTileType !== null && tileType(t) === props.filterTileType;
+}
+
+function onDiscardClick(t: Tile): void {
+  if (!props.interactive) return;
+  emit('discard-click', t);
 }
 </script>
 
@@ -102,6 +109,7 @@ function isFiltered(t: Tile): boolean {
         :direction="direction"
         :w="tileW"
         :h="tileH"
+        dim
       />
     </view>
     <view v-else-if="discards.length > 0" class="mj-river__grid" :style="gridStyle">
@@ -117,7 +125,7 @@ function isFiltered(t: Tile): boolean {
           'mj-river__tile--filtered': isFiltered(t),
           'mj-river__tile--clickable': interactive,
         }"
-        @click="emit('discard-click', t)"
+        @click="onDiscardClick(t)"
       />
     </view>
   </view>
@@ -147,7 +155,7 @@ function isFiltered(t: Tile): boolean {
 }
 .mj-river__meld-label {
   position: absolute;
-  top: -13px;
+  top: 0;
   left: 0;
   padding: 0 3px;
   border-radius: 999px;
@@ -156,6 +164,7 @@ function isFiltered(t: Tile): boolean {
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
+  pointer-events: none;
 }
 .mj-river__tile--latest {
   box-shadow: 0 0 6px rgba($ftl-color-gold, 0.55);
@@ -178,8 +187,5 @@ function isFiltered(t: Tile): boolean {
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
-}
-.mj-river__revealed {
-  opacity: 0.92;
 }
 </style>

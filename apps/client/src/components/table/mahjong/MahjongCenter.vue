@@ -49,12 +49,15 @@ const claimLabel = computed(() =>
   <view class="mj-center" :class="{ 'mj-center--compact': compact }">
     <view class="mj-center__head">
       <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
+      <text v-if="compact" class="mj-center__sep">·</text>
       <text class="mj-center__phase">{{ phaseText }}</text>
-      <text
-        v-if="active"
-        class="mj-center__clock"
-        :class="{ 'mj-center__clock--urgent': urgent }"
-      >{{ seconds }}s</text>
+      <template v-if="active">
+        <text v-if="compact" class="mj-center__sep">·</text>
+        <text
+          class="mj-center__clock"
+          :class="{ 'mj-center__clock--urgent': urgent }"
+        >{{ seconds }}s</text>
+      </template>
     </view>
     <template v-if="!compact">
       <view v-if="claimTile" class="mj-center__claim">
@@ -105,6 +108,17 @@ const claimLabel = computed(() =>
   gap: 6px;
   padding: 0 8px;
   white-space: nowrap;
+}
+.mj-center--compact .mj-center__wall,
+.mj-center--compact .mj-center__phase,
+.mj-center--compact .mj-center__clock {
+  font-size: 11px;
+  line-height: 1.2;
+}
+.mj-center__sep {
+  color: $ftl-color-text-muted;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .mj-center__head {
   display: flex;

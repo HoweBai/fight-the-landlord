@@ -62,6 +62,9 @@ const topSeat = computed(() => (me.value + 2) % 4);
 // —— 比例布局（Task 8）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
 const stageMetrics = inject(CANVAS_METRICS_KEY, null);
 const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
+const canvasH = computed(() =>
+  Number.isFinite(canvas.value.height) && canvas.value.height > 0 ? canvas.value.height : 750,
+);
 
 function seatLoad(seat: number) {
   return {
@@ -101,7 +104,7 @@ const actionsStyle = computed(() => ({
   zIndex: 3,
 }));
 const trusteeMaskStyle = computed(() => ({
-  bottom: `${canvas.value.height - (layout.value.hand.rect.top - 8 * layout.value.s)}px`,
+  bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.s)}px`,
 }));
 
 const view = computed(() => props.view);
@@ -143,8 +146,8 @@ const initialBootDone = ref(false);
 const seenMeldKeys = new Set<string>();
 const newMeldKeySet = ref<Set<string>>(new Set());
 
-function meldKey(m: MahjongMeldView): string {
-  return `${m.kind}:${m.tiles.map(tileType).join('_')}`;
+function meldKey(seat: number, m: MahjongMeldView): string {
+  return `${seat}:${m.kind}:${m.tiles.map(tileType).join('_')}`;
 }
 // 只在**手牌内容**变化时清空选择：换三张阶段别人提交也会 bump version，
 // 若把 version 纳入 watch 源，我正在选的第 2/3 张会被别人的动作清掉。
@@ -173,10 +176,24 @@ function findAdded(prev: number[], next: number[]): number | null {
   return null;
 }
 
+/** 同一手牌（multiset 相同）的新 version 包（别人托管/resync）不清摸牌标记。 */
+function sameTypes(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const counts = new Map<number, number>();
+  for (const t of a) counts.set(t, (counts.get(t) ?? 0) + 1);
+  for (const t of b) {
+    const c = counts.get(t) ?? 0;
+    if (c <= 0) return false;
+    counts.set(t, c - 1);
+  }
+  return true;
+}
+
 watch(
   () => (props.view?.hand ?? []).map((t) => tileType(t)),
   (next) => {
     const prev = prevHandTypes.value;
+    if (sameTypes(prev, next)) return;
     drawnType.value = next.length === prev.length + 1 ? findAdded(prev, next) : null;
     prevHandTypes.value = next;
   },
@@ -357,10 +374,12 @@ function seatActiveLevel(seat: number): 'strong' | 'weak' | null {
 // —— Batch 4 A 组：弃牌点击过滤 ——
 const discardClickTarget = ref<Tile | null>(null);
 
-/** SeatPanel 弃牌点击 handler：只在 claim 窗口 + 我 active 时响应。 */
-function onSeatDiscardClick(_seat: number, tile: Tile) {
+/** 弃牌点击 handler：只在 claim 窗口 + 我 active + 该座是本次 claim 来源座时响应。 */
+function onSeatDiscardClick(seat: number, tile: Tile) {
   if (phase.value !== 'claim' || !amActive.value) return;
   if (props.settlementArrived) return;
+  // claim 窗口的 currentPlayer 就是弃牌/杠牌者（本次待响应来源）
+  if (seat !== (props.view?.currentPlayer ?? -1)) return;
   // 再次点击同一张 → 取消过滤
   if (discardClickTarget.value && tileType(discardClickTarget.value) === tileType(tile)) {
     discardClickTarget.value = null;
@@ -483,7 +502,7 @@ function backsProps(seat: number) {
 }
 function riverMelds(seat: number) {
   return (props.view?.melds[seat] ?? []).map((m) => {
-    const key = meldKey(m);
+    const key = meldKey(seat, m);
     return { key, meld: m, pop: newMeldKeySet.value.has(key) };
   });
 }
@@ -513,9 +532,13 @@ function riverProps(seat: number) {
     meldOverlap: river.meld.overlap,
     meldPlacement: river.meld.placement,
     meldGap: river.meld.gap,
+    meldGroupGap: river.meld.groupGap,
     meldHeight: river.meld.height,
     filterTileType: discardClickTarget.value ? tileType(discardClickTarget.value) : null,
-    interactive: phase.value === 'claim' && amActive.value,
+    interactive:
+      phase.value === 'claim' &&
+      amActive.value &&
+      seat === (props.view?.currentPlayer ?? -1),
     revealed: isLeft || seat === rightSeat.value ? v.revealed : null,
   };
 }
@@ -544,7 +567,7 @@ const centerProps = computed(() => ({
   compact: layout.value.centerCompact,
   endedText:
     phase.value === 'ended'
-      ? '本局结束'
+      ? ''
       : endReason.value > 0
         ? `已胡 ${endReason.value} 家`
         : '',
@@ -629,11 +652,9 @@ function showNextBanner() {
 /** T7 Batch 2：防中途进入 mount 爆炸（B3 阻断修法）。 */
 onMounted(() => {
   // 记录所有玩家的所有已有副露 key —— 中途进入房/重连时已有副露不播 pop
-  for (const seatMelds of props.view?.melds ?? []) {
-    for (const m of seatMelds) {
-      seenMeldKeys.add(meldKey(m));
-    }
-  }
+  (props.view?.melds ?? []).forEach((seatMelds, seat) => {
+    for (const m of seatMelds) seenMeldKeys.add(meldKey(seat, m));
+  });
   initialBootDone.value = true;
 });
 
@@ -642,15 +663,15 @@ watch(
   () => props.view?.melds ?? [],
   (allMelds) => {
     if (!initialBootDone.value) return;
-    for (const seatMelds of allMelds) {
+    allMelds.forEach((seatMelds, seat) => {
       for (const m of seatMelds) {
-        const k = meldKey(m);
+        const k = meldKey(seat, m);
         if (!seenMeldKeys.has(k)) {
           seenMeldKeys.add(k);
           newMeldKeySet.value.add(k);
         }
       }
-    }
+    });
   },
   { deep: true },
 );

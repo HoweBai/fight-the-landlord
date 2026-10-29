@@ -80,5 +80,7 @@ const overlapTop = computed(() =>
 .mj-backs--vertical {
   flex-direction: column;
   flex-wrap: nowrap;
+  /* 列顶与同侧牌河顶对齐；14 张预算的剩余高度放在脚下 */
+  justify-content: flex-start;
 }
 </style>

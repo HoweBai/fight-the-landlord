@@ -175,6 +175,9 @@ describe('T12：四家分区重排', () => {
     });
     expect(wrapper.findAll('.mj-chip')).toHaveLength(4);
     expect(wrapper.findAll('.mj-river')).toHaveLength(4);
+    for (const d of ['top', 'left', 'right', 'my']) {
+      expect(wrapper.find(`.mj-river--${d}`).exists()).toBe(true);
+    }
     expect(wrapper.find('.mj-center').text()).toContain('牌墙 40');
   });
 
@@ -233,21 +236,66 @@ describe('T12：四家分区重排', () => {
     expect(topTiles[0]!.attributes('src') ?? '').not.toMatch(/back\.png$/);
   });
 
-  it('claim 窗口点击弃牌过滤，再点同一张取消', async () => {
+  it('跨座位同型副露不互相触发 pop', async () => {
+    const meld = { kind: 'peng' as const, tiles: [tile(0, 1), tile(0, 1), tile(0, 1)] };
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [meld], []] }) }),
+    });
+    expect(wrapper.findAll('.anim-meld-pop')).toHaveLength(0);
+    await wrapper.setProps({ view: view({ melds: [[], [], [meld], [meld]] }) });
+    await nextTick();
+    expect(wrapper.find('.mj-river--left .anim-meld-pop').exists()).toBe(true);
+    expect(wrapper.find('.mj-river--top .anim-meld-pop').exists()).toBe(false);
+  });
+
+  it('自己已胡：手牌行显示亮牌且不可选', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [true, false, false, false],
+          revealedHands: [
+            { seat: 0, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0]!.attributes('src') ?? '').not.toMatch(/back.png$/);
+    await tiles[0]!.trigger('click');
+    expect(wrapper.find('.mj__discard').attributes('disabled')).toBeDefined();
+  });
+
+  it('结束态只出现一次「本局结束」', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'ended', activeSeats: [] }) }),
+    });
+    const matches = wrapper.find('.mj-center').text().match(/本局结束/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it('claim 窗口只响应来源座弃牌，再点同一张取消', async () => {
     const wrapper = mount(MahjongBoard, {
       props: props({
         view: view({
           state: 'claim',
+          currentPlayer: 2,
           activeSeats: [0],
           windowId: 'claim:9',
           claimsForMe: [
             { claim: 'peng', tile: { s: 0, r: 1 } },
             { claim: 'hu', tile: { s: 1, r: 1 }, fan: 2 },
           ],
-          discards: [[], [], [{ s: 0, r: 1 }], []],
+          discards: [[{ s: 0, r: 1 }], [], [{ s: 0, r: 1 }], []],
         }),
       }),
     });
+    // 自家弃牌不是本次 claim 来源：点击不过滤
+    await wrapper.find('.mj-river--my .mj-tile').trigger('click');
+    const before = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    expect(before).toContain('碰');
+    expect(before).toContain('2 番胡');
+    // 来源座（对家）弃牌：过滤到只剩碰
     const topTile = wrapper.find('.mj-river--top .mj-tile');
     await topTile.trigger('click');
     expect(wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text())).toEqual(['碰']);
@@ -265,7 +313,7 @@ describe('T13：摸牌分离与 display 下标', () => {
   it('13→14：新增牌移到行尾并标 drawn', async () => {
     const wrapper = mount(MahjongBoard, { props: props() });
     await wrapper.setProps({
-      view: view({ hand: [...baseHand, { s: 1, r: 9 }] }),
+      view: view({ hand: [...baseHand, tile(1, 9)] }),
     });
     await nextTick();
     const tiles = wrapper.findAll('.mj__hand .mj-tile');
@@ -273,20 +321,64 @@ describe('T13：摸牌分离与 display 下标', () => {
     const last = tiles[tiles.length - 1]!;
     expect(last.classes()).toContain('mj__hand-tile--drawn');
     expect(last.attributes('aria-label')).toBe('筒9');
+    const layout = mahjongTableLayout(1334, 750);
+    expect(last.attributes('style')).toContain(
+      `margin-left: ${layout.hand.drawnGap - layout.hand.gap}px`,
+    );
   });
 
-  it('14→13 / 13→13 不标 drawn', async () => {
-    const wrapper = mount(MahjongBoard, {
-      props: props({ view: view({ hand: [...baseHand, { s: 1, r: 9 }] }) }),
-    });
-    await wrapper.setProps({ view: view({ hand: baseHand }) });
+  it('13→14 标出后丢一张非摸牌 → 标记消失；13→13 不标', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, tile(1, 9)] }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(1);
+    // 去掉一张非摸牌（排序后第一张 wan1），手牌回到 13
+    const afterDiscard = [...baseHand.slice(1), tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: afterDiscard }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(0);
+    // 13→13 同内容不标
+    await wrapper.setProps({ view: view({ hand: afterDiscard }) });
     await nextTick();
     expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(0);
   });
 
+  it('同内容新版本不清摸牌标记，选中行尾摸牌仍出同一张', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const hand14 = [...baseHand, tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: hand14 }) });
+    await nextTick();
+    await wrapper.findAll('.mj__hand .mj-tile')[13]!.trigger('click');
+    // 同内容、不同对象的新 version 包（模拟别人托管/resync）
+    await wrapper.setProps({ view: view({ hand: [...hand14] }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(1);
+    expect(wrapper.find('.mj__discard').attributes('disabled')).toBeUndefined();
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: { s: 1, r: 9 },
+    });
+  });
+
+  it('同内容新版本不清选择，选中非摸牌仍出同一张', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const hand14 = [...baseHand, tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: hand14 }) });
+    await nextTick();
+    await wrapper.findAll('.mj__hand .mj-tile')[0]!.trigger('click');
+    await wrapper.setProps({ view: view({ hand: [...hand14] }) });
+    await nextTick();
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: baseHand[0],
+    });
+  });
+
   it('点行尾摸牌再出牌，emit 的是那张摸牌（不是下标错位）', async () => {
     const wrapper = mount(MahjongBoard, { props: props() });
-    await wrapper.setProps({ view: view({ hand: [...baseHand, { s: 1, r: 9 }] }) });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, tile(1, 9)] }) });
     await nextTick();
     const tiles = wrapper.findAll('.mj__hand .mj-tile');
     await tiles[tiles.length - 1]!.trigger('click');

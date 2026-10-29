@@ -54,6 +54,8 @@ export interface RiverLayout {
     overlap: number;
     /** 条带与牌河/手牌之间的固定间距（px）。 */
     gap: number;
+    /** 副露组之间的间距（px）；左右家用 4s，对家/自己用 8s。 */
+    groupGap: number;
   };
 }
 
@@ -120,7 +122,7 @@ export const MAHJONG_TABLE_TOKENS = {
   meldOverlap: 8,
   sideMeldGap: 4,
   chip: 56,
-  sideChipW: 168, // 头像 56 + 名字/分/徽标列 112
+  sideChipW: 180, // 头像 56 + 名字/分/徽标列 124
   selfChipW: 56,
   selfChipH: 76,
   barChipW: 40,
@@ -191,6 +193,7 @@ function buildRiver(args: {
         ? melds * meldTile.h + (melds - 1) * T.sideMeldGap * s
         : meldTile.h;
   const meldGap = T.inner * s;
+  const groupGap = side ? T.sideMeldGap * s : T.inner * s;
   const meldRect =
     meldHeight <= 0
       ? { left: 0, top: 0, width: 0, height: 0 }
@@ -212,6 +215,7 @@ function buildRiver(args: {
       tile: meldTile,
       overlap: T.meldOverlap * s,
       gap: meldGap,
+      groupGap,
     },
   };
 }
