@@ -12,7 +12,7 @@
  *   动画播完 emit('pop-done') 让父组件清理临时标记
  */
 import { computed } from 'vue';
-import type { MahjongMeldView, Tile } from '@fight-the-landlord/protocol';
+import type { MahjongMeldView } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
 
 type Direction = 'my' | 'top' | 'left' | 'right';
@@ -25,6 +25,11 @@ const props = withDefaults(
     size?: 'sm' | 'md' | 'lg';
     /** true 时播放进场 pop 动画（增量新增时由 Board 传 true）。Batch 2 新增。 */
     pop?: boolean;
+    /** 显式牌张尺寸（设计 px）；不传则用 size 档位。 */
+    tileW?: number;
+    tileH?: number;
+    /** 组内叠压 px（正数）；不传则用 size 档位的默认负 margin。 */
+    overlap?: number;
   }>(),
   { size: 'sm', pop: false },
 );
@@ -52,10 +57,11 @@ const popAnimClass = computed(() => {
   }
 });
 
-/** 杠的第 4 张（叠在上方）。peng 没有。 */
-const capTile = computed<Tile | undefined>(() =>
-  props.meld.kind === 'peng' ? undefined : props.meld.tiles[3],
-);
+function tileStyle(index: number): { marginLeft?: string } | undefined {
+  return index > 0 && props.overlap !== undefined
+    ? { marginLeft: `-${props.overlap}px` }
+    : undefined;
+}
 
 function onAnimEnd(e: AnimationEvent): void {
   // 只处理 pop 动画结束（ftl-peng-pop / ftl-gang-pop / ftl-angang-pop）
@@ -75,22 +81,17 @@ function onAnimEnd(e: AnimationEvent): void {
     :class="[styleClass, `mj-meld--${size}`, popAnimClass]"
     @animationend="onAnimEnd"
   >
-    <!-- 前 3 张（碰/杠都是 3 张并排） -->
+    <!-- 碰 3 张；杠/暗杠 4 张同行（第 4 张不再绝对定位叠高） -->
     <MahjongTile
-      v-for="(tile, i) in meld.tiles.slice(0, 3)"
+      v-for="(tile, i) in meld.tiles"
       :key="`t-${i}`"
       :tile="tile"
-      :direction="direction"
-      :size="size"
-    />
-    <!-- 杠的第 4 张：叠在中间那张的正上方 -->
-    <MahjongTile
-      v-if="capTile"
-      class="mj-meld__cap"
-      :tile="capTile"
       :back="meld.kind === 'angang'"
       :direction="direction"
       :size="size"
+      :w="tileW"
+      :h="tileH"
+      :style="tileStyle(i)"
     />
   </view>
 </template>
@@ -115,27 +116,9 @@ function onAnimEnd(e: AnimationEvent): void {
   margin-left: 0;
 }
 
-/** 杠的第 4 张：叠在中间那张（index 1）的正上方 */
-.mj-meld__cap {
-  position: absolute;
-  left: calc(50% - 14px); // 中间那张正上方
-  bottom: 100%;
-  z-index: 3;
-  margin-left: 0 !important;
-}
-
-/** 暗杠：4 张全是牌背（视觉上叠牌效果就出来了） */
-.mj-meld--angang {
-  // 和 gang 共用 cap 样式，只是 capTile.back=true
-}
-
 /** 大尺寸时负 margin 跟着调 */
 .mj-meld--md :deep(.mj-tile),
 .mj-meld--lg :deep(.mj-tile) {
   margin-left: -18px;
-}
-.mj-meld--md .mj-meld__cap,
-.mj-meld--lg .mj-meld__cap {
-  left: calc(50% - 18px);
 }
 </style>

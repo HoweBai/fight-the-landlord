@@ -26,6 +26,9 @@ const props = withDefaults(
     dim?: boolean;
     /** 方向：my=自己 / top=对家 / left=左家 / right=右家。不传则用平铺旧资源。 */
     direction?: Direction;
+    /** 显式尺寸（设计 px）；w/h 同时提供时覆盖 size 档位。 */
+    w?: number;
+    h?: number;
   }>(),
   { size: 'md', selected: false, disabled: false, dim: false },
 );
@@ -46,6 +49,12 @@ const label = computed(() => {
   if (props.back || !props.tile) return '牌背';
   return `${MAHJONG_SUIT_NAMES[props.tile.s]}${props.tile.r}`;
 });
+
+const tileStyle = computed(() =>
+  props.w !== undefined && props.h !== undefined
+    ? { width: `${props.w}px`, height: `${props.h}px` }
+    : undefined,
+);
 </script>
 
 <template>
@@ -61,6 +70,7 @@ const label = computed(() => {
       },
     ]"
     :src="src"
+    :style="tileStyle"
     mode="aspectFit"
     :aria-label="label"
     @click="emit('click')"
@@ -89,7 +99,7 @@ const label = computed(() => {
   height: 69px;
 }
 .mj-tile--selected {
-  transform: translateY(-10px);
+  transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
   box-shadow: 0 0 0 2px $ftl-color-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 .mj-tile--disabled {
