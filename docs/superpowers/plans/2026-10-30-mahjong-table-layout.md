@@ -3122,6 +3122,7 @@ watch(
     drawnType.value = next.length === prev.length + 1 ? findAdded(prev, next) : null;
     prevHandTypes.value = next;
   },
+  { immediate: true },
 );
 
 watch(
@@ -3161,10 +3162,15 @@ if (entry && !props.busy) {
   lastClickIndex.value = -1;
 }
 
-// handHintAffected：
-const hintEntry = displayTiles.value[handHintIndex.value];
-const without = displayTiles.value.filter((_, i) => i !== handHintIndex.value);
-const stillHas = without.some((e) => tileType(e.tile) === tileType(hintEntry.tile));
+// handHintAffected（完整替换现有 computed）：
+const handHintAffected = computed(() => {
+  if (handHintIndex.value === null) return null;
+  const hintEntry = displayTiles.value[handHintIndex.value];
+  if (!hintEntry) return null;
+  const without = displayTiles.value.filter((_, i) => i !== handHintIndex.value);
+  const stillHas = without.some((e) => tileType(e.tile) === tileType(hintEntry.tile));
+  return { tile: hintEntry.tile, stillSafe: !stillHas };
+});
 ```
 
 - `onDiscard` / `onExchange` / `exchangeReady` 继续用 `selectedTiles`（无需改）。
@@ -3410,3 +3416,9 @@ git push origin dev
 
 报告：变更、验证证据（测试数/类型检查/build）、提交 SHA、是否已推 dev、未部署、
 已知边界（暗杠协议泄漏另立片、左右家已胡弃牌隐藏、动作浮层盖自己牌河右半）。
+
+---
+
+## 计划审查记录
+
+（待独立 reviewer 审查后填写）

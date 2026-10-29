@@ -354,8 +354,9 @@ export function mahjongTableLayout(
 ### 5.4 手牌：摸牌分离与选择映射
 
 - `sortedHand = sortTiles(view.hand)`（现有）。
-- `drawnType`：watch 手牌 multiset；仅当 `next.length === prev.length + 1` 且确实找到新增牌型时赋值，
-  否则一律清空（长度不变、-1、-2、-4、换局、换阶段都清）。
+- `drawnType`：watch 手牌 multiset，**必须 `immediate: true` 先记录初始手牌**；
+  仅当 `next.length === prev.length + 1` 且确实找到新增牌型时赋值，否则一律清空
+  （长度不变、-1、-2、-4、换局、换阶段都清）。
 - `displayTiles`：
   - `drawnType === null` → 直接用 `sortedHand`（不重排）；
   - `drawnType !== null` **且** `sortedHand` 里确实存在该牌型 → 移除**一张**并追加到末尾标 `drawn`；
