@@ -59,6 +59,7 @@ import {
   type MahjongTableLayout,
   type Rect,
   type RiverLayout,
+  type TileSize,
 } from '../src/game/mahjong-layout';
 
 const VIEWPORTS = [
