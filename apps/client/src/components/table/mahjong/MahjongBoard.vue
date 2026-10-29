@@ -1037,129 +1037,8 @@ function onMeldPopDone(key: string) {
   color: $ftl-color-text-muted;
   font-size: $ftl-font-md;
 }
-.mj__muted {
-  color: $ftl-color-text-muted;
-  font-size: $ftl-font-sm;
-}
-.mj__ended {
-  font-size: $ftl-font-md;
-  color: $ftl-color-text-secondary;
-}
-
-/* —— 座位区 —— */
-.mj__top {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: center;
-  min-height: 0;
-}
-.mj__top :deep(.mj-seat) {
-  max-width: 46%;
-}
-.mj__mid {
-  display: flex;
-  flex: 1 1 0;
-  align-items: center;
-  gap: $ftl-space-3;
-  min-height: 0;
-}
-.mj__side {
-  flex: 0 1 24%;
-  min-width: 0;
-  max-height: 100%;
-  overflow: hidden;
-}
-.mj__center {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: $ftl-space-2;
-  min-width: 0;
-  text-align: center;
-}
-.mj__phase {
-  color: $ftl-color-gold;
-  font-size: 18px;
-  font-weight: 700;
-  text-shadow: 0 2px 8px rgba($ftl-color-night-deep, 0.6);
-  white-space: nowrap;
-  letter-spacing: 2px;
-}
-.mj__claim-tile {
-  display: flex;
-  justify-content: center;
-}
-.mj__ting {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-}
-.mj__ting-label {
-  font-size: 10px;
-  color: $ftl-color-text-muted;
-}
-
-/* —— 我的副露 / 弃牌 —— */
-.mj__mine {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: $ftl-space-3;
-  min-height: 0;
-}
-.mj__my-meld,
-.mj__my-river,
-.mj__my-revealed {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.mj__me-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: $ftl-space-2;
-}
-.mj__me-badge {
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 10px;
-  line-height: 1.5;
-}
-.mj__me-badge--dealer {
-  background: $ftl-color-accent;
-  color: $ftl-color-on-primary;
-}
-.mj__me-badge--pos {
-  background: rgba($ftl-color-gold, 0.35);
-  color: $ftl-color-gold-light;
-}
-.mj__me-badge--neg {
-  background: rgba($ftl-color-danger, 0.3);
-}
-.mj__my-meld-label {
-  margin-right: 2px;
-  font-size: 10px;
-  color: $ftl-color-text-muted;
-}
 
 /* —— 动作栏 —— */
-.mj__action {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: $ftl-space-3;
-  min-height: $ftl-space-9;
-}
 .mj__hint,
 .mj__warn {
   font-size: $ftl-font-sm;
@@ -1213,14 +1092,6 @@ function onMeldPopDone(key: string) {
   align-items: flex-end;
   justify-content: flex-end;
   gap: $ftl-space-3;
-}
-.mj__discard--latest {
-  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.5);
-}
-// Batch 4 A 组：弃牌点击选中态 — 用 outline 避免和 .mj__discard--latest 金色 box-shadow 叠加
-.mj__discard--selected {
-  outline: 2px solid $ftl-color-primary;
-  outline-offset: -2px;
 }
 
 // Batch 4 B 组：长按手牌弹层
