@@ -164,3 +164,96 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
     });
   });
 });
+import { computed } from 'vue';
+import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
+import { mahjongTableLayout } from '../src/game/mahjong-layout';
+
+describe('T12：四家分区重排', () => {
+  it('四个座位卡、四个牌河、中央井', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ cardCounts: [14, 10, 7, 0] }) }),
+    });
+    expect(wrapper.findAll('.mj-chip')).toHaveLength(4);
+    expect(wrapper.findAll('.mj-river')).toHaveLength(4);
+    expect(wrapper.find('.mj-center').text()).toContain('牌墙 40');
+  });
+
+  it('对手牌背数量与 src 逐座对位（不是只数个数）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ cardCounts: [14, 10, 7, 0] }) }),
+    });
+    // me=0：right=1 → 10，top=2 → 7，left=3 → 0
+    expect(wrapper.findAll('.mj-backs-slot--right .mj-tile')).toHaveLength(10);
+    expect(wrapper.findAll('.mj-backs-slot--top .mj-tile')).toHaveLength(7);
+    expect(wrapper.findAll('.mj-backs-slot--left .mj-tile')).toHaveLength(0);
+    for (const img of wrapper.findAll('.mj-backs-slot image')) {
+      expect(img.attributes('src') ?? '').toMatch(/back\.png$/);
+    }
+  });
+
+  it('提供画布尺寸时手牌尺寸与纯函数逐值一致', () => {
+    // 用 4:3：s≈1.127，手牌 80.9×121.9；1623×750 的 s 与兜底同为 1，验不出注入
+    const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
+    const wrapper = mount(MahjongBoard, {
+      props: props(),
+      global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
+    });
+    const layout = mahjongTableLayout(1334, 1000);
+    const first = wrapper.find('.mj__hand .mj-tile');
+    expect(first.attributes('style')).toContain(`width: ${layout.hand.tile.w}px`);
+    expect(first.attributes('style')).toContain(`height: ${layout.hand.tile.h}px`);
+  });
+
+  it('左右家已胡：牌河区亮牌；对家已胡：牌背位亮牌', () => {
+    const leftHu = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [false, false, false, true],
+          revealedHands: [
+            { seat: 3, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    expect(leftHu.find('.mj-river--left .mj-river__revealed').exists()).toBe(true);
+    expect(leftHu.findAll('.mj-backs-slot--left .mj-tile')).toHaveLength(0);
+
+    const topHu = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [false, false, true, false],
+          revealedHands: [
+            { seat: 2, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    const topTiles = topHu.findAll('.mj-backs-slot--top .mj-tile');
+    expect(topTiles).toHaveLength(2);
+    expect(topTiles[0]!.attributes('src') ?? '').not.toMatch(/back\.png$/);
+  });
+
+  it('claim 窗口点击弃牌过滤，再点同一张取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'claim',
+          activeSeats: [0],
+          windowId: 'claim:9',
+          claimsForMe: [
+            { claim: 'peng', tile: { s: 0, r: 1 } },
+            { claim: 'hu', tile: { s: 1, r: 1 }, fan: 2 },
+          ],
+          discards: [[], [], [{ s: 0, r: 1 }], []],
+        }),
+      }),
+    });
+    const topTile = wrapper.find('.mj-river--top .mj-tile');
+    await topTile.trigger('click');
+    expect(wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text())).toEqual(['碰']);
+    await topTile.trigger('click');
+    const all = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    expect(all).toContain('碰');
+    expect(all).toContain('2 番胡');
+  });
+});

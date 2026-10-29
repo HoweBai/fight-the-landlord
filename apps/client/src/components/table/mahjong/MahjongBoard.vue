@@ -9,7 +9,7 @@
  * 多行动者窗口：`activeSeats` 含我 ⇒ 本窗口轮到我；动作原样回传 `view.windowId`
  *（服务端用它接受窗口内的过期 baseVersion）。
  */
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, inject, ref, watch, onMounted } from 'vue';
 import {
   MAHJONG_SUIT_NAMES,
   sortTiles,
@@ -21,12 +21,15 @@ import {
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
-import MahjongSeatPanel from './MahjongSeatPanel.vue';
+import { CANVAS_METRICS_KEY } from '../../../composables/useLandscapeCanvas';
+import { mahjongTableLayout, type Rect } from '../../../game/mahjong-layout';
+import MahjongSeatChip from './MahjongSeatChip.vue';
+import MahjongHandBacks from './MahjongHandBacks.vue';
+import MahjongRiver from './MahjongRiver.vue';
+import MahjongCenter from './MahjongCenter.vue';
 import MahjongTile from './MahjongTile.vue';
-import MahjongMeld from './MahjongMeld.vue';
 import MahjongHuBanner from './MahjongHuBanner.vue';
 import ClaimTile from './ClaimTile.vue';
-import TurnTimer from '../../TurnTimer.vue';
 import { haptic } from '../../../feedback/haptics';
 
 const props = defineProps<{
@@ -56,11 +59,54 @@ const leftSeat = computed(() => (me.value + 3) % 4);
 const rightSeat = computed(() => (me.value + 1) % 4);
 const topSeat = computed(() => (me.value + 2) % 4);
 
+// —— 比例布局（Task 8）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
+const stageMetrics = inject(CANVAS_METRICS_KEY, null);
+const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
+
+function seatLoad(seat: number) {
+  return {
+    discards: (props.view?.discards[seat] ?? []).length,
+    melds: (props.view?.melds[seat] ?? []).length,
+  };
+}
+const loads = computed(() => ({
+  top: seatLoad(topSeat.value),
+  left: seatLoad(leftSeat.value),
+  right: seatLoad(rightSeat.value),
+  self: seatLoad(me.value),
+}));
+const layout = computed(() =>
+  mahjongTableLayout(canvas.value.width, canvas.value.height, loads.value),
+);
+function rectStyle(r: Rect) {
+  return {
+    position: 'absolute' as const,
+    left: `${r.left}px`,
+    top: `${r.top}px`,
+    width: `${r.width}px`,
+    height: `${r.height}px`,
+  };
+}
+const handStyle = computed(() => ({
+  ...rectStyle(layout.value.hand.rect),
+  gap: `${layout.value.hand.gap}px`,
+  '--mj-tile-lift': `${10 * layout.value.s}px`,
+}));
+const actionsStyle = computed(() => ({
+  position: 'absolute' as const,
+  right: `${layout.value.actions.rightOffset}px`,
+  bottom: `${layout.value.actions.bottomOffset}px`,
+  maxWidth: `${layout.value.actions.maxWidth}px`,
+  minHeight: `${layout.value.actions.minHeight}px`,
+  zIndex: 3,
+}));
+const trusteeMaskStyle = computed(() => ({
+  bottom: `${canvas.value.height - (layout.value.hand.rect.top - 8 * layout.value.s)}px`,
+}));
+
 const view = computed(() => props.view);
 const phase = computed(() => props.view?.state ?? null);
 const hand = computed<readonly Tile[]>(() => sortTiles(props.view?.hand ?? []));
-const myMelds = computed<readonly MahjongMeldView[]>(() => props.view?.melds[me.value] ?? []);
-const myDiscards = computed<readonly Tile[]>(() => props.view?.discards[me.value] ?? []);
 const myRevealed = computed(
   () => props.view?.revealedHands.find((r) => r.seat === me.value) ?? null,
 );
@@ -72,13 +118,10 @@ const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsFor
 const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
-const myLack = computed(() => props.view?.lackSuits[me.value] ?? null);
-
-const myPendingDelta = computed(() => pendingDelta(me.value));
-const myHu = computed(() => props.view?.huInfos.find((h) => h.seat === me.value) ?? null);
 
 /** 手牌可选的条件：交互开启 + 未结算 + （换三张窗口 | 出牌窗口）。 */
 const handSelectable = computed(() => {
+  if (myRevealed.value) return false;
   if (!props.interactive || props.settlementArrived) return false;
   if (phase.value === 'exchange') return amActive.value;
   if (phase.value === 'play') return amActive.value;
@@ -321,28 +364,6 @@ const handHintAffected = computed(() => {
   return { tile: hintTile, stillSafe: !stillHas };
 });
 
-function seatPanelProps(seat: number) {
-  const v = props.view;
-  return {
-    seat,
-    name: nameOf(seat),
-    cardCount: v ? (v.cardCounts[seat] ?? 0) : 0,
-    lackSuit: v?.lackSuits[seat] ?? null,
-    melds: v?.melds[seat] ?? [],
-    discards: v?.discards[seat] ?? [],
-    hu: v?.huInfos.find((h) => h.seat === seat) ?? null,
-    revealed: v?.revealedHands.find((r) => r.seat === seat) ?? null,
-    isOut: v?.isOut[seat] ?? false,
-    trustee: v?.trustees[seat] ?? false,
-    activeLevel: seatActiveLevel(seat), // Batch 4 D 组：替换旧 active: boolean
-    ting: (v?.tingSeats ?? []).includes(seat), // Batch 5 B 组：对手听牌徽标
-    isMe: seat === me.value,
-    isDealer: seat === dealerSeat.value,
-    balance: seatBalance(seat),
-    pendingDelta: pendingDelta(seat),
-  };
-}
-
 /** 中央提示文案（纯展示映射，不判规则）。 */
 const phaseText = computed(() => {
   switch (phase.value) {
@@ -361,6 +382,129 @@ const phaseText = computed(() => {
   }
 });
 const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
+
+// —— Task 8：四家分区的组件 props 组装 ——
+function seatView(seat: number) {
+  return {
+    cardCount: props.view?.cardCounts[seat] ?? 0,
+    lackSuit: props.view?.lackSuits[seat] ?? null,
+    hu: props.view?.huInfos.find((h) => h.seat === seat) ?? null,
+    isOut: props.view?.isOut[seat] ?? false,
+    trustee: props.view?.trustees[seat] ?? false,
+    ting: (props.view?.tingSeats ?? []).includes(seat),
+    revealed: props.view?.revealedHands.find((r) => r.seat === seat) ?? null,
+  };
+}
+function chipProps(seat: number, variant: 'self' | 'side' | 'bar') {
+  const v = seatView(seat);
+  return {
+    name: nameOf(seat),
+    isMe: seat === me.value,
+    isDealer: seat === dealerSeat.value,
+    cardCount: v.cardCount,
+    lackSuit: v.lackSuit,
+    hu: v.hu,
+    isOut: v.isOut,
+    trustee: v.trustee,
+    ting: v.ting,
+    activeLevel: seatActiveLevel(seat),
+    balance: seatBalance(seat),
+    pendingDelta: pendingDelta(seat),
+    avatar: variant === 'bar' ? layout.value.barChip.w : layout.value.selfChip.width,
+    variant,
+  };
+}
+function backsProps(seat: number) {
+  const v = seatView(seat);
+  const isTop = seat === topSeat.value;
+  const backs = isTop
+    ? layout.value.topBacks
+    : seat === leftSeat.value
+      ? layout.value.leftBacks
+      : layout.value.rightBacks;
+  const revealed = isTop ? v.revealed : null;
+  const sideRevealed = !isTop && v.revealed !== null;
+  return {
+    count: revealed || sideRevealed ? 0 : v.cardCount,
+    direction: (isTop ? 'top' : seat === leftSeat.value ? 'left' : 'right') as
+      | 'top'
+      | 'left'
+      | 'right',
+    tileW: backs.tile.w,
+    tileH: backs.tile.h,
+    gap: isTop ? layout.value.topBacks.gap : 0,
+    pitch: isTop ? 0 : layout.value.leftBacks.pitch,
+    revealed,
+  };
+}
+function riverMelds(seat: number) {
+  return (props.view?.melds[seat] ?? []).map((m) => {
+    const key = meldKey(m);
+    return { key, meld: m, pop: newMeldKeySet.value.has(key) };
+  });
+}
+function riverProps(seat: number) {
+  const l = layout.value;
+  const isTop = seat === topSeat.value;
+  const isLeft = seat === leftSeat.value;
+  const river = isTop
+    ? l.topRiver
+    : isLeft
+      ? l.leftRiver
+      : seat === rightSeat.value
+        ? l.rightRiver
+        : l.ownRiver;
+  const v = seatView(seat);
+  return {
+    discards: props.view?.discards[seat] ?? [],
+    melds: riverMelds(seat),
+    direction: directionOf(seat),
+    tileW: river.tile.w,
+    tileH: river.tile.h,
+    gap: river.gap,
+    cols: river.cols,
+    rows: river.rows,
+    meldTileW: river.meld.tile.w,
+    meldTileH: river.meld.tile.h,
+    meldOverlap: river.meld.overlap,
+    meldPlacement: river.meld.placement,
+    meldGap: river.meld.gap,
+    meldHeight: river.meld.height,
+    filterTileType: discardClickTarget.value ? tileType(discardClickTarget.value) : null,
+    interactive: phase.value === 'claim' && amActive.value,
+    revealed: isLeft || seat === rightSeat.value ? v.revealed : null,
+  };
+}
+const hasActions = computed(() => {
+  if (props.settlementArrived || props.settlementRevealed) return false;
+  if (!props.interactive || !amActive.value) return false;
+  return (
+    phase.value === 'exchange' ||
+    phase.value === 'lack' ||
+    phase.value === 'play' ||
+    phase.value === 'claim'
+  );
+});
+const centerProps = computed(() => ({
+  wallCount: wallCount.value,
+  phaseText: phaseText.value,
+  claimTile: claimTile.value,
+  claimW: layout.value.centerTiles.claim.w,
+  claimH: layout.value.centerTiles.claim.h,
+  tingTiles: tingTiles.value,
+  tingW: layout.value.centerTiles.ting.w,
+  tingH: layout.value.centerTiles.ting.h,
+  maxFan: props.view?.maxFanForMe ?? null,
+  seconds: props.seconds,
+  active: amActive.value && !props.settlementRevealed,
+  compact: layout.value.centerCompact,
+  endedText:
+    phase.value === 'ended'
+      ? '本局结束'
+      : endReason.value > 0
+        ? `已胡 ${endReason.value} 家`
+        : '',
+}));
 
 // —— Batch 2 新增逻辑 ——
 
@@ -387,10 +531,10 @@ const lackRecommendation = computed<MahjongSuit | null>(() => {
 
 /** T4 Batch 2：座位位置百分比（Hu banner 定位用）。 */
 function bannerPosition(seat: number): { leftPct: number; topPct: number } {
-  if (seat === me.value) return { leftPct: 50, topPct: 90 };
-  if (seat === topSeat.value) return { leftPct: 50, topPct: 10 };
-  if (seat === leftSeat.value) return { leftPct: 8, topPct: 50 };
-  return { leftPct: 92, topPct: 50 };
+  if (seat === me.value) return { leftPct: 50, topPct: 82 };
+  if (seat === topSeat.value) return { leftPct: 50, topPct: 20 };
+  if (seat === leftSeat.value) return { leftPct: 14, topPct: 48 };
+  return { leftPct: 86, topPct: 48 };
 }
 
 /** T4 Batch 2 + T7 Batch 2：新局开始时 reset 所有跨局 Set（B2 阻断修法）。 */
@@ -474,11 +618,11 @@ function onMeldPopDone(key: string) {
 </script>
 
 <template>
-  <view class="mj">
+  <view class="mj" :style="{ '--mj-s': `${layout.s}` }">
     <!-- 麻将桌底部两个角落装饰（T3 Batch 1） -->
     <view class="mj__corner-bot mj__corner-bot--l" aria-hidden="true" />
     <view class="mj__corner-bot mj__corner-bot--r" aria-hidden="true" />
-    <view class="mj__bar">
+    <view class="mj__bar" :style="rectStyle(layout.bar)">
       <view class="mj__bar-left">
         <button
           type="button"
@@ -492,9 +636,13 @@ function onMeldPopDone(key: string) {
       <view class="mj__bar-center">
         <text v-if="levelName" class="mj__bar-text">{{ levelName }}</text>
         <text v-if="sceneBase !== null" class="mj__bar-text">底分 {{ sceneBase }}</text>
-        <text class="mj__bar-text">牌墙 {{ wallCount }}</text>
       </view>
       <view class="mj__bar-right">
+        <MahjongSeatChip
+          v-if="view"
+          v-bind="chipProps(topSeat, 'bar')"
+          :style="{ height: `${layout.barChip.h}px` }"
+        />
         <button
           v-if="!settlementRevealed && phase !== 'ended'"
           type="button"
@@ -518,113 +666,98 @@ function onMeldPopDone(key: string) {
 
     <view v-if="waitingForDeal" class="mj__waiting">已进房，等待服务端发牌…</view>
     <template v-else>
-      <view class="mj__top">
-        <MahjongSeatPanel
-          v-bind="seatPanelProps(topSeat)"
-          :direction="directionOf(topSeat)"
-          compact
-          @discard-click="onSeatDiscardClick(topSeat, $event)"
-        />
-      </view>
+      <MahjongHandBacks
+        class="mj-backs-slot mj-backs-slot--top"
+        v-bind="backsProps(topSeat)"
+        :style="rectStyle(layout.topBacks.rect)"
+      />
+      <MahjongHandBacks
+        class="mj-backs-slot mj-backs-slot--left"
+        v-bind="backsProps(leftSeat)"
+        :style="rectStyle(layout.leftBacks.rect)"
+      />
+      <MahjongHandBacks
+        class="mj-backs-slot mj-backs-slot--right"
+        v-bind="backsProps(rightSeat)"
+        :style="rectStyle(layout.rightBacks.rect)"
+      />
 
-      <view class="mj__mid">
-        <view class="mj__side">
-          <MahjongSeatPanel
-            v-bind="seatPanelProps(leftSeat)"
-            :direction="directionOf(leftSeat)"
-            compact
-            @discard-click="onSeatDiscardClick(leftSeat, $event)"
-          />
-        </view>
-        <view class="mj__center">
-          <text class="mj__phase">{{ phaseText }}</text>
-          <view v-if="claimTile" class="mj__claim-tile">
-            <MahjongTile :tile="claimTile" size="md" direction="my" />
-          </view>
-          <text v-if="endReason > 0 && phase !== 'ended'" class="mj__muted">
-            已胡 {{ endReason }} 家
-          </text>
-          <view v-if="tingTiles.length > 0" class="mj__ting">
-            <text class="mj__ting-label">
-              听<template v-if="view?.maxFanForMe !== undefined">（{{ view.maxFanForMe }} 番）</template>
-            </text>
-            <MahjongTile
-              v-for="(tile, i) in tingTiles"
-              :key="`ting-${i}`"
-              :tile="tile"
-              size="sm"
-              direction="my"
-            />
-          </view>
-        </view>
-        <view class="mj__side">
-          <MahjongSeatPanel
-            v-bind="seatPanelProps(rightSeat)"
-            :direction="directionOf(rightSeat)"
-            compact
-            @discard-click="onSeatDiscardClick(rightSeat, $event)"
-          />
-        </view>
-      </view>
+      <MahjongSeatChip v-bind="chipProps(leftSeat, 'side')" :style="rectStyle(layout.leftChip)" />
+      <MahjongSeatChip v-bind="chipProps(rightSeat, 'side')" :style="rectStyle(layout.rightChip)" />
+      <MahjongSeatChip v-bind="chipProps(me, 'self')" :style="rectStyle(layout.selfChip)" />
 
-      <view class="mj__mine">
-        <view class="mj__me-meta">
-          <text v-if="me === dealerSeat" class="mj__me-badge mj__me-badge--dealer">庄</text>
-          <text v-if="myLack !== null" class="mj__me-badge">
-            缺{{ MAHJONG_SUIT_NAMES[myLack] }}
-          </text>
-          <text v-if="myHu" class="mj__me-badge mj__me-badge--pos">
-            胡{{ myHu.fan > 0 ? ` ${myHu.fan}番` : '' }}
-          </text>
-          <text
-            v-if="myPendingDelta !== 0"
-            class="mj__me-badge"
-            :class="myPendingDelta > 0 ? 'mj__me-badge--pos' : 'mj__me-badge--neg'"
-          >
-            {{ myPendingDelta > 0 ? `+${myPendingDelta}` : myPendingDelta }}
-          </text>
-        </view>
-        <!-- T5 Batch 1: 用 MahjongMeld 独立组件渲染副露；T7 Batch 2: :key 改稳定标识 + :pop 增量动画 -->
-        <MahjongMeld
-          v-for="meld in myMelds"
-          :key="meldKey(meld)"
-          :meld="meld"
-          direction="my"
-          size="sm"
-          :pop="newMeldKeySet.has(meldKey(meld))"
-          @pop-done="onMeldPopDone(meldKey(meld))"
-        />
-        <view v-if="myDiscards.length > 0" class="mj__my-river mj-river">
+      <MahjongRiver
+        class="mj-river-slot mj-river-slot--top"
+        v-bind="riverProps(topSeat)"
+        :style="rectStyle(layout.topRiver.rect)"
+        @discard-click="onSeatDiscardClick(topSeat, $event)"
+        @meld-pop-done="onMeldPopDone"
+      />
+      <MahjongRiver
+        class="mj-river-slot mj-river-slot--left"
+        v-bind="riverProps(leftSeat)"
+        :style="rectStyle(layout.leftRiver.rect)"
+        @discard-click="onSeatDiscardClick(leftSeat, $event)"
+        @meld-pop-done="onMeldPopDone"
+      />
+      <MahjongRiver
+        class="mj-river-slot mj-river-slot--right"
+        v-bind="riverProps(rightSeat)"
+        :style="rectStyle(layout.rightRiver.rect)"
+        @discard-click="onSeatDiscardClick(rightSeat, $event)"
+        @meld-pop-done="onMeldPopDone"
+      />
+      <MahjongRiver
+        class="mj-river-slot mj-river-slot--self"
+        v-bind="riverProps(me)"
+        :style="rectStyle(layout.ownRiver.rect)"
+        @discard-click="onSeatDiscardClick(me, $event)"
+        @meld-pop-done="onMeldPopDone"
+      />
+
+      <MahjongCenter v-bind="centerProps" :style="rectStyle(layout.centerCard)" />
+
+      <view class="mj__hand" :class="{ 'mj__hand--selectable': handSelectable }" :style="handStyle">
+        <template v-if="myRevealed">
           <MahjongTile
-            v-for="(tile, i) in myDiscards"
-            :key="`my-discard-${i}`"
-            :tile="tile"
-            size="sm"
-            direction="my"
-            :class="{
-              'mj__discard--latest': i === myDiscards.length - 1 && myDiscards.length > 0,
-              'mj__discard--selected': discardClickTarget && i === myDiscards.length - 1
-            }"
-            @click="onSeatDiscardClick(me, tile)"
-          />
-        </view>
-        <view v-if="myRevealed" class="mj__my-revealed">
-          <text class="mj__my-meld-label">已胡</text>
-          <MahjongTile
-            v-for="(tile, i) in myRevealed.tiles"
+            v-for="(t, i) in myRevealed.tiles"
             :key="`my-revealed-${i}`"
-            :tile="tile"
-            size="sm"
+            :tile="t"
             direction="my"
+            :w="layout.hand.tile.w"
+            :h="layout.hand.tile.h"
             dim
           />
+        </template>
+        <template v-else>
+          <MahjongTile
+            v-for="(tile, i) in hand"
+            :key="`hand-${phase}-${i}`"
+            :tile="tile"
+            direction="my"
+            :w="layout.hand.tile.w"
+            :h="layout.hand.tile.h"
+            :selected="selected.includes(i)"
+            :disabled="!handSelectable"
+            :class="{
+              'anim-fly-out': flyingOutIndex === i,
+              'anim-deal-in': phase === 'play',
+            }"
+            :style="{ '--ftl-delay': `${i * 30}ms` }"
+            @click="onTileClick(i)"
+            @longpress="onTileLongPress(i)"
+          />
+        </template>
+        <view
+          v-if="phase === 'play' && handSelectable && selected.length === 1"
+          class="mj__hand-hint"
+        >
+          <text>再点一次出牌（或点"出牌"按钮）</text>
         </view>
       </view>
 
-      <view class="mj__action">
-        <TurnTimer :active="amActive && !settlementRevealed" :seconds="seconds" />
-
-        <template v-if="!settlementArrived && phase === 'exchange' && amActive">
+      <view v-if="hasActions" class="mj__actions" :style="actionsStyle">
+        <template v-if="phase === 'exchange'">
           <text class="mj__hint">已选 {{ selected.length }}/3</text>
           <button
             type="button"
@@ -639,7 +772,7 @@ function onMeldPopDone(key: string) {
           </text>
         </template>
 
-        <template v-else-if="!settlementArrived && phase === 'lack' && amActive">
+        <template v-else-if="phase === 'lack'">
           <button
             v-for="suit in ([0, 1, 2] as const)"
             :key="`lack-${suit}`"
@@ -657,7 +790,7 @@ function onMeldPopDone(key: string) {
           </button>
         </template>
 
-        <template v-else-if="!settlementArrived && phase === 'play' && amActive">
+        <template v-else-if="phase === 'play'">
           <button
             v-for="(opt, i) in myClaims"
             :key="claimKey(opt, i)"
@@ -680,7 +813,7 @@ function onMeldPopDone(key: string) {
         </template>
 
         <ClaimTile
-          v-else-if="!settlementArrived && phase === 'claim' && amActive"
+          v-else-if="phase === 'claim'"
           :options="myClaims"
           :filtered-options="discardClickTarget ? filteredClaimsForDiscard : undefined"
           :busy="busy"
@@ -688,48 +821,24 @@ function onMeldPopDone(key: string) {
           @claim="submitClaim"
           @pass="submitPass"
         />
-
-        <text v-else-if="settlementArrived || phase === 'ended'" class="mj__ended">本局结束</text>
-        <text v-else class="mj__muted">{{ phaseText }}</text>
-      </view>
-
-      <view v-if="myTrustee && !settlementRevealed && phase !== 'ended'" class="mj__trustee-mask" @click.stop>
-        <text class="mj__trustee-title">托管中</text>
-        <text class="mj__trustee-desc">轮到你时将自动出牌</text>
-        <button type="button" class="btn btn--primary mj__trustee-cancel" :disabled="busy" @click="onTrustee(false)">
-          取消托管
-        </button>
       </view>
 
       <view
-        class="mj__hand mj__hand--relative"
-        :class="{
-          'mj__hand--selectable': handSelectable,
-          'mj__hand--ting': tingTiles.length > 0,
-        }"
+        v-if="myTrustee && !settlementRevealed && phase !== 'ended'"
+        class="mj__trustee-mask"
+        :style="trusteeMaskStyle"
+        @click.stop
       >
-        <MahjongTile
-          v-for="(tile, i) in hand"
-          :key="`hand-${phase}-${i}`"
-          :tile="tile"
-          size="lg"
-          :selected="selected.includes(i)"
-          :disabled="!handSelectable"
-          :class="{
-            'anim-fly-out': flyingOutIndex === i,
-            'anim-deal-in': phase === 'play',
-          }"
-          :style="{ '--ftl-delay': `${i * 30}ms` }"
-          @click="onTileClick(i)"
-          @longpress="onTileLongPress(i)"
-        />
-        <!-- T3c Batch 3：play 窗口双击等待提示（阻断 B3：已加 position: relative） -->
-        <view
-          v-if="phase === 'play' && handSelectable && selected.length === 1"
-          class="mj__hand-hint"
+        <text class="mj__trustee-title">托管中</text>
+        <text class="mj__trustee-desc">轮到你时将自动出牌</text>
+        <button
+          type="button"
+          class="btn btn--primary mj__trustee-cancel"
+          :disabled="busy"
+          @click="onTrustee(false)"
         >
-          <text>再点一次出牌（或点"出牌"按钮）</text>
-        </view>
+          取消托管
+        </button>
       </view>
     </template>
 
@@ -775,12 +884,9 @@ function onMeldPopDone(key: string) {
 
 .mj {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: $ftl-space-2;
   width: 100%;
   height: 100%;
-  padding: $ftl-space-2 $ftl-space-5;
+  padding: 0;
   position: relative;
   color: $ftl-color-text;
   // 麻将桌背景（T3 Batch 1）
@@ -797,8 +903,8 @@ function onMeldPopDone(key: string) {
 .mj::after {
   content: '';
   position: absolute;
-  width: 72px;
-  height: 72px;
+  width: calc(var(--mj-s, 1) * 72px);
+  height: calc(var(--mj-s, 1) * 72px);
   pointer-events: none;
   z-index: 0;
   background-size: contain;
@@ -819,8 +925,8 @@ function onMeldPopDone(key: string) {
 .mj__corner-bot {
   position: absolute;
   bottom: 2px;
-  width: 72px;
-  height: 72px;
+  width: calc(var(--mj-s, 1) * 72px);
+  height: calc(var(--mj-s, 1) * 72px);
   pointer-events: none;
   z-index: 0;
   background-size: contain;
@@ -834,13 +940,13 @@ function onMeldPopDone(key: string) {
 
 /* —— 顶栏 —— */
 .mj__bar {
-  position: relative;
+  position: absolute;
+  box-sizing: border-box;
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: $ftl-space-5;
-  min-height: $ftl-bar-h;
+  padding: 0 20px;
 }
 .mj__bar-left,
 .mj__bar-right {
@@ -1021,21 +1127,11 @@ function onMeldPopDone(key: string) {
 
 /* —— 手牌 —— */
 .mj__hand {
+  position: absolute;
   display: flex;
-  flex: 0 0 auto;
   align-items: flex-end;
   justify-content: center;
-  gap: 2px;
-  min-height: 79px;
-  padding: $ftl-space-2 0 0;
-  overflow-x: auto;
-  position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
-}
-.mj__hand :deep(.mj-tile) {
-  margin-left: -18px;
-}
-.mj__hand :deep(.mj-tile:first-child) {
-  margin-left: 0;
+  overflow: visible;
 }
 .mj__hand :deep(.mj-tile--selected) {
   z-index: 1;
@@ -1044,31 +1140,29 @@ function onMeldPopDone(key: string) {
   cursor: pointer;
 }
 
-/* —— Batch 3：手牌 ting 高亮 + hand hint + 弃牌最新标记 —— */
-.mj__hand--ting::after {
-  content: '听牌中';
-  position: absolute;
-  top: -18px;
-  right: 0;
-  font-size: 10px;
-  color: $ftl-color-gold;
-  font-weight: 700;
-  background: rgba($ftl-color-gold, 0.2);
-  padding: 2px 6px;
-  border-radius: 4px;
-  line-height: 1.4;
-}
-
 .mj__hand-hint {
   position: absolute;
-  bottom: -16px;
+  top: -20px;
+  bottom: auto;
   left: 50%;
   transform: translateX(-50%);
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
   font-size: 11px;
   color: $ftl-color-gold-light;
-  opacity: 0.8;
+  opacity: 0.9;
   pointer-events: none;
   white-space: nowrap;
+}
+
+/* —— 动作浮层 —— */
+.mj__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: $ftl-space-3;
 }
 .mj__discard--latest {
   box-shadow: 0 0 6px rgba($ftl-color-gold, 0.5);
