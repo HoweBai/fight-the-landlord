@@ -584,7 +584,9 @@ function onMeldPopDone(key: string) {
             />
           </view>
 
-          <!-- 牌墙尾堆：最多 7 张牌背横排 + 数字提示剩余。牌墙耗尽(wallCount=0) 时隐藏。 -->
+          <!-- 牌墙尾堆：最多 7 张牌背横排 + 数字提示剩余。
+               P2-1: margin-top:auto 推到 .mj__center 底部锚点，
+               避免被上方 phase/claimTile 埋没。牌墙耗尽(wallCount=0) 时隐藏。 -->
           <view v-if="wallCount > 0" class="mj__wall-pile">
             <MahjongTile
               v-for="i in wallPileIndices"
@@ -1014,11 +1016,13 @@ function onMeldPopDone(key: string) {
   display: flex;
   align-items: flex-end;
   gap: 0;
-  margin-top: 6px;
-  padding: 3px 6px;
+  // P2-1: margin-top:auto 推到 .mj__center 底部锚点，始终在中间区域底部可见
+  margin-top: auto;
+  padding: 4px 10px;
   border-radius: $ftl-radius-sm;
-  background: rgba(0, 0, 0, 0.25);
-  border: $ftl-hairline solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+  border: $ftl-hairline solid rgba($ftl-color-gold, 0.2);
+  backdrop-filter: blur(2px);
 }
 .mj__wall-pile :deep(.mj-tile) {
   // P3 和其他组件统一：sm tile 一律 -12px overlap
@@ -1114,9 +1118,11 @@ function onMeldPopDone(key: string) {
   flex: 0 0 auto;
   align-items: flex-end;
   justify-content: center;
+  // P2-2: 加左右 40px 内边距，让手牌收在桌面视觉中心，
+  // 避免两侧延伸到 action bar 倒计时徽章和桌面边缘
+  padding: $ftl-space-2 $ftl-space-10 0;
   gap: 0; // P1-1: gap 改 0，完全由负 margin 控制 overlap，避免 flex gap 在 margin 之外多撑开 2px
   min-height: 79px;
-  padding: $ftl-space-2 0 0;
   overflow-x: auto;
   position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
 }
