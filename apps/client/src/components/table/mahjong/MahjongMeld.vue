@@ -155,8 +155,8 @@ function onAnimEnd(e: AnimationEvent): void {
 
 /**
  * ── vertical 模式（左/右家窄条面板）───────────────────────────
- * 3 张 tile 纵向堆叠，杠盖 cap 居中叠在 Meld 顶部。
- * 杠盖的"中间那张"语义在窄面板里不重要——视觉上 cap 在 Meld 上即可。
+ * 3 张 tile 纵向堆叠，杠盖 cap 居中叠在 Meld 上方。
+ * 杠盖 cap 叠在 tile[0]（顶部第一张）上方 — 窄面板里 cap 只要"在 Meld 上面"即可。
  * ────────────────────────────────────────────────────────────────
  */
 .mj-meld--vertical {
@@ -166,17 +166,15 @@ function onAnimEnd(e: AnimationEvent): void {
 }
 .mj-meld--vertical :deep(.mj-tile) {
   margin-left: 0;          // 清水平方向 overlap
-  margin-bottom: -16px;    // 垂直 overlap（和 SeatPanel vertical row 对齐）
+  margin-top: -16px;       // 垂直 overlap（和 SeatPanel vertical row 对齐）
 }
 .mj-meld--vertical :deep(.mj-tile:first-child) {
-  margin-bottom: 0;
+  margin-top: 0;
 }
 .mj-meld--vertical .mj-meld__cap {
-  // cap 叠在 Meld 顶部（flex-column 里 tile[0] 在顶部）
+  // cap 叠在 Meld 顶部（column 里 tile[0] 在顶部）
   left: 50%;
   transform: translateX(-50%);
-  bottom: 100%; // 距 Meld 底部（即 tile[2] 上方），视觉上会在 Meld 中部下方一点
-  // 简化处理：vertical 下 cap 只需要"在 Meld 上面"视觉即可，
-  // 精确叠 tile[1] 在窄面板里没有实际价值。
+  top: 0; // column 从 top→bottom，cap 贴顶部 = tile[0] 上方
 }
 </style>

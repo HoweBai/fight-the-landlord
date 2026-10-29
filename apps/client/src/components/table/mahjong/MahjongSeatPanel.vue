@@ -399,12 +399,20 @@ const rotateDir = computed<Rotate | undefined>(() =>
 // ── 左/右家竖排窄列模式 ────────────────────────────────────────
 // 核心原理（配合 MahjongTile rotate prop）：
 //   Tile rotate 模式 DOM 是横牌 (w=51, h=34) + transform rotate(±90°) → 视觉竖牌 (34×51)
-//   SeatPanel vertical → row 改 column-reverse → DOM 纵向排横牌
+//   SeatPanel vertical → row 改 column（**不 reverse**），DOM 纵向排横牌
+//   DOM 顺序 dark → meld → river → 视觉顺序"远离中心→靠近中心" ✓ 不重叠
 //   → DOM 层面 panel 宽 ≈ 51px （放得下 .mj__side 24% ≈ 200px）
 //   → 视觉层面 rotate 后变成高>宽的竖条窄列，牌面朝中心方向
+//
+// ⚠️ 为什么用 column 不用 column-reverse？
+//   DOM row 顺序：head→meta→dark→meld→river→revealed
+//   正确麻将桌左家（面右朝中心）布局：
+//     最远 ← dark(手牌) → meld(副露) → river(弃牌) → 最近
+//   column-reverse 会把 dark 推到 river 下面（更靠近中心）→ 手牌压弃牌河，重叠！
+//   column 保留 DOM 自然顺序，正好 = 远离→靠近 ✓
 // ────────────────────────────────────────────────────────────────
 .mj-seat--vertical {
-  flex-direction: column-reverse; // 底部是最新内容（弃牌堆/副露）靠近中心
+  flex-direction: column; // column：保留 DOM 自然顺序 = 从远离中心到靠近中心
   gap: 3px;
   max-width: 60px; // DOM row 宽 ≈ 51px，加 padding 撑到 55px
   min-width: 55px;
@@ -427,33 +435,33 @@ const rotateDir = computed<Rotate | undefined>(() =>
   background: rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.9);
 }
-// row 改纵向列：DOM 横牌 51×34 纵向堆叠
+// row 改纵向列：**不 reverse**，保留 DOM tile 顺序 = 先出的牌在上，后出的在下
 .mj-seat--vertical .mj-seat__row {
-  flex-direction: column-reverse; // 最新牌在底部（视觉上靠近中心）
+  flex-direction: column; // column：tile[0]（最早出/最旧）在上，tile[last]（最新）在下
   align-items: center;
   gap: 0; // overlap 用 margin 自己算
   max-height: none;
   flex-wrap: nowrap;
   overflow: visible;
 }
-// overlap 从 margin-left（水平）改成 margin-bottom（垂直）
-// column-reverse 里 margin-bottom 是"上面那张对下面那张的重叠"
+// overlap 从 margin-bottom 改 margin-top：column 里 tile[1] 在 tile[0] 下方，
+// margin-top: -16px → tile[1] 向上重叠 tile[0] 16px → 视觉后牌压前牌 ✓
 .mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile),
 .mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile) {
-  margin-left: 0;          // 清掉原水平方向 overlap
-  margin-bottom: -16px;    // DOM 垂直方向 overlap -16px
+  margin-left: 0;
+  margin-top: -16px;
 }
 .mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile:first-child),
 .mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile:first-child) {
-  margin-bottom: 0;
+  margin-top: 0;
 }
-// 弃牌河：同 overlap
+// 弃牌河：同 overlap — 最新弃牌（tile[last]）在最下面，margin-top 让它向上重叠前一张
 .mj-seat--vertical .mj-seat__row--river :deep(.mj-tile) {
   margin-left: 0;
-  margin-bottom: -16px;
+  margin-top: -16px;
 }
 .mj-seat--vertical .mj-seat__row--river :deep(.mj-tile:first-child) {
-  margin-bottom: 0;
+  margin-top: 0;
 }
 .mj-seat--vertical .mj-seat__row--river {
   border-top: none; // 竖排不需要顶部分隔线
@@ -466,7 +474,7 @@ const rotateDir = computed<Rotate | undefined>(() =>
 }
 // 副露容器内部只有 Meld，不再有 label，简化为纯纵向容器
 .mj-seat--vertical .mj-seat__meld {
-  flex-direction: column-reverse;
+  flex-direction: column; // 和外层 column 方向一致
   margin-right: 0;
   gap: 0;
 }
@@ -479,12 +487,11 @@ const rotateDir = computed<Rotate | undefined>(() =>
   font-size: 9px;
   padding: 1px 3px;
   margin-left: 0;
-  // overflow 徽标 row 里跟 tile 纵向排 → 放在 row 顶部（column-reverse 下是最靠近中心的位置）
-  order: -1;
+  // column 里 order: 0 = DOM 顺序 → overflow 徽标在 row 底部（最靠近中心一侧）
+  // 这正好是溢出提示应该出现的位置（靠近桌面中心的方向）
 }
 .mj-seat--vertical .mj-seat__overflow--river {
   margin-top: 4px;
-  order: 0; // 弃牌溢出在最下方（column-reverse 下最远离中心）
 }
 // 弃牌渐隐遮罩：竖排不适用，隐藏
 .mj-seat--vertical .mj-river__mask {
