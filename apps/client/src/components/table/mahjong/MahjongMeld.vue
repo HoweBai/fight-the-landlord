@@ -32,8 +32,13 @@ const props = withDefaults(
      * 强制用 my/ 竖置正立素材 + DOM 宽高交换 + transform rotate。
      */
     rotate?: Rotate;
+    /**
+     * vertical 模式：面板窄条时，Meld 内部 3 张也改成纵向堆叠。
+     * 杠盖 cap 定位跟着 vertical 调整。
+     */
+    vertical?: boolean;
   }>(),
-  { size: 'sm', pop: false },
+  { size: 'sm', pop: false, vertical: false },
 );
 
 const emit = defineEmits<{
@@ -79,7 +84,7 @@ function onAnimEnd(e: AnimationEvent): void {
 <template>
   <view
     class="mj-meld"
-    :class="[styleClass, `mj-meld--${size}`, popAnimClass]"
+    :class="[styleClass, `mj-meld--${size}`, popAnimClass, { 'mj-meld--vertical': vertical }]"
     @animationend="onAnimEnd"
   >
     <!-- 前 3 张（碰/杠都是 3 张并排） -->
@@ -146,5 +151,32 @@ function onAnimEnd(e: AnimationEvent): void {
 .mj-meld--md .mj-meld__cap,
 .mj-meld--lg .mj-meld__cap {
   left: calc(50% - 23px); // md tile 宽 46px 的一半（lg=60 也够用，略偏左 7px 视觉不明显）
+}
+
+/**
+ * ── vertical 模式（左/右家窄条面板）───────────────────────────
+ * 3 张 tile 纵向堆叠，杠盖 cap 居中叠在 Meld 顶部。
+ * 杠盖的"中间那张"语义在窄面板里不重要——视觉上 cap 在 Meld 上即可。
+ * ────────────────────────────────────────────────────────────────
+ */
+.mj-meld--vertical {
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.mj-meld--vertical :deep(.mj-tile) {
+  margin-left: 0;          // 清水平方向 overlap
+  margin-bottom: -16px;    // 垂直 overlap（和 SeatPanel vertical row 对齐）
+}
+.mj-meld--vertical :deep(.mj-tile:first-child) {
+  margin-bottom: 0;
+}
+.mj-meld--vertical .mj-meld__cap {
+  // cap 叠在 Meld 顶部（flex-column 里 tile[0] 在顶部）
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%; // 距 Meld 底部（即 tile[2] 上方），视觉上会在 Meld 中部下方一点
+  // 简化处理：vertical 下 cap 只需要"在 Meld 上面"视觉即可，
+  // 精确叠 tile[1] 在窄面板里没有实际价值。
 }
 </style>

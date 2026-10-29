@@ -160,7 +160,7 @@ const rotateDir = computed<Rotate | undefined>(() =>
     <view v-if="visibleMelds.length > 0" class="mj-seat__row">
       <view v-for="(meld, i) in visibleMelds" :key="`meld-${i}`" class="mj-seat__meld">
         <text class="mj-seat__meld-label">{{ MELD_LABEL[meld.kind] }}</text>
-        <MahjongMeld :meld="meld" :direction="direction" size="sm" :rotate="rotateDir" />
+        <MahjongMeld :meld="meld" :direction="direction" size="sm" :rotate="rotateDir" :vertical="isVertical" />
       </view>
       <text v-if="props.melds.length > visibleMelds.length" class="mj-seat__overflow">
         +{{ props.melds.length - visibleMelds.length }}
@@ -459,32 +459,32 @@ const rotateDir = computed<Rotate | undefined>(() =>
   border-top: none; // 竖排不需要顶部分隔线
   padding-top: 0;
 }
-// 副露：label 和 meld 都竖排
-.mj-seat--vertical .mj-seat__row:not(.mj-seat__row--river) {
-  gap: 4px; // 不同 meld 之间的垂直间距
-}
-.mj-seat--vertical .mj-seat__meld {
-  flex-direction: column-reverse; // 副露 label 在上，meld 在下（视觉）
-  margin-right: 0;
-  gap: 2px;
-}
+// 副露：label 隐藏（窄 55px 放不下 label + Meld）
+// 用 Meld 内部 3 张 tile 直接纵向堆叠 + cap 杠盖来表达碰/杠
 .mj-seat--vertical .mj-seat__meld-label {
-  font-size: 9px;
-  padding: 0 3px;
-  align-self: center;
+  display: none;
 }
-// 副露里 Meld 内部的 tile overlap：column-reverse 里 MahjongMeld 自己是 inline-flex 横排，
-// 但 Meld 里的 tile 也有 rotate prop，所以 Meld 整体和外部 row 独立处理。
-// Meld 内部的 overlap 已经在 MahjongMeld.vue 里用 margin-left 处理了（inline-flex 横排）。
+// 副露容器内部只有 Meld，不再有 label，简化为纯纵向容器
+.mj-seat--vertical .mj-seat__meld {
+  flex-direction: column-reverse;
+  margin-right: 0;
+  gap: 0;
+}
+// 副露组之间的垂直间距（副露 row 本身有 gap: 4px，这里保持）
+.mj-seat--vertical .mj-seat__row:not(.mj-seat__row--river) {
+  gap: 4px;
+}
 .mj-seat--vertical .mj-seat__overflow {
   align-self: center;
   font-size: 9px;
   padding: 1px 3px;
   margin-left: 0;
+  // overflow 徽标 row 里跟 tile 纵向排 → 放在 row 顶部（column-reverse 下是最靠近中心的位置）
+  order: -1;
 }
-// 竖牌行里的溢出 +N 也垂直居中
 .mj-seat--vertical .mj-seat__overflow--river {
-  margin-top: 4px; // 弃牌堆下方
+  margin-top: 4px;
+  order: 0; // 弃牌溢出在最下方（column-reverse 下最远离中心）
 }
 // 弃牌渐隐遮罩：竖排不适用，隐藏
 .mj-seat--vertical .mj-river__mask {
