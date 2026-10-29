@@ -107,8 +107,9 @@ function onAnimEnd(e: AnimationEvent): void {
 }
 
 /** 3 张横向叠加：后两张往左负 margin */
+// P3：sm tile 统一 -12px（和手牌/暗牌堆/牌墙堆一致）；md/lg 保持 -18px / -22px
 .mj-meld :deep(.mj-tile) {
-  margin-left: -14px;
+  margin-left: -12px;
   position: relative;
 }
 .mj-meld :deep(.mj-tile:first-child) {

@@ -377,9 +377,19 @@ function assertMahjongPlayerView(v: unknown, path: string): asserts v is Mahjong
   if (!Array.isArray(v.cardCounts) || v.cardCounts.length !== 4) {
     throw new ProtocolError(`${path}.cardCounts must have length 4`);
   }
+  v.cardCounts.forEach((n, i) => assertNum(n, `${path}.cardCounts[${i}]`));
+  // 不变式：自己的手牌张数必须与公开的计数一致（与 ddz/pdk 对齐，提前拦截远端数据漂移）。
+  if (v.hand.length !== (v.cardCounts as number[])[v.seat as number]) {
+    throw new ProtocolError(
+      `${path}: hand.length (${v.hand.length}) must equal cardCounts[seat] (${String((v.cardCounts as number[])[v.seat as number])})`,
+    );
+  }
   if (!Array.isArray(v.trustees) || v.trustees.length !== 4) {
     throw new ProtocolError(`${path}.trustees must have length 4`);
   }
+  v.trustees.forEach((b, i) => {
+    if (typeof b !== 'boolean') throw new ProtocolError(`${path}.trustees[${i}] must be a boolean`);
+  });
   assertNum(v.dealerSeat, `${path}.dealerSeat`);
   assertNum(v.wallCount, `${path}.wallCount`);
   if (!Array.isArray(v.lackSuits) || v.lackSuits.length !== 4) {

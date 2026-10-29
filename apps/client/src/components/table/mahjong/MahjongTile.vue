@@ -55,6 +55,7 @@ const label = computed(() => {
       `mj-tile--${size}`,
       direction ? `mj-tile--dir-${direction}` : null,
       {
+        'mj-tile--back': back || !tile,
         'mj-tile--selected': selected,
         'mj-tile--disabled': disabled,
         'mj-tile--dim': dim,
@@ -73,7 +74,7 @@ const label = computed(() => {
   display: block;
   flex: 0 0 auto;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.9);
+  background: transparent;
   transition: transform 0.08s, box-shadow 0.08s;
 }
 .mj-tile--sm {
@@ -99,9 +100,13 @@ const label = computed(() => {
   opacity: 0.5;
   filter: grayscale(0.6);
 }
-/** left/right 方向的牌面是横置（49×40，宽>高），容器需按横牌比例调整 */
-.mj-tile--dir-left,
-.mj-tile--dir-right {
+/**
+ * left/right 方向的牌面素材是横置（49×40，宽>高），容器需按横牌比例调整。
+ * 但牌背（.mj-tile--back）图是竖的（83×125），四个方向都是同一张，
+ * 所以保持默认竖牌容器尺寸，不走这个 override。
+ */
+.mj-tile--dir-left:not(.mj-tile--back),
+.mj-tile--dir-right:not(.mj-tile--back) {
   &.mj-tile--sm { width: 39px; height: 32px; }
   &.mj-tile--md { width: 51px; height: 42px; }
   &.mj-tile--lg { width: 68px; height: 55px; }

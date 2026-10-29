@@ -71,6 +71,21 @@ const lackLabel = computed(() =>
 const hasMeta = computed(
   () => props.trustee || props.hu !== null || props.isOut || lackLabel.value !== '',
 );
+/** P1a 对手暗牌堆：cardCount 张牌背（服务端 cardCounts 已经是手牌数，不含副露）。 */
+const showDarkTiles = computed(() => !props.isMe && props.cardCount > 0 && !props.isOut);
+// compact 模式下左/右/顶面板窄，限制暗牌数量防溢出遮挡副露/弃牌
+// 计算依据：sm tile 26px 宽，-12px overlap，8 张 = 26 + 7*14 = 124px ≈ 面板可用宽
+const DARK_TILE_LIMIT = props.compact ? 8 : 13;
+const darkTileCount = computed(() => Math.min(props.cardCount, DARK_TILE_LIMIT));
+// 用 computed 数组让 v-for 跑 key 稳定
+const darkTileIndices = computed(() => Array.from({ length: darkTileCount.value }, (_, i) => i));
+
+// —— P2 compact 限制：副露 ≤2 组、弃牌 ≤6 张。compact 面板窄，多行太多会溢出。——
+const DISCARD_LIMIT = props.compact ? 6 : 99;
+const MELD_LIMIT = props.compact ? 2 : 99;
+const visibleMelds = computed(() => props.melds.slice(0, MELD_LIMIT));
+const visibleDiscards = computed(() => props.discards.slice(0, DISCARD_LIMIT));
+const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
 </script>
 
 <template>
@@ -117,25 +132,45 @@ const hasMeta = computed(
       </text>
     </view>
 
-    <!-- T5 Batch 1: 副露用 MahjongMeld 独立组件 -->
-    <view v-if="melds.length > 0" class="mj-seat__row">
-      <view v-for="(meld, i) in melds" :key="`meld-${i}`" class="mj-seat__meld">
+    <!-- P1a 对手暗牌堆：横向堆叠的牌背。isOut 后手牌被 reveal 或清零，不再画。 -->
+    <view v-if="showDarkTiles" class="mj-seat__row mj-seat__row--dark">
+      <MahjongTile
+        v-for="i in darkTileIndices"
+        :key="`dark-${i}`"
+        back
+        size="sm"
+        :direction="direction"
+      />
+    </view>
+
+    <!-- T5 Batch 1: 副露用 MahjongMeld 独立组件；P2 compact 限制 ≤2 组 -->
+    <view v-if="visibleMelds.length > 0" class="mj-seat__row">
+      <view v-for="(meld, i) in visibleMelds" :key="`meld-${i}`" class="mj-seat__meld">
         <text class="mj-seat__meld-label">{{ MELD_LABEL[meld.kind] }}</text>
         <MahjongMeld :meld="meld" :direction="direction" size="sm" />
       </view>
+      <text v-if="props.melds.length > visibleMelds.length" class="mj-seat__overflow">
+        +{{ props.melds.length - visibleMelds.length }}
+      </text>
     </view>
 
-    <view v-if="discards.length > 0" class="mj-seat__row mj-seat__row--river mj-river">
+    <!-- P2 compact 限制弃牌 ≤6 张，多余的标 +N -->
+    <view v-if="visibleDiscards.length > 0" class="mj-seat__row mj-seat__row--river mj-river">
       <MahjongTile
-        v-for="(tile, i) in discards"
+        v-for="(tile, i) in visibleDiscards"
         :key="`discard-${i}`"
         :tile="tile"
         size="sm"
         :direction="direction"
-        :class="{ 'mj__discard--latest': i === discards.length - 1 && discards.length > 0 }"
+        :class="{
+          'mj__discard--latest': i === visibleDiscards.length - 1 && visibleDiscards.length > 0,
+        }"
         @click="emit('discard-click', tile)"
       />
-      <view v-if="discards.length > 6" class="mj-river__mask" />
+      <text v-if="discardOverflow" class="mj-seat__overflow mj-seat__overflow--river">
+        +{{ props.discards.length - visibleDiscards.length }}
+      </text>
+      <view v-if="visibleDiscards.length > 6" class="mj-river__mask" />
     </view>
 
     <view v-if="revealed" class="mj-seat__row mj-seat__row--revealed">
@@ -162,6 +197,7 @@ const hasMeta = computed(
   gap: 4px;
   min-width: 0;
   max-width: 100%;
+  min-height: 64px; // P1b 防 exchange/lack 阶段塌缩成一条线
   padding: 6px 8px;
   border-radius: $ftl-radius-sm;
   background: rgba(0, 0, 0, 0.28);
@@ -268,6 +304,21 @@ const hasMeta = computed(
   max-height: 84px;
   overflow: hidden;
 }
+// P1a 暗牌堆：比手牌更紧的重叠（-12px），形成一叠牌背效果
+.mj-seat__row--dark {
+  gap: 0;
+  // P0 回归修法：恢复默认 overflow: hidden，让超出的牌背自然裁切，
+  // 避免 compact 模式下暗牌堆溢出遮挡副露/弃牌。
+  max-height: none;
+}
+.mj-seat__row--dark :deep(.mj-tile) {
+  margin-left: -12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.mj-seat__row--dark :deep(.mj-tile:first-child) {
+  margin-left: 0;
+}
+// compact 限制已在 script 里用 DARK_TILE_LIMIT = 8 控数量，overlap 不用再加 override
 .mj-seat__row--river {
   padding-top: 3px;
   border-top: $ftl-hairline dashed rgba(255, 255, 255, 0.12);
@@ -296,15 +347,37 @@ const hasMeta = computed(
   gap: 2px;
   margin-right: 6px;
 }
+// P0 修复：副露 label 改为和其他 badge 一致的 pill 样式，深色面板上可见
 .mj-seat__meld-label {
+  padding: 0 5px;
+  border-radius: 999px;
   font-size: 10px;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+  flex: 0 0 auto;
+  align-self: center;
+}
+// P2 compact overflow 提示：副露/弃牌多时标 +N
+.mj-seat__overflow {
+  align-self: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
   color: $ftl-color-text-muted;
+  line-height: 1.4;
+}
+.mj-seat__overflow--river {
+  margin-left: 2px;
 }
 .mj-seat__tiles {
   display: flex;
   gap: 2px;
 }
+// P0 修复：compact 面板副露/暗牌行从 60px 提到 80px，给副露 label + meld + overflow +N 留足空间
 .mj-seat--compact .mj-seat__row:not(.mj-seat__row--river):not(.mj-seat__row--revealed) {
-  max-height: 60px;
+  max-height: 80px;
 }
 </style>

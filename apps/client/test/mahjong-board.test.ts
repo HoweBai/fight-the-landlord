@@ -163,4 +163,63 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
       tile: tile(0, 1),
     });
   });
+
+  describe('自己胡牌后：手牌不重复渲染', () => {
+    it('myRevealed 不为空时，.mj__hand 隐藏，.mj__my-revealed 展示手牌', () => {
+      const revealedTiles: Tile[] = [
+        tile(0, 1), tile(0, 2), tile(0, 3), tile(0, 4), tile(0, 5), tile(0, 6),
+        tile(0, 7), tile(0, 8), tile(0, 9), tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4),
+      ];
+      const wrapper = mount(MahjongBoard, {
+        props: props({
+          view: view({
+            state: 'play',
+            isOut: [true, false, false, false],
+            huInfos: [{
+              seat: 0,
+              fromSeat: null,
+              tile: tile(0, 5),
+              fan: 1,
+              multiplier: 1,
+              items: ['平胡'],
+              selfDraw: true,
+            }],
+            revealedHands: [
+              { seat: 0, tiles: revealedTiles, huTile: tile(0, 5) },
+            ],
+            activeSeats: [1], // 只有对手在 action 中
+          }),
+        }),
+      });
+      // .mj__hand 应该隐藏
+      expect(wrapper.find('.mj__hand').exists()).toBe(false);
+      // .mj__my-revealed 应该展示 revealed tiles
+      const revealed = wrapper.find('.mj__my-revealed');
+      expect(revealed.exists()).toBe(true);
+      expect(revealed.findAll('.mj-tile')).toHaveLength(revealedTiles.length);
+    });
+
+    it('没胡时，.mj__hand 正常显示手牌', () => {
+      const wrapper = mount(MahjongBoard, { props: props() });
+      expect(wrapper.find('.mj__hand').exists()).toBe(true);
+      expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
+    });
+
+    it('claim 阶段自己不 active 时，底部不重复显示 phaseText', () => {
+      const wrapper = mount(MahjongBoard, {
+        props: props({
+          view: view({
+            state: 'claim',
+            activeSeats: [1, 2], // 自己不在 active 中
+            windowId: 'claim:2',
+          }),
+        }),
+      });
+      // 中央应该有 phaseText
+      expect(wrapper.find('.mj__phase').text()).toContain('等待其他玩家响应');
+      // 底部动作栏不应该再出现同样的 muted text
+      const actionMuted = wrapper.find('.mj__action .mj__muted');
+      expect(actionMuted.exists()).toBe(false);
+    });
+  });
 });

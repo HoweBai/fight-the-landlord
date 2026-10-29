@@ -74,6 +74,22 @@ const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
 const myLack = computed(() => props.view?.lackSuits[me.value] ?? null);
 
+// —— P1 中央增强：最近出牌 + 牌墙堆 ——
+const lastDiscard = computed(() => props.view?.lastDiscard ?? null);
+/** 牌墙尾堆可视化：最多 7 张牌背横排 + 数字提示剩余张数。 */
+const wallPileCount = computed(() => Math.min(wallCount.value, 7));
+const wallPileIndices = computed(() =>
+  Array.from({ length: wallPileCount.value }, (_, i) => i),
+);
+/** 最近出牌的方向标签（谁出的）。 */
+function discardSeatLabel(seat: number): string {
+  if (seat === me.value) return '我出';
+  if (seat === topSeat.value) return '对家';
+  if (seat === leftSeat.value) return '左家';
+  if (seat === rightSeat.value) return '右家';
+  return '';
+}
+
 const myPendingDelta = computed(() => pendingDelta(me.value));
 const myHu = computed(() => props.view?.huInfos.find((h) => h.seat === me.value) ?? null);
 
@@ -556,6 +572,29 @@ function onMeldPopDone(key: string) {
               direction="my"
             />
           </view>
+
+          <!-- P1 中央增强：最近出牌 tile + 方向标签 + 牌墙尾堆 -->
+          <view v-if="lastDiscard && phase === 'play'" class="mj__last">
+            <text class="mj__last-label">{{ discardSeatLabel(lastDiscard.seat) }}弃</text>
+            <MahjongTile
+              :tile="lastDiscard.tile"
+              size="md"
+              direction="my"
+              class="mj__last-tile"
+            />
+          </view>
+
+          <!-- 牌墙尾堆：最多 7 张牌背横排 + 数字提示剩余。牌墙耗尽(wallCount=0) 时隐藏。 -->
+          <view v-if="wallCount > 0" class="mj__wall-pile">
+            <MahjongTile
+              v-for="i in wallPileIndices"
+              :key="`wall-${i}`"
+              back
+              size="sm"
+              direction="my"
+            />
+            <text class="mj__wall-count">{{ wallCount }}</text>
+          </view>
         </view>
         <view class="mj__side">
           <MahjongSeatPanel
@@ -608,15 +647,15 @@ function onMeldPopDone(key: string) {
             @click="onSeatDiscardClick(me, tile)"
           />
         </view>
+        <!-- 自己胡了时，在 .mj__mine 区域展示完整手牌（替代下方 .mj__hand） -->
         <view v-if="myRevealed" class="mj__my-revealed">
           <text class="mj__my-meld-label">已胡</text>
           <MahjongTile
             v-for="(tile, i) in myRevealed.tiles"
             :key="`my-revealed-${i}`"
             :tile="tile"
-            size="sm"
+            size="lg"
             direction="my"
-            dim
           />
         </view>
       </view>
@@ -690,7 +729,7 @@ function onMeldPopDone(key: string) {
         />
 
         <text v-else-if="settlementArrived || phase === 'ended'" class="mj__ended">本局结束</text>
-        <text v-else class="mj__muted">{{ phaseText }}</text>
+        <!-- 自己不 active 时不再底部重复显示 phaseText：中央 .mj__phase 已展示 -->
       </view>
 
       <view v-if="myTrustee && !settlementRevealed && phase !== 'ended'" class="mj__trustee-mask" @click.stop>
@@ -701,7 +740,10 @@ function onMeldPopDone(key: string) {
         </button>
       </view>
 
+      <!-- 自己胡了（myRevealed 不为空）时，手牌已在 .mj__my-revealed 展示，
+           隐藏 .mj__hand 避免重复渲染。settlementRevealed 同理。 -->
       <view
+        v-if="!myRevealed && !settlementRevealed"
         class="mj__hand mj__hand--relative"
         :class="{
           'mj__hand--selectable': handSelectable,
@@ -713,6 +755,7 @@ function onMeldPopDone(key: string) {
           :key="`hand-${phase}-${i}`"
           :tile="tile"
           size="lg"
+          direction="my"
           :selected="selected.includes(i)"
           :disabled="!handSelectable"
           :class="{
@@ -947,6 +990,52 @@ function onMeldPopDone(key: string) {
   color: $ftl-color-text-muted;
 }
 
+// —— P1 中央增强：最近出牌 + 牌墙堆 ——
+.mj__last {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: $ftl-radius-sm;
+  background: rgba(255, 255, 255, 0.08);
+  border: $ftl-hairline solid rgba($ftl-color-gold, 0.25);
+}
+.mj__last-label {
+  font-size: 9px;
+  color: $ftl-color-gold;
+  letter-spacing: 1px;
+}
+.mj__last-tile {
+  filter: drop-shadow(0 2px 6px rgba($ftl-color-gold, 0.4));
+}
+.mj__wall-pile {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border-radius: $ftl-radius-sm;
+  background: rgba(0, 0, 0, 0.25);
+  border: $ftl-hairline solid rgba(255, 255, 255, 0.08);
+}
+.mj__wall-pile :deep(.mj-tile) {
+  // P3 和其他组件统一：sm tile 一律 -12px overlap
+  margin-left: -12px;
+}
+.mj__wall-pile :deep(.mj-tile:first-child) {
+  margin-left: 0;
+}
+.mj__wall-count {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: $ftl-color-text-muted;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 /* —— 我的副露 / 弃牌 —— */
 .mj__mine {
   display: flex;
@@ -1032,13 +1121,14 @@ function onMeldPopDone(key: string) {
   position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
 }
 .mj__hand :deep(.mj-tile) {
-  margin-left: -18px;
+  // P1d 从 -18 调到 -12：原重叠 40% 太狠；新重叠 ~26%，既保持麻将牌堆感又不压过头
+  margin-left: -12px;
 }
 .mj__hand :deep(.mj-tile:first-child) {
   margin-left: 0;
 }
 .mj__hand :deep(.mj-tile--selected) {
-  z-index: 1;
+  z-index: 10; // P1d 选中时浮到最上层，不被后面的牌盖住
 }
 .mj__hand--selectable :deep(.mj-tile) {
   cursor: pointer;
