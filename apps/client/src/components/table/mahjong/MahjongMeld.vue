@@ -16,6 +16,8 @@ import type { MahjongMeldView, Tile } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
 
 type Direction = 'my' | 'top' | 'left' | 'right';
+/** 与 MahjongTile.Rotate 对齐。 */
+type Rotate = 'left' | 'right';
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +27,11 @@ const props = withDefaults(
     size?: 'sm' | 'md' | 'lg';
     /** true 时播放进场 pop 动画（增量新增时由 Board 传 true）。Batch 2 新增。 */
     pop?: boolean;
+    /**
+     * 左/右家竖排旋转模式 — 透传给内部 MahjongTile。
+     * 强制用 my/ 竖置正立素材 + DOM 宽高交换 + transform rotate。
+     */
+    rotate?: Rotate;
   }>(),
   { size: 'sm', pop: false },
 );
@@ -82,6 +89,7 @@ function onAnimEnd(e: AnimationEvent): void {
       :tile="tile"
       :direction="direction"
       :size="size"
+      :rotate="rotate"
     />
     <!-- 杠的第 4 张：叠在中间那张的正上方 -->
     <MahjongTile
@@ -91,6 +99,7 @@ function onAnimEnd(e: AnimationEvent): void {
       :back="meld.kind === 'angang'"
       :direction="direction"
       :size="size"
+      :rotate="rotate"
     />
   </view>
 </template>

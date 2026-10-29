@@ -17,6 +17,8 @@ import MahjongTile from './MahjongTile.vue';
 import MahjongMeld from './MahjongMeld.vue';
 
 type Direction = 'my' | 'top' | 'left' | 'right';
+/** 与 MahjongTile.Rotate 对齐。 */
+type Rotate = 'left' | 'right';
 
 const props = withDefaults(
   defineProps<{
@@ -86,6 +88,15 @@ const MELD_LIMIT = props.compact ? 2 : 99;
 const visibleMelds = computed(() => props.melds.slice(0, MELD_LIMIT));
 const visibleDiscards = computed(() => props.discards.slice(0, DISCARD_LIMIT));
 const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
+
+/**
+ * 左/右家竖排旋转：direction='left' → rotate(-90°) 朝右 / 'right' → rotate(90°) 朝左。
+ * 强制 Tile/Meld 用 my/ 竖置正立素材 + DOM 宽高交换 + transform rotate。
+ */
+const isVertical = computed(() => props.direction === 'left' || props.direction === 'right');
+const rotateDir = computed<Rotate | undefined>(() =>
+  props.direction === 'left' || props.direction === 'right' ? props.direction : undefined,
+);
 </script>
 
 <template>
@@ -95,6 +106,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
       'mj-seat--me': isMe,
       'mj-seat--out': isOut,
       'mj-seat--compact': compact,
+      'mj-seat--vertical': isVertical,
       'mj-seat--active-strong': activeLevel === 'strong',
       'mj-seat--active-weak': activeLevel === 'weak',
     }"
@@ -140,6 +152,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
         back
         size="sm"
         :direction="direction"
+        :rotate="rotateDir"
       />
     </view>
 
@@ -147,7 +160,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
     <view v-if="visibleMelds.length > 0" class="mj-seat__row">
       <view v-for="(meld, i) in visibleMelds" :key="`meld-${i}`" class="mj-seat__meld">
         <text class="mj-seat__meld-label">{{ MELD_LABEL[meld.kind] }}</text>
-        <MahjongMeld :meld="meld" :direction="direction" size="sm" />
+        <MahjongMeld :meld="meld" :direction="direction" size="sm" :rotate="rotateDir" />
       </view>
       <text v-if="props.melds.length > visibleMelds.length" class="mj-seat__overflow">
         +{{ props.melds.length - visibleMelds.length }}
@@ -162,6 +175,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
         :tile="tile"
         size="sm"
         :direction="direction"
+        :rotate="rotateDir"
         :class="{
           'mj__discard--latest': i === visibleDiscards.length - 1 && visibleDiscards.length > 0,
         }"
@@ -180,6 +194,7 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
         :tile="tile"
         size="sm"
         :direction="direction"
+        :rotate="rotateDir"
         dim
       />
     </view>
@@ -379,5 +394,100 @@ const discardOverflow = computed(() => props.discards.length > DISCARD_LIMIT);
 // P0 修复：compact 面板副露/暗牌行从 60px 提到 80px，给副露 label + meld + overflow +N 留足空间
 .mj-seat--compact .mj-seat__row:not(.mj-seat__row--river):not(.mj-seat__row--revealed) {
   max-height: 95px; // sm 放大后副露行需要更多高度
+}
+
+// ── 左/右家竖排窄列模式 ────────────────────────────────────────
+// 核心原理（配合 MahjongTile rotate prop）：
+//   Tile rotate 模式 DOM 是横牌 (w=51, h=34) + transform rotate(±90°) → 视觉竖牌 (34×51)
+//   SeatPanel vertical → row 改 column-reverse → DOM 纵向排横牌
+//   → DOM 层面 panel 宽 ≈ 51px （放得下 .mj__side 24% ≈ 200px）
+//   → 视觉层面 rotate 后变成高>宽的竖条窄列，牌面朝中心方向
+// ────────────────────────────────────────────────────────────────
+.mj-seat--vertical {
+  flex-direction: column-reverse; // 底部是最新内容（弃牌堆/副露）靠近中心
+  gap: 3px;
+  max-width: 60px; // DOM row 宽 ≈ 51px，加 padding 撑到 55px
+  min-width: 55px;
+  padding: 4px 2px;
+  align-items: center;
+  border-radius: $ftl-radius-sm;
+}
+// 窄面板放不下昵称/金币/meta badge，左/右家的头像/昵称已经在牌桌 Avatar 区显示
+.mj-seat--vertical .mj-seat__head,
+.mj-seat--vertical .mj-seat__meta,
+.mj-seat--vertical .mj-seat__balance {
+  display: none;
+}
+// 只保留 cardCount badge（DOM 层最小信息）
+.mj-seat--vertical .mj-seat__count {
+  font-size: 10px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+}
+// row 改纵向列：DOM 横牌 51×34 纵向堆叠
+.mj-seat--vertical .mj-seat__row {
+  flex-direction: column-reverse; // 最新牌在底部（视觉上靠近中心）
+  align-items: center;
+  gap: 0; // overlap 用 margin 自己算
+  max-height: none;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+// overlap 从 margin-left（水平）改成 margin-bottom（垂直）
+// column-reverse 里 margin-bottom 是"上面那张对下面那张的重叠"
+.mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile),
+.mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile) {
+  margin-left: 0;          // 清掉原水平方向 overlap
+  margin-bottom: -16px;    // DOM 垂直方向 overlap -16px
+}
+.mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile:first-child),
+.mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile:first-child) {
+  margin-bottom: 0;
+}
+// 弃牌河：同 overlap
+.mj-seat--vertical .mj-seat__row--river :deep(.mj-tile) {
+  margin-left: 0;
+  margin-bottom: -16px;
+}
+.mj-seat--vertical .mj-seat__row--river :deep(.mj-tile:first-child) {
+  margin-bottom: 0;
+}
+.mj-seat--vertical .mj-seat__row--river {
+  border-top: none; // 竖排不需要顶部分隔线
+  padding-top: 0;
+}
+// 副露：label 和 meld 都竖排
+.mj-seat--vertical .mj-seat__row:not(.mj-seat__row--river) {
+  gap: 4px; // 不同 meld 之间的垂直间距
+}
+.mj-seat--vertical .mj-seat__meld {
+  flex-direction: column-reverse; // 副露 label 在上，meld 在下（视觉）
+  margin-right: 0;
+  gap: 2px;
+}
+.mj-seat--vertical .mj-seat__meld-label {
+  font-size: 9px;
+  padding: 0 3px;
+  align-self: center;
+}
+// 副露里 Meld 内部的 tile overlap：column-reverse 里 MahjongMeld 自己是 inline-flex 横排，
+// 但 Meld 里的 tile 也有 rotate prop，所以 Meld 整体和外部 row 独立处理。
+// Meld 内部的 overlap 已经在 MahjongMeld.vue 里用 margin-left 处理了（inline-flex 横排）。
+.mj-seat--vertical .mj-seat__overflow {
+  align-self: center;
+  font-size: 9px;
+  padding: 1px 3px;
+  margin-left: 0;
+}
+// 竖牌行里的溢出 +N 也垂直居中
+.mj-seat--vertical .mj-seat__overflow--river {
+  margin-top: 4px; // 弃牌堆下方
+}
+// 弃牌渐隐遮罩：竖排不适用，隐藏
+.mj-seat--vertical .mj-river__mask {
+  display: none;
 }
 </style>
