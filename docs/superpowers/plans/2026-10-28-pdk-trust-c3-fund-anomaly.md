@@ -326,5 +326,13 @@ reason 精确集 + score=25 + `game_type` 过滤 + `hits_total{check}` 四 check
   - 定向轮 run `40745381090`（`bcb429bb`，`only=slice-17-currency`）：187 ✓（仅定因，非权威）。
   - 能力：`conformance.yml` 的 `workflow_dispatch` 增加可选 `only`（定向轮跳过 baselines
     全量校验并在日志标注「不是权威轮」）；权威轮必须留空。
+  - origin/dev 在集成分支工作期间前进 `cb09ad6e`→`60a904b7`（麻将规则表单化 13 提交：admin
+    表单 / protocol 行为门禁 / CI 探针）。并入 `7e27bdd2`（自动合并无冲突），本地全量复验：
+    lint/build 30/30、串行测试 30/30（0 cached）、`verify:admin` **656**、
+    `verify:admin-mahjong-rules` ✓、`verify:monitoring` 288、k8s 99、audit 0 critical/high、
+    baselines self-test 4/4、conformance tsc、render 82。
+  - **最终树 run `40750615598`（`7e27bdd2`）：全序全绿**（50m27s）—— slice-17 **187**、
+    slice-36-mahjong **68**、slice-37-fund-anomaly **64**、slice-07.4 **82**，
+    `check-baselines full` 全过。**该轮为合 dev 的权威依据。**
 
 
