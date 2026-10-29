@@ -828,11 +828,39 @@ function onMeldPopDone(key: string) {
   padding: $ftl-space-2 $ftl-space-5;
   position: relative;
   color: $ftl-color-text;
-  // 麻将桌背景（T3 Batch 1）
-  background: linear-gradient(180deg, $ftl-color-mahjong-table-deep 0%, $ftl-color-mahjong-table 50%, $ftl-color-mahjong-table-deep 100%);
+  // P3: 牌桌背景增强 — 多层叠底：深→浅渐变 + 中心光斑 + 边缘暗角 + 微纹理
+  background:
+    // 最顶：极细的对角微纹（让纯色不那么塑料感）
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.012) 3px,
+      rgba(0, 0, 0, 0.012) 4px
+    ),
+    // 中层：中心光斑（桌面打光效果）
+    radial-gradient(ellipse at center 45%, rgba(255, 240, 180, 0.07) 0%, transparent 60%),
+    // 底层：深→浅→深三段渐变
+    linear-gradient(
+      180deg,
+      $ftl-color-mahjong-table-deep 0%,
+      $ftl-color-mahjong-table 40%,
+      $ftl-color-mahjong-table 60%,
+      $ftl-color-mahjong-table-deep 100%
+    );
+  background-size: auto, auto, auto;
+  // P3: 外框 + 深层叠影模拟木框 + 暗角绒面
+  border: 3px solid rgba(20, 50, 30, 0.85);
   box-shadow:
-    inset 0 0 120px rgba(0, 30, 15, 0.5),
-    inset 0 0 30px rgba(255, 220, 100, 0.08);
+    // 外框高光（模拟木框上边反光）
+    inset 0 2px 0 rgba(255, 200, 100, 0.08),
+    // 外框底边阴影
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    // 内部暗角（大半径柔化）
+    inset 0 0 160px rgba(0, 25, 12, 0.55),
+    inset 0 0 40px rgba(0, 0, 0, 0.35),
+    // 中心极弱高光（呼应 radial gradient）
+    inset 0 0 80px rgba(255, 220, 100, 0.04);
   border-radius: 16px;
   overflow: hidden;
 }
