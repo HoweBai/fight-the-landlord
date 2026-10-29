@@ -444,21 +444,23 @@ const rotateDir = computed<Rotate | undefined>(() =>
   flex-wrap: nowrap;
   overflow: visible;
 }
-// overlap 从 margin-bottom 改 margin-top：column 里 tile[1] 在 tile[0] 下方，
-// margin-top: -16px → tile[1] 向上重叠 tile[0] 16px → 视觉后牌压前牌 ✓
+// ⚠️ 精确公式推导：tile rotate(-90°) 后视觉高 51px vs DOM 高 34px 差 17px，
+// 每侧视觉伸到 DOM 外 8.5px。想要视觉 overlap 16px（和 horizontal 一致）：
+// margin-top = 17 - Ov = 17 - 16 = +1px（rotate 多出来的 17px 自动补偿 overlap）
+// 错误地用 -16px 会让视觉重叠 = 16+8.5+8.5+16 = 49px（几乎完全盖住，用户反馈"重叠"根因）
 .mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile),
 .mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile) {
   margin-left: 0;
-  margin-top: -16px;
+  margin-top: 1px; // +1px 让 rotate 多出来的 17px 自动叠成 16px 视觉 overlap
 }
 .mj-seat--vertical .mj-seat__row--dark :deep(.mj-tile:first-child),
 .mj-seat--vertical .mj-seat__row--revealed :deep(.mj-tile:first-child) {
   margin-top: 0;
 }
-// 弃牌河：同 overlap — 最新弃牌（tile[last]）在最下面，margin-top 让它向上重叠前一张
+// 弃牌河：同公式
 .mj-seat--vertical .mj-seat__row--river :deep(.mj-tile) {
   margin-left: 0;
-  margin-top: -16px;
+  margin-top: 1px;
 }
 .mj-seat--vertical .mj-seat__row--river :deep(.mj-tile:first-child) {
   margin-top: 0;

@@ -166,7 +166,8 @@ function onAnimEnd(e: AnimationEvent): void {
 }
 .mj-meld--vertical :deep(.mj-tile) {
   margin-left: 0;          // 清水平方向 overlap
-  margin-top: -16px;       // 垂直 overlap（和 SeatPanel vertical row 对齐）
+  // 同 SeatPanel 精确公式：rotate(-90°) 视觉比 DOM 多 17px，设计 overlap 16px
+  margin-top: 1px;
 }
 .mj-meld--vertical :deep(.mj-tile:first-child) {
   margin-top: 0;
