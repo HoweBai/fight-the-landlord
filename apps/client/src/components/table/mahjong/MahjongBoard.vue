@@ -158,6 +158,48 @@ watch(
   },
 );
 
+// —— Task 9：摸牌分离（immediate 先记录初始手牌，避免首手丢 prev） ——
+const drawnType = ref<number | null>(null);
+const prevHandTypes = ref<number[]>([]);
+
+function findAdded(prev: number[], next: number[]): number | null {
+  const counts = new Map<number, number>();
+  for (const t of prev) counts.set(t, (counts.get(t) ?? 0) + 1);
+  for (const t of next) {
+    const c = counts.get(t) ?? 0;
+    if (c > 0) counts.set(t, c - 1);
+    else return t;
+  }
+  return null;
+}
+
+watch(
+  () => (props.view?.hand ?? []).map((t) => tileType(t)),
+  (next) => {
+    const prev = prevHandTypes.value;
+    drawnType.value = next.length === prev.length + 1 ? findAdded(prev, next) : null;
+    prevHandTypes.value = next;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.view?.state,
+  (to) => {
+    if (to === 'exchange' || to === 'ended' || to === undefined) drawnType.value = null;
+  },
+);
+
+/** display 顺序：sorted 13 + 摸牌单独移到行尾；找不到幽灵牌就退回原文。 */
+const displayTiles = computed<Array<{ tile: Tile; drawn: boolean }>>(() => {
+  const entries = hand.value.map((tile) => ({ tile, drawn: false }));
+  if (drawnType.value === null) return entries;
+  const idx = entries.findIndex((e) => tileType(e.tile) === drawnType.value);
+  if (idx < 0) return entries;
+  const [entry] = entries.splice(idx, 1);
+  return [...entries, { tile: entry!.tile, drawn: true }];
+});
+
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
   haptic('light');
@@ -177,11 +219,11 @@ function onTileClick(index: number): void {
     lastClickIndex.value === index && now - lastClickTime.value < 400;
 
   if (isDoubleClick) {
-    const tile = hand.value[index];
-    if (tile && !props.busy) {
+    const entry = displayTiles.value[index];
+    if (entry && !props.busy) {
       // T6 Batch 2：fly-out 追踪在 submit 前赋值（B2+H4 修法）
       flyingOutIndex.value = index;
-      submit({ type: 'discard', tile });
+      submit({ type: 'discard', tile: entry.tile });
       selected.value = [];
       lastClickIndex.value = -1;
     }
@@ -196,7 +238,9 @@ function onTileClick(index: number): void {
 }
 
 const selectedTiles = computed<Tile[]>(() =>
-  selected.value.map((i) => hand.value[i]).filter((t): t is Tile => t !== undefined),
+  selected.value
+    .map((i) => displayTiles.value[i]?.tile)
+    .filter((t): t is Tile => t !== undefined),
 );
 const exchangeReady = computed(
   () =>
@@ -357,11 +401,11 @@ watch(() => hand.value.length, () => { handHintIndex.value = null; });
  *  手牌还有同款 → ting 可能变 → stillSafe=false */
 const handHintAffected = computed(() => {
   if (handHintIndex.value === null) return null;
-  const hintTile = hand.value[handHintIndex.value];
-  if (!hintTile) return null;
-  const handWithout = hand.value.filter((_, i) => i !== handHintIndex.value!);
-  const stillHas = handWithout.some(t => tileType(t) === tileType(hintTile));
-  return { tile: hintTile, stillSafe: !stillHas };
+  const hintEntry = displayTiles.value[handHintIndex.value];
+  if (!hintEntry) return null;
+  const handWithout = displayTiles.value.filter((_, i) => i !== handHintIndex.value!);
+  const stillHas = handWithout.some((e) => tileType(e.tile) === tileType(hintEntry.tile));
+  return { tile: hintEntry.tile, stillSafe: !stillHas };
 });
 
 /** 中央提示文案（纯展示映射，不判规则）。 */
@@ -731,9 +775,9 @@ function onMeldPopDone(key: string) {
         </template>
         <template v-else>
           <MahjongTile
-            v-for="(tile, i) in hand"
+            v-for="(entry, i) in displayTiles"
             :key="`hand-${phase}-${i}`"
-            :tile="tile"
+            :tile="entry.tile"
             direction="my"
             :w="layout.hand.tile.w"
             :h="layout.hand.tile.h"
@@ -742,8 +786,14 @@ function onMeldPopDone(key: string) {
             :class="{
               'anim-fly-out': flyingOutIndex === i,
               'anim-deal-in': phase === 'play',
+              'mj__hand-tile--drawn': entry.drawn,
             }"
-            :style="{ '--ftl-delay': `${i * 30}ms` }"
+            :style="{
+              '--ftl-delay': `${i * 30}ms`,
+              marginLeft: entry.drawn
+                ? `${layout.hand.drawnGap - layout.hand.gap}px`
+                : undefined,
+            }"
             @click="onTileClick(i)"
             @longpress="onTileLongPress(i)"
           />

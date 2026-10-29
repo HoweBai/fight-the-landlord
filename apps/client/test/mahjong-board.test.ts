@@ -257,3 +257,56 @@ describe('T12：四家分区重排', () => {
     expect(all).toContain('2 番胡');
   });
 });
+import { nextTick } from 'vue';
+
+describe('T13：摸牌分离与 display 下标', () => {
+  const baseHand = view().hand;
+
+  it('13→14：新增牌移到行尾并标 drawn', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({
+      view: view({ hand: [...baseHand, { s: 1, r: 9 }] }),
+    });
+    await nextTick();
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    expect(tiles).toHaveLength(14);
+    const last = tiles[tiles.length - 1]!;
+    expect(last.classes()).toContain('mj__hand-tile--drawn');
+    expect(last.attributes('aria-label')).toBe('筒9');
+  });
+
+  it('14→13 / 13→13 不标 drawn', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ hand: [...baseHand, { s: 1, r: 9 }] }) }),
+    });
+    await wrapper.setProps({ view: view({ hand: baseHand }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(0);
+  });
+
+  it('点行尾摸牌再出牌，emit 的是那张摸牌（不是下标错位）', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, { s: 1, r: 9 }] }) });
+    await nextTick();
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    await tiles[tiles.length - 1]!.trigger('click');
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: { s: 1, r: 9 },
+    });
+  });
+
+  it('换三张仍按 display 下标选牌', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'exchange', activeSeats: [0], windowId: 'exchange' }) }),
+    });
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    await tiles[0]!.trigger('click');
+    await tiles[1]!.trigger('click');
+    await tiles[2]!.trigger('click');
+    await wrapper.find('.mj__confirm').trigger('click');
+    const emitted = wrapper.emitted('mahjong')?.[0]?.[0] as { tiles: unknown[] };
+    expect(emitted.tiles).toHaveLength(3);
+  });
+});
