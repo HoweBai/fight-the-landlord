@@ -1114,15 +1114,15 @@ function onMeldPopDone(key: string) {
   flex: 0 0 auto;
   align-items: flex-end;
   justify-content: center;
-  gap: 2px;
+  gap: 0; // P1-1: gap 改 0，完全由负 margin 控制 overlap，避免 flex gap 在 margin 之外多撑开 2px
   min-height: 79px;
   padding: $ftl-space-2 0 0;
   overflow-x: auto;
   position: relative; // 阻断 B3 修法：hand hint / ting 徽标用 absolute 定位
 }
 .mj__hand :deep(.mj-tile) {
-  // P1d 从 -18 调到 -12：原重叠 40% 太狠；新重叠 ~26%，既保持麻将牌堆感又不压过头
-  margin-left: -12px;
+  // P1-1: -12 → -16：原 overlap 26% 太松，新 overlap ~35%，13 张手牌紧凑不散
+  margin-left: -16px;
 }
 .mj__hand :deep(.mj-tile:first-child) {
   margin-left: 0;
