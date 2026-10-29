@@ -101,16 +101,16 @@ export const MAHJONG_TABLE_TOKENS = {
   inner: 8,
   gap: 2,
   handH: 108,
-  handCount: 14,
+  handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
   riverH: 75,
   riverCols: 12,
   riverRows: 2,
   topBackH: 54,
   topBackGap: 2,
-  sideBackH: 45,
+  sideBackH: 45, // 槽高（pitch 叠压用）；left/right 牌背素材是 49×40 横图，aspectFit 后约 24 高
   sidePitch: 24,
-  backCount: 14,
+  backCount: 14, // = handCount，牌背预算
   sideRiverW: 49,
   sideRiverH: 40,
   sideRiverCols: 3,

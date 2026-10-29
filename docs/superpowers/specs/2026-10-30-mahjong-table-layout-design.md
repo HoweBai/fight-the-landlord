@@ -197,8 +197,8 @@ s = min(H/750, 0.88W/1041.5398)，且 s ≥ 1
   不压手牌（4:3 手牌左 80s，卡右 76.6s）。
 - `leftChip/rightChip`：本侧区顶部，`140s × 56s`；左侧 `left=OUTER`，右侧 `left=W−OUTER−140s`。
 - `centerCard`：中央井内居中，最大 `220s × 160s`；井高 <176s 时 `compact=true`，
-  紧凑卡宽可用满 `centerZone.width − 8s`、高 40s、单行 11px 字号 + 省略号
-  （不再固定 220 宽，避免「牌墙/阶段/秒数」放不下）。
+  紧凑卡宽可用满 `centerZone.width − 8s`、高 `min(160s, 井高−8s)`（16:9 全副露井 48s
+  ⇒ 卡高 40s）、单行 11px 字号 + 省略号。
 - `actions`：`rightX = W − (sideZoneW + INNER)s`（右缘 x 坐标），
   `bottomY = hand.top − INNER*s`（底缘 y 坐标）；
   同时给 CSS 用的 `rightOffset = W − rightX`、`bottomOffset = H − bottomY`，
@@ -406,7 +406,8 @@ export function mahjongTableLayout(
   3. 听牌列表（`tingTiles`，20×30s，可换行）+ 最大番；
   4. 已胡家数（`endedText`）。
 - 紧凑模式（井高 <176s）：**单行** `牌墙 N · 阶段 · 12s`（11px、省略号；
-  卡宽用满 `centerZone.width − 8s`、高 40s）；待响应牌只出文字（不出牌面）。
+  卡宽用满 `centerZone.width − 8s`、高 `min(160s, 井高−8s)`，16:9 全副露为 40s）；
+  待响应牌只出文字（不出牌面）。
 - 动作浮层：
   - `play` + 我 active：现有 claims（胡/杠）+「出牌」；
   - `claim` + 我 active：现有 `ClaimTile`（其按钮沿用自身 `ftl-btn` 尺寸，不套 96×80）；
@@ -500,7 +501,8 @@ export function mahjongTableLayout(
   - 新增：摸牌（13→14）最后一张带 `drawn` 类且间隔；13→13 / 14→13 不标；
   - 新增：claim 窗口点击弃牌过滤后只剩匹配按钮；
   - 新增：提供 `CANVAS_METRICS_KEY` 时手牌首张 `style` 与
-    `mahjongTableLayout(1623,750).hand.tile` 逐值一致；1334×1000 时同理；
+    `mahjongTableLayout(1334,1000).hand.tile` 逐值一致（**不要用 1623×750**：
+    它与兜底 1334×750 的 s 都是 1，验不出注入）。
   - 新增：已胡左右家的牌河区渲染亮牌网格（不是牌背）。
 
 ### 7.3 闸
@@ -531,6 +533,8 @@ export function mahjongTableLayout(
 | 左右家副露 4 组可能贴手牌 | 16:9 全副露侧区底 612s，手牌顶 630s，保留 18s；高 s 时由侧区居中和 `fit` 收口 |
 | 动作浮层盖住自己的牌河/副露右半 | 已登记；响应过滤点的是别人的弃牌；右缘 `rightX ≤ 右家区.left`，不盖左右家 |
 | 自己卡与左下角装饰图重叠 | 装饰在 z0、pointer-events none；自己卡在上层；纯装饰，接受 |
+| `revealedHands.huTile` 不做特殊标记 | 协议字段保留；本片只按 `tiles` 渲染；另立片 |
+| `hasActions` 增加 `interactive` 门槛 | 与 `settlementArrived` 在 `table.vue` 当前取值下等价（`interactive = store.settlement === null`）；行为不变 |
 | 顶栏 64px 在小屏占高 | 画布最小 750 高，中央井无副露仍有 184px |
 
 ## 9. 涉及文件

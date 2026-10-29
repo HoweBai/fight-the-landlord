@@ -354,9 +354,9 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
       right: { discards: 24, melds: 0 },
       self: { discards: 24, melds: 0 },
     });
-    expect(l.topRiver.fit).toBe(1);
-    expect(l.ownRiver.fit).toBe(1);
-    expect(l.leftRiver.fit).toBe(1);
+    expect(l.topRiver.fit).toBeCloseTo(1, 12);
+    expect(l.ownRiver.fit).toBeCloseTo(1, 12);
+    expect(l.leftRiver.fit).toBeCloseTo(1, 12);
     expect(l.topRiver.rows).toBe(2);
     expect(l.leftRiver.cols).toBe(3);
   });

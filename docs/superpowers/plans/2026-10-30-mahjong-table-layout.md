@@ -28,7 +28,8 @@
 - 验证命令：
   - `pnpm -C apps/client test`
   - `pnpm -C apps/client run lint`
-  - 基线（2026-10-30）：119 个测试文件 / 1553 tests 通过、2 skipped。
+  - 基线（2026-10-30 开工前）：119 个测试文件 / 1553 tests 通过、2 skipped；
+    实现后新增 7 个测试文件，全量以实际输出为准（约 123 files / 1660+ tests）。
 
 ---
 
@@ -407,9 +408,9 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
       right: { discards: 24, melds: 0 },
       self: { discards: 24, melds: 0 },
     });
-    expect(l.topRiver.fit).toBe(1);
-    expect(l.ownRiver.fit).toBe(1);
-    expect(l.leftRiver.fit).toBe(1);
+    expect(l.topRiver.fit).toBeCloseTo(1, 12);
+    expect(l.ownRiver.fit).toBeCloseTo(1, 12);
+    expect(l.leftRiver.fit).toBeCloseTo(1, 12);
     expect(l.topRiver.rows).toBe(2);
     expect(l.leftRiver.cols).toBe(3);
   });
@@ -566,16 +567,16 @@ export const MAHJONG_TABLE_TOKENS = {
   inner: 8,
   gap: 2,
   handH: 108,
-  handCount: 14,
+  handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
   riverH: 75,
   riverCols: 12,
   riverRows: 2,
   topBackH: 54,
   topBackGap: 2,
-  sideBackH: 45,
+  sideBackH: 45, // 槽高（pitch 叠压用）；left/right 牌背素材是 49×40 横图，aspectFit 后约 24 高
   sidePitch: 24,
-  backCount: 14,
+  backCount: 14, // = handCount，牌背预算
   sideRiverW: 49,
   sideRiverH: 40,
   sideRiverCols: 3,
@@ -1269,7 +1270,7 @@ describe('MahjongSeatChip', () => {
     const hu = mount(MahjongSeatChip, {
       props: {
         ...base,
-        hu: { seat: 2, fromSeat: 0, tile: { s: 0, r: 1 }, fan: 3, selfDraw: false, items: ['清一色', '根'] },
+        hu: { seat: 2, fromSeat: 0, tile: { s: 0, r: 1 }, fan: 3, multiplier: 2, selfDraw: false, items: ['清一色', '根'] },
         isOut: true,
       },
     });
@@ -1894,7 +1895,10 @@ describe('MahjongRiver', () => {
     const strip = w.find('.mj-river__melds');
     expect(strip.attributes('style')).toContain('bottom: calc(100% + 8px)');
     expect(strip.attributes('style')).toContain('height: 60px');
-    expect(w.findComponent(MahjongMeld).classes()).toContain('anim-meld-pop');
+    const meldComps = w.findAllComponents(MahjongMeld);
+    expect(meldComps).toHaveLength(2);
+    // 第二个是 pop:true 的杠（第一个是 pop:false 的碰）
+    expect(meldComps[1]!.classes()).toContain('anim-meld-pop');
   });
 
   it('meldPlacement=below 时条带在下方', () => {
@@ -1981,6 +1985,7 @@ const props = withDefaults(
     tileH: number;
     gap: number;
     cols: number;
+    /** 行数：布局契约/测试用；实际网格由 gridAutoRows 撑开。 */
     rows: number;
     meldTileW: number;
     meldTileH: number;
@@ -2492,12 +2497,13 @@ describe('T12：四家分区重排', () => {
   });
 
   it('提供画布尺寸时手牌尺寸与纯函数逐值一致', () => {
-    const metrics = computed(() => ({ width: 1623, height: 750, scale: 1 }));
+    // 用 4:3：s≈1.127，手牌 80.9×121.9；1623×750 的 s 与兜底同为 1，验不出注入
+    const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
     const wrapper = mount(MahjongBoard, {
       props: props(),
       global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
     });
-    const layout = mahjongTableLayout(1623, 750);
+    const layout = mahjongTableLayout(1334, 1000);
     const first = wrapper.find('.mj__hand .mj-tile');
     expect(first.attributes('style')).toContain(`width: ${layout.hand.tile.w}px`);
     expect(first.attributes('style')).toContain(`height: ${layout.hand.tile.h}px`);
@@ -2531,6 +2537,30 @@ describe('T12：四家分区重排', () => {
     expect(topTiles).toHaveLength(2);
     expect(topTiles[0]!.attributes('src') ?? '').not.toMatch(/back\.png$/);
   });
+
+  it('claim 窗口点击弃牌过滤，再点同一张取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'claim',
+          activeSeats: [0],
+          windowId: 'claim:9',
+          claimsForMe: [
+            { claim: 'peng', tile: { s: 0, r: 1 } },
+            { claim: 'hu', tile: { s: 1, r: 1 }, fan: 2 },
+          ],
+          discards: [[], [], [{ s: 0, r: 1 }], []],
+        }),
+      }),
+    });
+    const topTile = wrapper.find('.mj-river--top .mj-tile');
+    await topTile.trigger('click');
+    expect(wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text())).toEqual(['碰']);
+    await topTile.trigger('click');
+    const all = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    expect(all).toContain('碰');
+    expect(all).toContain('2 番胡');
+  });
 });
 ```
 
@@ -2554,7 +2584,7 @@ import MahjongSeatChip from './MahjongSeatChip.vue';
 import MahjongHandBacks from './MahjongHandBacks.vue';
 import MahjongRiver from './MahjongRiver.vue';
 import MahjongCenter from './MahjongCenter.vue';
-import MahjongTile from './MahjongTile.vue';
+// MahjongTile 已经在文件顶部导入，不要重复添加
 ```
 
   **删除** `import MahjongSeatPanel` / `import MahjongMeld` / `import TurnTimer`。
@@ -2744,8 +2774,10 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
 
 - [ ] **Step 4: 模板区改动**
 
-把 `MahjongBoard.vue` 模板中 **`<view v-if="waitingForDeal">` 之后到 `<view v-if="myTrustee...">` 之前** 的
-分区/手牌/动作块整体替换为：
+把 `MahjongBoard.vue` 模板中 **从 `<view v-if="waitingForDeal">` 到旧手牌块 `</view>` 的整段**
+（含旧 `template v-else`、旧的 `myTrustee` 掩码、旧 `.mj__hand`）整体替换为下列代码块
+（块内已包含 waiting 视图/四家分区/手牌/动作浮层/托管掩码，托管与手牌都在 `v-else` 内）；
+保留其后的 HuBanner / 长按弹层 / `overlays` 槽不动。
 
 ```vue
     <view v-if="waitingForDeal" class="mj__waiting">已进房，等待服务端发牌…</view>
@@ -2801,7 +2833,7 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
 
       <MahjongCenter v-bind="centerProps" :style="rectStyle(layout.centerCard)" />
 
-      <view class="mj__hand" :style="handStyle">
+      <view class="mj__hand" :class="{ 'mj__hand--selectable': handSelectable }" :style="handStyle">
         <template v-if="myRevealed">
           <MahjongTile
             v-for="(t, i) in myRevealed.tiles"
@@ -2926,6 +2958,9 @@ function bannerPosition(seat: number): { leftPct: number; topPct: number } {
       </view>
     </template>
 ```
+
+根元素：把 `<view class="mj">` 改为
+`<view class="mj" :style="{ '--mj-s': `${layout.s}` }">`（装饰图 `calc(var(--mj-s)*72px)` 依赖它）。
 
 顶栏：把 `.mj__bar` 根加 `:style="rectStyle(layout.bar)"`，从 `mj__bar-center` 删除「牌墙」文本，
 在 `mj__bar-right` 最前面加：
@@ -3270,7 +3305,7 @@ git rm apps/client/src/components/table/mahjong/MahjongSeatPanel.vue
   `.mj__ting` / `.mj__ting-label`
 - `.mj__mine` / `.mj__me-meta` / `.mj__me-badge*` / `.mj__my-meld*` / `.mj__my-river` /
   `.mj__my-revealed*`
-- `.mj__action` / `.mj__hint`（动作行） / `.mj__warn` / `.mj__ended`
+- `.mj__action` / `.mj__ended`（`.mj__hint` / `.mj__warn` **保留**：换三张浮层还在用）
 - `.mj__hand--ting::after` / `.mj-river__mask` / `.mj__discard--latest` / `.mj__discard--selected`
 - `.mj__hand :deep(.mj-tile)` 相关负 margin / `overflow-x`
 - `.mj-seat*`（随组件删除）
@@ -3282,7 +3317,7 @@ git rm apps/client/src/components/table/mahjong/MahjongSeatPanel.vue
 - [ ] **Step 4: 跑闸**
 
 Run: `pnpm -C apps/client test`
-Expected: PASS（119 文件 + 新文件；无红）。
+Expected: PASS（全量测试文件，含本片新增；无红）。
 
 Run: `pnpm -C apps/client run lint`
 Expected: PASS（无未使用变量/导入）。
@@ -3386,7 +3421,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: 记录审查范围**
 
 ```bash
-BASE=$(git rev-parse HEAD)   # 开始 Task 1 之前的提交（spec/plan 之后的第一个代码提交的父）
+BASE=1abd2bec   # 已固定：Task 1 之前的最后一个 docs 提交（code 范围从这里开始）
 ```
 
 - [ ] **Step 2: 派独立 reviewer（子代理）**
@@ -3416,10 +3451,11 @@ pnpm -C apps/client run build:h5
 git status --short   # 必须干净
 ```
 
-- [ ] **Step 5: 提交 + 推送 dev**
+- [ ] **Step 5: 提交（仅当有修复）+ 推送 dev**
 
 ```bash
-git add -A apps/client
+# 只在 Step 3 确有改动时提交；无改动直接 push
+git add apps/client/src apps/client/test
 git commit -m "fix(mahjong): 代码审查修复
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 git push origin dev
@@ -3435,3 +3471,36 @@ git push origin dev
 ## 计划审查记录
 
 （待独立 reviewer 审查后填写）
+
+### 2026-10-30 第一轮（独立 reviewer，sonnet，对抗审查）
+
+**结论：需修订后再开工。**
+
+阻断项处置：
+
+| # | 发现 | 处置 |
+|---|---|---|
+| B1 | `MahjongTableLayout.actions` 接口陈旧（`right/bottom` vs 实现 `rightX/bottomY...`） | **开工前已修**：接口/测试/实现统一为六字段（reviewer 读到修订前版本） |
+| B2 | Task 6 断言 `findComponent(MahjongMeld)` 取到第一个（peng pop:false），`anim-meld-pop` 恒红 | 改为 `findAllComponents(MahjongMeld)[1]`（第二个是 pop:true 的杠） |
+| B3 | `prevHandTypes` 未播种，首次摸牌永不标记 | **开工前已修**：watch 加 `{ immediate: true }` |
+| B4 | Task 8 替换锚点与代码块不自洽（块内含 waiting/手牌/托管，锚点止于 trustee 前） | 改为「从 `<view v-if="waitingForDeal">` 到旧手牌块 `</view>` 整段替换」 |
+| B5 | 删 `capTile` 后 `type Tile` 未使用 | **Task 2 实现时已删** `Tile` import |
+| B6 | Task 8 重复 import `MahjongTile` | 从追加列表删除并注明「已在文件顶部」 |
+| B7 | Task 12 才取 BASE，`BASE..HEAD` 为空 | 固定 `BASE=1abd2bec`（Task 1 前最后一个 docs 提交） |
+
+高优先级处置：
+
+| # | 发现 | 处置 |
+|---|---|---|
+| H1 | 注入测试用 1623×750，s 与兜底同为 1，假绿 | 改用 1334×1000（s≈1.127，手牌 80.9×121.9）；spec §7.2 同步 |
+| H2 | 缺 claim 窗口点击弃牌过滤回归 | Task 8 新增用例（点 top 弃牌→只剩碰；再点取消→两条都回来） |
+| H3 | `.tmp-mjpreview` 并非 gitignored，`git add -A` 可能误提交 | 明确本地临时夹具；Task 11 Step 5 删除；Task 12 只 add `apps/client/src` + `test` |
+| H4 | `--mj-s` 从未设置，装饰图 calc 死代码 | Task 8 根元素绑 `:style="{ '--mj-s': `${layout.s}` }"` |
+| H5 | `handHintAffected` 丢越界保护 | 已补 `if (!hintEntry) return null;` |
+| H6 | Task 10 删 `.mj__hint`/`.mj__warn`，但换三张浮层仍用 | Task 10 保留这两个类，只删 `.mj__action`/`.mj__ended` |
+| H7 | 基线数字陈旧 | 更新为「开工前 119 files/1553 tests；实现后新增 7 文件，以全量输出为准」 |
+
+低优先级：L1 `handCount`/`backCount` 注释必须相等；L2 `fit` 断言改 `toBeCloseTo(1,12)`；
+L3 手牌根保留 `mj__hand--selectable` 类；L4 侧背 45 槽高注释（素材 49×40，aspectFit 后约 24 高）；
+L5 `huTile` 不特殊标记登记；L6 `hasActions` 的 `interactive` 门槛登记为等价；L7 紧凑卡高
+`min(160s, 井高−8s)`；L8 `rows` 仅布局契约/测试；L9 Task 12 仅在有修复时提交。
