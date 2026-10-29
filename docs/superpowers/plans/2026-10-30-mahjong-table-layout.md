@@ -543,7 +543,19 @@ export interface MahjongTableLayout {
   leftChip: Rect;
   rightChip: Rect;
   barChip: TileSize;
-  actions: { right: number; bottom: number; maxWidth: number };
+  actions: {
+    /** 浮层右缘 x 坐标（屏幕/画布坐标）。 */
+    rightX: number;
+    /** 浮层底缘 y 坐标（屏幕/画布坐标）。 */
+    bottomY: number;
+    /** CSS `right` 偏移 = W − rightX。 */
+    rightOffset: number;
+    /** CSS `bottom` 偏移 = H − bottomY。 */
+    bottomOffset: number;
+    maxWidth: number;
+    /** 按钮区最小高度（px）；内容可向上长。 */
+    minHeight: number;
+  };
 }
 
 /** s=1 的设计 token；测试与组件测试引用，业务布局一律用输出值。 */
@@ -3290,8 +3302,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 11: 三档真浏览器截图 + 全量验证
 
 **Files:**
-- 本机临时夹具：`apps/client/.tmp-mjpreview/**`（gitignored；**不入库**）
-- 证据目录：`.superpowers/mahjong-layout-research/**`（gitignored）
+- 本机临时夹具：`apps/client/.tmp-mjpreview/**`（**不是** gitignored；Task 11 Step 5 必须删除，不入库）
+- 证据目录：`.superpowers/mahjong-layout-research/**`（gitignored，不入库）
 
 - [ ] **Step 1: 夹具支持注入画布尺寸**
 
