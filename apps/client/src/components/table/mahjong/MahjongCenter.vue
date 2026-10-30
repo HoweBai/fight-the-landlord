@@ -1,7 +1,13 @@
 <script setup lang="ts">
 /**
- * 中央井（哑组件）：牌墙/阶段/待响应牌/听牌/倒计时。
- * 井高不足时切单行紧凑模式（只出文字，不出牌面）。
+ * 中央信息格（哑组件）：三档内容，宽度 = 中间列宽（由布局给）。
+ *
+ *  - full：牌墙大数字 + 阶段 + 倒计时 + 待响应牌（带来源座）+ 听牌列表；
+ *  - dense：同上报头降一档，不显示听牌列表（副露多、格矮时仍可读）；
+ *  - compact：单行「牌墙 N · 阶段 · 12s」，claim 只出文字。
+ *
+ * 「已胡 N 家」不在中央显示（座位卡「胡」徽标 + 亮牌承担）。
+ * 无计时器：倒计时只渲染 props.seconds。
  */
 import { computed } from 'vue';
 import { MAHJONG_SUIT_NAMES, type Tile } from '@fight-the-landlord/protocol';
@@ -11,34 +17,37 @@ const props = withDefaults(
   defineProps<{
     wallCount: number;
     phaseText: string;
+    level?: 'full' | 'dense' | 'compact';
     claimTile?: Tile | null;
     claimW?: number;
     claimH?: number;
+    claimLabel?: string;
+    claimFrom?: string;
     tingTiles?: readonly Tile[];
     tingW?: number;
     tingH?: number;
     maxFan?: number | null;
     seconds: number;
     active?: boolean;
-    compact?: boolean;
-    endedText?: string;
   }>(),
   {
+    level: 'full',
     claimTile: null,
     claimW: 34,
     claimH: 51,
+    claimLabel: '可响应',
+    claimFrom: '',
     tingTiles: () => [],
     tingW: 20,
     tingH: 30,
     maxFan: null,
     active: false,
-    compact: false,
-    endedText: '',
   },
 );
 
 const urgent = computed(() => props.active && props.seconds > 0 && props.seconds <= 5);
-const claimLabel = computed(() =>
+/** 牌名文字（如「万5」）；与 prop `claimLabel`（「可响应/可自摸胡」）区分，勿同名遮蔽。 */
+const claimTileLabel = computed(() =>
   props.claimTile
     ? `${MAHJONG_SUIT_NAMES[props.claimTile.s]}${props.claimTile.r}`
     : '',
@@ -46,25 +55,28 @@ const claimLabel = computed(() =>
 </script>
 
 <template>
-  <view class="mj-center" :class="{ 'mj-center--compact': compact }">
+  <view
+    class="mj-center"
+    :class="{ 'mj-center--compact': level === 'compact', 'mj-center--dense': level === 'dense' }"
+  >
     <view class="mj-center__head">
       <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
-      <text v-if="compact" class="mj-center__sep">·</text>
       <text class="mj-center__phase">{{ phaseText }}</text>
       <template v-if="active">
-        <text v-if="compact" class="mj-center__sep">·</text>
         <text
           class="mj-center__clock"
           :class="{ 'mj-center__clock--urgent': urgent }"
         >{{ seconds }}s</text>
       </template>
     </view>
-    <template v-if="!compact">
+    <template v-if="level !== 'compact'">
       <view v-if="claimTile" class="mj-center__claim">
         <MahjongTile :tile="claimTile" :w="claimW" :h="claimH" direction="my" />
-        <text class="mj-center__label">可响应</text>
+        <text class="mj-center__label">
+          {{ claimLabel }}<template v-if="claimFrom"> · {{ claimFrom }}</template>
+        </text>
       </view>
-      <view v-if="tingTiles.length > 0" class="mj-center__ting">
+      <view v-if="level === 'full' && tingTiles.length > 0" class="mj-center__ting">
         <text class="mj-center__label">
           听<template v-if="maxFan !== null">（{{ maxFan }} 番）</template>
         </text>
@@ -77,10 +89,9 @@ const claimLabel = computed(() =>
           direction="my"
         />
       </view>
-      <text v-if="endedText" class="mj-center__ended">{{ endedText }}</text>
     </template>
     <text v-else-if="claimTile" class="mj-center__compact-claim">
-      可响应 {{ claimLabel }}
+      {{ claimLabel }} {{ claimTileLabel }}
     </text>
   </view>
 </template>
@@ -92,16 +103,75 @@ const claimLabel = computed(() =>
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
   height: 100%;
-  padding: 6px 8px;
+  padding: 6px 12px;
   overflow: hidden;
   border: $ftl-hairline solid rgba($ftl-color-gold, 0.35);
   border-radius: $ftl-radius-md;
   background: rgba(0, 0, 0, 0.38);
   color: $ftl-color-text;
   text-align: center;
+}
+.mj-center__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+.mj-center__wall {
+  flex: 0 0 auto;
+  color: $ftl-color-gold-light;
+  font-size: $ftl-font-xl;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.mj-center--dense .mj-center__wall {
+  font-size: $ftl-font-lg;
+}
+.mj-center__phase {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: $ftl-color-gold;
+  font-size: $ftl-font-md;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-center--dense .mj-center__phase {
+  font-size: $ftl-font-sm;
+}
+.mj-center__clock {
+  flex: 0 0 auto;
+  color: $ftl-color-gold-light;
+  font-size: $ftl-font-sm;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.mj-center__clock--urgent {
+  color: $ftl-color-danger;
+}
+.mj-center__claim,
+.mj-center__ting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.mj-center__label {
+  color: $ftl-color-text-muted;
+  font-size: $ftl-font-sm;
+  white-space: nowrap;
 }
 .mj-center--compact {
   flex-direction: row;
@@ -115,65 +185,15 @@ const claimLabel = computed(() =>
   font-size: 11px;
   line-height: 1.2;
 }
-.mj-center__sep {
-  color: $ftl-color-text-muted;
-  font-size: 11px;
-  line-height: 1.2;
-}
-.mj-center__head {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-width: 0;
-}
-.mj-center__wall {
-  color: $ftl-color-gold-light;
-  font-size: $ftl-font-sm;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.mj-center__phase {
-  overflow: hidden;
-  color: $ftl-color-gold;
-  font-size: $ftl-font-md;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mj-center__clock {
-  color: $ftl-color-gold-light;
-  font-size: $ftl-font-sm;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.mj-center__clock--urgent {
-  color: $ftl-color-danger;
-}
-.mj-center__claim,
-.mj-center__ting {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-.mj-center__label {
-  color: $ftl-color-text-muted;
-  font-size: 10px;
-  white-space: nowrap;
-}
-.mj-center__ended {
-  color: $ftl-color-text-muted;
-  font-size: 10px;
-}
 .mj-center--compact .mj-center__head {
   flex: 0 0 auto;
+  gap: 6px;
 }
 .mj-center__compact-claim {
   overflow: hidden;
   color: $ftl-color-gold-light;
   font-size: 11px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

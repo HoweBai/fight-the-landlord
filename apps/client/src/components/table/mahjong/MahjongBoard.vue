@@ -451,7 +451,6 @@ const phaseText = computed(() => {
       return '等待发牌…';
   }
 });
-const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
 
 // —— Task 8：四家分区的组件 props 组装 ——
 function seatView(seat: number) {
@@ -601,25 +600,32 @@ const hasActions = computed(() => {
     phase.value === 'claim'
   );
 });
+/** 信息格里的「待响应牌」只在两种窗口里有意义：claim 窗口，或 play 窗口里能自摸胡。 */
+const claimTileForCenter = computed<Tile | null>(() => {
+  if (phase.value === 'claim') return claimTile.value;
+  if (phase.value === 'play' && myClaims.value.some((o) => o.claim === 'hu')) {
+    return claimTile.value;
+  }
+  return null;
+});
 const centerProps = computed(() => ({
   wallCount: wallCount.value,
   phaseText: phaseText.value,
-  claimTile: claimTile.value,
+  level: layout.value.infoLevel,
+  claimTile: claimTileForCenter.value,
   claimW: layout.value.infoTiles.claim.w,
   claimH: layout.value.infoTiles.claim.h,
+  claimLabel: phase.value === 'play' ? '可自摸胡' : '可响应',
+  claimFrom:
+    phase.value === 'claim' && claimTileForCenter.value
+      ? `${nameOf(props.view?.currentPlayer ?? 0)}打出`
+      : '',
   tingTiles: tingTiles.value,
   tingW: layout.value.infoTiles.ting.w,
   tingH: layout.value.infoTiles.ting.h,
   maxFan: props.view?.maxFanForMe ?? null,
   seconds: props.seconds,
   active: amActive.value && !props.settlementRevealed,
-  compact: layout.value.infoLevel === 'compact',
-  endedText:
-    phase.value === 'ended'
-      ? ''
-      : endReason.value > 0
-        ? `已胡 ${endReason.value} 家`
-        : '',
 }));
 
 // —— Batch 2 新增逻辑 ——
