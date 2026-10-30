@@ -1,22 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
   mahjongTableLayout,
-  MAHJONG_TABLE_TOKENS as T,
+  type LaneLayout,
   type MahjongTableInput,
   type MahjongTableLayout,
-  type Rect,
-  type RiverLayout,
-  type TileSize,
+  type MeldStripLayout,
 } from '../src/game/mahjong-layout';
 
+/**
+ * 中央牌板布局矩阵（2026-10-30 第二片）。
+ *
+ * 契约：牌板 = 左道 + 中间列 + 右道；中间列自上而下 = 对家牌河 / 信息格 / 自己牌河；
+ * 信息格宽 = 中间列宽；左右道贯穿牌板全高（吃掉四角）。
+ *
+ * 数字来源：spec §4.2（算法跑出来的七档值），**逐视口字面量**，不用实现自身输出反推。
+ */
 const VIEWPORTS = [
-  { name: '16:9', w: 1334, h: 750 },
-  { name: '19.5:9', w: 1623, h: 750 },
-  { name: '21:9', w: 1778, h: 750 },
-  { name: '16:10', w: 1334, h: 833 },
-  { name: '4:3', w: 1334, h: 1000 },
-  { name: 'square', w: 1334, h: 1334 },
-  { name: '1500x750', w: 1500, h: 750 },
+  { name: '16:9', w: 1334, h: 750, mid: 12, side: 3, bandH: 488, infoH: 184, laneH: 152, topCap: 24, sideCap: 33 },
+  { name: '19.5:9', w: 1623, h: 750, mid: 12, side: 3, bandH: 488, infoH: 184, laneH: 152, topCap: 24, sideCap: 33 },
+  { name: '21:9', w: 1778, h: 750, mid: 12, side: 3, bandH: 488, infoH: 184, laneH: 152, topCap: 24, sideCap: 33 },
+  { name: '1334x800', w: 1334, h: 800, mid: 12, side: 2, bandH: 520.5, infoH: 196.3, laneH: 162.1, topCap: 24, sideCap: 22 },
+  { name: '16:10', w: 1334, h: 833, mid: 11, side: 2, bandH: 542, infoH: 204.4, laneH: 168.8, topCap: 22, sideCap: 22 },
+  { name: '4:3', w: 1334, h: 1000, mid: 11, side: 2, bandH: 613.1, infoH: 270.5, laneH: 171.3, topCap: 22, sideCap: 26 },
+  { name: 'square', w: 1334, h: 1334, mid: 11, side: 2, bandH: 960.3, infoH: 270.5, laneH: 344.9, topCap: 44, sideCap: 40 },
 ] as const;
 
 const EMPTY: MahjongTableInput = {
@@ -25,382 +31,271 @@ const EMPTY: MahjongTableInput = {
   right: { discards: 0, melds: 0 },
   self: { discards: 0, melds: 0 },
 };
-
+const ONE: MahjongTableInput = {
+  top: { discards: 14, melds: 1, gangMelds: 0 },
+  left: { discards: 18, melds: 0, gangMelds: 0 },
+  right: { discards: 16, melds: 0, gangMelds: 0 },
+  self: { discards: 16, melds: 1, gangMelds: 0 },
+};
 const WORST: MahjongTableInput = {
-  top: { discards: 30, melds: 1 },
-  left: { discards: 30, melds: 4 },
-  right: { discards: 30, melds: 4 },
-  self: { discards: 30, melds: 1 },
+  top: { discards: 30, melds: 4, gangMelds: 4 },
+  left: { discards: 30, melds: 4, gangMelds: 4 },
+  right: { discards: 30, melds: 4, gangMelds: 4 },
+  self: { discards: 30, melds: 4, gangMelds: 4 },
 };
 
-function everyRect(l: MahjongTableLayout): Rect[] {
-  return [
-    l.bar,
-    l.topZone,
-    l.leftZone,
-    l.rightZone,
-    l.centerZone,
-    l.centerCard,
-    l.hand.rect,
-    l.ownRiver.rect,
-    l.topRiver.rect,
-    l.leftRiver.rect,
-    l.rightRiver.rect,
-    l.ownRiver.meld.rect,
-    l.topRiver.meld.rect,
-    l.leftRiver.meld.rect,
-    l.rightRiver.meld.rect,
-    l.topBacks.rect,
-    l.leftBacks.rect,
-    l.rightBacks.rect,
-    l.selfChip,
-    l.leftChip,
-    l.rightChip,
-  ];
+function lanesOf(l: MahjongTableLayout): LaneLayout[] {
+  return [l.topLane, l.bottomLane, l.leftLane, l.rightLane];
+}
+function stripsOf(l: MahjongTableLayout): MeldStripLayout[] {
+  return [l.topMelds.left, l.topMelds.right, l.topMelds.below, l.leftMelds, l.rightMelds, l.selfMelds];
 }
 
-function expectInCanvas(r: Rect, w: number, h: number): void {
-  for (const v of [r.left, r.top, r.width, r.height]) {
-    expect(Number.isFinite(v), `rect field must be finite: ${JSON.stringify(r)}`).toBe(true);
-  }
-  expect(r.width, 'rect width').toBeGreaterThanOrEqual(0);
-  expect(r.height, 'rect height').toBeGreaterThanOrEqual(0);
-  expect(r.left, 'rect left').toBeGreaterThanOrEqual(-0.01);
-  expect(r.top, 'rect top').toBeGreaterThanOrEqual(-0.01);
-  expect(r.left + r.width, 'rect right').toBeLessThanOrEqual(w + 0.01);
-  expect(r.top + r.height, 'rect bottom').toBeLessThanOrEqual(h + 0.01);
-}
-
-function expectInside(inner: Rect, outer: Rect): void {
-  expect(inner.left).toBeGreaterThanOrEqual(outer.left - 0.01);
-  expect(inner.top).toBeGreaterThanOrEqual(outer.top - 0.01);
-  expect(inner.left + inner.width).toBeLessThanOrEqual(outer.left + outer.width + 0.01);
-  expect(inner.top + inner.height).toBeLessThanOrEqual(outer.top + outer.height + 0.01);
-}
-
-function expectGridFits(r: RiverLayout): void {
-  const gridW = r.cols * r.tile.w + (r.cols - 1) * r.gap;
-  const gridH = r.rows * r.tile.h + (r.rows - 1) * r.gap;
-  expect(gridW).toBeLessThanOrEqual(r.rect.width + 0.01);
-  expect(gridH).toBeLessThanOrEqual(r.rect.height + 0.01);
-}
-
-function expectAspect(t: TileSize, ratio: number): void {
-  expect(t.w / t.h).toBeCloseTo(ratio, 6);
-}
-
-function expectNoOverlap(a: Rect, b: Rect): void {
-  const separated =
-    a.left + a.width <= b.left + 0.01 ||
-    b.left + b.width <= a.left + 0.01 ||
-    a.top + a.height <= b.top + 0.01 ||
-    b.top + b.height <= a.top + 0.01;
-  expect(separated, `${JSON.stringify(a)} overlaps ${JSON.stringify(b)}`).toBe(true);
-}
-
-describe('mahjongTableLayout：跨设备矩阵', () => {
+describe('中央牌板：跨设备矩阵', () => {
   for (const v of VIEWPORTS) {
     describe(v.name, () => {
-      const l = mahjongTableLayout(v.w, v.h, WORST);
-      const expectedS = Math.min(v.h / 750, (0.88 * v.w) / 1041.5398230088495);
+      const l = mahjongTableLayout(v.w, v.h, EMPTY);
+      const s = l.s;
 
-      it('s 公式钉死', () => {
-        expect(l.s).toBeGreaterThanOrEqual(1);
-        expect(l.s).toBeCloseTo(expectedS, 6);
+      it('候选与列宽（用 token 独立重算）', () => {
+        const tw = 75 * (75 / 113) * s;
+        const stw = 49 * s;
+        const g = 2 * s;
+        const middleW = v.mid * tw + (v.mid - 1) * g;
+        const sideLaneW = v.side * stw + (v.side - 1) * g;
+        expect(l.topLane.rect.width).toBeCloseTo(middleW, 3);
+        expect(l.leftLane.rect.width).toBeCloseTo(sideLaneW, 3);
+        expect(l.board.width).toBeCloseTo(middleW + 2 * sideLaneW, 3);
+        expect(l.board.left).toBeCloseTo((v.w - l.board.width) / 2, 3);
+        expect(l.topLane.cols).toBe(v.mid);
+        expect(l.leftLane.cols).toBe(v.side);
       });
 
-      it('手牌比例/贴底钉死', () => {
-        expect(l.hand.rect.width / v.w).toBeCloseTo(
-          Math.min(0.88, (1041.5398230088495 * (v.h / 750)) / v.w),
+      it('中间列中心 = 画面中心', () => {
+        expect(l.topLane.rect.left + l.topLane.rect.width / 2).toBeCloseTo(v.w / 2, 3);
+        expect(l.bottomLane.rect.left + l.bottomLane.rect.width / 2).toBeCloseTo(v.w / 2, 3);
+      });
+
+      it('信息格贴四边、宽度 = 中间列宽', () => {
+        expect(l.info.top).toBeCloseTo(l.topLane.rect.top + l.topLane.rect.height, 3);
+        expect(l.info.top + l.info.height).toBeCloseTo(l.bottomLane.rect.top, 3);
+        expect(l.info.left).toBeCloseTo(l.leftLane.rect.left + l.leftLane.rect.width, 3);
+        expect(l.info.left + l.info.width).toBeCloseTo(l.rightLane.rect.left, 3);
+        expect(l.info.width).toBeCloseTo(l.topLane.rect.width, 3);
+      });
+
+      it('左右道贯穿牌板全高', () => {
+        for (const lane of [l.leftLane, l.rightLane]) {
+          expect(lane.rect.top).toBeCloseTo(l.board.top, 3);
+          expect(lane.rect.height).toBeCloseTo(l.board.height, 3);
+        }
+      });
+
+      it('容量逐视口字面量', () => {
+        expect(l.topLane.cols * l.topLane.rows).toBe(v.topCap);
+        expect(l.leftLane.cols * l.leftLane.rows).toBe(v.sideCap);
+      });
+
+      it('高度与档位', () => {
+        expect(l.board.height).toBeCloseTo(v.bandH, 1);
+        expect(l.info.height).toBeCloseTo(v.infoH, 1);
+        expect(l.topLane.rect.height).toBeCloseTo(v.laneH, 1);
+        expect(l.infoLevel).toBe('full');
+      });
+
+      it('待响应/听牌牌张尺寸随 s', () => {
+        expect(l.infoTiles.claim.w).toBeCloseTo(34 * s, 4);
+        expect(l.infoTiles.claim.h).toBeCloseTo(51 * s, 4);
+        expect(l.infoTiles.ting.w).toBeCloseTo(20 * s, 4);
+        expect(l.infoTiles.ting.h).toBeCloseTo(30 * s, 4);
+      });
+
+      it('fit 任何张数不溢出（0/12/24/30/48）', () => {
+        for (const n of [0, 12, 24, 30, 48]) {
+          const x = mahjongTableLayout(v.w, v.h, { top: { discards: n, melds: 0, gangMelds: 0 } });
+          expect(x.topLane.fit).toBeGreaterThan(0);
+          expect(x.topLane.fit).toBeLessThanOrEqual(1);
+          if (n === 0) expect(x.topLane.fit).toBeCloseTo(1, 6);
+          const neededRows = Math.max(1, Math.ceil(n / x.topLane.cols));
+          const gridH = neededRows * x.topLane.tile.h + (neededRows - 1) * x.topLane.gap;
+          expect(gridH, `n=${n} 高度`).toBeLessThanOrEqual(x.topLane.rect.height + 0.01);
+          const gridW = x.topLane.cols * x.topLane.tile.w + (x.topLane.cols - 1) * x.topLane.gap;
+          expect(gridW, `n=${n} 宽度`).toBeLessThanOrEqual(x.topLane.rect.width + 0.01);
+        }
+      });
+
+      it('牌张比例', () => {
+        expect(l.topLane.tile.w / l.topLane.tile.h).toBeCloseTo(75 / 113, 6);
+        expect(l.leftLane.tile.w / l.leftLane.tile.h).toBeCloseTo(49 / 40, 6);
+      });
+
+      it('两侧牌背镜像紧邻侧道', () => {
+        expect(l.leftBacks.rect.left + l.leftBacks.rect.width).toBeCloseTo(
+          l.leftLane.rect.left - 8 * s,
           3,
         );
-        expect(l.hand.rect.top).toBeCloseTo(v.h - (12 + 108) * l.s, 3);
-        expect(l.hand.rect.width).toBeLessThanOrEqual(v.w * 0.88 + 0.01);
-      });
-
-      it('中央井高钉死（全副露：top 290s / bottom 348s）', () => {
-        expect(l.centerZone.height).toBeCloseTo(v.h - (64 + 290 + 348) * l.s, 3);
-      });
-
-      it('所有矩形在画布内', () => {
-        for (const r of everyRect(l)) expectInCanvas(r, v.w, v.h);
-      });
-
-      it('左右家区不压自家牌河/手牌', () => {
-        expect(l.leftZone.left + l.leftZone.width).toBeLessThanOrEqual(
-          l.ownRiver.rect.left + 0.01,
-        );
-        expect(l.ownRiver.rect.left + l.ownRiver.rect.width).toBeLessThanOrEqual(
-          l.rightZone.left + 0.01,
-        );
-        expect(l.leftZone.top + l.leftZone.height).toBeLessThanOrEqual(l.hand.rect.top + 0.01);
-        expect(l.rightZone.top + l.rightZone.height).toBeLessThanOrEqual(l.hand.rect.top + 0.01);
-        expectNoOverlap(l.leftZone, l.ownRiver.rect);
-        expectNoOverlap(l.rightZone, l.ownRiver.rect);
-        expectNoOverlap(l.selfChip, l.hand.rect);
-      });
-
-      it('自己卡不压手牌，动作浮层不压右家区', () => {
-        expect(l.selfChip.left + l.selfChip.width).toBeLessThanOrEqual(l.hand.rect.left + 0.01);
-        expect(l.actions.rightX).toBeLessThanOrEqual(l.rightZone.left + 0.01);
-        expect(l.actions.rightOffset).toBeCloseTo(v.w - l.actions.rightX, 6);
-        expect(l.actions.bottomY).toBeLessThanOrEqual(l.hand.rect.top + 0.01);
-        expect(l.actions.bottomOffset).toBeCloseTo(v.h - l.actions.bottomY, 6);
-      });
-
-      it('中央卡在中央井内', () => {
-        expect(l.centerZone.width).toBeGreaterThan(0);
-        expect(l.centerZone.height).toBeGreaterThan(0);
-        expectInside(l.centerCard, l.centerZone);
-      });
-
-      it('中央紧凑条件与井高一致', () => {
-        expect(l.centerCompact).toBe(l.centerZone.height < 176 * l.s);
-        if (v.h === 750 || v.name === '16:10') expect(l.centerCompact).toBe(true);
-        if (v.name === '4:3' || v.name === 'square') expect(l.centerCompact).toBe(false);
-        expect(l.centerZone.height).toBeGreaterThanOrEqual(40);
-      });
-
-      it('牌张比例正确', () => {
-        expectAspect(l.hand.tile, 75 / 113);
-        expectAspect(l.ownRiver.tile, 75 / 113);
-        expectAspect(l.topRiver.tile, 75 / 113);
-        expectAspect(l.leftRiver.tile, 49 / 40);
-        expectAspect(l.topBacks.tile, 75 / 113);
-        expectAspect(l.leftBacks.tile, 75 / 113);
-      });
-
-      it('牌河网格放得下', () => {
-        for (const r of [l.ownRiver, l.topRiver, l.leftRiver, l.rightRiver]) expectGridFits(r);
-      });
-
-      it('副露条带在牌河的指定一侧', () => {
-        expect(l.topRiver.meld.placement).toBe('above');
-        expect(l.ownRiver.meld.placement).toBe('below');
-        expect(l.leftRiver.meld.placement).toBe('below');
-        expect(l.topRiver.meld.rect.top + l.topRiver.meld.height + l.topRiver.meld.gap).toBeCloseTo(
-          l.topRiver.rect.top,
-          3,
-        );
-        expect(l.ownRiver.meld.rect.top).toBeCloseTo(
-          l.ownRiver.rect.top + l.ownRiver.rect.height + l.ownRiver.meld.gap,
-          3,
-        );
-        expect(l.leftRiver.meld.rect.top).toBeCloseTo(
-          l.leftRiver.rect.top + l.leftRiver.rect.height + l.leftRiver.meld.gap,
+        expect(l.rightBacks.rect.left).toBeCloseTo(
+          l.rightLane.rect.left + l.rightLane.rect.width + 8 * s,
           3,
         );
       });
 
-      it('侧区在可用竖向带居中', () => {
-        expect(
-          Math.abs(
-            l.leftZone.top +
-              l.leftZone.height / 2 -
-              (l.centerZone.top + l.centerZone.height / 2),
-          ),
-        ).toBeLessThan(100 * l.s);
+      it('座位卡在桌边、顶 = 牌板顶', () => {
+        expect(l.leftChip.left).toBeCloseTo(12 * s, 3);
+        expect(l.rightChip.left).toBeCloseTo(v.w - 12 * s - 180 * s, 3);
+        expect(l.leftChip.top).toBeCloseTo(l.board.top, 3);
+        expect(l.rightChip.top).toBeCloseTo(l.board.top, 3);
       });
 
-      it('4 个杠组不超牌河宽', () => {
-        const groupW = 4 * l.topRiver.meld.tile.w - 3 * l.topRiver.meld.overlap;
-        expect(4 * groupW + 3 * l.topRiver.meld.gap).toBeLessThanOrEqual(
-          l.topRiver.rect.width + 0.01,
-        );
+      it('所有矩形合法（EMPTY + WORST）', () => {
+        for (const input of [EMPTY, WORST]) {
+          const x = mahjongTableLayout(v.w, v.h, input);
+          const rects = [
+            x.bar, x.board, x.info,
+            ...lanesOf(x).map((r) => r.rect),
+            x.topBacks.rect, x.leftBacks.rect, x.rightBacks.rect,
+            x.selfChip, x.leftChip, x.rightChip, x.hand.rect,
+            ...stripsOf(x).map((r) => r.rect),
+          ];
+          for (const r of rects) {
+            for (const val of [r.left, r.top, r.width, r.height]) {
+              expect(Number.isFinite(val), JSON.stringify(r)).toBe(true);
+            }
+            expect(r.width).toBeGreaterThanOrEqual(0);
+            expect(r.height).toBeGreaterThanOrEqual(0);
+            expect(r.left).toBeGreaterThanOrEqual(-0.01);
+            expect(r.top).toBeGreaterThanOrEqual(-0.01);
+            expect(r.left + r.width).toBeLessThanOrEqual(v.w + 0.01);
+            expect(r.top + r.height).toBeLessThanOrEqual(v.h + 0.01);
+          }
+        }
+      });
+
+      it('动作浮层不压右道', () => {
+        expect(l.actions.rightX).toBeCloseTo(l.rightLane.rect.left, 3);
+        expect(l.actions.bottomY).toBeCloseTo(l.hand.rect.top - 8 * s, 3);
+        expect(l.actions.rightOffset).toBeCloseTo(v.w - l.rightLane.rect.left, 6);
+        expect(l.actions.bottomOffset).toBeCloseTo(v.h - (l.hand.rect.top - 8 * s), 6);
       });
     });
   }
 
-  it('纯函数：同输入两次结果逐值相等', () => {
-    expect(mahjongTableLayout(1623, 750, WORST)).toEqual(mahjongTableLayout(1623, 750, WORST));
+  it('对家+我各 1 碰：档位逐视口字面量', () => {
+    const expected = ['dense', 'dense', 'dense', 'dense', 'dense', 'full', 'full'] as const;
+    VIEWPORTS.forEach((v, i) => {
+      expect(mahjongTableLayout(v.w, v.h, ONE).infoLevel, v.name).toBe(expected[i]);
+    });
   });
 
-  it('1334×750 精确值（布局锚点）', () => {
-    const l = mahjongTableLayout(1334, 750, EMPTY);
-
-    expect(l.s).toBeCloseTo(1, 6);
-    expect(l.bar).toEqual({ left: 0, top: 0, width: 1334, height: 64 });
-
-    expect(l.topZone.left).toBeCloseTo(357.3274, 3);
-    expect(l.topZone.top).toBeCloseTo(64, 3);
-    expect(l.topZone.width).toBeCloseTo(619.3451, 3);
-    expect(l.topZone.height).toBeCloseTo(222, 3);
-
-    expect(l.topBacks.rect.top).toBeCloseTo(72, 3);
-    expect(l.topBacks.rect.height).toBeCloseTo(54, 3);
-    expect(l.topRiver.rect.top).toBeCloseTo(134, 3);
-    expect(l.topRiver.rect.height).toBeCloseTo(152, 3);
-
-    expect(l.centerZone.left).toBeCloseTo(208.8673, 3);
-    expect(l.centerZone.top).toBeCloseTo(286, 3);
-    expect(l.centerZone.width).toBeCloseTo(916.2654, 3);
-    expect(l.centerZone.height).toBeCloseTo(184, 3);
-    expect(l.centerCompact).toBe(false);
-    expect(l.centerCard.width).toBeCloseTo(220, 3);
-    expect(l.centerCard.height).toBeCloseTo(160, 3);
-
-    expect(l.hand.rect.left).toBeCloseTo(146.2301, 3);
-    expect(l.hand.rect.top).toBeCloseTo(630, 3);
-    expect(l.hand.rect.width).toBeCloseTo(1041.5398, 3);
-    expect(l.hand.rect.height).toBeCloseTo(108, 3);
-    expect(l.hand.tile.w).toBeCloseTo(71.6814, 3);
-    expect(l.hand.tile.h).toBeCloseTo(108, 3);
-    expect(l.hand.gap).toBeCloseTo(2, 3);
-    expect(l.hand.drawnGap).toBeCloseTo(12, 3);
-
-    expect(l.ownRiver.rect.left).toBeCloseTo(357.3274, 3);
-    expect(l.ownRiver.rect.top).toBeCloseTo(470, 3);
-    expect(l.ownRiver.rect.width).toBeCloseTo(619.3451, 3);
-    expect(l.ownRiver.rect.height).toBeCloseTo(152, 3);
-
-    expect(l.leftZone.left).toBeCloseTo(0, 3);
-    expect(l.leftZone.top).toBeCloseTo(128.5, 3);
-    expect(l.leftZone.width).toBeCloseTo(200.8673, 3);
-    expect(l.leftZone.height).toBeCloseTo(445, 3);
-    expect(l.leftChip.left).toBeCloseTo(12, 3);
-    expect(l.leftChip.top).toBeCloseTo(128.5, 3);
-    expect(l.leftChip.width).toBeCloseTo(180, 3);
-    expect(l.leftChip.height).toBeCloseTo(56, 3);
-    expect(l.leftBacks.rect.left).toBeCloseTo(12, 3);
-    expect(l.leftBacks.rect.top).toBeCloseTo(192.5, 3);
-    expect(l.leftBacks.rect.width).toBeCloseTo(29.8673, 3);
-    expect(l.leftBacks.rect.height).toBeCloseTo(381, 3);
-    expect(l.leftRiver.rect.left).toBeCloseTo(49.8673, 3);
-    expect(l.leftRiver.rect.top).toBeCloseTo(192.5, 3);
-    expect(l.leftRiver.rect.width).toBeCloseTo(151, 3);
-    expect(l.leftRiver.rect.height).toBeCloseTo(334, 3);
-
-    expect(l.rightZone.left).toBeCloseTo(1133.1327, 3);
-    expect(l.rightChip.left).toBeCloseTo(1142, 3);
-    expect(l.rightBacks.rect.left).toBeCloseTo(1292.1327, 3);
-    expect(l.rightRiver.rect.left).toBeCloseTo(1133.1327, 3);
-
-    expect(l.selfChip.left).toBeCloseTo(12, 3);
-    expect(l.selfChip.top).toBeCloseTo(646, 3);
-    expect(l.selfChip.width).toBeCloseTo(56, 3);
-    expect(l.selfChip.height).toBeCloseTo(76, 3);
-
-    expect(l.actions.rightX).toBeCloseTo(1125.1327, 3);
-    expect(l.actions.bottomY).toBeCloseTo(622, 3);
-    expect(l.actions.rightOffset).toBeCloseTo(208.8673, 3);
-    expect(l.actions.bottomOffset).toBeCloseTo(128, 3);
-    expect(l.actions.maxWidth).toBeCloseTo(400, 3);
-    expect(l.actions.minHeight).toBeCloseTo(80, 3);
-    expect(l.barChip.w).toBeCloseTo(40, 3);
-    expect(l.barChip.h).toBeCloseTo(56, 3);
-
-    expect(l.centerTiles.claim.w).toBeCloseTo(34, 3);
-    expect(l.centerTiles.claim.h).toBeCloseTo(51, 3);
-    expect(l.centerTiles.ting.w).toBeCloseTo(20, 3);
-    expect(l.centerTiles.ting.h).toBeCloseTo(30, 3);
-  });
-
-  it('全副露：中央井 48、牌河上移、侧区 522、副露条位置正确', () => {
-    const l = mahjongTableLayout(1334, 750, WORST);
-    expect(l.s).toBeCloseTo(1, 6);
-    expect(l.topZone.height).toBeCloseTo(290, 3);
-    expect(l.topRiver.rect.top).toBeCloseTo(202, 3);
-    expect(l.ownRiver.rect.top).toBeCloseTo(402, 3);
-    expect(l.centerZone.top).toBeCloseTo(354, 3);
-    expect(l.centerZone.height).toBeCloseTo(48, 3);
-    expect(l.centerCompact).toBe(true);
-    expect(l.centerCard.height).toBeCloseTo(40, 3);
-    expect(l.centerCard.width).toBeCloseTo(908.2655, 3);
-    expect(l.leftZone.top).toBeCloseTo(90, 3);
-    expect(l.leftZone.height).toBeCloseTo(522, 3);
-    expect(l.leftRiver.rect.top).toBeCloseTo(154, 3);
-    expect(l.leftRiver.meld.height).toBeCloseTo(116, 3);
-    expect(l.leftRiver.meld.groupGap).toBeCloseTo(4, 3);
-    expect(l.topRiver.meld.groupGap).toBeCloseTo(8, 3);
-    expect(l.leftRiver.meld.rect.top).toBeCloseTo(496, 3);
-    expect(l.leftRiver.meld.rect.height).toBeCloseTo(116, 3);
-    expect(l.topRiver.meld.height).toBeCloseTo(60, 3);
-    expect(l.topRiver.meld.rect.top).toBeCloseTo(134, 3);
-    expect(l.ownRiver.meld.rect.top).toBeCloseTo(562, 3);
-    expect(l.topRiver.meld.placement).toBe('above');
-    expect(l.ownRiver.meld.placement).toBe('below');
-    expect(l.leftRiver.meld.placement).toBe('below');
-    expect(l.topRiver.meld.rect.top + l.topRiver.meld.height + l.topRiver.meld.gap).toBeCloseTo(
-      l.topRiver.rect.top,
+  it('对家+我各 4 杠：档位与下移逐视口字面量', () => {
+    const expected = ['dense', 'dense', 'dense', 'compact', 'compact', 'full', 'full'] as const;
+    VIEWPORTS.forEach((v, i) => {
+      expect(mahjongTableLayout(v.w, v.h, WORST).infoLevel, v.name).toBe(expected[i]);
+    });
+    expect(mahjongTableLayout(1334, 750, WORST).topMelds.below.groups).toBe(0);
+    expect(mahjongTableLayout(1334, 833, WORST).topMelds.below.groups).toBe(4);
+    expect(mahjongTableLayout(1334, 833, WORST).topMelds.below.rect.height).toBeCloseTo(
+      48.75 * (833 / 750),
       3,
+    );
+    expect(mahjongTableLayout(1334, 833, WORST).board.top).toBeCloseTo(211.9, 1);
+    expect(mahjongTableLayout(1334, 833, ONE).topMelds.below.groups).toBe(0);
+  });
+
+  it('16:9 精确锚点', () => {
+    const l = mahjongTableLayout(1334, 750, EMPTY);
+    expect(l.s).toBeCloseTo(1, 6);
+    expect(l.board.left).toBeCloseTo(206.327, 3);
+    expect(l.board.top).toBeCloseTo(134, 3);
+    expect(l.board.width).toBeCloseTo(921.345, 3);
+    expect(l.board.height).toBeCloseTo(488, 3);
+    expect(l.info.left).toBeCloseTo(357.327, 3);
+    expect(l.info.width).toBeCloseTo(619.345, 3);
+    expect(l.info.height).toBeCloseTo(184, 3);
+    expect(l.topLane.rect.left).toBeCloseTo(357.327, 3);
+    expect(l.topLane.rect.width).toBeCloseTo(619.345, 3);
+    expect(l.topLane.rect.height).toBeCloseTo(152, 3);
+    expect(l.bottomLane.rect.top).toBeCloseTo(470, 3);
+    expect(l.leftLane.rect.left).toBeCloseTo(206.327, 3);
+    expect(l.leftLane.rect.width).toBeCloseTo(151, 3);
+    expect(l.leftLane.rect.height).toBeCloseTo(488, 3);
+    expect(l.actions.rightX).toBeCloseTo(976.673, 3);
+    expect(l.topMelds.below.groups).toBe(0);
+  });
+
+  it('16:9 各 1 碰：信息格 127.25、牌板 431.25、对家副露在牌背两翼', () => {
+    const l = mahjongTableLayout(1334, 750, ONE);
+    expect(l.board.height).toBeCloseTo(431.25, 3);
+    expect(l.info.height).toBeCloseTo(127.25, 3);
+    expect(l.topMelds.below.groups).toBe(0);
+    expect(l.topMelds.right.rect.left).toBeCloseTo(
+      l.topBacks.rect.left + l.topBacks.rect.width + 8,
+      3,
+    );
+    expect(l.topMelds.left.rect.left + l.topMelds.left.rect.width).toBeCloseTo(
+      l.topBacks.rect.left - 8,
+      3,
+    );
+    expect(l.selfMelds.rect.top).toBeCloseTo(750 - 120 - 8 - 48.75, 3);
+  });
+
+  it('左右副露用 49×40 资产：4 组高 116s、组宽 103.4s', () => {
+    const l = mahjongTableLayout(1334, 750, WORST);
+    expect(l.leftMelds.rect.height).toBeCloseTo(4 * 26 + 3 * 4, 3);
+    expect(l.leftMelds.rect.width).toBeCloseTo(4 * (49 * 0.65) - 3 * 8, 3);
+    expect(l.leftMelds.tile.h).toBeCloseTo(26, 3);
+  });
+
+  it('副露条不压牌河/信息格', () => {
+    const l = mahjongTableLayout(1334, 750, WORST);
+    expect(l.topMelds.left.rect.left + l.topMelds.left.rect.width).toBeLessThanOrEqual(
+      l.topBacks.rect.left + 0.01,
+    );
+    expect(l.topMelds.right.rect.left).toBeGreaterThanOrEqual(
+      l.topBacks.rect.left + l.topBacks.rect.width - 0.01,
+    );
+    expect(l.selfMelds.rect.top + l.selfMelds.rect.height).toBeLessThanOrEqual(
+      l.hand.rect.top + 0.01,
+    );
+    expect(l.leftMelds.rect.left + l.leftMelds.rect.width).toBeLessThanOrEqual(
+      l.leftLane.rect.left + 0.01,
+    );
+    expect(l.rightMelds.rect.left).toBeGreaterThanOrEqual(
+      l.rightLane.rect.left + l.rightLane.rect.width - 0.01,
     );
   });
 
-  it('不传 input 不抛错，等价全 0；输入对象不被改写', () => {
-    const bare = mahjongTableLayout(1334, 750);
-    const empty = mahjongTableLayout(1334, 750, EMPTY);
-    expect(bare).toEqual(empty);
+  it('纯函数性：不传 input 不抛、freeze 可算、两次相等', () => {
+    expect(() => mahjongTableLayout(1334, 750)).not.toThrow();
     const frozen = Object.freeze({
-      top: Object.freeze({ discards: 3, melds: 1 }),
+      top: Object.freeze({ discards: 3, melds: 1, gangMelds: 1 }),
       left: Object.freeze({ discards: 2, melds: 0 }),
       right: Object.freeze({ discards: 1, melds: 0 }),
       self: Object.freeze({ discards: 4, melds: 0 }),
     });
     expect(() => mahjongTableLayout(1334, 750, frozen)).not.toThrow();
+    expect(mahjongTableLayout(1334, 750, WORST)).toEqual(
+      mahjongTableLayout(1334, 750, WORST),
+    );
   });
 
-  it('30 张弃牌：压缩且网格放得下', () => {
-    const l = mahjongTableLayout(1334, 750, WORST);
-    expect(l.topRiver.fit).toBeLessThan(1);
-    expect(l.ownRiver.fit).toBeLessThan(1);
-    expect(l.leftRiver.fit).toBeLessThan(1);
-    expect(l.topRiver.fit).toBeCloseTo(152 / 229, 3);
-    expect(l.leftRiver.fit).toBeCloseTo(151 / 202, 3);
-    expect(l.topRiver.cols).toBe(12);
-    expect(l.topRiver.rows).toBe(3);
-    expect(l.leftRiver.cols).toBe(4);
-    expect(l.leftRiver.rows).toBe(8);
-    for (const r of [l.topRiver, l.ownRiver, l.leftRiver, l.rightRiver]) expectGridFits(r);
-  });
-
-  it('24 张弃牌以内不压缩', () => {
-    const l = mahjongTableLayout(1334, 750, {
-      top: { discards: 24, melds: 0 },
-      left: { discards: 24, melds: 0 },
-      right: { discards: 24, melds: 0 },
-      self: { discards: 24, melds: 0 },
-    });
-    expect(l.topRiver.fit).toBeCloseTo(1, 12);
-    expect(l.ownRiver.fit).toBeCloseTo(1, 12);
-    expect(l.leftRiver.fit).toBeCloseTo(1, 12);
-    expect(l.topRiver.rows).toBe(2);
-    expect(l.leftRiver.cols).toBe(3);
-  });
-
-  it('宽度兜底：4:3 手牌 ≤88% 且 s>1', () => {
-    const l = mahjongTableLayout(1334, 1000, EMPTY);
-    expect(l.s).toBeGreaterThan(1);
-    expect(l.hand.rect.width).toBeLessThanOrEqual(1334 * 0.88 + 0.01);
-    expect(l.selfChip.left + l.selfChip.width).toBeLessThanOrEqual(l.hand.rect.left + 0.01);
-  });
-
-  it('非法输入回落 16:9 尺寸，不产生 NaN', () => {
+  it('非法输入回落 1334×750，无 NaN、无负矩形', () => {
     for (const [w, h] of [
       [0, 0],
       [-1, 100],
       [Number.NaN, 750],
       [1334, Number.POSITIVE_INFINITY],
+      [100, 100],
     ]) {
       const l = mahjongTableLayout(w, h, EMPTY);
       expect(Number.isFinite(l.s)).toBe(true);
-      for (const r of everyRect(l)) {
-        for (const v of [r.left, r.top, r.width, r.height]) expect(Number.isFinite(v)).toBe(true);
+      for (const r of [l.board, l.info, ...lanesOf(l).map((x) => x.rect)]) {
+        for (const val of [r.left, r.top, r.width, r.height]) {
+          expect(Number.isFinite(val)).toBe(true);
+        }
+        expect(r.left).toBeGreaterThanOrEqual(0);
+        expect(r.width).toBeGreaterThanOrEqual(0);
       }
     }
-  });
-
-  it('token 表无多余扫描面（s=1 基准）', () => {
-    expect(T.barH).toBe(64);
-    expect(T.outer).toBe(12);
-    expect(T.inner).toBe(8);
-    expect(T.gap).toBe(2);
-    expect(T.handH).toBe(108);
-    expect(T.riverH).toBe(75);
-    expect(T.topBackH).toBe(54);
-    expect(T.sideBackH).toBe(45);
-    expect(T.sideRiverW).toBe(49);
-    expect(T.sideRiverH).toBe(40);
-    expect(T.backCount).toBe(14);
-    expect(T.chip).toBe(56);
   });
 });

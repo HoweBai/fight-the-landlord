@@ -22,10 +22,15 @@ import {
   type Tile,
 } from '@fight-the-landlord/protocol';
 import { CANVAS_METRICS_KEY } from '../../../composables/useLandscapeCanvas';
-import { mahjongTableLayout, type Rect } from '../../../game/mahjong-layout';
+import {
+  mahjongTableLayout,
+  type MeldStripLayout,
+  type Rect,
+} from '../../../game/mahjong-layout';
 import MahjongSeatChip from './MahjongSeatChip.vue';
 import MahjongHandBacks from './MahjongHandBacks.vue';
 import MahjongRiver from './MahjongRiver.vue';
+import MahjongMeldStrip from './MahjongMeldStrip.vue';
 import MahjongCenter from './MahjongCenter.vue';
 import MahjongTile from './MahjongTile.vue';
 import MahjongHuBanner from './MahjongHuBanner.vue';
@@ -67,9 +72,11 @@ const canvasH = computed(() =>
 );
 
 function seatLoad(seat: number) {
+  const melds = props.view?.melds[seat] ?? [];
   return {
     discards: (props.view?.discards[seat] ?? []).length,
-    melds: (props.view?.melds[seat] ?? []).length,
+    melds: melds.length,
+    gangMelds: melds.filter((m) => m.tiles.length === 4).length,
   };
 }
 const loads = computed(() => ({
@@ -500,47 +507,89 @@ function backsProps(seat: number) {
     revealed,
   };
 }
-function riverMelds(seat: number) {
+/** claim 窗口的本次待响应来源座：`interactive`（点击）与 `source`（高亮）共用同一判定。 */
+function isSource(seat: number): boolean {
+  return (
+    phase.value === 'claim' &&
+    amActive.value &&
+    seat === (props.view?.currentPlayer ?? -1)
+  );
+}
+
+function meldGroups(seat: number) {
   return (props.view?.melds[seat] ?? []).map((m) => {
     const key = meldKey(seat, m);
     return { key, meld: m, pop: newMeldKeySet.value.has(key) };
   });
 }
-function riverProps(seat: number) {
+
+function laneOf(seat: number) {
   const l = layout.value;
-  const isTop = seat === topSeat.value;
-  const isLeft = seat === leftSeat.value;
-  const river = isTop
-    ? l.topRiver
-    : isLeft
-      ? l.leftRiver
-      : seat === rightSeat.value
-        ? l.rightRiver
-        : l.ownRiver;
+  if (seat === topSeat.value) return l.topLane;
+  if (seat === leftSeat.value) return l.leftLane;
+  if (seat === rightSeat.value) return l.rightLane;
+  return l.bottomLane;
+}
+
+function riverProps(seat: number) {
+  const lane = laneOf(seat);
   const v = seatView(seat);
   return {
     discards: props.view?.discards[seat] ?? [],
-    melds: riverMelds(seat),
     direction: directionOf(seat),
-    tileW: river.tile.w,
-    tileH: river.tile.h,
-    gap: river.gap,
-    cols: river.cols,
-    rows: river.rows,
-    meldTileW: river.meld.tile.w,
-    meldTileH: river.meld.tile.h,
-    meldOverlap: river.meld.overlap,
-    meldPlacement: river.meld.placement,
-    meldGap: river.meld.gap,
-    meldGroupGap: river.meld.groupGap,
-    meldHeight: river.meld.height,
+    tileW: lane.tile.w,
+    tileH: lane.tile.h,
+    gap: lane.gap,
+    cols: lane.cols,
+    rows: lane.rows,
     filterTileType: discardClickTarget.value ? tileType(discardClickTarget.value) : null,
-    interactive:
-      phase.value === 'claim' &&
-      amActive.value &&
-      seat === (props.view?.currentPlayer ?? -1),
-    revealed: isLeft || seat === rightSeat.value ? v.revealed : null,
+    interactive: isSource(seat),
+    source: isSource(seat),
+    revealed: seat === leftSeat.value || seat === rightSeat.value ? v.revealed : null,
   };
+}
+
+interface StripProps {
+  melds: Array<{ key: string; meld: MahjongMeldView; pop: boolean }>;
+  direction: Direction;
+  tileW: number;
+  tileH: number;
+  overlap: number;
+  groupGap: number;
+  layout: 'row' | 'column';
+}
+
+function stripProps(
+  strip: MeldStripLayout,
+  groups: Array<{ key: string; meld: MahjongMeldView; pop: boolean }>,
+  direction: Direction,
+): StripProps {
+  return {
+    melds: strip.groups > 0 ? groups : [],
+    direction,
+    tileW: strip.tile.w,
+    tileH: strip.tile.h,
+    overlap: strip.overlap,
+    groupGap: strip.groupGap,
+    layout: strip.direction,
+  };
+}
+
+/** 对家副露三带互斥：下移条生效时两翼 groups=0（不渲染）；否则右翼先拿 ceil(n/2)。 */
+function topStripProps(which: 'left' | 'right' | 'below'): StripProps {
+  const strip = layout.value.topMelds[which];
+  const all = meldGroups(topSeat.value);
+  if (which === 'below') return stripProps(strip, all, 'top');
+  const rightN = Math.ceil(all.length / 2);
+  return stripProps(strip, which === 'right' ? all.slice(0, rightN) : all.slice(rightN), 'top');
+}
+
+function sideStripProps(seat: number, strip: MeldStripLayout): StripProps {
+  return stripProps(strip, meldGroups(seat), directionOf(seat));
+}
+
+function selfStripProps(): StripProps {
+  return stripProps(layout.value.selfMelds, meldGroups(me.value), 'my');
 }
 const hasActions = computed(() => {
   if (props.settlementArrived || props.settlementRevealed) return false;
@@ -556,15 +605,15 @@ const centerProps = computed(() => ({
   wallCount: wallCount.value,
   phaseText: phaseText.value,
   claimTile: claimTile.value,
-  claimW: layout.value.centerTiles.claim.w,
-  claimH: layout.value.centerTiles.claim.h,
+  claimW: layout.value.infoTiles.claim.w,
+  claimH: layout.value.infoTiles.claim.h,
   tingTiles: tingTiles.value,
-  tingW: layout.value.centerTiles.ting.w,
-  tingH: layout.value.centerTiles.ting.h,
+  tingW: layout.value.infoTiles.ting.w,
+  tingH: layout.value.infoTiles.ting.h,
   maxFan: props.view?.maxFanForMe ?? null,
   seconds: props.seconds,
   active: amActive.value && !props.settlementRevealed,
-  compact: layout.value.centerCompact,
+  compact: layout.value.infoLevel === 'compact',
   endedText:
     phase.value === 'ended'
       ? ''
@@ -754,33 +803,70 @@ function onMeldPopDone(key: string) {
       <MahjongRiver
         class="mj-river-slot mj-river-slot--top"
         v-bind="riverProps(topSeat)"
-        :style="rectStyle(layout.topRiver.rect)"
+        :style="rectStyle(layout.topLane.rect)"
         @discard-click="onSeatDiscardClick(topSeat, $event)"
-        @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--left"
         v-bind="riverProps(leftSeat)"
-        :style="rectStyle(layout.leftRiver.rect)"
+        :style="rectStyle(layout.leftLane.rect)"
         @discard-click="onSeatDiscardClick(leftSeat, $event)"
-        @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--right"
         v-bind="riverProps(rightSeat)"
-        :style="rectStyle(layout.rightRiver.rect)"
+        :style="rectStyle(layout.rightLane.rect)"
         @discard-click="onSeatDiscardClick(rightSeat, $event)"
-        @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--self"
         v-bind="riverProps(me)"
-        :style="rectStyle(layout.ownRiver.rect)"
+        :style="rectStyle(layout.bottomLane.rect)"
         @discard-click="onSeatDiscardClick(me, $event)"
-        @meld-pop-done="onMeldPopDone"
       />
 
-      <MahjongCenter v-bind="centerProps" :style="rectStyle(layout.centerCard)" />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--top-right"
+        v-bind="topStripProps('right')"
+        :style="rectStyle(layout.topMelds.right.rect)"
+        @pop-done="onMeldPopDone"
+      />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--top-left"
+        v-bind="topStripProps('left')"
+        :style="rectStyle(layout.topMelds.left.rect)"
+        @pop-done="onMeldPopDone"
+      />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--top-below"
+        v-bind="topStripProps('below')"
+        :style="rectStyle(layout.topMelds.below.rect)"
+        @pop-done="onMeldPopDone"
+      />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--left"
+        v-bind="sideStripProps(leftSeat, layout.leftMelds)"
+        :style="rectStyle(layout.leftMelds.rect)"
+        @pop-done="onMeldPopDone"
+      />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--right"
+        v-bind="sideStripProps(rightSeat, layout.rightMelds)"
+        :style="rectStyle(layout.rightMelds.rect)"
+        @pop-done="onMeldPopDone"
+      />
+      <MahjongMeldStrip
+        class="mj-melds-slot mj-melds-slot--self"
+        v-bind="selfStripProps()"
+        :style="rectStyle(layout.selfMelds.rect)"
+        @pop-done="onMeldPopDone"
+      />
+
+      <MahjongCenter
+        class="mj-info-slot"
+        v-bind="centerProps"
+        :style="rectStyle(layout.info)"
+      />
 
       <view class="mj__hand" :class="{ 'mj__hand--selectable': handSelectable }" :style="handStyle">
         <template v-if="myRevealed">
