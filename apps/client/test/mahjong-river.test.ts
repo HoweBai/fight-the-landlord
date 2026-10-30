@@ -66,6 +66,7 @@ describe('MahjongRiver', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongRiver.vue', 'utf8');
     expect(src).toMatch(/\.mj-river\s*\{[^}]*align-items:\s*flex-start/);
     expect(src).toMatch(/\.mj-river\s*\{[^}]*justify-content:\s*flex-start/);
+    expect(src).toMatch(/\.mj-river__grid\s*\{[^}]*align-content:\s*start/);
   });
 
   it('direction 类名正确', () => {

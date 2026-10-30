@@ -161,7 +161,7 @@ laneH = 2×77−2 = 152；infoH = 488−304 = 184
 │ [自己卡]  [自己的副露条 0.65×]                               │
 │                  [手牌 1041.54×108]                         │
 └────────────────────────────────────────────────────────────┘
-左家外侧栏（x 12..192）：座位卡 180×56（板顶）→ 副露竖排 103.4×n → 牌背 30×381
+左家外侧栏：座位卡 180×56（贴桌边；宽屏时夹到牌背外侧 8s）→ 副露竖排 103.4×n → 牌背 30×381（紧邻牌板）
 （右侧镜像：牌背在 boardRight + 8s，副露在 W − 12 − 103.4）
 ```
 
@@ -271,7 +271,7 @@ export interface MahjongTableLayout {
 | 组件 | 改动 |
 |---|---|
 | `MahjongRiver.vue` | **删**副露 props 与渲染、`meld-pop-done` emit；新增 `source?: boolean`（claim 窗口来源道，加类 `mj-river--source`）。保留：弃牌网格、`revealed` 亮牌网格、`filterTileType` 高亮、`discard-click`、`direction`、`cols`、`rows`、`tileW/H`、`gap`。**根元素对齐改为 `align-items: flex-start; justify-content: flex-start`**（原来居中，行数从 1→2 时整块上移 38.5s；D6）。网格自身同时 `align-content: start` |
-| `MahjongMeldStrip.vue` | **新增**。props：`melds({key,meld,pop})`、`direction`、`tileW/H`、`overlap`、`groupGap`、`layout:'row'|'column'`；emit `pop-done(key)`。渲染每组 `MahjongMeld` + 「碰/杠/暗杠」小标签 + `anim-meld-pop`；`melds` 空时不渲染根 |
+| `MahjongMeldStrip.vue` | **新增**。props：`melds({key,meld,pop})`、`direction`、`tileW/H`、`overlap`、`groupGap`、`layout:'row'|'column'`、`justify?:'start'|'center'|'end'`（对家两翼贴住牌背：左翼 end / 右翼 start，其余居中）；emit `pop-done(key)`。渲染每组 `MahjongMeld` + 「碰/杠/暗杠」小标签 + `anim-meld-pop`；`melds` 空时不渲染根 |
 | `MahjongCenter.vue` | 重写为三档（§5.4）。props：`wallCount, phaseText, level:'full'|'dense'|'compact', claimTile?, claimW?, claimH?, claimLabel?, claimFrom?, tingTiles?, tingW?, tingH?, maxFan?, seconds, active?`（删 `compact`/`endedText`）。保留根类 `mj-center`、`mj-center--compact`、`mj-center__clock--urgent` |
 | `MahjongBoard.vue` | 分区按新 layout 输出；四道 `MahjongRiver` + **六处** `MahjongMeldStrip`（`--top-left/--top-right/--top-below/--left/--right/--self`）；信息格加 `mj-info-slot` 类与 `claimFrom`/`claimLabel`/`level`；删 `endReason` |
 | `MahjongTile.vue` / `MahjongMeld.vue` | 不改 |
@@ -297,8 +297,8 @@ const isSource = (seat: number) =>
 
 | 档 | 条件 | 内容 | 字号 |
 |---|---|---|---|
-| `full` | infoH ≥ 176s | ① 牌墙 N（大数字）+ 阶段 + 倒计时（一行）；② 待响应牌 34×51 + 「来源座 打出」（有 claim）；③ 听牌小牌面 20×30 + 「N 番」（有听牌） | 牌墙 `$ftl-font-xl`(40)、阶段 `$ftl-font-md`(28)、倒计时/标签 `$ftl-font-sm`(26) |
-| `dense` | 120s ≤ infoH < 176s | ① 行同上（字号降一档）；② 待响应牌 34×51；**不显示听牌列表** | 牌墙 `$ftl-font-lg`(32)、阶段/标签 `$ftl-font-sm`(26) |
+| `full` | infoH ≥ 176s | ① 牌墙 N（大数字，**独占一行**）；② 阶段 + 倒计时（下一行）；③ 待响应牌 34×51 + 「来源座 打出」；④ 听牌小牌面 20×30 + 「N 番」（**仅在没有待响应牌时**——三行在 184s 格里放不下） | 牌墙 `$ftl-font-xl`(40)、阶段 `$ftl-font-md`(28)、倒计时/标签 `$ftl-font-sm`(26) |
+| `dense` | 120s ≤ infoH < 176s | 单行「牌墙 · 阶段 · 倒计时」（字号降一档）；② 待响应牌 34×51；**不显示听牌列表** | 牌墙 `$ftl-font-lg`(32)、阶段/标签 `$ftl-font-sm`(26) |
 | `compact` | infoH < 120s | 单行 `牌墙 N · 阶段 · 12s`；有 claim 时第二行文字 `可响应 万5` | 11px（沿用现值） |
 
 - 倒计时 `active` 时显示，≤5 秒加 `mj-center__clock--urgent`（不变）。
@@ -401,6 +401,7 @@ const isSource = (seat: number) =>
 | 高张数（>36）压缩到 0.5× 以下 | 登记；不溢出优先；血战到底末期单人可到 40+ 张 |
 | 4:3/正方形中间列 11 列、侧道 2 列 | 容量 22/26 ≥20；信息格反而更宽（640/660） |
 | 对家副露在窄高屏下移，牌板少 57s | 4:3 信息格 234（full）；16:10 141→78（登记） |
+| 对家 3–4 组副露的翼宽按**悲观上限**估算（杠优先落右翼），个别顺序会「本可留两翼却下移」 | 登记；扫描保证**不会反向下移后裁切**（右翼估计是上界）；D4 只承诺「3–4 组才下移」 |
 | 四道统一左上原点 ⇒ 自己那条道的最新牌离中心最远 | 最新牌金边高亮承担；不引入动态锚点（避免布局漂移）；River 网格 `align-content:start` 保证旧牌不动 |
 | 「已胡 N 家」移除后，血战到底「还剩几家」要靠数座位卡「胡」徽标 | 登记；交付报告里列为待走查项；若真机走查认为不够，下一片在 dense/full 档加一行，不加高度 |
 | `MahjongRiver` 的副露测试迁移 | 迁移而非删除；新组件断言等强 |
@@ -436,7 +437,7 @@ const isSource = (seat: number) =>
 |---|---|---|
 | B1 | 侧道牌宽 49 与 49.7788 两套数 | **已修**：全表按侧牌 49×40 重算（sideLaneW = 3×49+2×2 = 151）；§4.1/§4.2/§7.1#9 同口径 |
 | B2 | D4 的行数规则与例子自相矛盾（4:3 实为 2 行，不是 3 行），且缺「240/120 都无解」兜底 | **已修**：D4 写成三条优先级（最大且 ≥240s → 最大且 ≥120s → 2）；例子改为 16:9 2 行 / 4:3 2 行（270.5）/ 正方形 4 行 |
-| B3 | 示意图的 B 未实现候选退化，16:10/4:3 会溢出可用宽 | **已修**：实现后按最终算法重生成 `b-1334x1000.png`（11 列/2 列、信息格 639.7×270.5），并在交付说明里标注更新 |
+| B3 | 示意图的 B 未实现候选退化，16:10/4:3 会溢出可用宽 | **已处置**：示意图是设计期产物、**不按最终算法重生成**（`b-*.png` 仅作方案对比留档）；交付证据改用**真组件截图** `real-1334x750.png` / `real-1334x750-full.png` / `real-1334x1000.png` / `real-1623x750.png`（`.superpowers/.../v2-mockups/`，gitignored） |
 | B4 | 信息格 = middleW − 2×sideLaneW 把 P3 的空带搬进板内 | **已修**：`info.width = middleW`（信息格占满中间列），P3 的对应表述成立；§4/§5.1/§5.4/§7.1#5 同步 |
 | H1 | 「对手碰杠不改形态」在 16:10 上不成立（最坏假设导致 1 组碰也下移） | **已修**：输入加 `gangMelds`，两翼按实际组型算；16:10 1–2 组走两翼（信息格 204→141），3–4 组才下移（78，登记） |
 | H2 | 两翼判定三处未定义（overlap、牌背宽、最坏 vs 实际） | **已修**：D8/D16/D17 写死 overlap=8s、牌背宽=内容宽 527.8、按实际组型、右翼先分 ceil(n/2) |

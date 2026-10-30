@@ -23,7 +23,7 @@ const base = {
 };
 
 describe('MahjongCenter', () => {
-  it('full：牌墙/阶段/倒计时/待响应/来源座/听牌/番', () => {
+  it('full：牌墙/阶段/倒计时/待响应/来源座；有 claim 时听牌让位', () => {
     const w = mount(MahjongCenter, {
       props: {
         ...base,
@@ -36,9 +36,19 @@ describe('MahjongCenter', () => {
     expect(w.text()).toContain('牌墙 42');
     expect(w.text()).toContain('请出牌');
     expect(w.text()).toContain('东家甲打出');
+    expect(w.findAll('.mj-tile')).toHaveLength(1);
+    expect(w.find('.mj-center__ting').exists()).toBe(false);
+    expect(w.find('.mj-center__head').classes()).toContain('mj-center__head--stacked');
+  });
+
+  it('full 无待响应时显示听牌与番', () => {
+    const w = mount(MahjongCenter, {
+      props: { ...base, tingTiles: [{ s: 0, r: 5 }, { s: 0, r: 8 }], maxFan: 5 },
+    });
     expect(w.text()).toContain('听');
     expect(w.text()).toContain('5 番');
-    expect(w.findAll('.mj-tile')).toHaveLength(3);
+    expect(w.findAll('.mj-tile')).toHaveLength(2);
+    expect(w.find('.mj-center__claim').exists()).toBe(false);
   });
 
   it('dense：有听牌也不渲染听牌列表', () => {
@@ -55,6 +65,7 @@ describe('MahjongCenter', () => {
     });
     expect(w.classes()).toContain('mj-center--compact');
     expect(w.findAll('image')).toHaveLength(0);
+    expect(w.findAll('.mj-center__sep')).toHaveLength(2);
     expect(w.text()).toContain('可响应');
     expect(w.text()).toContain('万5');
   });
@@ -84,9 +95,9 @@ describe('MahjongCenter', () => {
     ).toBe(false);
   });
 
-  it('紧凑模式字号仍 11px（源码闸）', () => {
+  it('紧凑模式字号仍 11px（源码闸；禁止跨 } 匹配，防被文件后段的 11px 救活）', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
-    expect(src).toMatch(/\.mj-center--compact \.mj-center__wall,[\s\S]*?font-size: 11px/);
+    expect(src).toMatch(/\.mj-center--compact \.mj-center__wall,[^}]*font-size:\s*11px/);
   });
 
   it('不再渲染「已胡 N 家」', () => {

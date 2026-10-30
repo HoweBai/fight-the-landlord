@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
-> Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把四川麻将中央区从「四块牌河围井 + 浮动中央卡」改成**中央牌板**：左右侧道拉满牌板全高，
 中间列自上而下 = 对家牌河 / 信息格 / 自己牌河；副露移出竖向预算；信息格三档内容。
@@ -43,7 +43,7 @@
   emit `pop-done(key: string)`。根 class `mj-strip`、类 `mj-strip--row|--column`、
   组 `.mj-strip__group`、标签 `.mj-strip__label`。`melds` 为空时不渲染根。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `apps/client/test/mahjong-meld-strip.test.ts`：
 
@@ -139,9 +139,9 @@ describe('MahjongMeldStrip', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL（组件不存在）
+- [x] **Step 2: 跑红** → FAIL（组件不存在）
 
-- [ ] **Step 3: 写组件**
+- [x] **Step 3: 写组件**
 
 新建 `apps/client/src/components/table/mahjong/MahjongMeldStrip.vue`：
 
@@ -233,7 +233,7 @@ const stripStyle = computed<Record<string, string>>(() => ({
 </style>
 ```
 
-- [ ] **Step 4: 跑绿 + 类型检查 + 提交**
+- [x] **Step 4: 跑绿 + 类型检查 + 提交**
 
 ```bash
 pnpm -C apps/client test mahjong-meld-strip && pnpm -C apps/client run lint
@@ -269,7 +269,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Board 槽类：`.mj-river-slot--{top,left,right,self}`、`.mj-melds-slot--{top-left,top-right,top-below,left,right,self}`、
   信息格 `mj-info-slot`。
 
-- [ ] **Step 1: 改测试（红）**
+- [x] **Step 1: 改测试（红）**
 
 **(a) `mahjong-layout.test.ts` 整体重写为：**
 
@@ -603,26 +603,26 @@ it('1334×833 对家 4 杠：下移条存在、两翼不渲染（互斥）', () 
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 ```bash
 pnpm -C apps/client test mahjong-layout mahjong-river mahjong-board
 ```
 
-- [ ] **Step 3: 重写 `mahjong-layout.ts`**
+- [x] **Step 3: 重写 `mahjong-layout.ts`**
 
 删旧中央区与 `buildRiver`；按 §附录 A 实现新函数。**保留** `s` 公式、`hand`、`topBacks/leftBacks/
 rightBacks`、`selfChip/leftChip/rightChip`、`barChip`、`actions`（公式更新）、`MAHJONG_TABLE_TOKENS`
 （新增 6 个 token；`meldScale` 由 0.8 改 0.65）。
 
-- [ ] **Step 4: 改 `MahjongRiver.vue`**
+- [x] **Step 4: 改 `MahjongRiver.vue`**
 
 删 `MahjongMeld` import、`MELD_LABEL`、`vertical`、副露 props/模板/样式、`meld-pop-done`；
 加 `source?: boolean`；根类加 `mj-river--source`；`.mj-river` 的 `align-items/justify-content` 改
 `flex-start`；`.mj-river__grid` 的 `align-content/justify-content` 改 `start`；
 `.mj-river--source` 用 `outline`（不占布局）。
 
-- [ ] **Step 5: 改 `MahjongBoard.vue`**
+- [x] **Step 5: 改 `MahjongBoard.vue`**
 
 1. 删 `MahjongMeld` 相关与旧 `riverProps` 的副露字段；`loads` 加 `gangMelds`
    （`melds.filter((m) => m.tiles.length === 4).length`）。
@@ -636,13 +636,13 @@ rightBacks`、`selfChip/leftChip/rightChip`、`barChip`、`actions`（公式更�
    `claimW/H: layout.infoTiles.claim.*`、`tingW/H: layout.infoTiles.ting.*`、`endedText` 维持旧计算。
 6. `actionsStyle` 用 `layout.actions.rightOffset/bottomOffset`。
 
-- [ ] **Step 6: 跑绿 + 类型检查**
+- [x] **Step 6: 跑绿 + 类型检查**
 
 ```bash
 pnpm -C apps/client test mahjong-layout mahjong-river mahjong-board && pnpm -C apps/client run lint
 ```
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/client/src/game/mahjong-layout.ts \
@@ -670,7 +670,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - 组件内**不得**再用 `claimLabel` 作局部 computed（会遮蔽 prop）；局部牌名 computed 改名
   `claimTileLabel`（`MAHJONG_SUIT_NAMES[s] + r`）。
 
-- [ ] **Step 1: 改测试（红）**
+- [x] **Step 1: 改测试（红）**
 
 `mahjong-center.test.ts`：`base` 改为
 `{ wallCount: 42, phaseText: '请出牌', level: 'full' as const, seconds: 12, active: true, claimW: 34, claimH: 51, tingW: 20, tingH: 30 }`
@@ -722,12 +722,12 @@ it('不再渲染「已胡 N 家」', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红** → FAIL（`level` 未定义）
+- [x] **Step 2: 跑红** → FAIL（`level` 未定义）
 
-- [ ] **Step 3: 写组件**（模板骨架见 spec §5.4；字号 full/dense 两档；compact 保留 11px 规则；
+- [x] **Step 3: 写组件**（模板骨架见 spec §5.4；字号 full/dense 两档；compact 保留 11px 规则；
   phase 保留 `min-width:0 + ellipsis`，clock `flex-shrink:0`）
 
-- [ ] **Step 4: Board 换 centerProps 并删 `endReason`/`endedText`**
+- [x] **Step 4: Board 换 centerProps 并删 `endReason`/`endedText`**
 
 ```ts
 const claimTileForCenter = computed(() => {
@@ -751,7 +751,7 @@ const centerProps = computed(() => ({
 
 删 `endReason`（唯一消费者是旧 `endedText`）。
 
-- [ ] **Step 5: 跑绿 + 类型检查 + 提交**
+- [x] **Step 5: 跑绿 + 类型检查 + 提交**
 
 ```bash
 pnpm -C apps/client test mahjong-center mahjong-board && pnpm -C apps/client run lint
@@ -766,10 +766,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ### Task 4: 收尾与文档
 
-- [ ] 全量验证：`pnpm -C apps/client test`、`pnpm -C apps/client run lint`、`pnpm -C apps/client run build:h5`。
-- [ ] 更新 `.superpowers/mahjong-layout-research/v2-mockups/mockup.html` 的 `drawB()`：
-  候选退化（[(12,3),(12,2),(11,2),…]）、`infoW = middleW`、`infoH` 用附录 A 的行数规则、六条副露带、
-  四道左上原点、`rightX = rightLane.left`。然后重渲染：
+- [x] 全量验证：`pnpm -C apps/client test`、`pnpm -C apps/client run lint`、`pnpm -C apps/client run build:h5`。
+- [x] ~~更新 `mockup.html` 的 `drawB()`~~ **改为不重生成**：示意图是设计期产物，交付证据改用真组件截图
+  （`real-1334x750.png` / `real-1334x750-full.png` / `real-1334x1000.png` / `real-1623x750.png`）。
+  原渲染命令留档：
   ```bash
   CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
@@ -778,9 +778,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ffmpeg -y -loglevel error -i raw-b.png -vf "crop=1334:750:0:0" b-1334x750.png
   # 同理 --window-size=1400,1140 渲染 v=b&h=1000 并 crop 1334:1000
   ```
-- [ ] 更新 spec「审查记录」与 plan 勾选；写交接 `docs/superpowers/plans/2026-10-30-mahjong-central-board-handoff.md`。
-- [ ] 真浏览器截图三档（1334×750 / 1334×1000 / 1623×750），与 mockup 对照。
-- [ ] 提交 + 推 dev。
+- [x] 更新 spec「审查记录」与 plan 勾选；写交接 `docs/superpowers/plans/2026-10-30-mahjong-central-board-handoff.md`。
+- [x] 真浏览器截图三档（1334×750 / 1334×1000 / 1623×750），与 mockup 对照。
+- [x] 提交 + 推 dev。
 
 ## §附录 A：`mahjongTableLayout` 精确实现
 
@@ -1068,3 +1068,29 @@ return {
 | L8/L9 | 与 H5/H3 同源 | 已并入 |
 
 **修订后状态：可开工。**
+
+---
+
+## 代码审查记录
+
+### 2026-10-30 第一轮（独立 reviewer，sonnet，`ec238a12..HEAD`）
+
+结论：**需修复后再交付**（1 Important + 10 Minor）。全部处置：
+
+| 编号 | 发现 | 处置 |
+|---|---|---|
+| I1 | Task 4 未闭环；spec §10 B3 写「已重生成 mockup」失实（`b-*.png` mtime 早于实现） | **已修**：spec B3 改为「示意图不重生成，交付证据 = 真组件截图」；plan 勾选 + 偏差说明；交接落盘 |
+| M1 | `topFlanksFit` 按悲观上限（杠优先右翼），个别顺序会「本可留两翼却下移」 | **登记**（spec §8）；扫描证明不会反向下移后裁切（右翼估计是上界） |
+| M2 | compact 与 spec §5.4 不一致（缺 `·` 分隔；claim 同行） | **已修**：compact 恢复 `·` 分隔；spec 改为「单行、claim 文字追加同一行」 |
+| M3 | play 窗口「可自摸胡」取「第一个带 tile 的选项」，与杠的顺序耦合 | **已修**：改取 `claim === 'hu'` 的那张牌 |
+| M4 | 新 prop `justify` 未进 spec/plan | **已修**：spec §5.2 补 |
+| M5 | `MAHJONG_TABLE_TOKENS.riverCols` 死 token；注释「测试引用」失实 | **已修**：删 token、改注释 |
+| M6 | 布局矩阵缺 4 条（s 公式、bare=EMPTY、WORST 侧道全高、below.bottom） | **已修**：全部补上 |
+| M7 | river 源码闸缺网格 `align-content: start` | **已修**：补正则 |
+| M8 | center 11px 闸可跨 `}` 被文件后段 11px 救活 | **已修**：`[^}]*` 收紧 + 注释 |
+| M9 | Board 缺分翼归属与副露条 rect 断言 | **已修**：加「3 组副露 2+1」与「below 条 rect」两条 |
+| M10 | `discards: Infinity` 未夹取 → `tile {0,0}` 违反 D7 | **已修**：`normalizeLoad` 非有限值归 0 + 测试 |
+
+**核对无问题项**（reviewer 已查）：任一画布无 NaN/负矩形/越界；`buildLane` 的 n=0/超容量/cols 变化数学正确；
+`isSource` 点击语义未变；双击/换三张/长按/托管/结算/banner 未被 DOM 重排触及；`topStripProps` 新数组只重渲染不重建；
+dense 不渲染听牌；「已胡 N 家」与 `endReason` 已彻底移除；新组件满足单根/style/零计时器/无裸 1px/无 rpx。

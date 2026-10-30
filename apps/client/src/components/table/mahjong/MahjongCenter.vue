@@ -59,15 +59,19 @@ const claimTileLabel = computed(() =>
     class="mj-center"
     :class="{ 'mj-center--compact': level === 'compact', 'mj-center--dense': level === 'dense' }"
   >
-    <view class="mj-center__head">
+    <view class="mj-center__head" :class="{ 'mj-center__head--stacked': level === 'full' }">
       <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
-      <text class="mj-center__phase">{{ phaseText }}</text>
-      <template v-if="active">
-        <text
-          class="mj-center__clock"
-          :class="{ 'mj-center__clock--urgent': urgent }"
-        >{{ seconds }}s</text>
-      </template>
+      <text v-if="level === 'compact'" class="mj-center__sep">·</text>
+      <view class="mj-center__sub">
+        <text class="mj-center__phase">{{ phaseText }}</text>
+        <template v-if="active">
+          <text v-if="level === 'compact'" class="mj-center__sep">·</text>
+          <text
+            class="mj-center__clock"
+            :class="{ 'mj-center__clock--urgent': urgent }"
+          >{{ seconds }}s</text>
+        </template>
+      </view>
     </view>
     <template v-if="level !== 'compact'">
       <view v-if="claimTile" class="mj-center__claim">
@@ -76,7 +80,8 @@ const claimTileLabel = computed(() =>
           {{ claimLabel }}<template v-if="claimFrom"> · {{ claimFrom }}</template>
         </text>
       </view>
-      <view v-if="level === 'full' && tingTiles.length > 0" class="mj-center__ting">
+      <!-- 待响应优先：有 claim 时让位（full 档高度容纳不下「大数字 + 待响应 + 听牌」三行） -->
+      <view v-else-if="level === 'full' && tingTiles.length > 0" class="mj-center__ting">
         <text class="mj-center__label">
           听<template v-if="maxFan !== null">（{{ maxFan }} 番）</template>
         </text>
@@ -121,6 +126,23 @@ const claimTileLabel = computed(() =>
   gap: 12px;
   min-width: 0;
   max-width: 100%;
+}
+.mj-center__head--stacked {
+  flex-direction: column;
+  gap: 4px;
+}
+.mj-center__sub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+.mj-center__sep {
+  color: $ftl-color-text-muted;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .mj-center__wall {
   flex: 0 0 auto;

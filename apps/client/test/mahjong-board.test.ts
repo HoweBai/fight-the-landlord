@@ -357,6 +357,24 @@ describe('T12：四家分区重排', () => {
     expect(wrapper.find('.mj-melds-slot--top-below').exists()).toBe(true);
     expect(wrapper.find('.mj-melds-slot--top-right').exists()).toBe(false);
     expect(wrapper.find('.mj-melds-slot--top-left').exists()).toBe(false);
+    const l = mahjongTableLayout(1334, 833, {
+      top: { discards: 0, melds: 4, gangMelds: 4 },
+      self: { discards: 0, melds: 0 },
+    });
+    const below = wrapper.find('.mj-melds-slot--top-below');
+    expect(below.attributes('style')).toContain(`left: ${l.topMelds.below.rect.left}px`);
+    expect(below.attributes('style')).toContain(`width: ${l.topMelds.below.rect.width}px`);
+  });
+
+  it('对家 3 组副露：右翼拿前 2 组、左翼拿其余（分翼按顺序）', () => {
+    const peng = { kind: 'peng' as const, tiles: [tile(0, 1), tile(0, 1), tile(0, 1)] };
+    const gang = { kind: 'gang' as const, tiles: [tile(1, 2), tile(1, 2), tile(1, 2), tile(1, 3)] };
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [peng, gang, peng], []] }) }),
+    });
+    expect(wrapper.findAll('.mj-melds-slot--top-right .mj-strip__group')).toHaveLength(2);
+    expect(wrapper.findAll('.mj-melds-slot--top-left .mj-strip__group')).toHaveLength(1);
+    expect(wrapper.find('.mj-melds-slot--top-below').exists()).toBe(false);
   });
 });
 import { nextTick } from 'vue';

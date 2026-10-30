@@ -57,6 +57,14 @@ describe('中央牌板：跨设备矩阵', () => {
       const l = mahjongTableLayout(v.w, v.h, EMPTY);
       const s = l.s;
 
+      it('s 公式钉死', () => {
+        const expected = Math.max(
+          1,
+          Math.min(v.h / 750, (0.88 * v.w) / 1041.5398230088495),
+        );
+        expect(l.s).toBeCloseTo(expected, 6);
+      });
+
       it('候选与列宽（用 token 独立重算）', () => {
         const tw = 75 * (75 / 113) * s;
         const stw = 49 * s;
@@ -84,10 +92,12 @@ describe('中央牌板：跨设备矩阵', () => {
         expect(l.info.width).toBeCloseTo(l.topLane.rect.width, 3);
       });
 
-      it('左右道贯穿牌板全高', () => {
-        for (const lane of [l.leftLane, l.rightLane]) {
-          expect(lane.rect.top).toBeCloseTo(l.board.top, 3);
-          expect(lane.rect.height).toBeCloseTo(l.board.height, 3);
+      it('左右道贯穿牌板全高（EMPTY + WORST）', () => {
+        for (const x of [l, mahjongTableLayout(v.w, v.h, WORST)]) {
+          for (const lane of [x.leftLane, x.rightLane]) {
+            expect(lane.rect.top).toBeCloseTo(x.board.top, 3);
+            expect(lane.rect.height).toBeCloseTo(x.board.height, 3);
+          }
         }
       });
 
@@ -204,6 +214,10 @@ describe('中央牌板：跨设备矩阵', () => {
     );
     expect(mahjongTableLayout(1334, 833, WORST).board.top).toBeCloseTo(211.9, 1);
     expect(mahjongTableLayout(1334, 833, ONE).topMelds.below.groups).toBe(0);
+    const below = mahjongTableLayout(1334, 833, WORST);
+    expect(below.topMelds.below.rect.top + below.topMelds.below.rect.height).toBeLessThanOrEqual(
+      below.board.top + 0.01,
+    );
   });
 
   it('16:9 精确锚点', () => {
@@ -279,6 +293,23 @@ describe('中央牌板：跨设备矩阵', () => {
     expect(l.rightMelds.rect.left).toBeGreaterThanOrEqual(
       l.rightLane.rect.left + l.rightLane.rect.width - 0.01,
     );
+  });
+
+  it('不传 input 与全 0 等价', () => {
+    expect(mahjongTableLayout(1334, 750)).toEqual(mahjongTableLayout(1334, 750, EMPTY));
+  });
+
+  it('弃牌/副露非法值被夹取（Infinity / 负数 / 杠数超组数）', () => {
+    const inf = mahjongTableLayout(1334, 750, {
+      top: { discards: Number.POSITIVE_INFINITY, melds: 0 },
+    });
+    expect(inf.topLane.fit).toBeCloseTo(1, 6);
+    expect(inf.topLane.tile.w).toBeGreaterThan(0);
+    const odd = mahjongTableLayout(1334, 750, {
+      top: { discards: -5, melds: 2, gangMelds: 9 },
+    });
+    expect(odd.topLane.fit).toBeCloseTo(1, 6);
+    expect(odd.topMelds.below.groups).toBe(0);
   });
 
   it('纯函数性：不传 input 不抛、freeze 可算、两次相等', () => {

@@ -109,7 +109,7 @@ export interface MahjongTableLayout {
   };
 }
 
-/** s=1 的设计 token；测试与组件测试引用，业务布局一律用输出值。 */
+/** s=1 的设计 token（实现自用；测试按字面量钉，不 import 本表）。 */
 export const MAHJONG_TABLE_TOKENS = {
   barH: 64,
   outer: 12,
@@ -119,7 +119,6 @@ export const MAHJONG_TABLE_TOKENS = {
   handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
   riverH: 75,
-  riverCols: 12, // 中间列最大列数（候选表首项）
   topBackH: 54,
   topBackGap: 2,
   sideBackH: 45, // 槽高（pitch 叠压用）；left/right 牌背素材是 49×40 横图
@@ -172,13 +171,11 @@ interface NormalizedSeat {
 }
 
 function normalizeLoad(raw: Partial<MahjongSeatLoad> | undefined): NormalizedSeat {
-  const melds = Math.max(0, Math.min(4, Math.floor(Number(raw?.melds) || 0)));
-  const gangMelds = Math.max(0, Math.min(melds, Math.floor(Number(raw?.gangMelds) || 0)));
-  return {
-    discards: Math.max(0, Math.floor(Number(raw?.discards) || 0)),
-    melds,
-    gangMelds,
-  };
+  const count = (v: unknown, max: number) =>
+    Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(Number(v)))) : 0;
+  const melds = count(raw?.melds, 4);
+  const gangMelds = Math.min(count(raw?.gangMelds, 4), melds);
+  return { discards: count(raw?.discards, Number.MAX_SAFE_INTEGER), melds, gangMelds };
 }
 
 function rect(left: number, top: number, width: number, height: number): Rect {

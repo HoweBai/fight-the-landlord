@@ -608,11 +608,13 @@ const hasActions = computed(() => {
     phase.value === 'claim'
   );
 });
-/** 信息格里的「待响应牌」只在两种窗口里有意义：claim 窗口，或 play 窗口里能自摸胡。 */
+/** 信息格里的「待响应牌」只在两种窗口里有意义：claim 窗口，或 play 窗口里能自摸胡。
+ *  play 窗口必须取 `claim === 'hu'` 那张，不能取「第一个带 tile 的选项」——
+ *  后者在只有暗杠/补杠时会显示成「可自摸胡 + 杠牌」。 */
 const claimTileForCenter = computed<Tile | null>(() => {
   if (phase.value === 'claim') return claimTile.value;
-  if (phase.value === 'play' && myClaims.value.some((o) => o.claim === 'hu')) {
-    return claimTile.value;
+  if (phase.value === 'play') {
+    return myClaims.value.find((o) => o.claim === 'hu')?.tile ?? null;
   }
   return null;
 });
