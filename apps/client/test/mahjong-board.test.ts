@@ -165,7 +165,7 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
   });
 
   describe('自己胡牌后：手牌不重复渲染', () => {
-    it('myRevealed 不为空时，.mj__hand 隐藏，.mj__my-revealed 展示手牌', () => {
+    it('myRevealed 不为空时，手牌槽只渲染 revealed 牌（不重复渲染普通手牌）', () => {
       const revealedTiles: Tile[] = [
         tile(0, 1), tile(0, 2), tile(0, 3), tile(0, 4), tile(0, 5), tile(0, 6),
         tile(0, 7), tile(0, 8), tile(0, 9), tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4),
@@ -191,12 +191,13 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
           }),
         }),
       });
-      // .mj__hand 应该隐藏
-      expect(wrapper.find('.mj__hand').exists()).toBe(false);
-      // .mj__my-revealed 应该展示 revealed tiles
-      const revealed = wrapper.find('.mj__my-revealed');
-      expect(revealed.exists()).toBe(true);
-      expect(revealed.findAll('.mj-tile')).toHaveLength(revealedTiles.length);
+      // .mj__hand 仍是手牌槽，但只渲染 revealed 牌（普通手牌不再重复渲染）
+      const hand = wrapper.find('.mj__hand');
+      expect(hand.exists()).toBe(true);
+      expect(hand.findAll('.mj-tile')).toHaveLength(revealedTiles.length);
+      // 判别力：revealed 牌带 dim；本场景（非本人回合）普通手牌会带 disabled —— 两者为 0/13 才能区分
+      expect(hand.findAll('.mj-tile--dim')).toHaveLength(revealedTiles.length);
+      expect(hand.findAll('.mj-tile--disabled')).toHaveLength(0);
     });
 
     it('没胡时，.mj__hand 正常显示手牌', () => {
@@ -215,10 +216,10 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
           }),
         }),
       });
-      // 中央应该有 phaseText
-      expect(wrapper.find('.mj__phase').text()).toContain('等待其他玩家响应');
+      // 中央应该有 phaseText（中央井组件：.mj-center__phase）
+      expect(wrapper.find('.mj-center__phase').text()).toContain('等待其他玩家响应');
       // 底部动作栏不应该再出现同样的 muted text
-      const actionMuted = wrapper.find('.mj__action .mj__muted');
+      const actionMuted = wrapper.find('.mj__actions .mj__muted');
       expect(actionMuted.exists()).toBe(false);
     });
   });
