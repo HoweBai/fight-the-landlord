@@ -16,8 +16,6 @@ import type { MahjongMeldView } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
 
 type Direction = 'my' | 'top' | 'left' | 'right';
-/** 与 MahjongTile.Rotate 对齐。 */
-type Rotate = 'left' | 'right';
 
 const props = withDefaults(
   defineProps<{
@@ -27,6 +25,8 @@ const props = withDefaults(
     size?: 'sm' | 'md' | 'lg';
     /** true 时播放进场 pop 动画（增量新增时由 Board 传 true）。Batch 2 新增。 */
     pop?: boolean;
+    /** 竖排（左右家副露条）。 */
+    vertical?: boolean;
     /** 显式牌张尺寸（设计 px）；不传则用 size 档位。 */
     tileW?: number;
     tileH?: number;

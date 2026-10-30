@@ -28,6 +28,8 @@ const props = withDefaults(
     dim?: boolean;
     /** 方向：my=自己 / top=对家 / left=左家 / right=右家。不传则用平铺旧资源。 */
     direction?: Direction;
+    /** 旋转方向：设置后强制用 my/ 正立素材并按 ±90° 旋转（SeatPanel 竖置牌）。 */
+    rotate?: Rotate;
     /** 显式尺寸（设计 px）；w/h 同时提供时覆盖 size 档位。 */
     w?: number;
     h?: number;
