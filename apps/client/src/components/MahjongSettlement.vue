@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
- * 四川麻将结算面板（T11）。
+ * 四川麻将结算面板（完整版）。
  *
- * 只渲染服务端 `MahjongSettlementResult` 的字段：番型/分差/杠分/退税/花猪/查叫/burn/
- * writtenOff 与金币列。**一个数都不算**——所有金额/番数/事件都来自结算载荷。
+ * 只渲染服务端 `MahjongSettlementResult` 的字段。**一个数都不算**。
  */
 import { computed } from 'vue';
-import type { MahjongScoreEvent, MahjongSettlementResult } from '@fight-the-landlord/protocol';
+import type { MahjongMeldView, MahjongScoreEvent, MahjongSettlementResult, Tile } from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { GOLD_FREEZE_MS, useGoldColumnFreeze } from '../composables/useGoldColumnFreeze';
 import Panel from './Panel.vue';
+import MahjongTile from './table/mahjong/MahjongTile.vue';
 
 const props = defineProps<{
   settlement: MahjongSettlementResult;
@@ -40,14 +40,13 @@ function goldCell(seat: number): string {
     const value = balances[seat];
     return value === undefined ? '—' : String(value);
   }
-  // Batch 3：金币冻结时加锁 emoji + 淡灰视觉（只改展示，不改 useGoldColumnFreeze 逻辑）
   if (goldFrozen.value) return '🔒 结算中…';
   return '结算中…';
 }
 
-/** Batch 3：番型 emoji 映射表（纯展示，不改 fanDetails 数据）。 */
+/** 番型 emoji 映射表（纯展示）。 */
 const FAN_EMOJI: Record<string, string> = {
-  清一色: '🎴', 七对: '👯', 大对: '🔶', 根: '🌳', 杠上开花: '💥',
+  清一色: '🎴', 七对: '👯', 根: '🌳', 杠上开花: '💥',
   海底捞月: '🌙', 十三幺: '👻', 对对胡: '🃏', 平胡: '✨', 抢杠胡: '⚡',
 };
 function fanEmoji(name: string): string {
@@ -59,13 +58,60 @@ const rows = computed(() =>
 );
 const winners = computed(() => new Set(props.settlement.winnerSeats));
 const huazhu = computed(() => new Set(props.settlement.huazhuSeats));
+
+/** 番型文本（从 hu 事件 fanDetails 构造）。 */
 const fanBySeat = computed(() => {
   const map = new Map<number, string>();
   for (const d of props.settlement.fanDetails) {
-    // 阻断 B2 修法：join 里加 emoji 前缀（fanBySeat 是 computed 不是模板 map）
-    map.set(d.seat, d.items.length > 0 ? d.items.map(item => fanEmoji(item) + item).join('+') : `${d.fan} 番`);
+    map.set(
+      d.seat,
+      d.items.length > 0
+        ? d.items.map((item) => fanEmoji(item) + item).join('+')
+        : `${d.fan} 番`,
+    );
   }
   return map;
+});
+
+/** 胡牌类型小标：自摸 / 点炮 / 抢杠。抢杠用 items 里含"抢杠胡"关键字推导。 */
+const huTypeBySeat = computed(() => {
+  const map = new Map<number, { label: string; icon: string }>();
+  for (const e of props.settlement.events) {
+    if (e.kind !== 'hu') continue;
+    const rob = e.items.some((item) => item.includes('抢杠胡'));
+    if (rob) {
+      map.set(e.seat, { label: '抢杠胡', icon: '⚡' });
+    } else if (e.fromSeat === null) {
+      map.set(e.seat, { label: '自摸', icon: '🌀' });
+    } else {
+      map.set(e.seat, { label: '点炮', icon: '💥' });
+    }
+  }
+  return map;
+});
+
+/** 亮牌数据：胡牌者 + 花猪（若有 lackSuit），其他未胡者省略。 */
+const revealedHandBySeat = computed(() => {
+  const map = new Map<number, { tiles: Tile[]; huTile: Tile }>();
+  for (const h of props.settlement.revealedHands ?? []) {
+    map.set(h.seat, { tiles: h.tiles, huTile: h.huTile });
+  }
+  return map;
+});
+
+/** 副露按座位索引。 */
+const meldsBySeatMap = computed(() => {
+  const map = new Map<number, MahjongMeldView[]>();
+  for (const m of props.settlement.meldsBySeat ?? []) {
+    map.set(m.seat, m.melds);
+  }
+  return map;
+});
+
+/** 定缺花色按座位索引。 */
+const lackSuitBySeat = computed(() => {
+  const arr = props.settlement.lackSuits ?? [];
+  return (seat: number): number | null => arr[seat] ?? null;
 });
 
 function nameOf(seat: number): string {
@@ -82,7 +128,7 @@ const myHeadline = computed<{ won: boolean; delta: number; huazhu: boolean } | n
   const row = props.settlement.scoreChanges.find((r) => r.seat === mine);
   if (!row) return null;
   return {
-    won: row.delta > 0,  // 按分差正负判断输赢，而非 winnerSeats（麻将 winnerSeats 是"已胡牌"列表，不等于最终赢家）
+    won: row.delta > 0,
     delta: row.delta,
     huazhu: huazhu.value.has(mine),
   };
@@ -99,10 +145,15 @@ const eventLines = computed<string[]>(() => {
           `杠：${nameOf(e.seat)} ${e.gang === 'concealed' ? '暗杠' : e.gang === 'added' ? '补杠' : '直杠'} +${e.payers.reduce((a, p) => a + p.amount, 0)}`,
         );
         break;
-      case 'hu':
+      case 'hu': {
+        const rob = e.items.some((item) => item.includes('抢杠胡'));
         lines.push(
-          `胡：${nameOf(e.seat)} ${e.items.length > 0 ? e.items.map(item => fanEmoji(item) + item).join('+') : `${e.fan} 番`}${e.fromSeat === null ? '（自摸）' : `（点炮 ${nameOf(e.fromSeat)}）`}`,
+          `胡：${nameOf(e.seat)} ${e.items.length > 0 ? e.items.map(item => fanEmoji(item) + item).join('+') : `${e.fan} 番`}${rob ? '（抢杠胡）' : e.fromSeat === null ? '（自摸）' : `（点炮 ${nameOf(e.fromSeat)}）`}`,
         );
+        break;
+      }
+      case 'chajiao':
+        lines.push(`查叫：${nameOf(e.fromSeat)} → ${nameOf(e.toSeat)} ${e.amount}`);
         break;
       case 'transfer':
         lines.push(`呼叫转移：${nameOf(e.fromSeat)} → ${nameOf(e.toSeat)} ${e.amount}`);
@@ -112,11 +163,8 @@ const eventLines = computed<string[]>(() => {
           `退税：${nameOf(e.fromSeat)} 退回 ${e.toSeats.map((t) => `${nameOf(t.seat)} ${t.amount}`).join('、')}`,
         );
         break;
-      case 'chajiao':
-        lines.push(`查叫：${nameOf(e.fromSeat)} → ${nameOf(e.toSeat)} ${e.amount}`);
-        break;
       case 'huazhu':
-        lines.push(`花猪：${nameOf(e.seat)} 罚 ${e.amount}`);
+        lines.push(`花猪：${nameOf(e.seat)} ${e.mode === 'burn48' ? '罚 48 归系统' : `付 ${e.payees.length} 家 各 ${e.amount}`}`);
         break;
       default:
         break;
@@ -125,9 +173,22 @@ const eventLines = computed<string[]>(() => {
   return lines;
 });
 
-const endText = computed(() =>
-  props.settlement.endReason === 'wallEmpty' ? '牌墙摸空' : '三家胡牌',
-);
+/** 结束原因精确文本。 */
+const endText = computed(() => {
+  const r = props.settlement.endReason;
+  if (r === 'threeWinners') return '三家胡牌';
+  if (r === 'wallEmptyWithHu') return '摸最后一张自摸';
+  return props.settlement.liuju ? '荒庄（牌墙摸空）' : '牌墙摸空';
+});
+
+/** 规则摘要：底分 / 封顶 / 自摸模式 / 花猪模式。 */
+const rulesSummary = computed(() => {
+  const r = props.settlement;
+  const parts: string[] = [];
+  parts.push(`底分 ${r.baseScore}`);
+  if (r.rulesPreset) parts.push(r.rulesPreset === 'chengdu' ? '成都预设' : r.rulesPreset);
+  return parts.join(' · ');
+});
 </script>
 
 <template>
@@ -157,32 +218,69 @@ const endText = computed(() =>
         <text v-if="showGold" class="mj-settlement__th mj-settlement__th--gold">金币</text>
       </view>
 
-      <view
-        v-for="row in rows"
-        :key="row.seat"
-        class="mj-settlement__row"
-        :class="{
-          'mj-settlement__row--me': isMe(row.seat),
-          'mj-settlement__row--winner': winners.has(row.seat),
-        }"
-      >
-        <text class="mj-settlement__row-name">
-          {{ nameOf(row.seat) }}
-          <template v-if="huazhu.has(row.seat)">（花猪）</template>
-        </text>
-        <text class="mj-settlement__row-fan">{{ fanBySeat.get(row.seat) ?? '—' }}</text>
-        <text
-          class="mj-settlement__delta"
-          :class="row.delta >= 0 ? 'mj-settlement__delta--pos' : 'mj-settlement__delta--neg'"
-          >{{ row.delta > 0 ? `+${row.delta}` : String(row.delta) }}</text
+      <template v-for="row in rows" :key="row.seat">
+        <view
+          class="mj-settlement__row"
+          :class="{
+            'mj-settlement__row--me': isMe(row.seat),
+            'mj-settlement__row--winner': winners.has(row.seat),
+          }"
         >
-        <text v-if="showGold" class="mj-settlement__gold">{{ goldCell(row.seat) }}</text>
-      </view>
+          <view class="mj-settlement__row-name-wrap">
+            <text class="mj-settlement__row-name">{{ nameOf(row.seat) }}<template v-if="huazhu.has(row.seat)">（花猪）</template></text>
+          </view>
+          <view v-if="fanBySeat.get(row.seat) || huTypeBySeat.get(row.seat)" class="mj-settlement__row-fan-wrap">
+            <text v-if="fanBySeat.get(row.seat)" class="mj-settlement__row-fan">{{ fanBySeat.get(row.seat) }}</text>
+            <text v-if="huTypeBySeat.get(row.seat)" class="mj-settlement__hu-type">
+              {{ huTypeBySeat.get(row.seat)!.icon }} {{ huTypeBySeat.get(row.seat)!.label }}
+            </text>
+          </view>
+          <text
+            class="mj-settlement__delta"
+            :class="row.delta >= 0 ? 'mj-settlement__delta--pos' : 'mj-settlement__delta--neg'"
+            >{{ row.delta > 0 ? `+${row.delta}` : String(row.delta) }}</text
+          >
+          <text v-if="showGold" class="mj-settlement__gold">{{ goldCell(row.seat) }}</text>
+        </view>
+
+        <!-- 亮牌区：胡牌者 + 花猪。默认都显示（内容空时不占空间）。 -->
+        <view v-if="revealedHandBySeat.get(row.seat) || meldsBySeatMap.get(row.seat)?.length || huazhu.has(row.seat)" class="mj-settlement__hand">
+          <!-- 胡牌者手牌（含胡牌张高亮） -->
+          <template v-if="revealedHandBySeat.get(row.seat)">
+            <text class="mj-settlement__hand-label">
+              {{ nameOf(row.seat) }} 的手牌 <text class="mj-settlement__hand-hint">（{{ revealedHandBySeat.get(row.seat)!.tiles.length }} 张）</text>
+            </text>
+            <view class="mj-settlement__hand-row">
+              <MahjongTile
+                v-for="(t, idx) in revealedHandBySeat.get(row.seat)!.tiles"
+                :key="`t-${idx}`"
+                :tile="t"
+                size="sm"
+                direction="my"
+                :class="{ 'mj-tile--hu': t.s === revealedHandBySeat.get(row.seat)!.huTile.s && t.r === revealedHandBySeat.get(row.seat)!.huTile.r }"
+              />
+            </view>
+          </template>
+          <!-- 花猪缺门牌定位提示 -->
+          <text v-if="huazhu.has(row.seat)" class="mj-settlement__huazhu-hint">
+            定缺花色：{{ lackSuitBySeat(row.seat) === 0 ? '万' : lackSuitBySeat(row.seat) === 1 ? '筒' : '条' }}
+          </text>
+          <!-- 副露（所有有副露的玩家都显示） -->
+          <template v-if="meldsBySeatMap.get(row.seat)?.length">
+            <text class="mj-settlement__hand-label">副露</text>
+            <view class="mj-settlement__melds">
+              <template v-for="(meld, mi) in meldsBySeatMap.get(row.seat)" :key="`m-${mi}`">
+                <MahjongTile v-for="(t, ti) in meld.tiles" :key="`mt-${mi}-${ti}`" :tile="t" size="sm" direction="my" />
+                <text v-if="mi < meldsBySeatMap.get(row.seat)!.length - 1" class="mj-settlement__meld-sep">+</text>
+              </template>
+            </view>
+          </template>
+        </view>
+      </template>
     </view>
 
     <text class="mj-settlement__formula">
-      底分 {{ settlement.baseScore }} · {{ endText }}
-      <template v-if="settlement.liuju"> · 荒庄</template>
+      {{ rulesSummary }} · {{ endText }}
       <template v-if="settlement.rakeTotal > 0"> · 抽水 {{ settlement.rakeTotal }}</template>
     </text>
 
@@ -317,11 +415,18 @@ const endText = computed(() =>
   border-bottom: none;
   border-radius: 0 0 $ftl-radius-sm $ftl-radius-sm;
 }
-.mj-settlement__row-name,
+.mj-settlement__row-name-wrap,
 .mj-settlement__row-fan,
 .mj-settlement__delta,
 .mj-settlement__gold {
   flex: 1 1 0;
+}
+.mj-settlement__row-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  min-width: 0;
 }
 .mj-settlement__row--me {
   background: rgba($ftl-color-gold, 0.12);
@@ -339,6 +444,63 @@ const endText = computed(() =>
 .mj-settlement__row-fan {
   font-size: $ftl-font-sm;
   color: rgba($ftl-color-on-primary, 0.75);
+}
+.mj-settlement__row-fan-wrap {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.mj-settlement__hu-type {
+  font-size: 11px;
+  color: rgba($ftl-color-gold, 0.85);
+  letter-spacing: 0.5px;
+}
+.mj-settlement__hand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: $ftl-space-3 $ftl-space-5;
+  margin: 0 $ftl-space-4;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 0 0 $ftl-radius-sm $ftl-radius-sm;
+  border-bottom: $ftl-hairline solid rgba(255, 255, 255, 0.06);
+}
+.mj-settlement__hand-label {
+  font-size: 12px;
+  color: rgba($ftl-color-on-primary, 0.65);
+  font-weight: 500;
+}
+.mj-settlement__hand-hint {
+  font-size: 11px;
+  color: rgba($ftl-color-on-primary, 0.4);
+}
+.mj-settlement__hand-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+}
+.mj-settlement__hand-row .mj-tile--hu {
+  box-shadow: 0 0 0 2px $ftl-color-gold, 0 0 8px rgba($ftl-color-gold, 0.6);
+  transform: translateY(-2px);
+}
+.mj-settlement__huazhu-hint {
+  font-size: 12px;
+  color: rgba($ftl-color-danger, 0.85);
+  font-weight: 500;
+}
+.mj-settlement__melds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+}
+.mj-settlement__meld-sep {
+  font-size: 12px;
+  color: rgba($ftl-color-on-primary, 0.4);
+  margin: 0 2px;
 }
 .mj-settlement__delta {
   font-weight: 600;

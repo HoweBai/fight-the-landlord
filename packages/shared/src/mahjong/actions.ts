@@ -77,11 +77,15 @@ function nextTurn(s: MahjongSession, seat: number): void {
   s.lastDiscard = null;
 }
 
-function finish(s: MahjongSession, reason: 'threeWinners' | 'wallEmpty'): void {
+function finish(
+  s: MahjongSession,
+  reason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu',
+): void {
   s.state = 'ended';
-  s.liuju = reason === 'wallEmpty';
   s.endReason = reason;
   s.winnerSeats = s.players.filter((p) => p.isOut).map((p) => p.seat);
+  // liuju 精确化：只有纯 wallEmpty（无人胡）才叫荒庄。
+  s.liuju = reason === 'wallEmpty' && s.winnerSeats.length === 0;
   s.windowSeq += 1;
   s.windowId = 'ended';
   s.pendingClaims = null;
@@ -93,7 +97,7 @@ function checkFinished(s: MahjongSession): boolean {
     return true;
   }
   if (s.wall.length === 0) {
-    finish(s, 'wallEmpty');
+    finish(s, s.players.some((p) => p.isOut) ? 'wallEmptyWithHu' : 'wallEmpty');
     return true;
   }
   return false;
@@ -102,7 +106,7 @@ function checkFinished(s: MahjongSession): boolean {
 function drawFor(s: MahjongSession, seat: number, fromKong: boolean): void {
   const next = s.wall.shift();
   if (!next) {
-    finish(s, 'wallEmpty');
+    finish(s, s.players.some((p) => p.isOut) ? 'wallEmptyWithHu' : 'wallEmpty');
     return;
   }
   const player = s.players[seat]!;

@@ -444,10 +444,33 @@ function assertMahjongSettlement(v: unknown, path: string): asserts v is Mahjong
   if (!Array.isArray(v.chajiao)) throw new ProtocolError(`${path}.chajiao must be an array`);
   if (typeof v.liuju !== 'boolean') throw new ProtocolError(`${path}.liuju must be boolean`);
   if (!Array.isArray(v.huazhuSeats)) throw new ProtocolError(`${path}.huazhuSeats must be an array`);
-  if (v.endReason !== 'threeWinners' && v.endReason !== 'wallEmpty') {
+  if (v.endReason !== 'threeWinners' && v.endReason !== 'wallEmpty' && v.endReason !== 'wallEmptyWithHu') {
     throw new ProtocolError(`${path}.endReason is invalid`);
   }
   if (!Array.isArray(v.writtenOff)) throw new ProtocolError(`${path}.writtenOff must be an array`);
+  if (v.revealedHands !== undefined) {
+    if (!Array.isArray(v.revealedHands)) throw new ProtocolError(`${path}.revealedHands must be an array`);
+    v.revealedHands.forEach((h, i) => {
+      if (!isObj(h)) throw new ProtocolError(`${path}.revealedHands[${i}] must be an object`);
+      assertNum(h.seat, `${path}.revealedHands[${i}].seat`);
+      assertTileArray(h.tiles, `${path}.revealedHands[${i}].tiles`);
+      if (!isObj(h.huTile)) throw new ProtocolError(`${path}.revealedHands[${i}].huTile must be a Tile`);
+    });
+  }
+  if (v.meldsBySeat !== undefined) {
+    if (!Array.isArray(v.meldsBySeat)) throw new ProtocolError(`${path}.meldsBySeat must be an array`);
+    v.meldsBySeat.forEach((m, i) => {
+      if (!isObj(m)) throw new ProtocolError(`${path}.meldsBySeat[${i}] must be an object`);
+      assertNum(m.seat, `${path}.meldsBySeat[${i}].seat`);
+      if (!Array.isArray(m.melds)) throw new ProtocolError(`${path}.meldsBySeat[${i}].melds must be an array`);
+    });
+  }
+  if (v.lackSuits !== undefined) {
+    if (!Array.isArray(v.lackSuits) || v.lackSuits.length !== 4) {
+      throw new ProtocolError(`${path}.lackSuits must have length 4`);
+    }
+  }
+  if (v.rulesPreset !== undefined) assertStr(v.rulesPreset, `${path}.rulesPreset`);
 }
 
 function assertGameView(v: unknown, path: string): asserts v is GameView {
