@@ -108,11 +108,11 @@ export const MAHJONG_TABLE_TOKENS = {
   riverH: 50,
   riverCols: 12,
   riverRows: 2,
-  topBackH: 54,
+  topBackH: 48,
   topBackGap: 2,
-  sideBackH: 45, // 槽高（pitch 叠压用）；left/right 牌背素材是 49×40 横图，aspectFit 后约 24 高
-  sidePitch: 24,
-  backCount: 14, // = handCount，牌背预算
+  sideBackH: 49, // 槽高（pitch 叠压用）；与 sideRiver tile 高（40）对齐更顺
+  sidePitch: 27,
+  backCount: 12, // topBacks 宽度 ≈ riverW ≈ 420px 只能放 12 张 48×75/113 tile；左右家保持上限 14
   sideRiverW: 49,
   sideRiverH: 40,
   sideRiverCols: 3,
@@ -121,11 +121,11 @@ export const MAHJONG_TABLE_TOKENS = {
   sideMeldScale: 0.65,
   meldOverlap: 4,
   sideMeldGap: 4,
-  chip: 56,
-  sideChipW: 180, // 头像 56 + 名字/分/徽标列 124
+  chip: 60,
+  sideChipW: 200, // 头像 56 + 名字/分/徽标列 144（多出 20px 给底部徽标条带）
   selfChipW: 56,
   selfChipH: 76,
-  barChipW: 40,
+  barChipW: 56,
   barChipH: 56,
   centerClaimW: 34,
   centerClaimH: 51,
@@ -289,11 +289,11 @@ export function mahjongTableLayout(
   const centerZone = rect(centerLeft, centerTop, centerRight - centerLeft, centerBottom - centerTop);
 
   const centerCompact = centerZone.height < 176 * s;
-  // 紧凑模式单行内容有限，上限 360*s；非紧凑模式有 claim/ting 牌面展示，上限 440*s
+  // 紧凑模式单行内容有限，上限 360*s；非紧凑模式有 claim/ting 牌面展示，上限 480*s
   const centerCardW = Math.max(
     0,
     Math.min(
-      (centerCompact ? 360 : 440) * s,
+      (centerCompact ? 360 : 480) * s,
       centerZone.width - (centerCompact ? 8 : 16) * s,
     ),
   );

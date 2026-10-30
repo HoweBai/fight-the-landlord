@@ -114,6 +114,7 @@ const metaText = computed(() => {
     </view>
 
     <view v-else class="mj-chip__self-info">
+      <text class="mj-chip__self-name">{{ name }}</text>
       <text class="mj-chip__meta">{{ balance ?? '—' }}</text>
       <text
         v-if="deltaLabel"
@@ -249,6 +250,23 @@ const metaText = computed(() => {
   align-items: center;
   gap: 3px;
   min-width: 0;
+  // self 变体下：头像在 chip 上方，self-info 在下方需要 column 排列
+  .mj-chip--self & {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding-top: 2px;
+  }
+}
+.mj-chip__self-name {
+  color: rgba($ftl-color-on-primary, 0.9);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56px;
 }
 .mj-chip__delta {
   font-size: 9px;

@@ -67,9 +67,6 @@ const sortedRevealedHands = computed(() =>
 // —— 比例布局（Task 8）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
 const stageMetrics = inject(CANVAS_METRICS_KEY, null);
 const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
-const canvasH = computed(() =>
-  Number.isFinite(canvas.value.height) && canvas.value.height > 0 ? canvas.value.height : 750,
-);
 
 function seatLoad(seat: number) {
   return {
@@ -109,7 +106,9 @@ const actionsStyle = computed(() => ({
   zIndex: 3,
 }));
 const trusteeMaskStyle = computed(() => ({
-  bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.s)}px`,
+  // P1: 托管遮罩只盖手牌区顶部 1/3 — 保留底部 2/3 让玩家仍能看到手牌排列
+  top: `${layout.value.hand.rect.top}px`,
+  height: `${(layout.value.hand.rect.height + 24 * layout.value.s) / 3}px`,
 }));
 
 const view = computed(() => props.view);
@@ -125,6 +124,15 @@ const amActive = computed(() => activeSeats.value.includes(me.value));
 const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsForMe ?? [])]);
 const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
+// P1: 血战存活数 — 4 - 已出局人数
+const aliveSeats = computed<number>(() => {
+  const out = props.view?.isOut ?? [];
+  return 4 - out.filter((v) => v).length;
+});
+// P1: Claim 窗口自选项 — 非 active 但有可碰/杠/胡选项时提示
+const showClaimBubble = computed<boolean>(
+  () => phase.value === 'claim' && myClaims.value.length > 0 && !amActive.value,
+);
 const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
 
 /** 手牌可选的条件：交互开启 + 未结算 + （换三张窗口 | 出牌窗口）。 */
@@ -220,6 +228,13 @@ const displayTiles = computed<Array<{ tile: Tile; drawn: boolean }>>(() => {
   if (idx < 0) return entries;
   const [entry] = entries.splice(idx, 1);
   return [...entries, { tile: entry!.tile, drawn: true }];
+});
+/** 摸牌标记 gap：14 张手牌（刚摸完未碰杠）保持大 gap；碰杠后 13 张缩成小 gap 避免视觉断裂。 */
+const effectiveDrawnGap = computed(() => {
+  const full = layout.value.hand.drawnGap;
+  const base = layout.value.hand.gap;
+  const handCount = hand.value.length + (drawnType.value !== null ? 1 : 0);
+  return handCount >= 14 ? full : base * 1.5;
 });
 
 function onTileClick(index: number): void {
@@ -478,7 +493,7 @@ function chipProps(seat: number, variant: 'self' | 'side' | 'bar') {
     activeLevel: seatActiveLevel(seat),
     balance: seatBalance(seat),
     pendingDelta: pendingDelta(seat),
-    avatar: variant === 'bar' ? layout.value.barChip.w : layout.value.selfChip.width,
+    avatar: variant === 'bar' ? layout.value.barChip.w : (variant === 'self' ? layout.value.selfChip.width : 56),
     variant,
   };
 }
@@ -492,8 +507,10 @@ function backsProps(seat: number) {
       : layout.value.rightBacks;
   const revealed = isTop ? v.revealed : null;
   const sideRevealed = !isTop && v.revealed !== null;
+  // P1: topBacks 宽度 ≈ 420px 只能放 12 张 48px 高 tile，限制显示上限
+  const countLimit = isTop ? 12 : 14;
   return {
-    count: revealed || sideRevealed ? 0 : v.cardCount,
+    count: revealed || sideRevealed ? 0 : Math.min(v.cardCount, countLimit),
     direction: (isTop ? 'top' : seat === leftSeat.value ? 'left' : 'right') as
       | 'top'
       | 'left'
@@ -689,6 +706,7 @@ function onMeldPopDone(key: string) {
 
 <template>
   <view class="mj" :style="{ '--mj-s': `${layout.s}` }">
+    <view class="mj__table-surface" />
     <view class="mj__bar" :style="rectStyle(layout.bar)">
       <view class="mj__bar-left">
         <button
@@ -703,6 +721,7 @@ function onMeldPopDone(key: string) {
       <view class="mj__bar-center">
         <text v-if="levelName" class="mj__bar-text">{{ levelName }}</text>
         <text v-if="sceneBase !== null" class="mj__bar-text">底分 {{ sceneBase }}</text>
+        <text v-if="phase !== 'ended' && aliveSeats < 4" class="mj__bar-text">剩 {{ aliveSeats }} 家</text>
       </view>
       <view class="mj__bar-right">
         <MahjongSeatChip
@@ -752,6 +771,17 @@ function onMeldPopDone(key: string) {
       <MahjongSeatChip v-bind="chipProps(leftSeat, 'side')" :style="rectStyle(layout.leftChip)" />
       <MahjongSeatChip v-bind="chipProps(rightSeat, 'side')" :style="rectStyle(layout.rightChip)" />
       <MahjongSeatChip v-bind="chipProps(me, 'self')" :style="rectStyle(layout.selfChip)" />
+      <!-- P1: Claim 自选项气泡 — 等待响应窗口内我有可选项时提示 -->
+      <view
+        v-if="showClaimBubble"
+        class="mj__claim-bubble"
+        :style="{
+          left: `${layout.selfChip.left + layout.selfChip.width + 4 * layout.s}px`,
+          top: `${layout.selfChip.top - 8 * layout.s}px`,
+        }"
+      >
+        <text>你有 {{ myClaims.length }} 个可选项</text>
+      </view>
 
       <MahjongRiver
         class="mj-river-slot mj-river-slot--top"
@@ -814,7 +844,7 @@ function onMeldPopDone(key: string) {
             :style="{
               '--ftl-delay': `${i * 30}ms`,
               marginLeft: entry.drawn
-                ? `${layout.hand.drawnGap - layout.hand.gap}px`
+                ? `${effectiveDrawnGap - layout.hand.gap}px`
                 : undefined,
             }"
             @click="onTileClick(i)"
@@ -960,12 +990,18 @@ function onMeldPopDone(key: string) {
 .mj {
   box-sizing: border-box;
   display: block;
+  position: relative;
   width: 100%;
   height: 100%;
-  padding: 0;
-  position: relative;
   color: $ftl-color-text;
-  // P3: 牌桌背景增强 — 多层叠底：深→浅渐变 + 中心光斑 + 边缘暗角 + 微纹理
+  // P1: 根元素不再 overflow:hidden — 让 chip 的 active 发光 box-shadow 能溢出可见区。
+  // 内部桌布层 mj__table-surface 单独承载背景裁切。
+  overflow: visible;
+}
+.mj__table-surface {
+  position: absolute;
+  inset: 0;
+  // 桌布背景：多层叠底（深→浅渐变 + 中心光斑 + 边缘暗角 + 微纹理）
   background:
     // 最顶：极细的对角微纹（让纯色不那么塑料感）
     repeating-linear-gradient(
@@ -986,7 +1022,7 @@ function onMeldPopDone(key: string) {
       $ftl-color-mahjong-table-deep 100%
     );
   background-size: auto, auto, auto;
-  // P3: 外框 + 深层叠影模拟木框 + 暗角绒面
+  // 外框 + 深层叠影模拟木框 + 暗角绒面
   border: 3px solid rgba(20, 50, 30, 0.85);
   box-shadow:
     // 外框高光（模拟木框上边反光）
@@ -999,6 +1035,8 @@ function onMeldPopDone(key: string) {
     // 中心极弱高光（呼应 radial gradient）
     inset 0 0 80px rgba(255, 220, 100, 0.04);
   overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* —— 顶栏 —— */
@@ -1075,6 +1113,18 @@ function onMeldPopDone(key: string) {
   justify-content: center;
   overflow: visible;
 }
+// P1: 摸牌标记 —— 极淡蓝色底边标注"这是刚摸的那张"
+.mj__hand :deep(.mj__hand-tile--drawn)::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(120, 200, 255, 0.55);
+  pointer-events: none;
+}
 .mj__hand :deep(.mj-tile--selected) {
   z-index: 10; // P1d 选中时浮到最上层，不被后面的牌盖住
 }
@@ -1134,31 +1184,47 @@ function onMeldPopDone(key: string) {
 
 /* —— 托管遮罩 —— */
 .mj__trustee-mask {
+  // P1: 托管遮罩改为绝对定位顶部 1/3 覆盖（保留手牌底部可见）
   position: absolute;
-  right: 50%;
-  bottom: 96px;
-  transform: translateX(50%);
+  left: 0;
+  right: 0;
   z-index: 4;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: $ftl-space-2;
-  padding: $ftl-space-4 $ftl-space-7;
+  justify-content: center;
+  gap: $ftl-space-4;
+  padding: 6px 16px;
   border-radius: $ftl-radius-md;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.55);
   border: $ftl-hairline solid rgba($ftl-color-gold, 0.4);
 }
 .mj__trustee-title {
   color: $ftl-color-gold;
-  font-size: $ftl-font-md;
+  font-size: $ftl-font-sm;
   font-weight: 700;
 }
 .mj__trustee-desc {
   color: $ftl-color-text-muted;
-  font-size: $ftl-font-sm;
+  font-size: 10px;
 }
 .mj__trustee-cancel {
-  margin-top: $ftl-space-2;
+  padding: 2px 10px;
+  font-size: $ftl-font-sm;
+}
+// P1: Claim 自选项气泡 — 黄色悬浮提示
+.mj__claim-bubble {
+  position: absolute;
+  z-index: 5;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 220, 100, 0.9);
+  color: rgba(60, 30, 0, 1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  animation: ftl-float-up 2s infinite ease-in-out;
 }
 
 /* —— 按钮（自持样式：父组件 scoped 规则进不来）—— */

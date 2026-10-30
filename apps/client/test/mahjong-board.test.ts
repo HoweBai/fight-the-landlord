@@ -80,7 +80,7 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
     expect(wrapper.find('.mj').exists()).toBe(true);
     expect(wrapper.find('.mj__bar').exists()).toBe(true);
     expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
-    expect(wrapper.text()).toContain('牌墙 40');
+    expect(wrapper.text()).toContain('🀄 40');
     expect(wrapper.text()).toContain('底分 1');
   });
 
@@ -237,7 +237,7 @@ describe('T12：四家分区重排', () => {
     for (const d of ['top', 'left', 'right', 'my']) {
       expect(wrapper.find(`.mj-river--${d}`).exists()).toBe(true);
     }
-    expect(wrapper.find('.mj-center').text()).toContain('牌墙 40');
+    expect(wrapper.find('.mj-center').text()).toContain('🀄 40');
   });
 
   it('对手牌背数量与 src 逐座对位（不是只数个数）', () => {

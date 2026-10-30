@@ -139,7 +139,20 @@ function onDiscardClick(t: Tile): void {
   align-items: center;
   justify-content: center;
   overflow: visible;
+  // P1: 共享背景框 — 淡色圆角矩形框住"这一排都是 XX 家的副露 + 弃牌"
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    pointer-events: none;
+    z-index: -1;
+  }
 }
+// ownRiver（自己的弃牌区）不加共享框
+.mj-river--my::before { display: none; }
 .mj-river__grid {
   align-content: center;
   justify-content: center;

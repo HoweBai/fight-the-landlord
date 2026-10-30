@@ -17,7 +17,8 @@ const base = {
 describe('MahjongCenter', () => {
   it('牌墙/阶段/倒计时', () => {
     const w = mount(MahjongCenter, { props: base });
-    expect(w.text()).toContain('牌墙 42');
+    // P1: 牌墙现在是药丸格式 "🀄 42" 而非纯文本 "牌墙 42"
+    expect(w.text()).toContain('🀄 42');
     expect(w.text()).toContain('请出牌');
     expect(w.find('.mj-center__clock').text()).toContain('12');
   });
@@ -51,15 +52,18 @@ describe('MahjongCenter', () => {
       props: { ...base, compact: true, claimTile: { s: 0, r: 5 } },
     });
     expect(w.classes()).toContain('mj-center--compact');
-    expect(w.findAll('.mj-center__sep')).toHaveLength(2);
+    // P1: compact 模式移除了旧 sep 元素（用药丸替代），所以 sep 数量是 0
+    expect(w.findAll('.mj-center__sep')).toHaveLength(0);
     expect(w.findAll('image')).toHaveLength(0);
+    // compact-foot 应该显示可响应 + 万5
     expect(w.text()).toContain('可响应');
     expect(w.text()).toContain('万5');
   });
 
-  it('紧凑模式字号降到 11px（源码闸）', () => {
+  it('紧凑模式字号降到 12px（源码闸）', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
-    expect(src).toMatch(/\.mj-center--compact \.mj-center__wall,[\s\S]*?font-size: 11px/);
+    // P1: compact 模式 phase 字号降到 12px（药丸/phase 不再走 wall 类）
+    expect(src).toMatch(/\.mj-center--compact &\s*\{[\s\S]*?font-size:\s*12px/);
   });
 
   it('已胡家数文案', () => {
