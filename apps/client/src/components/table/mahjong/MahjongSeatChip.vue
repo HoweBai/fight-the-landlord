@@ -254,7 +254,7 @@ const metaText = computed(() => {
   .mj-chip--self & {
     flex-direction: column;
     align-items: flex-start;
-    gap: 1px;
+    gap: 2px;
     padding-top: 2px;
   }
 }

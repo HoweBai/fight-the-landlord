@@ -118,7 +118,7 @@ const clockText = computed(() => {
   height: 100%;
   padding: 6px 10px;
   overflow: hidden;
-  border: 1px solid rgba(255, 215, 100, 0.35);
+  border: $ftl-hairline solid rgba(255, 215, 100, 0.35);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(4px);
@@ -151,13 +151,13 @@ const clockText = computed(() => {
 .mj-center__wall-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1px 8px;
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 700;
   line-height: 1.4;
   border-radius: 10px;
   background: rgba($ftl-color-gold, 0.18);
-  border: 1px solid rgba($ftl-color-gold, 0.45);
+  border: $ftl-hairline solid rgba($ftl-color-gold, 0.45);
   color: $ftl-color-gold;
   white-space: nowrap;
 }
