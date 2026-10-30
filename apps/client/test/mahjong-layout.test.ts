@@ -140,9 +140,13 @@ describe('中央牌板：跨设备矩阵', () => {
         );
       });
 
-      it('座位卡在桌边、顶 = 牌板顶', () => {
-        expect(l.leftChip.left).toBeCloseTo(12 * s, 3);
-        expect(l.rightChip.left).toBeCloseTo(v.w - 12 * s - 180 * s, 3);
+      it('座位卡贴桌边或夹到牌背外侧、不压侧道、顶 = 牌板顶', () => {
+        expect(l.leftChip.left).toBeGreaterThanOrEqual(12 * s - 0.01);
+        expect(l.rightChip.left + 180 * s).toBeLessThanOrEqual(v.w - 12 * s + 0.01);
+        expect(l.leftChip.left + 180 * s).toBeLessThanOrEqual(l.leftLane.rect.left + 0.01);
+        expect(l.rightChip.left).toBeGreaterThanOrEqual(
+          l.rightLane.rect.left + l.rightLane.rect.width - 0.01,
+        );
         expect(l.leftChip.top).toBeCloseTo(l.board.top, 3);
         expect(l.rightChip.top).toBeCloseTo(l.board.top, 3);
       });
@@ -221,6 +225,18 @@ describe('中央牌板：跨设备矩阵', () => {
     expect(l.leftLane.rect.height).toBeCloseTo(488, 3);
     expect(l.actions.rightX).toBeCloseTo(976.673, 3);
     expect(l.topMelds.below.groups).toBe(0);
+  });
+
+  it('16:9 座位卡贴桌边；21:9 被夹到牌背外侧', () => {
+    const wide = mahjongTableLayout(1334, 750, EMPTY);
+    expect(wide.leftChip.left).toBeCloseTo(12, 3);
+    expect(wide.rightChip.left).toBeCloseTo(1334 - 12 - 180, 3);
+    const ultra = mahjongTableLayout(1778, 750, EMPTY);
+    expect(ultra.leftChip.left).toBeCloseTo(ultra.leftBacks.rect.left - 180 - 8, 3);
+    expect(ultra.rightChip.left).toBeCloseTo(
+      ultra.rightBacks.rect.left + ultra.rightBacks.rect.width + 8,
+      3,
+    );
   });
 
   it('16:9 各 1 碰：信息格 127.25、牌板 431.25、对家副露在牌背两翼', () => {

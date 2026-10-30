@@ -391,8 +391,17 @@ export function mahjongTableLayout(
     u(T.selfChipW),
     u(T.selfChipH),
   );
-  const leftChip = rect(u(T.outer), boardTopY, u(T.sideChipW), u(T.chip));
-  const rightChip = rect(w - u(T.outer) - u(T.sideChipW), boardTopY, u(T.sideChipW), u(T.chip));
+  // 座位卡优先贴桌边；牌板在宽屏上居中后，余量过大就把卡夹到牌背外侧 8s 处，避免「卡在桌边、牌背在中间」。
+  const leftChipLeft = Math.max(
+    u(T.outer),
+    leftBacks.rect.left - u(T.sideChipW) - u(T.inner),
+  );
+  const rightChipLeft = Math.min(
+    w - u(T.outer) - u(T.sideChipW),
+    rightBacks.rect.left + rightBacks.rect.width + u(T.inner),
+  );
+  const leftChip = rect(leftChipLeft, boardTopY, u(T.sideChipW), u(T.chip));
+  const rightChip = rect(rightChipLeft, boardTopY, u(T.sideChipW), u(T.chip));
 
   // —— 副露条 ——
   const zero = rect(0, 0, 0, 0);
