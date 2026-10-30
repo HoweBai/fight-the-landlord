@@ -1,6 +1,6 @@
 # 麻将中央牌板片 · 交接（2026-10-30）
 
-> 状态：实现 + 全量验证 + 真组件三档截图完成；**待代码审查结论后推 dev**；未部署。
+> 状态：实现 + 全量验证 + 代码审查修复 + 真组件四张截图完成；**已推 dev 并部署测试服 `dev-2583a6c`**（2026-10-30）。
 > 设计：`docs/superpowers/specs/2026-10-30-mahjong-central-board-design.md`
 > 计划：`docs/superpowers/plans/2026-10-30-mahjong-central-board.md`
 > 回滚基线：`ec238a12`（本片第一行代码之前）。
@@ -50,7 +50,7 @@ compact 恢复 `·` 分隔；`discards: Infinity` 夹到 0；补 4 条布局断�
 
 ## 5. 下一步
 
-1. 代码审查修复 → 重跑全量。
-2. 推 `dev`（零 CI）。
-3. 测试服部署：`bash scripts/deploy/deploy-dev.sh`（用户发话后）。
-4. 真机走查：四家方向、副露两翼/下移、claim 来源道高亮与过滤、宽屏座位卡、信息格三档。
+1. ~~代码审查修复~~ / ~~推 dev~~ / ~~测试服部署~~ **已完成**：`dev@2583a6c`，tag `dev-2583a6c`，冒烟三条 + 钉 IP 复核通过。
+2. 真机走查：四家方向、副露两翼/下移、claim 来源道高亮与过滤、宽屏座位卡、信息格三档。
+3. 回滚（秒级）：`bash scripts/deploy/rollback.sh dev-04a4ac2`（上一片部署 tag，2026-10-28）。
+4. 合 master 时走权威轮（CI + conformance + 镜像）。
