@@ -1,10 +1,10 @@
 /** 麻将视图投影（只给自己的手牌；牌墙/他人手牌/RNG 永不出站）。 */
 import {
   countTiles,
+  sortTiles,
   tileFromType,
   type MahjongClaimOption,
   type MahjongPlayerView,
-  type Tile,
 } from '@fight-the-landlord/protocol';
 import type { MahjongSession } from '@fight-the-landlord/shared';
 import {
@@ -116,7 +116,7 @@ export function buildMahjongView(session: MahjongSession, seat: number): Mahjong
     .map((p) => p.hu!);
   const revealedHands = session.players
     .filter((p) => p.isOut && p.hu !== null)
-    .map((p) => ({ seat: p.seat, tiles: [...p.hand] as Tile[], huTile: p.hu!.tile }));
+    .map((p) => ({ seat: p.seat, tiles: sortTiles([...p.hand]), huTile: p.hu!.tile }));
   return {
     roomCode: session.roomCode,
     gameType: 'mahjong',

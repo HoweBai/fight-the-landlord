@@ -59,6 +59,11 @@ const leftSeat = computed(() => (me.value + 3) % 4);
 const rightSeat = computed(() => (me.value + 1) % 4);
 const topSeat = computed(() => (me.value + 2) % 4);
 
+/** revealedHands 防御性排序：服务端返回可能是原始未排序的手牌顺序。 */
+const sortedRevealedHands = computed(() =>
+  props.view?.revealedHands.map((r) => ({ ...r, tiles: sortTiles(r.tiles) })) ?? [],
+);
+
 // —— 比例布局（Task 8）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
 const stageMetrics = inject(CANVAS_METRICS_KEY, null);
 const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
@@ -111,7 +116,7 @@ const view = computed(() => props.view);
 const phase = computed(() => props.view?.state ?? null);
 const hand = computed<readonly Tile[]>(() => sortTiles(props.view?.hand ?? []));
 const myRevealed = computed(
-  () => props.view?.revealedHands.find((r) => r.seat === me.value) ?? null,
+  () => sortedRevealedHands.value.find((r) => r.seat === me.value) ?? null,
 );
 const wallCount = computed(() => props.view?.wallCount ?? 0);
 const dealerSeat = computed(() => props.view?.dealerSeat ?? 0);
@@ -455,7 +460,7 @@ function seatView(seat: number) {
     isOut: props.view?.isOut[seat] ?? false,
     trustee: props.view?.trustees[seat] ?? false,
     ting: (props.view?.tingSeats ?? []).includes(seat),
-    revealed: props.view?.revealedHands.find((r) => r.seat === seat) ?? null,
+    revealed: sortedRevealedHands.value.find((r) => r.seat === seat) ?? null,
   };
 }
 function chipProps(seat: number, variant: 'self' | 'side' | 'bar') {
@@ -684,9 +689,6 @@ function onMeldPopDone(key: string) {
 
 <template>
   <view class="mj" :style="{ '--mj-s': `${layout.s}` }">
-    <!-- 麻将桌底部两个角落装饰（T3 Batch 1） -->
-    <view class="mj__corner-bot mj__corner-bot--l" aria-hidden="true" />
-    <view class="mj__corner-bot mj__corner-bot--r" aria-hidden="true" />
     <view class="mj__bar" :style="rectStyle(layout.bar)">
       <view class="mj__bar-left">
         <button
@@ -996,49 +998,8 @@ function onMeldPopDone(key: string) {
     inset 0 0 40px rgba(0, 0, 0, 0.35),
     // 中心极弱高光（呼应 radial gradient）
     inset 0 0 80px rgba(255, 220, 100, 0.04);
-  border-radius: 16px;
   overflow: hidden;
 }
-
-// —— 麻将桌角落装饰（T3 Batch 1）——
-.mj::before,
-.mj::after {
-  content: '';
-  position: absolute;
-  width: calc(var(--mj-s, 1) * 72px);
-  height: calc(var(--mj-s, 1) * 72px);
-  pointer-events: none;
-  z-index: 0;
-  background-size: contain;
-  background-position: center;
-  opacity: 0.85;
-}
-.mj::before {
-  top: 2px;
-  left: 2px;
-  background: url('/pages/table/static/ui/mahjong-table/Z_corner_ltop.png') no-repeat;
-}
-.mj::after {
-  top: 2px;
-  right: 2px;
-  transform: scaleX(-1);
-  background: url('/pages/table/static/ui/mahjong-table/Z_corner_rtop.png') no-repeat;
-}
-.mj__corner-bot {
-  position: absolute;
-  bottom: 2px;
-  width: calc(var(--mj-s, 1) * 72px);
-  height: calc(var(--mj-s, 1) * 72px);
-  pointer-events: none;
-  z-index: 0;
-  background-size: contain;
-  background-position: center;
-  opacity: 0.85;
-}
-.mj__corner-bot--l { left: 2px; transform: scaleY(-1);
-  background: url('/pages/table/static/ui/mahjong-table/Z_corner_lbottom.png') no-repeat; }
-.mj__corner-bot--r { right: 2px; transform: scale(-1, -1);
-  background: url('/pages/table/static/ui/mahjong-table/Z_corner_rbottom.png') no-repeat; }
 
 /* —— 顶栏 —— */
 .mj__bar {

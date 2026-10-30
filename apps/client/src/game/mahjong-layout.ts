@@ -105,7 +105,7 @@ export const MAHJONG_TABLE_TOKENS = {
   handH: 108,
   handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
-  riverH: 75,
+  riverH: 50,
   riverCols: 12,
   riverRows: 2,
   topBackH: 54,
@@ -119,7 +119,7 @@ export const MAHJONG_TABLE_TOKENS = {
   sideRiverRows: 8,
   meldScale: 0.8,
   sideMeldScale: 0.65,
-  meldOverlap: 8,
+  meldOverlap: 4,
   sideMeldGap: 4,
   chip: 56,
   sideChipW: 180, // 头像 56 + 名字/分/徽标列 124
@@ -289,9 +289,14 @@ export function mahjongTableLayout(
   const centerZone = rect(centerLeft, centerTop, centerRight - centerLeft, centerBottom - centerTop);
 
   const centerCompact = centerZone.height < 176 * s;
-  const centerCardW = centerCompact
-    ? Math.max(0, centerZone.width - 8 * s)
-    : Math.max(0, Math.min(220 * s, centerZone.width - 16 * s));
+  // 紧凑模式单行内容有限，上限 360*s；非紧凑模式有 claim/ting 牌面展示，上限 440*s
+  const centerCardW = Math.max(
+    0,
+    Math.min(
+      (centerCompact ? 360 : 440) * s,
+      centerZone.width - (centerCompact ? 8 : 16) * s,
+    ),
+  );
   const centerCardH = Math.max(
     0,
     Math.min(160 * s, centerZone.height - (centerCompact ? 8 : 16) * s),

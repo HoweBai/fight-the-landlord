@@ -82,7 +82,7 @@ const myHeadline = computed<{ won: boolean; delta: number; huazhu: boolean } | n
   const row = props.settlement.scoreChanges.find((r) => r.seat === mine);
   if (!row) return null;
   return {
-    won: winners.value.has(mine),
+    won: row.delta > 0,  // 按分差正负判断输赢，而非 winnerSeats（麻将 winnerSeats 是"已胡牌"列表，不等于最终赢家）
     delta: row.delta,
     huazhu: huazhu.value.has(mine),
   };

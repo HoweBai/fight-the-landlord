@@ -109,18 +109,18 @@ function onAnimEnd(e: AnimationEvent): void {
   line-height: 0; // 消除 image inline 间隙
 }
 
-/** 3 张横向叠加：后两张往左负 margin。放大后所有档位等比增加。 */
+/** 组内 tile 默认无负 margin；叠压量由父组件 overlap prop 精确控制 */
 .mj-meld :deep(.mj-tile) {
-  margin-left: -16px; // sm 宽 34px，overlap -16px ≈ 47%
+  margin-left: 0;
   position: relative;
 }
 .mj-meld :deep(.mj-tile:first-child) {
   margin-left: 0;
 }
 
-/** 大尺寸时负 margin 跟着调 */
+/** md/lg 档位也不再硬编码负 margin */
 .mj-meld--md :deep(.mj-tile),
 .mj-meld--lg :deep(.mj-tile) {
-  margin-left: -22px;
+  margin-left: 0;
 }
 </style>

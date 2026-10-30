@@ -48,15 +48,31 @@ const claimLabel = computed(() =>
 <template>
   <view class="mj-center" :class="{ 'mj-center--compact': compact }">
     <view class="mj-center__head">
-      <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
-      <text v-if="compact" class="mj-center__sep">·</text>
-      <text class="mj-center__phase">{{ phaseText }}</text>
-      <template v-if="active">
-        <text v-if="compact" class="mj-center__sep">·</text>
-        <text
-          class="mj-center__clock"
-          :class="{ 'mj-center__clock--urgent': urgent }"
-        >{{ seconds }}s</text>
+      <!-- 非紧凑：单行居中（phase 大字居中 + wall/clock 小字左右） -->
+      <template v-if="!compact">
+        <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
+        <text class="mj-center__sep">·</text>
+        <text class="mj-center__phase">{{ phaseText }}</text>
+        <template v-if="active">
+          <text class="mj-center__sep">·</text>
+          <text
+            class="mj-center__clock"
+            :class="{ 'mj-center__clock--urgent': urgent }"
+          >{{ seconds }}s</text>
+        </template>
+      </template>
+      <!-- 紧凑：单行（挤不下时降级） -->
+      <template v-else>
+        <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
+        <text class="mj-center__sep">·</text>
+        <text class="mj-center__phase">{{ phaseText }}</text>
+        <template v-if="active">
+          <text class="mj-center__sep">·</text>
+          <text
+            class="mj-center__clock"
+            :class="{ 'mj-center__clock--urgent': urgent }"
+          >{{ seconds }}s</text>
+        </template>
       </template>
     </view>
     <template v-if="!compact">
@@ -126,25 +142,46 @@ const claimLabel = computed(() =>
   justify-content: center;
   gap: 8px;
   min-width: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+// 紧凑模式覆盖为单行
+.mj-center--compact .mj-center__head {
+  gap: 6px;
+  width: auto;
+}
+.mj-center--compact .mj-center__wall,
+.mj-center--compact .mj-center__phase,
+.mj-center--compact .mj-center__clock {
+  font-size: 11px;
+  line-height: 1.2;
+}
+.mj-center__sep {
+  color: $ftl-color-text-muted;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .mj-center__wall {
   color: $ftl-color-gold-light;
   font-size: $ftl-font-sm;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 .mj-center__phase {
-  overflow: hidden;
   color: $ftl-color-gold;
   font-size: $ftl-font-md;
-  font-weight: 600;
-  text-overflow: ellipsis;
+  font-weight: 700;
+  text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.3;
 }
 .mj-center__clock {
   color: $ftl-color-gold-light;
   font-size: $ftl-font-sm;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 .mj-center__clock--urgent {
