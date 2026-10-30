@@ -18,6 +18,8 @@ const props = defineProps<{
   overlap: number;
   groupGap: number;
   layout: 'row' | 'column';
+  /** 组在条带内的贴靠方向：对家两翼贴住牌背（左翼 end / 右翼 start），其余居中。 */
+  justify?: 'start' | 'center' | 'end';
 }>();
 
 const emit = defineEmits<{ (e: 'pop-done', key: string): void }>();
@@ -32,7 +34,12 @@ const stripStyle = computed<Record<string, string>>(() => ({
   display: 'flex',
   flexDirection: props.layout === 'column' ? 'column' : 'row',
   alignItems: 'center',
-  justifyContent: 'center',
+  justifyContent:
+    props.justify === 'start'
+      ? 'flex-start'
+      : props.justify === 'end'
+        ? 'flex-end'
+        : 'center',
   gap: `${props.groupGap}px`,
 }));
 </script>

@@ -76,6 +76,18 @@ describe('MahjongMeldStrip', () => {
     expect(w.emitted('pop-done')?.[0]).toEqual(['peng:0_0_0']);
   });
 
+  it('justify 贴靠方向落到 style', () => {
+    const make = (justify: 'start' | 'end') =>
+      mount(MahjongMeldStrip, {
+        props: props({
+          justify,
+          melds: [group('peng:0_0_0', { kind: 'peng', tiles: [wan1, wan1, wan1] })],
+        }),
+      });
+    expect(make('start').attributes('style')).toContain('justify-content: flex-start');
+    expect(make('end').attributes('style')).toContain('justify-content: flex-end');
+  });
+
   it('tileW/tileH/overlap 透传到每张牌', () => {
     const w = mount(MahjongMeldStrip, {
       props: props({ melds: [group('gang', { kind: 'gang', tiles: [wan1, wan1, wan1, wan2] })] }),

@@ -556,12 +556,14 @@ interface StripProps {
   overlap: number;
   groupGap: number;
   layout: 'row' | 'column';
+  justify: 'start' | 'center' | 'end';
 }
 
 function stripProps(
   strip: MeldStripLayout,
   groups: Array<{ key: string; meld: MahjongMeldView; pop: boolean }>,
   direction: Direction,
+  justify: 'start' | 'center' | 'end' = 'center',
 ): StripProps {
   return {
     melds: strip.groups > 0 ? groups : [],
@@ -571,6 +573,7 @@ function stripProps(
     overlap: strip.overlap,
     groupGap: strip.groupGap,
     layout: strip.direction,
+    justify,
   };
 }
 
@@ -580,7 +583,12 @@ function topStripProps(which: 'left' | 'right' | 'below'): StripProps {
   const all = meldGroups(topSeat.value);
   if (which === 'below') return stripProps(strip, all, 'top');
   const rightN = Math.ceil(all.length / 2);
-  return stripProps(strip, which === 'right' ? all.slice(0, rightN) : all.slice(rightN), 'top');
+  return stripProps(
+    strip,
+    which === 'right' ? all.slice(0, rightN) : all.slice(rightN),
+    'top',
+    which === 'right' ? 'start' : 'end',
+  );
 }
 
 function sideStripProps(seat: number, strip: MeldStripLayout): StripProps {
