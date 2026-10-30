@@ -30,9 +30,10 @@
  *    视口事件接线（含 H5 旋转后复读用的定时器）全部在 `useLandscapeViewport` composable 里 ——
  *    组件区「不新造时钟」纪律要求组件自身零定时器。
  */
-import { computed } from "vue";
+import { computed, provide } from "vue";
 import {
   CANVAS_H,
+  CANVAS_METRICS_KEY,
   CANVAS_W,
   isPortrait,
   layoutMetrics,
@@ -60,6 +61,12 @@ const metrics = computed(() => {
   const m = layoutMetrics(w, h, insets);
   return m.scale > 0 ? m : FALLBACK_METRICS;
 });
+
+/**
+ * 画布尺寸向下注入：牌桌类组件（麻将等）用它算比例布局；
+ * 独立挂载（单测/未来复用）没有 provider 时由调用方回退 1334×750。
+ */
+provide(CANVAS_METRICS_KEY, metrics);
 
 /** 竖屏 ⇒ 只显示旋转提示（App 锁横屏后基本不会为真，H5 会）。 */
 const portrait = computed(() => {

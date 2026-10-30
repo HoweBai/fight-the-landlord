@@ -28,13 +28,9 @@ const props = withDefaults(
     dim?: boolean;
     /** 方向：my=自己 / top=对家 / left=左家 / right=右家。不传则用平铺旧资源。 */
     direction?: Direction;
-    /**
-     * 左/右家竖排旋转模式：
-     * - 强制用 my/ 竖置正立素材（left/right 目录 49×40 横置素材在旋转后字会倒）
-     * - DOM 宽高先交换（竖→横），再 transform rotate → flex 横排 → 视觉竖排
-     * - margin-left 在 rotate 后自然变成纵向重叠，overlap 数值不用额外调
-     */
-    rotate?: Rotate;
+    /** 显式尺寸（设计 px）；w/h 同时提供时覆盖 size 档位。 */
+    w?: number;
+    h?: number;
   }>(),
   { size: 'md', selected: false, disabled: false, dim: false },
 );
@@ -56,6 +52,12 @@ const label = computed(() => {
   if (props.back || !props.tile) return '牌背';
   return `${MAHJONG_SUIT_NAMES[props.tile.s]}${props.tile.r}`;
 });
+
+const tileStyle = computed(() =>
+  props.w !== undefined && props.h !== undefined
+    ? { width: `${props.w}px`, height: `${props.h}px` }
+    : undefined,
+);
 </script>
 
 <template>
@@ -73,6 +75,7 @@ const label = computed(() => {
       },
     ]"
     :src="src"
+    :style="tileStyle"
     mode="aspectFit"
     :aria-label="label"
     @click="emit('click')"
@@ -107,7 +110,7 @@ const label = computed(() => {
   height: 90px;
 }
 .mj-tile--selected {
-  transform: translateY(-10px);
+  transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
   box-shadow: 0 0 0 2px $ftl-color-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 .mj-tile--disabled {
