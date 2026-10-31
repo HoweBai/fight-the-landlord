@@ -4,7 +4,7 @@
  *
  * 只渲染服务端 `MahjongSettlementResult` 的字段。**一个数都不算**。
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { MahjongMeldView, MahjongScoreEvent, MahjongSettlementResult, Tile } from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { GOLD_FREEZE_MS, useGoldColumnFreeze } from '../composables/useGoldColumnFreeze';
@@ -18,6 +18,32 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'again'): void; (e: 'back'): void }>();
 const store = useGameStore();
+
+/** 默认折叠，点击详情按钮才展开手牌区。 */
+const expandedSeats = ref<Set<number>>(new Set());
+function toggleSeat(seat: number): void {
+  const set = expandedSeats.value;
+  if (set.has(seat)) {
+    set.delete(seat);
+  } else {
+    set.add(seat);
+  }
+  expandedSeats.value = new Set(set);
+}
+function hasDetail(seat: number): boolean {
+  return (
+    revealedHandBySeat.value.has(seat) ||
+    (meldsBySeatMap.value.get(seat)?.length ?? 0) > 0 ||
+    huazhu.value.has(seat)
+  );
+}
+
+/** 事件明细默认折叠，点击公式行末尾的详情按钮才展开。 */
+const eventsExpanded = ref(false);
+function toggleEvents(): void {
+  eventsExpanded.value = !eventsExpanded.value;
+}
+const hasEvents = computed(() => eventLines.value.length > 0 || props.settlement.writtenOff.length > 0);
 
 const showGold = computed(
   () => store.settlementBalances !== null || Object.keys(store.seatBalances).length > 0,
@@ -216,6 +242,7 @@ const rulesSummary = computed(() => {
         <text class="mj-settlement__th mj-settlement__th--fan">番型</text>
         <text class="mj-settlement__th mj-settlement__th--delta">分差</text>
         <text v-if="showGold" class="mj-settlement__th mj-settlement__th--gold">金币</text>
+        <text class="mj-settlement__th mj-settlement__th--action">操作</text>
       </view>
 
       <template v-for="row in rows" :key="row.seat">
@@ -229,7 +256,7 @@ const rulesSummary = computed(() => {
           <view class="mj-settlement__row-name-wrap">
             <text class="mj-settlement__row-name">{{ nameOf(row.seat) }}<template v-if="huazhu.has(row.seat)">（花猪）</template></text>
           </view>
-          <view v-if="fanBySeat.get(row.seat) || huTypeBySeat.get(row.seat)" class="mj-settlement__row-fan-wrap">
+          <view class="mj-settlement__row-fan-wrap">
             <text v-if="fanBySeat.get(row.seat)" class="mj-settlement__row-fan">{{ fanBySeat.get(row.seat) }}</text>
             <text v-if="huTypeBySeat.get(row.seat)" class="mj-settlement__hu-type">
               {{ huTypeBySeat.get(row.seat)!.icon }} {{ huTypeBySeat.get(row.seat)!.label }}
@@ -241,10 +268,22 @@ const rulesSummary = computed(() => {
             >{{ row.delta > 0 ? `+${row.delta}` : String(row.delta) }}</text
           >
           <text v-if="showGold" class="mj-settlement__gold">{{ goldCell(row.seat) }}</text>
+          <view class="mj-settlement__action-wrap">
+            <button
+              v-if="hasDetail(row.seat)"
+              type="button"
+              class="mj-settlement__detail-btn"
+              :class="{ 'mj-settlement__detail-btn--expanded': expandedSeats.has(row.seat) }"
+              @click="toggleSeat(row.seat)"
+            >
+              {{ expandedSeats.has(row.seat) ? '收起' : '详情' }}
+            </button>
+            <text v-else class="mj-settlement__no-detail">—</text>
+          </view>
         </view>
 
-        <!-- 亮牌区：胡牌者 + 花猪。默认都显示（内容空时不占空间）。 -->
-        <view v-if="revealedHandBySeat.get(row.seat) || meldsBySeatMap.get(row.seat)?.length || huazhu.has(row.seat)" class="mj-settlement__hand">
+        <!-- 亮牌区：胡牌者 + 花猪。默认折叠，点击详情按钮才展开。 -->
+        <view v-if="expandedSeats.has(row.seat)" class="mj-settlement__hand">
           <!-- 胡牌者手牌（含胡牌张高亮） -->
           <template v-if="revealedHandBySeat.get(row.seat)">
             <text class="mj-settlement__hand-label">
@@ -279,18 +318,29 @@ const rulesSummary = computed(() => {
       </template>
     </view>
 
-    <text class="mj-settlement__formula">
-      {{ rulesSummary }} · {{ endText }}
-      <template v-if="settlement.rakeTotal > 0"> · 抽水 {{ settlement.rakeTotal }}</template>
-    </text>
+    <view class="mj-settlement__formula">
+      <text class="mj-settlement__formula-text">
+        {{ rulesSummary }} · {{ endText }}
+        <template v-if="settlement.rakeTotal > 0"> · 抽水 {{ settlement.rakeTotal }}</template>
+      </text>
+      <button
+        v-if="hasEvents"
+        type="button"
+        class="mj-settlement__events-toggle"
+        :class="{ 'mj-settlement__events-toggle--expanded': eventsExpanded }"
+        @click="toggleEvents"
+      >
+        {{ eventsExpanded ? '收起' : '详情' }}
+      </button>
+    </view>
 
-    <view v-if="eventLines.length > 0" class="mj-settlement__events">
+    <view v-if="eventsExpanded && eventLines.length > 0" class="mj-settlement__events">
       <text v-for="(line, i) in eventLines" :key="`ev-${i}`" class="mj-settlement__event">
         {{ line }}
       </text>
     </view>
 
-    <view v-if="settlement.writtenOff.length > 0" class="mj-settlement__events">
+    <view v-if="eventsExpanded && settlement.writtenOff.length > 0" class="mj-settlement__events">
       <text v-for="(w, i) in settlement.writtenOff" :key="`wo-${i}`" class="mj-settlement__event">
         未收：{{ nameOf(w.seat) }} {{ w.amount }}（{{ w.reason }}）
       </text>
@@ -400,6 +450,11 @@ const rulesSummary = computed(() => {
 .mj-settlement__th--gold,
 .mj-settlement__gold {
   text-align: right;
+}
+.mj-settlement__th--action {
+  flex: 0 0 auto;
+  width: 64px;
+  text-align: center;
 }
 .mj-settlement__row {
   box-sizing: border-box;
@@ -515,9 +570,44 @@ const rulesSummary = computed(() => {
   color: $ftl-color-on-primary;
   font-weight: 600;
 }
+.mj-settlement__action-wrap {
+  flex: 0 0 auto;
+  width: 64px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.mj-settlement__detail-btn {
+  box-sizing: border-box;
+  padding: 4px 12px;
+  border-radius: $ftl-radius-sm;
+  background: rgba($ftl-color-accent, 0.25);
+  border: $ftl-hairline solid rgba($ftl-color-accent, 0.55);
+  color: $ftl-color-accent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.mj-settlement__detail-btn:active {
+  background: rgba($ftl-color-accent, 0.45);
+  transform: scale(0.96);
+}
+.mj-settlement__detail-btn--expanded {
+  background: rgba($ftl-color-gold, 0.2);
+  border-color: rgba($ftl-color-gold, 0.6);
+  color: $ftl-color-gold-light;
+}
+.mj-settlement__no-detail {
+  font-size: 14px;
+  color: rgba($ftl-color-on-primary, 0.3);
+}
 
 .mj-settlement__formula {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: $ftl-space-3;
   box-sizing: border-box;
   padding: $ftl-space-3 $ftl-space-5;
   border-radius: $ftl-radius-sm;
@@ -525,6 +615,32 @@ const rulesSummary = computed(() => {
   color: $ftl-color-text-secondary;
   font-size: $ftl-font-sm;
   line-height: 1.4;
+}
+.mj-settlement__formula-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mj-settlement__events-toggle {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 3px 10px;
+  border-radius: $ftl-radius-sm;
+  background: rgba($ftl-color-accent, 0.2);
+  border: $ftl-hairline solid rgba($ftl-color-accent, 0.5);
+  color: $ftl-color-accent;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.mj-settlement__events-toggle:active {
+  transform: scale(0.96);
+}
+.mj-settlement__events-toggle--expanded {
+  background: rgba($ftl-color-gold, 0.2);
+  border-color: rgba($ftl-color-gold, 0.6);
+  color: $ftl-color-gold-light;
 }
 .mj-settlement__events {
   display: flex;
