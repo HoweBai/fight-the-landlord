@@ -138,6 +138,43 @@ describe('useClientConfig（共享加载/归一化）', () => {
     vi.unstubAllGlobals();
   });
 
+  it('FAILSAFE：agentInviteRequired=false', () => {
+    expect(FAILSAFE_CLIENT_CONFIG.agentInviteRequired).toBe(false);
+  });
+
+  it('normalize：agentInviteRequired === true 才为 true', () => {
+    expect(normalizeClientConfig({ agentInviteRequired: true } as never).agentInviteRequired).toBe(true);
+    expect(normalizeClientConfig({ agentInviteRequired: 'true' } as never).agentInviteRequired).toBe(false);
+    expect(normalizeClientConfig({} as never).agentInviteRequired).toBe(false);
+  });
+
+  it('refreshInviteBootConfig：同时落 enabled/required，不写 clientConfigVersion', async () => {
+    const store = useGameStore();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          code: 0,
+          data: { version: 7, agentInviteEnabled: true, agentInviteRequired: true },
+        }),
+    })));
+
+    expect(await refreshInviteBootConfig()).toBe(true);
+    expect(store.agentInviteEnabled).toBe(true);
+    expect(store.agentInviteRequired).toBe(true);
+    expect(store.clientConfigVersion).toBe(0);
+    vi.unstubAllGlobals();
+  });
+
+  it('setClientConfig：复制 agentInviteRequired', () => {
+    const store = useGameStore();
+    store.setClientConfig({ ...FAILSAFE_CLIENT_CONFIG, agentInviteRequired: true });
+    expect(store.agentInviteRequired).toBe(true);
+    store.setClientConfig({ ...FAILSAFE_CLIENT_CONFIG, agentInviteRequired: false });
+    expect(store.agentInviteRequired).toBe(false);
+  });
+
   it('reliefThresholdCoins：FAILSAFE null；合法值透传；坏值 null', () => {
     expect(FAILSAFE_CLIENT_CONFIG.reliefThresholdCoins).toBeNull();
     expect(

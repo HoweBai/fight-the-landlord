@@ -94,6 +94,7 @@ export interface ClientConfigState
     | 'cardCounterPricePerGameCoins'
     | 'cardCounterPricePerHourCoins'
     | 'agentInviteEnabled'
+    | 'agentInviteRequired'
   > {
   entryMultiplier: number | null;
   coinPerYuan: number | null;
@@ -110,6 +111,8 @@ export interface ClientConfigState
   cardCounterPricePerHourCoins?: number | null;
   /** 代理分润：邀请码入口（缺省/旧服务端 ⇒ false）。 */
   agentInviteEnabled?: boolean;
+  /** 代理分润：邀请码必填（缺省/旧服务端 ⇒ false）。 */
+  agentInviteRequired?: boolean;
 }
 
 /** 记牌器收费片：本局开通状态（`game.card_counter` 载荷；按 roomCode 存）。 */
@@ -281,6 +284,7 @@ export const useGameStore = defineStore('game', {
      * 初值/fail-safe = `false`（未知/旧服务端 ⇒ 不渲染；登录页会懒拉一次配置）。
      */
     agentInviteEnabled: false,
+    agentInviteRequired: false,
     /**
      * 入场门槛倍率（`currency.entryMultiplier`，客户端可见的唯一货币键）。
      *
@@ -764,6 +768,11 @@ export const useGameStore = defineStore('game', {
       this.agentInviteEnabled = value === true;
     },
 
+    /** 代理分润（2026-11-03）：公开启动配置/全量配置落必填标志。 */
+    setAgentInviteRequired(value: boolean) {
+      this.agentInviteRequired = value === true;
+    },
+
     setClientConfig(cfg: ClientConfigState) {      // P1-10：服务端配置到达 ⇒ 上一轮的「失败标记」退场（false 现在是权威的「关」）。
       this.clientConfigFailsafe = false;
       this.baseScoreLevels = cfg.baseScoreLevels;
@@ -780,6 +789,7 @@ export const useGameStore = defineStore('game', {
       this.cardCounterPricePerHourCoins = cfg.cardCounterPricePerHourCoins ?? null;
       this.reliefAdpid = cfg.reliefAdpid;
       this.agentInviteEnabled = cfg.agentInviteEnabled === true;
+      this.agentInviteRequired = cfg.agentInviteRequired === true;
       this.entryMultiplier = cfg.entryMultiplier;
       this.rechargeEnabled = cfg.rechargeEnabled;
       this.withdrawEnabled = cfg.withdrawEnabled;
