@@ -159,6 +159,24 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
     .filter((e): e is Extract<MahjongScoreEvent, { kind: 'hu' }> => e.kind === 'hu')
     .map((e) => ({ seat: e.seat, fan: e.fan, multiplier: e.multiplier, items: e.items }));
 
+  const tileSort = (a: { s: number; r: number }, b: { s: number; r: number }) =>
+    a.s - b.s || a.r - b.r;
+
+  const revealedHands = session.players
+    .filter((p) => p.isOut && p.hu)
+    .map((p) => ({
+      seat: p.seat,
+      tiles: [...p.hand].sort(tileSort),
+      huTile: p.hu!.tile,
+    }))
+    .sort((a, b) => a.seat - b.seat);
+
+  const meldsBySeat = session.players
+    .map((p) => ({ seat: p.seat, melds: p.melds.map((m) => ({ ...m, tiles: [...m.tiles] })) }))
+    .sort((a, b) => a.seat - b.seat);
+
+  const lackSuits = session.players.map((p) => p.lackSuit);
+
   return {
     roomCode: session.roomCode,
     gameType: 'mahjong',
@@ -175,6 +193,10 @@ export function settleMahjong(session: MahjongSession): MahjongSettlementResult 
     huazhuSeats,
     endReason: session.endReason ?? 'threeWinners',
     writtenOff: [],
+    revealedHands,
+    meldsBySeat,
+    lackSuits,
+    rulesPreset: session.rules.preset,
   };
 }
 

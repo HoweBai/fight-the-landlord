@@ -67,9 +67,9 @@ export interface MahjongSession extends GameSessionBase<Tile, MahjongActionRecor
   windowId: string;
   /** 窗口序号（windowId 的稳定后缀）。 */
   windowSeq: number;
-  /** 荒庄标记 / 结束原因。 */
+  /** 荒庄标记 / 结束原因（2026-10-30 起三值：墙空但已有人胡 ⇒ `wallEmptyWithHu`，不算荒庄）。 */
   liuju?: boolean;
-  endReason?: 'threeWinners' | 'wallEmpty';
+  endReason?: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu';
 }
 
 /** T2 用：动作日志的基础形状（不含旧 ddz 的 play/pass 语义）。 */

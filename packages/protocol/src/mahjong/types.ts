@@ -141,8 +141,16 @@ export interface MahjongSettlementResult extends SettlementVector {
   chajiao: Array<{ from: number; to: number; amount: number }>;
   liuju: boolean;
   huazhuSeats: number[];
-  endReason: 'threeWinners' | 'wallEmpty';
+  endReason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu';
   writtenOff: Array<{ seat: number; amount: number; reason: string }>;
+  /** 已胡者亮牌（终局手牌快照；仅 winnerSeats 中的座位）。 */
+  revealedHands?: Array<{ seat: number; tiles: Tile[]; huTile: Tile }>;
+  /** 全部 4 座副露快照。 */
+  meldsBySeat?: Array<{ seat: number; melds: MahjongMeldView[] }>;
+  /** 全部 4 座定缺花色快照。 */
+  lackSuits?: Array<MahjongSuit | null>;
+  /** 规则预设名（'chengdu' | 'sbr'）；自定义规则省略。 */
+  rulesPreset?: string;
 }
 
 export interface MahjongRecordSeat {
@@ -181,7 +189,7 @@ export interface MahjongRecordEnvelope {
     writtenOff: Array<{ seat: number; amount: number; reason: string }>;
     liuju: boolean;
     huazhuSeats: number[];
-    endReason: 'threeWinners' | 'wallEmpty';
+    endReason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu';
   };
 }
 

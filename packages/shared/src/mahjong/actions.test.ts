@@ -264,3 +264,138 @@ describe('缺门与抢杠边界', () => {
     }
   });
 });
+
+describe('endReason 修复 + 结算新字段', () => {
+  it('wallEmptyWithHu：墙空但有人已胡 → 不生成 wallEmpty 专属事件', () => {
+    let s = makeGame([
+      ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    ], 0);
+    // 手动让 seat 1 胡了
+    s.players[1]!.isOut = true;
+    s.players[1]!.hu = {
+      seat: 1,
+      fromSeat: null,
+      tile: t(0, 1),
+      fan: 1,
+      multiplier: 1,
+      items: ['平胡+1'],
+      selfDraw: true,
+    };
+    s.scoreEvents.push({
+      kind: 'hu',
+      seq: 1,
+      seat: 1,
+      fromSeat: null,
+      fan: 1,
+      multiplier: 1,
+      payers: [
+        { seat: 0, amount: 20 },
+        { seat: 2, amount: 20 },
+        { seat: 3, amount: 20 },
+      ],
+      items: ['平胡+1'],
+    });
+    // wall 空
+    s.wall = [];
+    s.wallCount = 0;
+    s.state = 'ended';
+    s.endReason = 'wallEmptyWithHu';
+    s.liuju = false;
+    s = finishMahjong(s, Date.now());
+    const result = settleMahjong(s);
+    expect(result.endReason).toBe('wallEmptyWithHu');
+    expect(result.liuju).toBe(false);
+    expect(result.events.filter((e) => e.kind === 'chajiao')).toHaveLength(0);
+    expect(result.events.filter((e) => e.kind === 'huazhu')).toHaveLength(0);
+    expect(result.events.filter((e) => e.kind === 'refund')).toHaveLength(0);
+  });
+
+  it('wallEmpty：墙空且无人胡 → liuju=true, 生成 wallEmpty 专属事件', () => {
+    let s = makeGame([
+      ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    ], 0);
+    // wall 空，无人胡
+    s.wall = [];
+    s.wallCount = 0;
+    s.state = 'ended';
+    s.endReason = 'wallEmpty';
+    s.liuju = true;
+    s = finishMahjong(s, Date.now());
+    const result = settleMahjong(s);
+    expect(result.endReason).toBe('wallEmpty');
+    expect(result.liuju).toBe(true);
+  });
+
+  it('settleMahjong 返回 revealedHands / meldsBySeat / lackSuits / rulesPreset', () => {
+    let s = makeGame([
+      ranks(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      ranks(1, [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    ], 0);
+    // 让 seat 1 胡了
+    const huTile = t(0, 1);
+    s.players[1]!.isOut = true;
+    s.players[1]!.hu = {
+      seat: 1,
+      fromSeat: null,
+      tile: huTile,
+      fan: 1,
+      multiplier: 1,
+      items: ['平胡+1'],
+      selfDraw: true,
+    };
+    s.scoreEvents.push({
+      kind: 'hu',
+      seq: 1,
+      seat: 1,
+      fromSeat: null,
+      fan: 1,
+      multiplier: 1,
+      payers: [
+        { seat: 0, amount: 20 },
+        { seat: 2, amount: 20 },
+        { seat: 3, amount: 20 },
+      ],
+      items: ['平胡+1'],
+    });
+    // seat 2 有一个碰
+    s.players[2]!.melds.push({ kind: 'peng', tiles: ranks(1, [5, 5, 5]), fromSeat: 1 });
+    s.state = 'ended';
+    s.endReason = 'threeWinners';
+    s = finishMahjong(s, Date.now());
+    const result = settleMahjong(s);
+
+    // revealedHands
+    expect(result.revealedHands).toBeDefined();
+    expect(result.revealedHands).toHaveLength(1);
+    expect(result.revealedHands![0]!.seat).toBe(1);
+    expect(result.revealedHands![0]!.huTile).toEqual(huTile);
+    // 手牌应该已排序
+    const hand = result.revealedHands![0]!.tiles;
+    for (let i = 1; i < hand.length; i += 1) {
+      expect(hand[i]!.s * 10 + hand[i]!.r).toBeGreaterThanOrEqual(
+        hand[i - 1]!.s * 10 + hand[i - 1]!.r,
+      );
+    }
+
+    // meldsBySeat：全部 4 座，seat 升序
+    expect(result.meldsBySeat).toHaveLength(4);
+    for (let i = 0; i < 4; i += 1) expect(result.meldsBySeat![i]!.seat).toBe(i);
+    expect(result.meldsBySeat![2]!.melds).toHaveLength(1);
+    expect(result.meldsBySeat![2]!.melds[0]!.kind).toBe('peng');
+
+    // lackSuits：4 座都有定缺
+    expect(result.lackSuits).toHaveLength(4);
+    expect(result.lackSuits!.every((l) => l === 2)).toBe(true);
+
+    // rulesPreset
+    expect(result.rulesPreset).toBe('chengdu');
+  });
+});
