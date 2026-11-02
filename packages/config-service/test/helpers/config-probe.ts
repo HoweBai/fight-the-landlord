@@ -309,6 +309,7 @@ const SEED: ReadonlyArray<readonly [string, unknown]> = [
   ['currency.reliefThresholdCoins', 150],
   // 代理分润（2026-10-26；来自 `AgentInviteKey1796900000000`）
   ['agent.inviteEnabled', false],
+  ['agent.inviteRequired', false],
 ];
 
 export function seedDb(): FakePlatformDb {

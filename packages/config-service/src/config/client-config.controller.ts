@@ -112,13 +112,13 @@ export class ClientConfigController {
    * 代理分润（2026-10-26，r3 Critical #1）：**登录前**公开启动配置。
    *
    * 登录页在无令牌时无法调用 `GET /api/config`（需玩家验签）⇒ 注册页的邀请码输入框
-   * 永远拿不到开关。本端点只回两个字段（`version` + `agentInviteEnabled`），
+   * 永远拿不到开关。本端点只回三个字段（`version` + `agentInviteEnabled` + `agentInviteRequired`），
    * 由网关 `PUBLIC_PATHS` 精确放行；**不得**把其余配置键顺手塞进来。
    */
   @Get('boot')
   async boot(): Promise<{
     code: ErrCode;
-    data: { version: number; agentInviteEnabled: boolean };
+    data: { version: number; agentInviteEnabled: boolean; agentInviteRequired: boolean };
   }> {
     const full = await this.get();
     return {
@@ -126,6 +126,7 @@ export class ClientConfigController {
       data: {
         version: full.data.version,
         agentInviteEnabled: full.data.agentInviteEnabled,
+        agentInviteRequired: full.data.agentInviteRequired,
       },
     };
   }
@@ -280,6 +281,8 @@ export class ClientConfigController {
         games,
         // 代理分润：邀请码输入框门控（缺键/旧快照 ⇒ false）。
         agentInviteEnabled: readBoolean(byKey, 'agent.inviteEnabled', undefined, false),
+        // 代理分润：注册邀请码必填（缺键/旧快照 ⇒ false）。
+        agentInviteRequired: readBoolean(byKey, 'agent.inviteRequired', undefined, false),
         version: maxVersion(rows),
       },
     };
