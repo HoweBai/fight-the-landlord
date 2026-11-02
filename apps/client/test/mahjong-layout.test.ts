@@ -103,7 +103,7 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
   for (const v of VIEWPORTS) {
     describe(v.name, () => {
       const l = mahjongTableLayout(v.w, v.h, WORST);
-      const expectedS = Math.min(v.h / 750, (0.88 * v.w) / 1130);
+      const expectedS = Math.min(v.h / 750, (0.95 * v.w) / 1256);
 
       it('s 公式钉死', () => {
         expect(l.s).toBeGreaterThanOrEqual(1);
@@ -112,16 +112,15 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
 
       it('手牌比例/贴底钉死', () => {
         expect(l.hand.rect.width / v.w).toBeCloseTo(
-          Math.min(0.88, (1130 * (v.h / 750)) / v.w),
+          Math.min(0.95, (1256 * (v.h / 750)) / v.w),
           3,
         );
-        expect(l.hand.rect.top).toBeCloseTo(v.h - (12 + 104) * l.s, 3);
-        expect(l.hand.rect.width).toBeLessThanOrEqual(v.w * 0.88 + 0.01);
-        expect(l.hand.rect.left).toBeGreaterThan(l.selfChip.left + l.selfChip.width - 0.01);
+        expect(l.hand.rect.top).toBeCloseTo(v.h - (12 + 116) * l.s, 3);
+        expect(l.hand.rect.width).toBeLessThanOrEqual(v.w * 0.95 + 0.01);
       });
 
-      it('中央井高钉死（全副露：top 229.8s / bottom 290.8s）', () => {
-        expect(l.centerZone.height).toBeCloseTo(v.h - (64 + 229.8 + 290.8) * l.s, 3);
+      it('中央井高钉死（全副露：top 229.8s / bottom 302.8s）', () => {
+        expect(l.centerZone.height).toBeCloseTo(v.h - (64 + 229.8 + 302.8) * l.s, 3);
       });
 
       it('所有矩形在画布内', () => {
@@ -139,18 +138,23 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
         expect(l.rightZone.top + l.rightZone.height).toBeLessThanOrEqual(l.hand.rect.top + 0.01);
         expectNoOverlap(l.leftZone, l.ownRiver.rect);
         expectNoOverlap(l.rightZone, l.ownRiver.rect);
-        expectNoOverlap(l.selfChip, l.hand.rect);
       });
 
-      it('自己卡不压手牌，动作浮层不压右家区', () => {
-        expect(l.selfChip.left + l.selfChip.width).toBeLessThanOrEqual(l.hand.rect.left + 0.01);
+      it('自家人像在手牌上方、左副露右侧，不压牌河/手牌', () => {
+        expect(l.selfChip.top + l.selfChip.height).toBeCloseTo(l.hand.rect.top - 20 * l.s, 3);
+        expect(l.selfChip.left).toBeGreaterThanOrEqual(
+          l.leftRiver.meld.rect.left + l.leftRiver.meld.rect.width + 8 * l.s - 0.1,
+        );
+        for (const r of [l.leftRiver.rect, l.leftRiver.meld.rect, l.ownRiver.rect, l.hand.rect]) {
+          expectNoOverlap(l.selfChip, r);
+        }
+      });
+
+      it('动作浮层不压右家区/自家牌河', () => {
         expect(l.actions.rightX).toBeLessThanOrEqual(l.rightZone.left + 0.01);
         expect(l.actions.rightOffset).toBeCloseTo(v.w - l.actions.rightX, 6);
         expect(l.actions.bottomY).toBeLessThanOrEqual(l.hand.rect.top + 0.01);
         expect(l.actions.bottomOffset).toBeCloseTo(v.h - l.actions.bottomY, 6);
-      });
-
-      it('动作浮层不压自家牌河', () => {
         const actionsRect: Rect = {
           left: l.actions.rightX - l.actions.maxWidth,
           top: l.actions.bottomY - l.actions.minHeight,
@@ -167,11 +171,11 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
         expect(l.centerZone.width).toBeGreaterThan(0);
         expect(l.centerZone.height).toBeGreaterThan(0);
         expectInside(l.centerCard, l.centerZone);
-        expect(l.centerCard.height).toBeGreaterThanOrEqual(148 * l.s);
+        expect(l.centerCard.height).toBeGreaterThanOrEqual(143 * l.s);
       });
 
       it('中央紧凑条件与内容预算一致', () => {
-        expect(l.centerCompact).toBe(l.centerCard.height < 148 * l.s);
+        expect(l.centerCompact).toBe(l.centerCard.height < 143 * l.s);
         expect(l.centerCompact).toBe(false);
         expect(l.centerZone.height).toBeGreaterThanOrEqual(40);
       });
@@ -257,44 +261,44 @@ describe('mahjongTableLayout：1334×750 精确锚点', () => {
     expect(l.centerZone.left).toBeCloseTo(224.3333, 3);
     expect(l.centerZone.top).toBeCloseTo(241, 3);
     expect(l.centerZone.width).toBeCloseTo(885.3333, 3);
-    expect(l.centerZone.height).toBeCloseTo(271, 3);
+    expect(l.centerZone.height).toBeCloseTo(259, 3);
     expect(l.centerCompact).toBe(false);
     expect(l.centerCard.left).toBeCloseTo(497, 3);
-    expect(l.centerCard.top).toBeCloseTo(291.5, 3);
+    expect(l.centerCard.top).toBeCloseTo(285.5, 3);
     expect(l.centerCard.width).toBeCloseTo(340, 3);
     expect(l.centerCard.height).toBeCloseTo(170, 3);
 
-    expect(l.hand.rect.left).toBeCloseTo(102, 3);
-    expect(l.hand.rect.top).toBeCloseTo(634, 3);
-    expect(l.hand.rect.width).toBeCloseTo(1130, 3);
-    expect(l.hand.rect.height).toBeCloseTo(104, 3);
-    expect(l.hand.tile.w).toBeCloseTo(78, 3);
-    expect(l.hand.tile.h).toBeCloseTo(104, 3);
+    expect(l.hand.rect.left).toBeCloseTo(39, 3);
+    expect(l.hand.rect.top).toBeCloseTo(622, 3);
+    expect(l.hand.rect.width).toBeCloseTo(1256, 3);
+    expect(l.hand.rect.height).toBeCloseTo(116, 3);
+    expect(l.hand.tile.w).toBeCloseTo(87, 3);
+    expect(l.hand.tile.h).toBeCloseTo(116, 3);
     expect(l.hand.gap).toBeCloseTo(2, 3);
     expect(l.hand.drawnGap).toBeCloseTo(12, 3);
 
     expect(l.ownRiver.rect.left).toBeCloseTo(404, 3);
-    expect(l.ownRiver.rect.top).toBeCloseTo(512, 3);
+    expect(l.ownRiver.rect.top).toBeCloseTo(500, 3);
     expect(l.ownRiver.rect.width).toBeCloseTo(526, 3);
     expect(l.ownRiver.rect.height).toBeCloseTo(114, 3);
 
     expect(l.leftZone.left).toBeCloseTo(0, 3);
-    expect(l.leftZone.top).toBeCloseTo(122, 3);
+    expect(l.leftZone.top).toBeCloseTo(116, 3);
     expect(l.leftZone.width).toBeCloseTo(216.3333, 3);
     expect(l.leftZone.height).toBeCloseTo(462, 3);
     expect(l.leftChip.left).toBeCloseTo(12, 3);
-    expect(l.leftChip.top).toBeCloseTo(122, 3);
+    expect(l.leftChip.top).toBeCloseTo(116, 3);
     expect(l.leftChip.width).toBeCloseTo(180, 3);
     expect(l.leftChip.height).toBeCloseTo(56, 3);
     expect(l.leftBacks.rect.left).toBeCloseTo(12, 3);
-    expect(l.leftBacks.rect.top).toBeCloseTo(186, 3);
+    expect(l.leftBacks.rect.top).toBeCloseTo(180, 3);
     expect(l.leftBacks.rect.width).toBeCloseTo(45.3333, 3);
     expect(l.leftBacks.rect.height).toBeCloseTo(398, 3);
     expect(l.leftBacks.tile.w).toBeCloseTo(45.3333, 3);
     expect(l.leftBacks.tile.h).toBeCloseTo(34, 3);
     expect(l.leftBacks.pitch).toBeCloseTo(26, 3);
     expect(l.leftRiver.rect.left).toBeCloseTo(65.3333, 3);
-    expect(l.leftRiver.rect.top).toBeCloseTo(186, 3);
+    expect(l.leftRiver.rect.top).toBeCloseTo(180, 3);
     expect(l.leftRiver.rect.width).toBeCloseTo(151, 3);
     expect(l.leftRiver.rect.height).toBeCloseTo(310, 3);
 
@@ -303,15 +307,15 @@ describe('mahjongTableLayout：1334×750 精确锚点', () => {
     expect(l.rightBacks.rect.left).toBeCloseTo(1276.6667, 3);
     expect(l.rightRiver.rect.left).toBeCloseTo(1117.6667, 3);
 
-    expect(l.selfChip.left).toBeCloseTo(12, 3);
-    expect(l.selfChip.top).toBeCloseTo(648, 3);
+    expect(l.selfChip.left).toBeCloseTo(224.3333, 3);
+    expect(l.selfChip.top).toBeCloseTo(526, 3);
     expect(l.selfChip.width).toBeCloseTo(56, 3);
     expect(l.selfChip.height).toBeCloseTo(76, 3);
 
     expect(l.actions.rightX).toBeCloseTo(1109.6667, 3);
-    expect(l.actions.bottomY).toBeCloseTo(626, 3);
+    expect(l.actions.bottomY).toBeCloseTo(614, 3);
     expect(l.actions.rightOffset).toBeCloseTo(224.3333, 3);
-    expect(l.actions.bottomOffset).toBeCloseTo(124, 3);
+    expect(l.actions.bottomOffset).toBeCloseTo(136, 3);
     expect(l.actions.maxWidth).toBeCloseTo(171.6667, 3);
     expect(l.actions.minHeight).toBeCloseTo(80, 3);
     expect(l.barChip.w).toBeCloseTo(40, 3);
@@ -328,69 +332,42 @@ describe('mahjongTableLayout：1334×750 精确锚点', () => {
     expect(l.s).toBeCloseTo(1, 6);
     expect(l.topZone.height).toBeCloseTo(229.8, 3);
     expect(l.topRiver.rect.top).toBeCloseTo(179.8, 3);
-    expect(l.ownRiver.rect.top).toBeCloseTo(459.2, 3);
+    expect(l.ownRiver.rect.top).toBeCloseTo(447.2, 3);
+    expect(l.ownRiver.meld.rect.top).toBeCloseTo(569.2, 3);
     expect(l.centerZone.top).toBeCloseTo(293.8, 3);
-    expect(l.centerZone.height).toBeCloseTo(165.4, 3);
+    expect(l.centerZone.height).toBeCloseTo(153.4, 3);
     expect(l.centerCompact).toBe(false);
     expect(l.centerCard.left).toBeCloseTo(497, 3);
-    expect(l.centerCard.top).toBeCloseTo(299.8, 3);
+    expect(l.centerCard.top).toBeCloseTo(297.8, 3);
     expect(l.centerCard.width).toBeCloseTo(340, 3);
-    expect(l.centerCard.height).toBeCloseTo(153.4, 3);
-    expect(l.leftZone.top).toBeCloseTo(107.9, 3);
+    expect(l.centerCard.height).toBeCloseTo(145.4, 3);
+    expect(l.leftZone.top).toBeCloseTo(101.9, 3);
     expect(l.leftZone.height).toBeCloseTo(490.2, 3);
-    expect(l.leftRiver.rect.top).toBeCloseTo(171.9, 3);
+    expect(l.leftChip.top).toBeCloseTo(101.9, 3);
+    expect(l.leftRiver.rect.top).toBeCloseTo(165.9, 3);
     expect(l.leftRiver.meld.height).toBeCloseTo(108.2, 3);
     expect(l.leftRiver.meld.groupGap).toBeCloseTo(4, 3);
     expect(l.topRiver.meld.groupGap).toBeCloseTo(8, 3);
-    expect(l.leftRiver.meld.rect.top).toBeCloseTo(489.9, 3);
+    expect(l.leftRiver.meld.rect.top).toBeCloseTo(483.9, 3);
     expect(l.leftRiver.meld.rect.height).toBeCloseTo(108.2, 3);
     expect(l.topRiver.meld.height).toBeCloseTo(44.8, 3);
     expect(l.topRiver.meld.rect.top).toBeCloseTo(127, 3);
-    expect(l.ownRiver.meld.rect.top).toBeCloseTo(581.2, 3);
     expect(l.actions.maxWidth).toBeCloseTo(171.6667, 3);
     expect(l.topRiver.meld.placement).toBe('above');
     expect(l.ownRiver.meld.placement).toBe('below');
     expect(l.leftRiver.meld.placement).toBe('below');
   });
 
-  it('独立期望表：4 档视口（不按实现公式反推）', () => {
+  it('独立期望表：8 档视口（不按实现公式反推）', () => {
     const cases = [
-      {
-        w: 1334, h: 750, s: 1,
-        hand: [102, 1130, 104],
-        centerEmpty: [271, 340, 170],
-        centerWorst: [165.4, 340, 153.4],
-        actionsMaxW: 171.667,
-        leftZoneW: 216.333,
-        selfGap: 34,
-      },
-      {
-        w: 1334, h: 1000, s: 1.038867,
-        hand: [80.04, 1173.92, 108.042],
-        centerEmpty: [502.383, 353.215, 176.607],
-        centerWorst: [392.678, 353.215, 176.607],
-        actionsMaxW: 152.414,
-        leftZoneW: 224.742,
-        selfGap: 9.397,
-      },
-      {
-        w: 1623, h: 750, s: 1,
-        hand: [246.5, 1130, 104],
-        centerEmpty: [271, 340, 170],
-        centerWorst: [165.4, 340, 153.4],
-        actionsMaxW: 316.167,
-        leftZoneW: 216.333,
-        selfGap: 178.5,
-      },
-      {
-        w: 1343, h: 1000, s: 1.045876,
-        hand: [80.58, 1181.84, 108.771],
-        centerEmpty: [499.025, 355.598, 177.799],
-        centerWorst: [388.581, 355.598, 177.799],
-        actionsMaxW: 153.443,
-        leftZoneW: 226.258,
-        selfGap: 9.46,
-      },
+      { w: 1334, h: 750, s: 1, hand: [39, 1256, 116], self: [224.33, 526], empty: [259, 340, 170], worst: [153.4, 340, 145.4], actions: 171.67 },
+      { w: 1623, h: 750, s: 1, hand: [183.5, 1256, 116], self: [224.33, 526], empty: [259, 340, 170], worst: [153.4, 340, 145.4], actions: 316.17 },
+      { w: 1778, h: 750, s: 1, hand: [261, 1256, 116], self: [224.33, 526], empty: [259, 340, 170], worst: [153.4, 340, 145.4], actions: 393.67 },
+      { w: 1334, h: 833, s: 1.008997, hand: [33.35, 1267.3, 117.04], self: [226.35, 606.98], empty: [337.58, 343.06, 171.53], worst: [231.03, 343.06, 171.53], actions: 167.21 },
+      { w: 1334, h: 1000, s: 1.008997, hand: [33.35, 1267.3, 117.04], self: [226.35, 773.98], empty: [504.58, 343.06, 171.53], worst: [398.03, 343.06, 171.53], actions: 167.21 },
+      { w: 1334, h: 1334, s: 1.008997, hand: [33.35, 1267.3, 117.04], self: [226.35, 1107.98], empty: [838.58, 343.06, 171.53], worst: [732.03, 343.06, 171.53], actions: 167.21 },
+      { w: 1500, h: 750, s: 1, hand: [122, 1256, 116], self: [224.33, 526], empty: [259, 340, 170], worst: [153.4, 340, 145.4], actions: 254.67 },
+      { w: 1343, h: 1000, s: 1.015804, hand: [33.58, 1275.85, 117.83], self: [227.88, 772.46], empty: [501.24, 345.37, 172.69], worst: [393.97, 345.37, 172.69], actions: 168.34 },
     ];
     for (const c of cases) {
       const e = mahjongTableLayout(c.w, c.h, EMPTY);
@@ -399,16 +376,22 @@ describe('mahjongTableLayout：1334×750 精确锚点', () => {
       expect(e.hand.rect.left).toBeCloseTo(c.hand[0]!, 2);
       expect(e.hand.rect.width).toBeCloseTo(c.hand[1]!, 2);
       expect(e.hand.rect.height).toBeCloseTo(c.hand[2]!, 2);
-      expect(e.centerZone.height).toBeCloseTo(c.centerEmpty[0]!, 2);
-      expect(e.centerCard.width).toBeCloseTo(c.centerEmpty[1]!, 2);
-      expect(e.centerCard.height).toBeCloseTo(c.centerEmpty[2]!, 2);
-      expect(x.centerZone.height).toBeCloseTo(c.centerWorst[0]!, 2);
-      expect(x.centerCard.width).toBeCloseTo(c.centerWorst[1]!, 2);
-      expect(x.centerCard.height).toBeCloseTo(c.centerWorst[2]!, 2);
-      expect(x.actions.maxWidth).toBeCloseTo(c.actionsMaxW, 2);
-      expect(e.leftZone.width).toBeCloseTo(c.leftZoneW, 2);
-      expect(e.hand.rect.left - (e.selfChip.left + e.selfChip.width)).toBeCloseTo(c.selfGap, 2);
+      expect(e.selfChip.left).toBeCloseTo(c.self[0]!, 2);
+      expect(e.selfChip.top).toBeCloseTo(c.self[1]!, 2);
+      expect(e.centerZone.height).toBeCloseTo(c.empty[0]!, 2);
+      expect(e.centerCard.width).toBeCloseTo(c.empty[1]!, 2);
+      expect(e.centerCard.height).toBeCloseTo(c.empty[2]!, 2);
+      expect(x.centerZone.height).toBeCloseTo(c.worst[0]!, 2);
+      expect(x.centerCard.width).toBeCloseTo(c.worst[1]!, 2);
+      expect(x.centerCard.height).toBeCloseTo(c.worst[2]!, 2);
+      expect(x.actions.maxWidth).toBeCloseTo(c.actions, 2);
     }
+  });
+
+  it('1334×750 手牌宽 1256、s=1（0.95W 只是上限）', () => {
+    const l = mahjongTableLayout(1334, 750, EMPTY);
+    expect(l.s).toBe(1);
+    expect(l.hand.rect.width).toBe(1256);
   });
 });
 
@@ -454,11 +437,10 @@ describe('mahjongTableLayout：边界与输入', () => {
     expect(l.leftRiver.cols).toBe(3);
   });
 
-  it('宽度兜底：4:3 手牌 ≤88% 且 s>1', () => {
+  it('宽度兜底：4:3 手牌 ≤95% 且 s>1', () => {
     const l = mahjongTableLayout(1334, 1000, EMPTY);
     expect(l.s).toBeGreaterThan(1);
-    expect(l.hand.rect.width).toBeLessThanOrEqual(1334 * 0.88 + 0.01);
-    expect(l.selfChip.left + l.selfChip.width).toBeLessThanOrEqual(l.hand.rect.left + 0.01);
+    expect(l.hand.rect.width).toBeLessThanOrEqual(1334 * 0.95 + 0.01);
   });
 
   it('非法输入回落 16:9 尺寸，不产生 NaN', () => {
@@ -481,7 +463,7 @@ describe('mahjongTableLayout：边界与输入', () => {
     expect(T.outer).toBe(12);
     expect(T.inner).toBe(8);
     expect(T.gap).toBe(2);
-    expect(T.handH).toBe(104);
+    expect(T.handH).toBe(116);
     expect(T.riverH).toBe(56);
     expect(T.topBackH).toBe(47);
     expect(T.sideBackH).toBe(34);

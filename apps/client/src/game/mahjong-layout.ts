@@ -2,9 +2,9 @@
  * 麻将牌桌比例布局（纯函数，零依赖）。
  *
  * 坐标模型：画布设计尺寸 W×H（恒 ≥1334×750，至少一条边正好在最小值）。
- * 统一比例单位 s = min(H/750, 0.88W/handRowW)，且 s ≥ 1：
+ * 统一比例单位 s = min(H/750, 0.95W/handRowW)，且 s ≥ 1：
  *  - 高度是竖向节奏基准；
- *  - 宽度兜底保证 14 张手牌永远 ≤88% 宽，左侧留出自家人像卡。
+ *  - 宽度兜底保证 14 张手牌永远 ≤95% 宽；自家人像在中央井左缘、手牌上方。
  *
  * 所有输出均为**设计 px**（画布坐标），由 LandscapeStage 的 transform: scale(k) 统一缩放。
  * 本文件不读窗口、不读 store、不造计时器。
@@ -102,7 +102,7 @@ export const MAHJONG_TABLE_TOKENS = {
   outer: 12,
   inner: 8,
   gap: 2,
-  handH: 104,
+  handH: 116,
   handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
   riverH: 56,
@@ -236,7 +236,7 @@ export function mahjongTableLayout(
   const self = normalizeLoad(input.self);
 
   const handRowW = (T.handCount * T.handH * TILE_RATIO + (T.handCount - 1) * T.gap + T.drawnGap);
-  const s = Math.max(1, Math.min(h / DEFAULT_H, (0.88 * w) / handRowW));
+  const s = Math.max(1, Math.min(h / DEFAULT_H, (0.95 * w) / handRowW));
 
   // —— 竖向尺寸 ——
   const barH = T.barH * s;
@@ -290,16 +290,16 @@ export function mahjongTableLayout(
   const centerBottom = Math.max(centerTop, h - bottomZoneH);
   const centerZone = rect(centerLeft, centerTop, centerRight - centerLeft, centerBottom - centerTop);
 
-  const compactZone = centerZone.height < 160 * s;
+  const compactZone = centerZone.height < 151 * s;
   const centerCardW = Math.max(
     0,
     Math.min((compactZone ? 260 : 340) * s, centerZone.width - 16 * s),
   );
   const centerCardH = Math.max(
     0,
-    Math.min((compactZone ? 120 : 170) * s, centerZone.height - 12 * s),
+    Math.min((compactZone ? 120 : 170) * s, centerZone.height - 8 * s),
   );
-  const centerCompact = centerCardH < 148 * s;
+  const centerCompact = centerCardH < 143 * s;
   const centerCard = rect(
     centerZone.left + (centerZone.width - centerCardW) / 2,
     centerZone.top + (centerZone.height - centerCardH) / 2,
@@ -370,8 +370,8 @@ export function mahjongTableLayout(
   };
 
   const selfChip = rect(
-    outer,
-    handTop + ((T.handH - T.selfChipH) / 2) * s,
+    centerLeft,
+    handTop - T.selfChipH * s - 20 * s,
     T.selfChipW * s,
     T.selfChipH * s,
   );
