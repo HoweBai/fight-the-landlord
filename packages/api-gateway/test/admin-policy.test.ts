@@ -1014,6 +1014,7 @@ describe('代理分润（2026-10-26）：P-ag0..P-ag4', () => {
   it('P-ag0：agent.inviteEnabled 及 % 编码变体 ⇒ 仅 super_admin（先于 P4）', () => {
     for (const key of [
       'agent.inviteEnabled',
+      'agent.inviteRequired',
       'agent%2EinviteEnabled',
       'agent%252EinviteEnabled',
       'AGENT.inviteEnabled',
@@ -1025,5 +1026,14 @@ describe('代理分润（2026-10-26）：P-ag0..P-ag4', () => {
     }
     // 普通 config 键仍走 P4（operator 可写）—— 判别力：不是把所有 config 都收紧。
     expect(check('PUT', '/api/admin/config/room.friendRoomEnabled', 'operator')).toBe(true);
+  });
+
+  it('P-ag0b：admin 邀请码列表仅 super_admin；finance/operator 403', () => {
+    const path = '/api/admin/agents/ag_1/invite-codes';
+    expect(check('GET', path, 'super_admin')).toBe(true);
+    expect(check('GET', path, 'finance')).toBe(false);
+    expect(check('GET', path, 'operator')).toBe(false);
+    // 判别力：既有代理读面仍对 finance 放行。
+    expect(check('GET', '/api/admin/agents/ag_1/bindings', 'finance')).toBe(true);
   });
 });
