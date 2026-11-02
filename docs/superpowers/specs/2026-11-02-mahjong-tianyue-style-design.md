@@ -1,7 +1,7 @@
 # 麻将牌桌「天月麻雀」风格重制 — 设计 spec
 
 日期：2026-11-02
-状态：待对抗审查
+状态：已对抗审查并修订（v2）
 范围：纯客户端展示层（麻将牌桌）
 参考：天月麻雀（Amatsuki Mahjong）牌桌截图；当前实现 `apps/client/src/components/table/mahjong/*`
 
@@ -14,7 +14,7 @@
 「像天月」的具体判据（按优先级）：
 
 1. 桌面是亮青色（青绿/蓝绿），不是深绿绒布；有同心圆压纹和木色外框。
-2. 麻将牌是白牌面、细灰边、红/绿/黑平涂字；牌背是深蓝色。
+2. 麻将牌是白牌面、米色立体边、红/绿/黑平涂字；牌背是深蓝色。
 3. UI 是深蓝半透明玻璃 + 细金边；头像圆形金框 + 蓝色缎带名牌。
 4. 中央是蓝金圆盘，倒计时在圆盘中心，字要大。
 5. 整体明亮、干净、留白多，不像现在的深色赌场风。
@@ -40,183 +40,212 @@
 - `MahjongCenter.vue` 重做为蓝金圆盘（倒计时、牌墙、阶段、可响应/听牌）。
 - `MahjongSeatChip.vue` 的圆形金框头像 + 蓝色缎带名牌。
 - `ClaimTile.vue` 的按钮/弹层配色。
-- `MahjongHuBanner.vue` 的配色对齐（金/海军蓝）。
-- `mahjong-layout.ts` 的牌面比例、牌位尺寸、中央盘尺寸。
+- `MahjongHuBanner.vue` 的配色对齐。
+- `mahjong-layout.ts` 的牌面比例、牌位尺寸、中央盘尺寸、动作区宽度。
 - `uni.scss` 新增麻将专用色板 token（`$ftl-color-mj-*`）。
-- 麻将牌素材全套替换 + 素材生成脚本 + 第三方声明。
+- 麻将牌素材全套替换 + 素材生成脚本 + 第三方声明 + 素材预算闸。
+- 基线修复：`MahjongTile`/`MahjongMeld` 的死 prop 类型错误；`mahjong-board.test.ts` 两条陈旧断言。
 - 对应测试更新。
 
 ### 不做
 
 - 不改协议、服务端、配置中心、数据库、admin。
 - 不做二次元角色立绘；头像仍用现有 `/static/ui/default.png`。
-- 不重做大厅、结算页、历史页。结算浮层如与新牌桌明显冲突，只做最小配色对齐，不重排结构。
-- 不使用天月麻雀自己的美术资源；只用开源素材或 CSS 绘制。
+- 不重做大厅、结算页、历史页。结算浮层只做最小配色对齐，不重排结构。
+- 不使用天月麻雀自己的美术资源；只用 CC0 素材或 CSS 绘制。
 - 不做运行时旋转牌面（避免 App 端 `<image>` transform 兼容风险），改为预生成四方向 PNG。
-- 不新增游戏规则/数据字段；中央圆盘只用现有 props。
+- 不新增游戏规则/数据字段；中央圆盘只用现有 props + 一个 `ended` 布尔。
 
 ## 4. 决策表
 
 | 编号 | 决策 | 理由/约束 |
 |---|---|---|
 | D1 | 采用方案 A（全套换皮 + 尺寸/中央盘重排） | 用户明确要布局/位置变化 |
-| D2 | 保持四家围桌拓扑；自家副露仍在手牌上方 | 1334 宽下手牌约 1139px，左右只剩 ~97px，放不下天月那种贴左/右的副露列；强行挪会压侧家区 |
-| D3 | 牌面用 lietxia/mahjong_graphic「扁平风格 flat style」 | 白牌面/细灰边/红绿黑平涂，最接近天月；M+ 字体许可允许商用；源图 272×360 |
+| D2 | 保持四家围桌拓扑；自家副露仍在手牌上方 | 1334 宽下手牌 1130px，左右只剩 ~102px，放不下天月那种贴左/右的副露列；强行挪会压侧家区 |
+| D3 | 牌面改用 **FluffyStuff/riichi-mahjong-tiles**（CC0 公有领域） | 600×800、米色立体边、平涂字，接近天月；许可明确、可商用、可修改；放弃 lietxia（其 PNG 位图许可未核实，仅字形有 M+） |
 | D4 | 预生成 my/top/left/right 四方向 PNG，保留现有目录与文件名 | 现有 `MahjongTile` 按方向取目录；避免运行时旋转在 App 端的兼容风险 |
-| D5 | 牌面宽高比从 75:113（0.664）改为 180:238（0.756） | 匹配 flat style 源图；天月牌面也接近 0.75 |
-| D6 | 手牌高度 108→104，牌面视觉反而变宽（71.7→78.6） | 保证 `s=1` 时手牌行 ≤ 0.88W（1139 < 1174），不破坏左侧自家人像卡的留白契约 |
-| D7 | 牌河牌高 50→56；顶牌背高 54→48；侧牌背槽高 45→34、侧牌河高 40→37 | 让四方向牌比例统一到 0.756 / 1.322；顶牌背 13 张不溢出牌河宽度 |
-| D8 | 中央矩形卡改为 260×220 的圆盘卡；中央盘直径 130，下缘留 64px 给可响应/听牌 | 中心区 1334×750 下高 264，260×220 可放下；不挤压牌河 |
-| D9 | 倒计时：圆盘中心大数字；`seconds>0` 时显示秒数，否则显示牌墙数；`active && seconds<=5` 红色脉冲 | 客户端拿不到每窗口总时长，不做假进度环；只做「大数字+状态色」，不伪造百分比 |
-| D10 | 桌面木框用伪元素/inset 阴影绘制，不改 `.mj` 的 border 宽度 | `.mj` 是 `box-sizing:border-box`，绝对定位子元素以 padding box 为基准；border 从 3px 加到 10px 会让全桌内容偏移 7px |
-| D11 | 新色板只在麻将组件/uni.scss 内使用 | 不影响斗地主/跑得快等其他玩法 |
-| D12 | 素材生成脚本放 `scripts/build-mahjong-tile-set.mjs`，源图 vendor 到 `scripts/assets/mahjong/lietxia-flat/` | 可离线复现；不依赖构建时联网 |
-| D13 | 删除 6 张未被引用的 `left/*z.png`（当前工作区已删除） | 死资源；新素材整批替换 |
-| D14 | 不新增第三方运行时依赖 | 素材生成用 workspace 已有 `@napi-rs/canvas` |
+| D5 | 牌面宽高比 3:4（0.75），输出 180×240 / 240×180 | 匹配 FluffyStuff 源图 600×800；天月牌面也接近 0.75 |
+| D6 | 手牌高度 108→104；牌面宽度 71.7→78（变宽） | 保证 `s=1` 时手牌行 1130 ≤ 0.88W（1174），且 `hand.left=102 > selfChip.right=68`，不破坏左侧自家人像卡 |
+| D7 | 牌河高 50→56；顶牌背高 54→47；侧牌背槽高 45→34、侧牌河高 40→37 | 四方向比例统一；14 张顶牌背 519.5 ≤ 牌河宽 526，不溢出 |
+| D8 | 中央卡 340×170，圆盘 110，顶部信息条 22，右列 210 | 最差（上下家都有副露）中心区高 165.4，卡高 153.4；110+22+12=144 ≤153.4，放得下；详见 5.2 |
+| D9 | 倒计时：`active && seconds>0` 显示秒数，否则显示牌墙数；`active && seconds>0 && seconds<=5` 红色脉冲；结束态显示「终」 | `seconds` 是当前窗口剩余秒（含对手窗口），不能无条件显示；`seconds=0` 是超时哨兵，不能显示 0s |
+| D10 | 新增 `ended?: boolean` prop，由 Board 按 `phase==='ended'` 传入 | `endedText` 在血战中途是「已胡 N 家」，不是结束态；不能拿它判断终局 |
+| D11 | 桌面木框用伪元素/inset 渐变绘制，不改 `.mj` 的 border 宽度 | `.mj` 是 `box-sizing:border-box`，绝对定位子元素以 padding box 为基准；border 从 3px 加到 10px 会让全桌内容偏移 7px |
+| D12 | 动作区 `maxWidth` 收紧到自家牌河右侧（约 172px @1334），按钮换行 | 旧布局 claim 面板会盖住自家牌河右端 2–4 列；新牌河更宽，必须限制 |
+| D13 | 素材生成用 Python + Pillow，输出调色板 PNG（64 色） | 112 张约 450KB（旧 980KB）；生成结果入库；Pillow 仅开发期依赖 |
+| D14 | 新增 `table/mahjong` 素材预算 768KiB，并纳入 `asset-budget.test.ts` | 现目录未被预算覆盖；新目标 450KB 有机械闸 |
+| D15 | 红/金底一律用深海军蓝文字；桌面上的裸文字必须加海军蓝底 | 白 on 金 1.66:1、金 on 青 1.59:1，均不达标；详见 5.6 |
+| D16 | 红色脉冲复用 `anim-urgent-pulse` | 已有 reduced-motion 降级；不新造 keyframe |
+| D17 | 保留现有 7 档视口矩阵，补 1343×1000；紧凑阈值按内容预算定 | 防止新 token 在 21:9/方屏下溢出 |
+| D18 | 基线修复作为任务 0：删死 prop、修 2 条陈旧测试 | 当前 `vue-tsc` 6 错、2 测试红；不先修会让 TDD 红绿混淆 |
+| D19 | 不删除旧 `$ftl-color-mahjong-table*` token，只停止引用 | 避免无关重构；后续清理另立片 |
 
 ## 5. 实现设计
 
 ### 5.1 素材管线
 
-源图（vendored，27 张牌面 + 1 张牌背）：
+源图（vendored，CC0，27 张字形 + 牌面 + 牌背）：
 
 ```
-scripts/assets/mahjong/lietxia-flat/
-  f1m.png … f9m.png   （万）
-  f1p.png … f9p.png   （筒）
-  f1s.png … f9s.png   （条）
-  flat_back.png
+scripts/assets/mahjong/fluffystuff/
+  Front.png              （空白牌面，600×800）
+  Back.png               （红色牌背，600×800，生成时改海军蓝）
+  Man1.png … Man9.png     （万）
+  Pin1.png … Pin9.png     （筒）
+  Sou1.png … Sou9.png     （条）
+  LICENSE.txt            （CC0 声明 + 源仓库 URL）
 ```
 
-生成脚本 `scripts/build-mahjong-tile-set.mjs`：
+生成脚本 `scripts/build-mahjong-tile-set.py`（Python 3 + Pillow）：
 
-1. 读源图（272×360 RGBA）。
-2. 输出到 `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/`：
-   - `my/`：缩放到 180×238，文件名 `wan-1.png` / `tong-1.png` / `tiao-1.png` / `back.png`。
-   - `top/`：旋转 180°，180×238。
-   - `left/`：顺时针旋转 90°，238×180。
-   - `right/`：逆时针旋转 90°，238×180。
-3. 输出使用 `@napi-rs/canvas` 的 PNG 编码；质量优先保证边缘干净。
-4. 脚本幂等：重复运行覆盖同名文件；不改其他目录。
-5. 脚本不参与构建；生成结果入库（uni-app 静态资源要求）。
+1. 合成牌面：`Front.png` 上叠加字形 PNG（alpha composite）。
+2. 牌背改色：`Back.png` 转 HSV，色相 +170，再与 `#1b2950` 以 38% 混合，保留立体高光。
+3. 输出到 `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/`：
+   - `my/`：缩放到 180×240；文件名 `wan-1.png` / `tong-1.png` / `tiao-1.png` / `back.png`。
+   - `top/`：旋转 180°，180×240。
+   - `left/`：顺时针旋转 90°，240×180。
+   - `right/`：逆时针旋转 90°，240×180。
+4. 调色板量化：64 色、`FASTOCTREE`、无抖动（渐变已实测无可见 banding），`optimize=True`。
+5. 生成 `apps/client/src/pages/table/static/mahjong/manifest.json`：每文件 `sha256`、宽高、方向；供素材测试核对。
+6. 幂等：重复运行覆盖同名文件，不改其他目录。
 
-第三方声明：在 `THIRD-PARTY-NOTICES.md` 新增小节，注明
-`lietxia/mahjong_graphic`、`PNG 位图/扁平风格 flat style`、M+ 字体许可、源仓库 URL。
+许可证：`THIRD-PARTY-NOTICES.md` 用新小节替换旧 babykylin 小节，注明
+`FluffyStuff/riichi-mahjong-tiles`、CC0 1.0、源仓库 URL、修改内容（旋转/缩放/改色/量化）。
+
+旧脚本 `scripts/extract-mahjong-tiles.mjs` 标记退役（文件头注释），不再产出新素材。
 
 ### 5.2 布局与尺寸
 
 `apps/client/src/game/mahjong-layout.ts`：
 
-- `TILE_RATIO` 改为 `180 / 238`（≈0.7563）。
+- `TILE_RATIO` 改为 `3 / 4`（0.75）。
+- 新增 `SIDE_TILE_RATIO = 4 / 3`（横向牌背/牌河）。
 - token 调整：
 
 | token | 原值 | 新值 | 影响 |
 |---|---:|---:|---|
-| handH | 108 | 104 | 手牌行宽 1139（≤0.88W） |
-| riverH | 50 | 56 | 牌河牌 42.3×56 |
-| topBackH | 54 | 48 | 顶牌背 13 张约 472 宽，不溢出 |
-| sideBackH | 45 | 34 | 侧牌背槽 45×34（横图比例 1.322） |
+| handH | 108 | 104 | 手牌 78×104，行宽 1130 |
+| riverH | 50 | 56 | 牌河牌 42×56，河宽 526 |
+| topBackH | 54 | 47 | 顶牌背 35.25×47；14 张 519.5 ≤ 526 |
+| sideBackH | 45 | 34 | 侧牌背槽 45.33×34 |
 | sidePitch | 24 | 26 | 侧牌背叠压 8px |
-| sideRiverH | 40 | 37 | 侧牌河比例 49/37≈1.324 |
+| sideRiverH | 40 | 37 | 侧牌河 49×37（比例 1.324） |
 | centerClaimW/H | 34/51 | 34/45 | 比例 0.756 |
-| centerTingW/H | 20/30 | 20/26 | 比例 0.756 |
+| centerTingW/H | 20/30 | 20/27 | 比例 0.741 |
 
+- `sideBackW` 公式改为 `T.sideBackH * SIDE_TILE_RATIO`（不再用 `TILE_RATIO`）。
 - 中央卡：
-  - 非紧凑：宽 `min(260*s, centerZone.width - 16*s)`，高 `min(220*s, centerZone.height - 16*s)`。
-  - 紧凑阈值：`centerZone.height < 240*s` 时切紧凑；紧凑卡高 `min(120*s, ...)`，只出圆盘+单行文字。
-  - 1334×750 验算：centerZone 高 264 → 非紧凑，卡 260×220。
-- 手牌/牌河/侧家区的位置公式不变，只随 token 变化。
-- `centerTiles`、`actions` 等输出字段保持不变；不新增/删除输出字段。
+  - 宽 `min(340*s, centerZone.width - 16*s)`。
+  - 高 `min(170*s, centerZone.height - 12*s)`。
+  - `centerCompact = centerCard.height < 144*s`。
+  - 紧凑卡：`min(260*s, ...) × min(120*s, ...)`，圆盘 90，单行文字。
+- 动作区：`maxWidth = min(T.actionsMaxW*s, actions.rightX - (ownRiver.rect.left+ownRiver.rect.width) - inner*s)`，最小值 120*s。
+- 1334×750 验算（s=1）：
+
+| 场景 | centerZone 高 | centerCard 高 | 紧凑？ |
+|---|---:|---:|---|
+| 无副露 | 271 | 170 | 否 |
+| 单家副露 | 218.2 | 170 | 否 |
+| 上下家都有副露 | 165.4 | 153.4 | 否 |
+
+- 中央卡内容预算：顶部条 22 + 上下 padding 12 + 底行 110（圆盘）= 144；最差卡高 153.4，余 9.4。
+  - 底行右列宽 210：claim 34×45 + ting 20×27（最多两行 57）+ gap 6 = 108 ≤ 底行 110。
+  - 9 张听牌单行 204 ≤ 210；13 张两行 57 高。
 
 ### 5.3 组件与样式
 
 #### MahjongBoard.vue
 
-- `.mj` 背景替换为：
-  - 底层：`linear-gradient(180deg, #7cb0be 0%, #62aab8 45%, #4e7884 100%)`
-  - 中层：中心柔光 `radial-gradient(ellipse at 50% 45%, rgba(255,255,255,.18), transparent 62%)`
-  - 上层：同心圆压纹 `repeating-radial-gradient(circle at 50% 45%, transparent 0 58px, rgba(255,255,255,.035) 58px 59px)`
-  - 木质外框：`::before` 绝对定位 `inset:0`，`border:10px solid` 木色渐变，`pointer-events:none`，`z-index` 0；不用 `.mj` 的 border。
-- 顶栏：半透明海军蓝渐变 + 底部金色 hairline；文字白色，徽标金色。
-- 动作按钮：海军蓝渐变 + 金边；主按钮（出牌/胡）保持金色，但改冷金（#e8c56a / #a8792e）。
-- 托管遮罩：海军蓝玻璃 + 金边；长按提示弹层同样换色。
+- `.mj` 背景（CSS 层序：**最上层写最前**）：
+  ```scss
+  background:
+    repeating-radial-gradient(circle at 50% 45%, transparent 0 58px, rgba(255,255,255,.035) 58px 59px),
+    radial-gradient(ellipse at 50% 45%, rgba(255,255,255,.18), transparent 62%),
+    linear-gradient(180deg, $ftl-color-mj-table-light 0%, $ftl-color-mj-table-mid 45%, $ftl-color-mj-table-deep 100%);
+  ```
+- **删除**旧的 `border: 3px solid rgba(20,50,30,.85)` 与全部旧绿色 `box-shadow`（含 160px 暗角）。
+- 木框：`.mj::before { position:absolute; inset:0; border:10px solid transparent; border-image: linear-gradient(135deg, $ftl-color-mj-wood-mid, $ftl-color-mj-wood-light, $ftl-color-mj-wood-deep) 1; pointer-events:none; z-index:0; }`。顶部 10px 被顶栏覆盖是有意为之。
+- 顶栏：海军蓝玻璃渐变 + 底部金色 hairline；白字，徽标金色。
+- 动作按钮：海军蓝渐变 + 金边；主按钮（出牌/胡）金色底 + **海军蓝文字**。
+- 托管遮罩、长按提示弹层：海军蓝玻璃 + 金边，文字浅蓝。
 - 不改模板结构、不改 emit、不改交互逻辑。
 
 #### MahjongTile.vue
 
-- 素材路径映射不变（`/pages/table/static/mahjong/{dir}/{suit}-{r}.png`）。
-- 尺寸覆盖按新比例调整：
-  - `my`：34×45 / 46×61 / 60×79（sm/md/lg）
-  - `top`：与 my 相同（新素材同比例，不再需要 55×84 的独立比例）
-  - `left/right`：51×39 / 69×52 / 90×68（横图）
-  - rotate 模式的宽高交换同步改为新比例。
-- 视觉：白牌面自带；外层只加 1px 半透明描边阴影和 `box-shadow: 0 2px 6px rgba(10,25,50,.28)`。
-- 选中态：金色双环 + 上浮；禁用/置灰保持。
+- 素材路径映射不变。
+- 尺寸档位按 3:4 调整：
+  - `my`：34×45 / 46×61 / 60×80（sm/md/lg）
+  - `top`：同 my（同比例）
+  - `left/right`：45×34 / 61×46 / 80×60（横图）
+- `border-radius: 12%`（跟随源图圆角，避免透明角露出方形阴影）。
+- 阴影用 `filter: drop-shadow(0 2px 3px rgba(10,25,50,.35))`（跟随 alpha）。
+- 选中态：`box-shadow: 0 0 0 $ftl-hairline $ftl-color-mj-gold` + 上浮；hover 不用。
+- 删除未声明的 `rotate` prop 与 `Rotate` 类型（基线修复）。
 
 #### MahjongHandBacks.vue
 
-- 无需改逻辑；`tileW/tileH` 由布局给。
-- 侧家背牌从「竖槽里塞横图」改为「横槽填满」，视觉上不再缩成小方块。
-- 背牌加 1px 亮边高光（CSS），模拟天月蓝色牌背的立体边。
+- 逻辑不变；`tileW/tileH` 由布局给。
+- 侧家背牌横槽填满（`sideBackW = sideBackH * 4/3`）。
+- 背牌加 `box-shadow: inset 0 $ftl-hairline 0 rgba(255,255,255,.18)` 亮边。
 
 #### MahjongRiver.vue
 
-- 牌河网格、副露条逻辑不变。
-- 最新牌高亮从金色光晕改为「金色外环 + 轻微上浮 2px」。
-- 可响应牌筛选描边改为青色。
-- 副露标签「碰/杠/暗杠」改为海军蓝底 + 金边小胶囊。
+- 网格/副露条逻辑不变。
+- 最新牌：金色外环 + 上浮 2px。
+- 可响应牌：青色描边（`$ftl-color-mj-cyan`）。
+- 副露标签：海军蓝底 + 金边小胶囊。
 
 #### MahjongMeld.vue
 
-- 牌面不变；组间距沿用布局输出。
-- 暗杠/碰的背面牌用新蓝背；明牌用新白面。
-- 副露组整体加极淡的海军蓝底托（可选，避免白牌贴在亮青桌面上发飘）。
+- 逻辑不变；删除未声明的 `vertical` 绑定与 `Rotate` 类型（基线修复）。
+- 副露组加极淡海军蓝底托（`rgba(27,41,80,.35)`），避免白牌贴亮青桌面发飘。
 
 #### MahjongCenter.vue（重做）
 
 结构：
 
 ```
-.mj-center（260×220 卡片，海军蓝玻璃 + 双金边 + 四角装饰）
-  .mj-center__dial（130×130 圆盘）
-    .mj-center__ring（金色双环）
-    .mj-center__value（大数字：秒数 / 牌墙数 / 终）
-    .mj-center__unit（“s” 或 “张”）
-  .mj-center__top（牌墙 N）
-  .mj-center__phase（阶段文案）
-  .mj-center__claims（可响应牌 / 听牌牌面，最多两行）
+.mj-center（340×170 卡片，海军蓝玻璃 + 双金边）
+  .mj-center__strip（高 22：牌墙 N + 阶段）
+  .mj-center__body（高 ≥110）
+    .mj-center__dial（110×110 圆盘）
+      .mj-center__ring（金色双环）
+      .mj-center__value（大数字）
+      .mj-center__unit（s / 张）
+    .mj-center__side（宽 210：claim / ting / endedText）
 ```
 
-- `seconds > 0` → 圆盘中心显示 `seconds`，单位 `s`；`active && seconds <= 5` 加 `--urgent`（红色 + 脉冲）。
-- `seconds === 0` 且未结束 → 圆盘中心显示 `wallCount`，单位 `张`。
-- 结束态 → 显示 `终` 或 `endedText`。
-- 顶部始终显示 `牌墙 {wallCount}`；阶段文案在圆盘下方。
-- 可响应牌：用现有 `claimTile`，34×45；听牌：20×26，最多两行，超出用 `+N` 收敛（不横向滚动）。
-- 紧凑模式：圆盘 90px + 单行「牌墙 · 阶段 · 秒」文字；隐藏听牌牌面（与现有紧凑行为一致）。
-- 不改 props 名称与含义。
+- props 增加 `ended?: boolean`；其余 props 名称/含义不变。
+- `dialValue`：`ended ? '终' : (active && seconds>0 ? seconds : wallCount)`。
+- `dialUnit`：秒数→`s`；牌墙→`张`；结束→空。
+- `urgent = active && seconds > 0 && seconds <= 5`；复用 `anim-urgent-pulse`；颜色 `$ftl-color-mj-urgent`。
+- `endedText` 只做右列次要行，不控制终局。
+- `claimTile` 34×45；`tingTiles` 20×27，最多两行；超出用 `+N` 收敛；保留 `maxFan` → `听（N 番）`。
+- 紧凑模式：圆盘 90 + 单行「牌墙 · 阶段 · 秒」；隐藏听牌牌面；claim 只出文字。
+- 圆盘底部加 12 个刻度（CSS 伪元素/渐变小点），模拟天月表盘。
 
 #### MahjongSeatChip.vue
 
-- 头像：圆形裁切 + 2px 金环 + 外发光；保留庄/缺/胡/听角标（角标位置微调，避免压金环）。
-- 信息区：海军蓝半透明胶囊 + 细金边；名字白色、余额金色；徽标（托管/已出局/番数/输赢）用同色系小胶囊。
-- self 变体：头像 + 余额上下排，不加胶囊底（避免挡手牌）。
-- bar 变体：保持 40×56 紧凑头像，只换金环和底色。
-- 活跃态：强/弱动作窗口用青色/金色外发光，不改变布局尺寸。
+- 头像结构改为三层：`.avatar-frame`（金环 + 角标，不裁切）→ `.avatar-clip`（`border-radius:50%; overflow:hidden`）→ `<image>`。
+- 角标（庄/缺/胡/听）挂在 frame 上，不被圆形裁切。
+- 信息区：海军蓝半透明胶囊 + 细金边；名字白、余额金（金在海军蓝底上 8.5:1）。
+- self 变体：头像 + 余额小胶囊（必须带海军蓝底，不允许裸金贴桌面）。
+- bar 变体：头像 40×40，bar 卡 40×56。
+- 活跃态：强/弱用青色/金色外发光。
+- side 变体保持横排（受 56px 高度限制）；名牌做缎带圆角，不改成天月的竖排（有意偏离，登记在 §8）。
 
 #### ClaimTile.vue
 
-- 弹层：海军蓝玻璃 + 金边（替换深绿）。
-- 次按钮（碰/杠）：海军蓝渐变 + 金边。
-- 主按钮（胡）：金色立体保持，改冷金色值。
+- 弹层：海军蓝玻璃 + 金边。
+- 次按钮：海军蓝渐变 + 金边；主按钮（胡）：金底 + 海军蓝文字。
 - 过：降低透明度，保持弱化。
 
 #### MahjongHuBanner.vue
 
-- 金色渐变改为「冷金 + 海军蓝」；文字白色；阴影减弱，避免在亮桌面上过曝。
+- 海军蓝底 + 金边 + 金色文字（8.5:1）；不使用白 on 金。
+- 动画不变。
 
 ### 5.4 主题 token（uni.scss）
-
-新增（只给麻将用，前缀 `mj`）：
 
 ```scss
 $ftl-color-mj-table-light: #7cb0be;
@@ -228,79 +257,128 @@ $ftl-color-mj-glass: rgba(27, 41, 80, 0.72);
 $ftl-color-mj-gold: #e8c56a;
 $ftl-color-mj-gold-deep: #a8792e;
 $ftl-color-mj-cyan: #6fe3e8;
+$ftl-color-mj-urgent: #ff8a8a;
+$ftl-color-mj-muted: #b9c6e0;
+$ftl-color-mj-wood-light: #8a6440;
+$ftl-color-mj-wood-mid: #6b4a2f;
+$ftl-color-mj-wood-deep: #5a3c24;
+$ftl-color-mj-on-gold: #1b2950;
 ```
 
-现有 `$ftl-color-mahjong-table*` 保留但不再被麻将牌桌引用；清理留给后续无关重构，不在本片做。
+组件内只用这些 token；不写裸 hex；描边一律 `$ftl-hairline`（2px），不写 `1px`。
+
+### 5.5 组件契约
+
+- `MahjongCenter` 新增 `ended?: boolean`（默认 false）；其余 props/emits 不变。
+- 其余组件 props/emits 完全不变。
+- 不新增运行时依赖；素材脚本的 Pillow 仅开发期。
+
+### 5.6 对比度判据
+
+| 组合 | 比值 | 结论 |
+|---|---:|---|
+| `#1b2950` on `#e8c56a` | 8.54:1 | 金底文字用海军蓝 |
+| `#e8c56a` on `#1b2950` | 8.54:1 | 海军蓝底金色文字 |
+| `#b9c6e0` on `#1b2950` | 8.26:1 | 次要文字 |
+| `#ff8a8a` on `#1b2950` | 6.26:1 | 紧迫倒计时 |
+| `#1b2950` on `#62aab8` | 5.38:1 | 桌面上裸字用海军蓝 |
+| `#ffffff` on `#62aab8` | 2.64:1 | **禁止**裸白字贴桌面 |
+| `#e8c56a` on `#62aab8` | 1.59:1 | **禁止**裸金贴桌面 |
 
 ## 6. 测试判据
 
-### 6.1 布局纯函数（`apps/client/test/mahjong-layout.test.ts`）
+### 6.1 基线（任务 0）
 
-- 1334×750：`centerCard` 在 `centerZone` 内；`centerCard.width≈260`、`height≈220`。
-- 1334×1000 / 1623×750 / 1343×1000 矩阵：四区不重叠；手牌/牌河/副露/中央卡互不覆盖。
-- `s=1` 时手牌行宽 `≤ 0.88*W`（新比例下的关键回归断言）。
-- 顶牌背 13 张总宽 `≤ topBacks.rect.width`（防溢出）。
-- 侧牌背槽宽高比 ≈ 238/180；侧牌河宽高比 ≈ 49/37。
-- 牌面比例：`hand.tile.w / hand.tile.h ≈ 180/238`。
-- 紧凑阈值：构造矮画布，`centerCompact=true`，卡片高度 ≤ 120s。
-- 全部输出仍为有限正数；不出现 NaN/负尺寸。
+- `pnpm -C apps/client run lint` 0 错误（当前 6 个：TILE 的 `rotate`/`Rotate`，MELD 的 `vertical`/`Rotate`）。
+- `pnpm -C apps/client test -- mahjong` 全绿（当前 2 条陈旧断言：`.mj__my-revealed` / `.mj__phase`）。
 
-### 6.2 组件（`apps/client/test/mahjong-*.test.ts`）
+### 6.2 布局纯函数（`mahjong-layout.test.ts`）
 
-- `MahjongTile`：四方向素材路径映射正确；back 路径正确；尺寸类按新比例；选中/禁用/置灰类保留。
-- `MahjongCenter`：秒数/牌墙/终态切换；urgent 类只在 `active && seconds<=5`；claim/ting 渲染；紧凑模式隐藏听牌。
-- `MahjongRiver`：最新牌高亮类；可响应描边类；点击 emit 不变。
-- `MahjongHandBacks`：13 张背牌渲染；侧家横槽填满；已胡亮牌替换。
-- `MahjongSeatChip`：圆形头像类；角标渲染；活跃态类。
-- `MahjongBoard`：背景/顶栏/动作按钮类存在；出牌/胡/过/碰/杠 emit 不变；托管遮罩仍可取消。
-- `ClaimTile`：按钮文案/emit 不变；主/次/过按钮类。
+- 保留 7 档视口矩阵 + 1343×1000。
+- 1334×750：`centerCard` 在 `centerZone` 内；宽 340、高 170。
+- 无副露 / 单家副露 / 上下家都有副露：centerZone 分别为 271 / 218.2 / 165.4；centerCard 170 / 170 / 153.4；`centerCompact=false`。
+- 手牌不压自家人像：`hand.rect.left > selfChip.right`；`hand.rect.right ≤ W - outer`。
+- 顶牌背 14 张：`tile.w*14 + gap*13 ≤ topBacks.rect.width`。
+- 侧牌背槽 `tile.w/tile.h ≈ 4/3`；侧牌河 `tile.w/tile.h ≈ 49/37`。
+- `hand.tile.w/h ≈ 3/4`；`centerTiles.claim.w/h ≈ 34/45`。
+- 动作区：`actions.maxWidth ≤ actions.rightX - (ownRiver.left+ownRiver.width) - inner`；构造动作矩形与 `ownRiver.rect` 无重叠。
+- 所有输出有限正数；不出现 NaN/负尺寸。
+- 紧凑只在 `centerCard.height < 144*s` 时触发。
 
-### 6.3 素材完整性（新增）
+### 6.3 组件（`mahjong-*.test.ts`）
 
-新增 `apps/client/test/mahjong-assets.test.ts`：
+- `MahjongTile`：四方向路径；back；新尺寸类；选中/禁用/置灰；无 `rotate` 残留。
+- `MahjongCenter`：
+  - `active=true, seconds=12` → 圆盘 12；
+  - `active=false, seconds=12` → 圆盘牌墙数；
+  - `active=true, seconds=0` → 圆盘牌墙数且无 urgent；
+  - `active=true, seconds=5` → urgent 类 + `anim-urgent-pulse`；
+  - `ended=true` → 圆盘「终」，`endedText` 仍在次要行；
+  - `ended=false, endedText='已胡 1 家'` → 仍显示倒计时/牌墙；
+  - claim/ting 渲染；`maxFan` 文案；紧凑模式隐藏听牌。
+- `MahjongRiver`：最新牌高亮；可响应描边；点击 emit。
+- `MahjongHandBacks`：13/14 张；侧家横槽；已胡亮牌替换。
+- `MahjongSeatChip`：圆形头像 frame/clip 结构；角标不被裁切；self 余额有海军蓝底类；活跃态。
+- `MahjongBoard`：新主题 token 被引用；旧绿色 token/inset 阴影消失；出牌/胡/过/碰/杠 emit 不变；托管遮罩可取消。
+- `ClaimTile`：按钮文案/emit；主/次/过类。
 
-- `my/top/left/right` 各 27 张牌面 + `back.png`；
-- `my/top` 尺寸 180×238；`left/right` 238×180（读 PNG 头，不引图像库）；
-- 文件名与 `suit-{1..9}` 一一对应；
-- 不存在未被引用的 `*z.png`。
+### 6.4 素材（新增 `mahjong-assets.test.ts`）
 
-### 6.4 真浏览器/真机
+- 路径用 `helpers/source-scan` 的 `SRC_ROOT`，不用 `import.meta.url`（jsdom 下 file URL 坑）。
+- 四方向各 27 张 + `back.png`；文件名 `wan|tong|tiao-{1..9}` 一一对应。
+- `manifest.json` 存在；每个文件 sha256 与 manifest 一致；同方向 27 张互不相同。
+- 尺寸：my/top 180×240；left/right 240×180。
+- 方向抽检（用 `@napi-rs/canvas` 取像素）：
+  - `my/wan-1` 红色像素重心在下半部（y>0.5）；
+  - `left/wan-1` 红色重心在左半部（x<0.5，顺时针 90° 后「萬」从下转到左）；
+  - `right/wan-1` 红色重心在右半部（x>0.5）。
+- 不存在未引用 `*z.png`。
+- `asset-budget.test.ts` 新增 `table/mahjong ≤ 768 KiB`；判别力自证长度 7。
+
+### 6.5 主题源码闸（新增 `mahjong-theme.test.ts`）
+
+- `MahjongBoard.vue` 样式包含 `$ftl-color-mj-table-light` / `-mid` / `-deep` / `$ftl-color-mj-navy`；
+- 不包含 `$ftl-color-mahjong-table`、`rgba(20, 50, 30`、`rgba(0, 25, 12`；
+- 不包含 `rotate` / `vertical` 死 prop 残留；
+- `uni.scss` 定义全部 `$ftl-color-mj-*` token。
+
+### 6.6 真浏览器/真机
 
 - `pnpm -C apps/client test`、`pnpm -C apps/client run lint`。
-- 真浏览器截图：1334×750、1334×1000、1623×750；对照天月参考截图检查：
-  - 桌面是否亮青、木框是否在边缘；
-  - 白牌/蓝背是否清晰；
-  - 中央圆盘倒计时是否可读；
-  - 四家牌河/副露/头像是否不重叠；
-  - 按钮是否可点、无死按钮。
-- App 端模拟器走查一次，确认 PNG 牌面与圆盘在 webview 中没有变形/白边。
+- 真浏览器截图：1334×750、1334×1000、1623×750、1778×750；对照天月参考截图检查：
+  - 桌面亮青、木框在左/右/下；无旧绿暗角；
+  - 白牌/蓝背清晰；牌背与桌面可区分；
+  - 中央圆盘倒计时可读，claim/ting 不溢出；
+  - 四家牌河/副露/头像/动作区不重叠；
+  - 按钮可点，无死按钮；胡按钮海军蓝字。
+- App 端模拟器走查一次：PNG 牌面无白边/变形，圆盘/圆头像裁切正常。
 
 ## 7. 错误处理与边界
 
-- **素材缺失**：`MahjongTile` 的 `<image>` 若 404，uni-app 显示空白；新增素材完整性测试在 CI 阶段拦住。运行时不做兜底图，避免掩盖问题。
-- **听牌牌过多**：中央卡只展示最多两行，超出显示 `+N`；不横向滚动，不撑破卡片。
-- **小画布/紧凑模式**：`centerCompact` 走单行；圆盘缩到 90px；隐藏听牌牌面。若连单行都放不下，阶段文案 `text-overflow: ellipsis`。
-- **倒计时为 0**：圆盘切牌墙数；不显示 `0s`。
-- **结算后**：`endedText` 存在时圆盘显示终态，不显示倒计时。
-- **侧家已胡亮牌**：沿用现有 `revealed` 分支；亮牌用新白面 + dim。
-- **长按提示/托管遮罩**：不改变 z-index 层级；遮罩仍在手牌上方、banner 之下。
-- **木框层**：`pointer-events:none`，不拦截按钮；z-index 低于所有交互元素。
-- **背景对比度**：白字/金字在亮青桌面上必须带深色底（顶栏、座位卡、按钮都有海军蓝底），不允许裸文字直接贴桌面。
+- **素材缺失**：`<image>` 404 显示空白；素材完整性/哈希测试在 CI 拦住；不做运行时兜底图。
+- **听牌过多**：右列最多两行，超出 `+N`；不横向滚动。
+- **紧凑模式**：卡片高 <144s 时圆盘 90 + 单行文字；隐藏听牌牌面；claim 出文字。
+- **倒计时**：`seconds=0` 或非 active 显示牌墙数；不显示 `0s`；urgent 仅在 `active && seconds>0 && <=5`。
+- **结束态**：只看 `ended`；`endedText` 不控制终局。
+- **侧家已胡亮牌**：沿用 `revealed` 分支；白面 + dim。
+- **木框层**：`pointer-events:none`，不拦按钮；顶部被顶栏覆盖是有意。
+- **动作区**：不压自家牌河；按钮换行，面板向上长。
+- **对比度**：裸文字贴桌面一律禁止；金底文字用海军蓝。
 
-## 8. 风险
+## 8. 风险与有意偏离
 
-| 风险 | 等级 | 处置 |
+| 项 | 等级 | 处置/说明 |
 |---|---|---|
-| 牌面比例变化导致所有牌位尺寸连锁变化，布局测试大面积红 | 高 | 先改布局纯函数 + 测试，再改组件；按 1334×750 基准逐项验算 |
-| 中央圆盘 220 高压缩牌河/手牌 | 高 | 1334×750 下 centerZone 264 高，卡 220 居中；用测试锁不重叠 |
-| 侧家牌背从「竖槽横图」改为「横槽填满」后侧区变宽 | 中 | sideZoneW 从 199→216，仍 < 画布 1/4；测试锁 centerZone 宽度 |
-| 白牌在亮青桌面上对比度不足 | 中 | 牌面自带灰边 + 外阴影；牌背深蓝；必要时加深桌面中部渐变 |
-| `backdrop-filter` 在低端 Android 掉帧 | 中 | 只在小面积按钮/卡片用 blur；桌面不使用 blur |
-| App 端 `<image>` 对 PNG 透明边缘/旋转的渲染差异 | 中 | 预生成四方向 PNG，不做运行时旋转；模拟器走查 |
-| 素材体积增加导致进桌加载变慢 | 中 | 目标 mahjong 目录 ≤1.2MB；180×238 输出，必要时降到 150×198 |
-| 素材许可证/署名遗漏 | 低 | 新增 THIRD-PARTY-NOTICES 小节；源仓库/许可/修改说明齐全 |
-| 删除 z-suffix 文件被其他分支引用 | 低 | 全仓 grep 无引用；删除随本片提交 |
-| 结算浮层与新桌面色系冲突 | 低 | 本片只做最小配色对齐；不做结构重排；另立片可完整重做 |
+| 牌面比例变化导致全量牌位连锁 | 高 | 先改布局纯函数 + 测试，再改组件；1334×750 逐项验算 |
+| 中央卡在最差副露下只有 153.4 高 | 高 | 110 圆盘 + 22 顶条 + 12 padding = 144，余 9.4；测试锁 |
+| 侧区从 199 宽变 216.3 | 中 | 仍 < 画布 1/4；测试锁 centerZone 宽 |
+| 白牌/蓝背与亮青桌面区分 | 中 | 米色边 + drop-shadow；蓝背深于桌面；对比度表 |
+| `backdrop-filter` 低端机掉帧 | 中 | 只在小面积按钮/卡片用 blur；桌面不用 blur |
+| App 端 PNG 透明边缘 | 中 | 预生成四方向；border-radius 12% + drop-shadow；模拟器走查 |
+| 素材体积 | 低 | 量化 64 色，实测 ~4KB/张；总 ~450KB；预算 768KiB |
+| 许可 | 低 | FluffyStuff CC0；NOTICE 替换旧声明 |
+| 删除 z-suffix | 低 | 全仓 grep 无引用；随素材提交删除 |
+| **有意偏离天月** | — | ① 牌背用海军蓝（天月偏中蓝）；② 中央无东南西北/四家分数（四川麻将无此数据，改牌墙/阶段/倒计时）；③ side chip 横排（56px 高度限制）；④ 手牌 104 高（0.88W 约束下最大值）；⑤ 不做二次元立绘 |
 
 ## 9. 涉及文件
 
@@ -321,13 +399,14 @@ $ftl-color-mj-cyan: #6fe3e8;
 **素材**
 
 - `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/*.png`（整批替换）
-- `scripts/build-mahjong-tile-set.mjs`（新增）
-- `scripts/assets/mahjong/lietxia-flat/*.png`（新增，vendored 源图）
+- `scripts/build-mahjong-tile-set.py`（新增）
+- `scripts/assets/mahjong/fluffystuff/*.png` + `LICENSE.txt`（新增 vendored 源图）
+- `scripts/extract-mahjong-tiles.mjs`（标记退役）
 
 **文档**
 
 - `THIRD-PARTY-NOTICES.md`
-- `apps/client/src/static/ASSETS.md`（如素材体积/说明有变）
+- `apps/client/src/static/ASSETS.md`
 - 本 spec
 
 **测试**
@@ -340,7 +419,45 @@ $ftl-color-mj-cyan: #6fe3e8;
 - `apps/client/test/mahjong-seat-chip.test.ts`
 - `apps/client/test/mahjong-tile-meld.test.ts`
 - `apps/client/test/mahjong-assets.test.ts`（新增）
+- `apps/client/test/mahjong-theme.test.ts`（新增）
+- `apps/client/test/asset-budget.test.ts`
 
 ## 10. 审查记录
 
-（待独立 reviewer 审查后填写；格式：编号 / 等级 阻断|高|低 / 结论 / 处置）
+独立 reviewer（sonnet，2026-11-02）结论：阻断 3 / 高 9 / 低 14。逐条处置：
+
+| 编号 | 等级 | 结论 | 处置 |
+|---|---|---|---|
+| B1 中央卡 260×220 装不下内容 | 阻断 | 成立 | 改 340×170；顶条 22 + 圆盘 110 + padding 12 = 144；最差卡高 153.4；右列 210；B1 的像素预算写进 5.2/6.2 |
+| B2 紧凑阈值 240 使副露时退化 | 阻断 | 成立 | 阈值改为 `centerCard.height < 144*s`；750 高 + 1/4 副露均非紧凑；矩阵测试锁定 |
+| B3 `endedText` 语义读反 | 阻断 | 成立 | 新增 `ended` prop；终态只看 `ended`；`endedText` 降为次要行；补 3 条组件测试 |
+| H1 sideBackW 公式矛盾 | 高 | 成立 | 新增 `SIDE_TILE_RATIO=4/3`；`sideBackW=sideBackH*4/3`；测试锁 4/3 与 sideZoneW≈216 |
+| H2 seconds/urgent 语义冲突 | 高 | 成立 | 圆盘值改为 `active && seconds>0 ? seconds : wallCount`；urgent 加 `seconds>0`；补 12s/0s 测试 |
+| H3 对比度不足 | 高 | 成立 | 5.6 对比度表；金底海军蓝字；桌面裸字加海军蓝底；urgent 改 `#ff8a8a` |
+| H4 素材体积不可达 | 高 | 成立 | 改 64 色量化，实测 ~450KB；新增 `table/mahjong` 768KiB 预算；源图体积登记 |
+| H5 lietxia 许可失实 | 高 | 成立 | 改用 FluffyStuff CC0；NOTICE 只声明 CC0；不再写 M+ |
+| H6 ui-tokens 闸 | 高 | 成立 | 组件只用 `$ftl-color-mj-*`；描边一律 `$ftl-hairline`；写入 5.4 |
+| H7 基线红 | 高 | 成立 | 任务 0 修 6 个 TS 错 + 2 条陈旧测试；基线绿后再开工 |
+| H8 旧绿色阴影/边框残留 | 高 | 成立 | 5.3 明确删除旧 border + 全部旧绿色 inset 阴影；主题源码闸锁 |
+| H9 测试判别力不足 | 高 | 成立 | 新增主题源码闸、素材哈希/方向抽检、hand/self 不重叠、14 张顶背、保留 7 档矩阵 |
+| L1 centerZone 270≠264 | 低 | 成立 | 最终 token 下 271；用公式锚点 |
+| L2 顶牌背 13 张 495.9 / 14 张溢出 | 低 | 成立 | topBackH 47；14 张 519.5 ≤ 526；测试 14 |
+| L3 ting 比例 0.769 | 低 | 成立 | 改 20×27，注明 0.741 |
+| L4 素材测试路径/假绿 | 低 | 成立 | 用 `SRC_ROOT`；manifest sha256 + 方向像素抽检 |
+| L5 背景层序写反 | 低 | 成立 | 5.3 改为最上层写最前 |
+| L6 木框渐变/z-index | 低 | 成立 | border-image + `::before`；顶部被顶栏覆盖有意 |
+| L7 动作区压牌河 | 低 | 成立 | D12 收紧 maxWidth；测试无重叠 |
+| L8 透明角方形阴影 | 低 | 成立 | border-radius 12% + drop-shadow |
+| L9 bar 头像 40×40 | 低 | 成立 | 5.3 明确头像 40×40、bar 卡 40×56 |
+| L10 参考特征未覆盖 | 低 | 部分采纳 | 牌背调海军蓝；无东南西北/分数为四川麻将数据限制；side chip 横排为高度限制；手牌 104 为 0.88W 上限；登记为有意偏离 |
+| L11 文档/旧脚本/maxFan | 低 | 成立 | NOTICE 替换；旧脚本退役；保留 maxFan 文案 |
+| L12 脉冲动画 | 低 | 成立 | 复用 `anim-urgent-pulse`；reduced-motion 已有 |
+| L13 测试矩阵缩小 | 低 | 成立 | 保留 7 档 + 1343×1000 |
+| L14 vendor 体积未登记 | 低 | 成立 | ASSETS.md 登记源图/输出体积；预算 768KiB |
+
+修订后仍存在的取舍（不修）：
+
+- 中央盘没有天月的东南西北/四家分数环（数据不存在）。
+- side chip 保持横排（56px 高度约束）。
+- 手牌高度 104（0.88W 约束下的最大值）。
+- 牌背用海军蓝而非天月的中蓝（与桌面区分度更好）。
