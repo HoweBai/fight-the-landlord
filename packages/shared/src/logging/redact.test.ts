@@ -33,6 +33,15 @@ describe('§5.5 日志脱敏（R142）', () => {
     );
   });
 
+  it('邀请码键（inviteCode / invite_code）不得记录；通用 code 不误伤', () => {
+    expect(redactText('{"inviteCode":"ABCD2345"}')).toBe('{"inviteCode":"[REDACTED]"}');
+    expect(redactText('{"invite_code":"ABCD2345"}')).toBe('{"invite_code":"[REDACTED]"}');
+    expect(redactText('{"code":0}')).toBe('{"code":0}');
+    expect(redactValue({ inviteCode: 'ABCD2345' })).toEqual({ inviteCode: REDACTED });
+    expect(redactValue({ invite_code: 'ABCD2345' })).toEqual({ invite_code: REDACTED });
+    expect(redactValue({ code: 0 })).toEqual({ code: 0 });
+  });
+
   /**
    * 支付片 §12（T6）：PEM 私钥块的机械层。块从 `-----BEGIN … PRIVATE KEY-----`
    * 到对应 `-----END … PRIVATE KEY-----` **整块**替换 ⇒ `[REDACTED_PRIVATE_KEY]`。
