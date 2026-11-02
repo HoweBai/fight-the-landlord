@@ -85,14 +85,14 @@ function optClass(opt: MahjongClaimOption): string {
   border: 2px solid rgba($ftl-color-gold, 0.7);
   background: linear-gradient(180deg, rgba(30, 60, 40, 0.82), rgba(20, 45, 30, 0.88));
   backdrop-filter: blur(12px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 200, 100, 0.15);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 $ftl-hairline 0 rgba(255, 200, 100, 0.15);
 }
 .mj-claim-tile__prompt {
   font-size: $ftl-font-sm;
   color: $ftl-color-gold;
   font-weight: 700;
   text-align: center;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
 }
 .mj-claim-tile__opts {
   display: flex;
@@ -159,7 +159,7 @@ function optClass(opt: MahjongClaimOption): string {
   opacity: 0.55;
   border-color: rgba(140, 150, 170, 0.35) !important;
   background: linear-gradient(180deg, rgba(70, 80, 95, 0.5), rgba(45, 55, 70, 0.6)) !important;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25), inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.05) !important;
   color: rgba($ftl-color-on-primary, 0.6) !important;
 }
 
