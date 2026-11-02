@@ -191,12 +191,10 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
           }),
         }),
       });
-      // .mj__hand 应该隐藏
-      expect(wrapper.find('.mj__hand').exists()).toBe(false);
-      // .mj__my-revealed 应该展示 revealed tiles
-      const revealed = wrapper.find('.mj__my-revealed');
-      expect(revealed.exists()).toBe(true);
-      expect(revealed.findAll('.mj-tile')).toHaveLength(revealedTiles.length);
+      // .mj__hand 仍存在，但只渲染 revealed tiles，不重复渲染原手牌
+      expect(wrapper.find('.mj__hand').exists()).toBe(true);
+      expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(revealedTiles.length);
+      expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
     });
 
     it('没胡时，.mj__hand 正常显示手牌', () => {
@@ -216,10 +214,9 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
         }),
       });
       // 中央应该有 phaseText
-      expect(wrapper.find('.mj__phase').text()).toContain('等待其他玩家响应');
-      // 底部动作栏不应该再出现同样的 muted text
-      const actionMuted = wrapper.find('.mj__action .mj__muted');
-      expect(actionMuted.exists()).toBe(false);
+      expect(wrapper.find('.mj-center__phase').text()).toContain('等待其他玩家响应');
+      // 该窗口自己不在 active，动作栏不应渲染（不要对空 wrapper 调 .text()）
+      expect(wrapper.find('.mj__actions').exists()).toBe(false);
     });
   });
 });

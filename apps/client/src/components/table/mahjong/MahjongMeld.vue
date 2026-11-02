@@ -16,8 +16,6 @@ import type { MahjongMeldView } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
 
 type Direction = 'my' | 'top' | 'left' | 'right';
-/** 与 MahjongTile.Rotate 对齐。 */
-type Rotate = 'left' | 'right';
 
 const props = withDefaults(
   defineProps<{
@@ -33,7 +31,7 @@ const props = withDefaults(
     /** 组内叠压 px（正数）；不传则用 size 档位的默认负 margin。 */
     overlap?: number;
   }>(),
-  { size: 'sm', pop: false, vertical: false },
+  { size: 'sm', pop: false },
 );
 
 const emit = defineEmits<{
@@ -80,7 +78,7 @@ function onAnimEnd(e: AnimationEvent): void {
 <template>
   <view
     class="mj-meld"
-    :class="[styleClass, `mj-meld--${size}`, popAnimClass, { 'mj-meld--vertical': vertical }]"
+    :class="[styleClass, `mj-meld--${size}`, popAnimClass]"
     @animationend="onAnimEnd"
   >
     <!-- 碰 3 张；杠/暗杠 4 张同行（第 4 张不再绝对定位叠高） -->
