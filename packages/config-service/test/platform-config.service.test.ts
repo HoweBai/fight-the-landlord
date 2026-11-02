@@ -385,7 +385,7 @@ afterEach(() => {
  * ------------------------------------------------------------------ */
 
 describe('PlatformConfigService（规格 §2.1 / A6）', () => {
-  it('① list() 首查命中113 键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
+  it('① list() 首查命中 113 键：{key,value,version}、version 全 1、值逐字 = §2.2；且**每次查库不缓存**', async () => {
     const { svc, db, repo } = makeService(new FakeDb());
     seed(db);
 

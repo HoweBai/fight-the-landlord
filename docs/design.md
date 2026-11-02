@@ -1266,7 +1266,7 @@ socket.emit(type, { version: number, payload: unknown });
 | `risk.predicate.sameDevice`（**风控第 18 键**） | 严格 `true`/`false` | **`false`**（**默认关**，D4 暗上线） | room-service（§8.3 同设备谓词；开启手顺见 `first-deploy.md`） |
 | `risk.predicate.sameIp`（**风控第 19 键**） | 严格 `true`/`false` | **`false`**（**默认关**） | room-service（§8.3 同 IP 谓词；CGNAT 误伤面大 ⇒ 评估后再开） |
 | `game.doudizhu.risk.winRateThreshold`（**风控第 20 键**） | number · `0.5 ≤ n ≤ 1.0` · ≤2 位小数 | `0.8` | user-service（扫描胜率阈值；命中 = `winRate >` 本值） |
-| `game.doudizhu.risk.minGames`（**风控第 23 键**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（扫描最少局数；命中 = `games >` 本值） |
+| `game.doudizhu.risk.minGames`（**风控第 21 键**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（扫描最少局数；命中 = `games >` 本值） |
 | `game.paodekuai.risk.winRateThreshold`（**2026-10-25 跑得快风控；2026-10-26 起为回退键**） | number · `0.5 ≤ n ≤ 1.0` · ≤2 位小数 | `0.8` | user-service（对应人数键缺失时的回退；与斗地主独立；两玩法同时命中不叠分） |
 | `game.paodekuai.risk.minGames`（**2026-10-25 跑得快风控；2026-10-26 起为回退键**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（对应人数键缺失时的回退；命中 = `games >` 本值） |
 | `game.paodekuai.risk.player2.winRateThreshold`（**2026-10-26 按人数**） | number · `0.5 ≤ n ≤ 1.0` · ≤2 位小数 | `0.8` | user-service（2 人桶胜率阈值；样本按人数独立） |
@@ -1277,7 +1277,7 @@ socket.emit(type, { version: number, payload: unknown });
 | `game.paodekuai.risk.player4.minGames`（**2026-10-26 按人数**） | 整数 · `1 ≤ n ≤ 100000` | `100` | user-service（4 人桶最少局数） |
 | `game.paodekuai.risk.autoThrottleScore`（**2026-10-26 PDK 自动限流**） | 整数 · `25 ≤ n ≤ 50` | `50` | user-service（25=PDK 单命中即自动限流；26–49 与 50 同效；只影响 PDK 胜率命中线） |
 | `game.paodekuai.twoPlayerEnabled`（**2026-10-25 2 人场**） | 严格 `true`/`false` | `false` | room-service（2 人匹配/建房闸）+ config-service（`supportedPlayerCounts`）；4 人仍由 `game.paodekuai.nonThreePlayerEnabled` 控制；客户端已支持 2/3/4 人牌桌 |
-| `risk.deviceLimit`（**风控第 23 键**） | 整数 · `2 ≤ n ≤ 100` | `3` | user-service（设备数阈值；命中 = 窗口内 `devices >` 本值） |
+| `risk.deviceLimit`（**风控第 22 键**） | 整数 · `2 ≤ n ≤ 100` | `3` | user-service（设备数阈值；命中 = 窗口内 `devices >` 本值） |
 | `risk.deviceWindowDays`（**风控第 23 键**） | 整数 · `1 ≤ n ≤ 365` | `30` | user-service（设备统计窗口，天） |
 | `risk.autoThrottle`（**风控第 24 键**） | 严格 `true`/`false` | `true` | user-service（scan 状态机：评分 ≥50 且开 ⇒ 自动上限流档；封禁恒人工） |
 | `risk.deviceRetentionDays`（**风控第 25 键**） | 整数 · `1 ≤ n ≤ 3650` | `365` | user-service（设备记录清理保留期） |

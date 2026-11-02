@@ -41,9 +41,9 @@ export const CONFIG_KEYS = [
   'risk.predicate.sameIp',
   /** 风控片 T1（第 20 键）：胜率阈值（number、`0.5 ≤ n ≤ 1.0`、≤2 位小数、种子 0.8；客户端不可见）。 */
   'risk.winRateThreshold',
-  /** 风控片 T1（第 23 键）：扫描最少局数（int、`1 ≤ n ≤ 100000`、种子 100；客户端不可见）。 */
+  /** 风控片 T1（第 21 键）：扫描最少局数（int、`1 ≤ n ≤ 100000`、种子 100；客户端不可见）。 */
   'risk.minGames',
-  /** 风控片 T1（第 23 键）：单设备关联账号上限（int、`2 ≤ n ≤ 100`、种子 3；客户端不可见）。 */
+  /** 风控片 T1（第 22 键）：单设备关联账号上限（int、`2 ≤ n ≤ 100`、种子 3；客户端不可见）。 */
   'risk.deviceLimit',
   /** 风控片 T1（第 23 键）：设备扫描窗口天数（int、`1 ≤ n ≤ 365`、种子 30；客户端不可见）。 */
   'risk.deviceWindowDays',
@@ -705,7 +705,7 @@ function parseWinRateThreshold(value: unknown, key = 'risk.winRateThreshold'): n
   return value;
 }
 
-/** 扫描最少局数（风控片 T1 第 23 键）：int 且 `1 ≤ n ≤ 100000`（种子 100）。 */
+/** 扫描最少局数（风控片 T1 第 21 键）：int 且 `1 ≤ n ≤ 100000`（种子 100）。 */
 function parseMinGames(value: unknown, key = 'risk.minGames'): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new ProtocolError(`${key} 必须是整数`);
@@ -728,7 +728,7 @@ function parseAutoThrottleScore(value: unknown): number {
   return value;
 }
 
-/** 单设备关联账号上限（风控片 T1 第 23 键）：int 且 `2 ≤ n ≤ 100`（种子 3；1 = 无意义——忽略它就是它）。 */
+/** 单设备关联账号上限（风控片 T1 第 22 键）：int 且 `2 ≤ n ≤ 100`（种子 3；1 = 无意义——忽略它就是它）。 */
 function parseDeviceLimit(value: unknown): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new ProtocolError('risk.deviceLimit 必须是整数');
