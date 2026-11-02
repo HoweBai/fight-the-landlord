@@ -321,3 +321,11 @@ const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
 | M9 源闸可绕过 | Minor | 成立 | ClaimTile 去注释+opts 块；Center 关键选择器唯一块 |
 | M10 board 陈旧注释 | Minor | 成立 | 4:3 s≈1.009/手牌约 87.8×117 |
 | M11 plan BASE 写错 | Minor | 成立 | 改为 `5c624742` |
+
+
+## 执行结果（2026-11-02）
+
+- client **1777 passed / 2 skipped**；protocol 325；shared 446；vue-tsc 0；H5 build DONE。
+- 视觉 harness：`.superpowers/mahjong-visual/v2-*.png`（1334×750 normal/worst/claim、1334×1000、1778×750、844×390）；CDP 实测中央卡 340×170 / 340×145.4、四家列 100×40、dial 80、ting 27、claim 166×261。
+- APK：0.1.8/108，20,035,642 bytes；Release `apk-latest`；测试服 `/download/ubigame.apk` sha256 `0fdd12cc…` 一致。
+- 测试服：`dev-2c02804`；health/H5 200；admin 逐字节一致。
