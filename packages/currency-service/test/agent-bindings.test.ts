@@ -17,18 +17,31 @@ interface BindRow {
 function makeDb(
   initial: Record<string, BindRow> = {},
   agentStatus: string | { value: string } = 'active',
+  opts: { codeStatus?: string; failBindingInsert?: boolean } = {},
 ) {
   const statusRef = typeof agentStatus === 'string' ? { value: agentStatus } : agentStatus;
+  const codeStatus = { value: opts.codeStatus ?? 'active' };
   const bindings = new Map(Object.entries(initial));
   const history: Array<Record<string, unknown>> = [];
   const audit: Array<Record<string, unknown>> = [];
+  const claimParams: unknown[][] = [];
   const manager = {
     query: async (sql: string, params?: unknown[]) => {
       const p = params ?? [];
       if (sql.includes('FROM `agent_accounts` WHERE `id`')) {
         return [{ status: statusRef.value }];
       }
+      if (sql.includes('FROM `agent_invite_codes` WHERE `code` = ?')) {
+        return [{ status: codeStatus.value }];
+      }
+      if (sql.startsWith("UPDATE `agent_invite_codes` SET `status` = 'used'")) {
+        claimParams.push(p);
+        if (codeStatus.value !== 'active') return { affectedRows: 0 };
+        codeStatus.value = 'used';
+        return { affectedRows: 1 };
+      }
       if (sql.includes('INSERT IGNORE INTO `agent_bindings`')) {
+        if (opts.failBindingInsert === true) throw new Error('insert failed');
         const owner = String(p[0]);
         if (bindings.has(owner)) return { affectedRows: 0 };
         bindings.set(owner, {
@@ -105,15 +118,32 @@ function makeDb(
     },
   } as unknown as EntityManager;
   const dataSource = {
-    transaction: async <T>(cb: (m: EntityManager) => Promise<T>) => cb(manager),
+    transaction: async <T>(cb: (m: EntityManager) => Promise<T>) => {
+      const snapBindings = new Map(bindings);
+      const snapHistory = [...history];
+      const snapAudit = [...audit];
+      const snapCode = codeStatus.value;
+      try {
+        return await cb(manager);
+      } catch (err) {
+        bindings.clear();
+        for (const [k, v] of snapBindings) bindings.set(k, v);
+        history.length = 0;
+        history.push(...snapHistory);
+        audit.length = 0;
+        audit.push(...snapAudit);
+        codeStatus.value = snapCode;
+        throw err;
+      }
+    },
     query: (sql: string, params?: unknown[]) => manager.query(sql, params),
   };
-  return { manager, dataSource, bindings, history, audit };
+  return { manager, dataSource, bindings, history, audit, codeStatus, claimParams };
 }
 
 function makeService(
   db: ReturnType<typeof makeDb>,
-  opts: { enabled?: boolean; inviteEnabled?: boolean; resolved?: unknown } = {},
+  opts: { enabled?: boolean; inviteEnabled?: boolean; hasSnapshot?: boolean; resolved?: unknown } = {},
 ) {
   const settings = {
     getOrDefault: vi.fn(async () => ({
@@ -128,7 +158,10 @@ function makeService(
       adjustMaxYuanPerDay: 20000,
     })),
   } as unknown as AgentSettingsService;
-  const config = { agentInviteEnabled: () => opts.inviteEnabled ?? true } as never;
+  const config = {
+    agentInviteEnabled: () => opts.inviteEnabled ?? true,
+    hasSnapshot: () => opts.hasSnapshot ?? true,
+  } as never;
   const invite = {
     resolve: vi.fn(async () =>
       opts.resolved === undefined
@@ -156,41 +189,92 @@ describe('AgentBindingsService：注册绑定', () => {
     expect(db.history).toEqual([{ owner: 'u1', agent: 'a', action: 'bind', actor: 'signup', reason: null }]);
   });
 
-  it('settings 关闭 / 邀请码开关关闭 ⇒ ignored（不做任何写入）', async () => {
-    for (const opts of [{ enabled: false }, { inviteEnabled: false }]) {
+  it('settings 关闭 / 邀请码开关关闭 / 快照不可用 ⇒ ignored + reason（不做任何写入）', async () => {
+    for (const [opts, reason] of [
+      [{ enabled: false }, 'settings_disabled'],
+      [{ inviteEnabled: false }, 'invite_disabled'],
+      [{ hasSnapshot: false }, 'config_unavailable'],
+    ] as const) {
       const db = makeDb();
       const { svc, invite } = makeService(db, opts);
       await expect(
         svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
-      ).resolves.toEqual({ status: 'ignored' });
+      ).resolves.toEqual({ status: 'ignored', reason });
       expect(db.bindings.size).toBe(0);
       expect(invite.resolve).not.toHaveBeenCalled();
     }
   });
 
-  it('码无效 / 代理冻结 ⇒ AGENT_INVITE_INVALID', async () => {
-    for (const resolved of [
-      null,
-      { agentId: 'a', agentName: 'A', agentStatus: 'frozen', codeStatus: 'active' },
-    ]) {
-      const db = makeDb();
-      const { svc } = makeService(db, { resolved });
-      await expect(
-        svc.bindFromSignup({ ownerId: 'u1', code: 'BAD', phone: '13800000000' }),
-      ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID });
-      expect(db.bindings.size).toBe(0);
-    }
+  it('码不存在 / 代理冻结 ⇒ AGENT_INVITE_INVALID', async () => {
+    const missing = makeDb();
+    const missingSvc = makeService(missing, { resolved: null }).svc;
+    await expect(
+      missingSvc.bindFromSignup({ ownerId: 'u1', code: 'BAD', phone: '13800000000' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码无效' });
+    expect(missing.bindings.size).toBe(0);
+
+    const frozen = makeDb({}, 'frozen');
+    await expect(
+      makeService(frozen).svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码无效' });
+    expect(frozen.codeStatus.value).toBe('active');
   });
 
-  it('已有绑定 ⇒ already_bound（首绑为准，不覆盖）', async () => {
+  it('码已使用 ⇒ 11006 邀请码已被使用；revoked ⇒ 邀请码无效', async () => {
+    const used = makeDb({}, 'active', { codeStatus: 'used' });
+    await expect(
+      makeService(used).svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码已被使用' });
+
+    const revoked = makeDb({}, 'active', { codeStatus: 'revoked' });
+    await expect(
+      makeService(revoked).svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码无效' });
+  });
+
+  it('成功绑定 ⇒ 码变 used + used_by/used_at；同码第二次 ⇒ 已被使用', async () => {
+    const db = makeDb();
+    const { svc } = makeService(db);
+    await expect(
+      svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).resolves.toEqual({ status: 'bound' });
+    expect(db.bindings.get('u1')!.agent_id).toBe('a');
+    expect(db.codeStatus.value).toBe('used');
+    expect(db.claimParams).toEqual([['u1', 'ABCD2345']]);
+    await expect(
+      svc.bindFromSignup({ ownerId: 'u2', code: 'ABCD2345', phone: '13800000001' }),
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码已被使用' });
+  });
+
+  it('已有同代理绑定 ⇒ already_bound，且不消费新码', async () => {
+    const db = makeDb({
+      u1: { agent_id: 'a', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
+    });
+    const { svc } = makeService(db);
+    await expect(
+      svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).resolves.toEqual({ status: 'already_bound' });
+    expect(db.codeStatus.value).toBe('active');
+  });
+
+  it('已有异代理绑定 ⇒ 11006 邀请码无效', async () => {
     const db = makeDb({
       u1: { agent_id: 'old', phone_hash: 'x', phone_masked: '138****0000', source: 'signup', bound_at: new Date() },
     });
     const { svc } = makeService(db);
     await expect(
       svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
-    ).resolves.toEqual({ status: 'already_bound' });
-    expect(db.bindings.get('u1')!.agent_id).toBe('old');
+    ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '邀请码无效' });
+    expect(db.codeStatus.value).toBe('active');
+  });
+
+  it('绑定写失败 ⇒ 事务回滚，码仍 active', async () => {
+    const db = makeDb({}, 'active', { failBindingInsert: true });
+    await expect(
+      makeService(db).svc.bindFromSignup({ ownerId: 'u1', code: 'ABCD2345', phone: '13800000000' }),
+    ).rejects.toThrow('insert failed');
+    expect(db.codeStatus.value).toBe('active');
+    expect(db.bindings.size).toBe(0);
   });
 });
 
