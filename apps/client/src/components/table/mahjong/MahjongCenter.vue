@@ -311,7 +311,6 @@ function badgeClass(badge: string): string {
   text-shadow: 0 2px 6px rgba($ftl-color-mj-panel, 0.8);
 }
 .mj-center__unit {
-  margin-top: 1px;
   color: $ftl-color-mj-muted;
   font-size: $ftl-font-mj-mini;
   line-height: 1;
@@ -340,11 +339,14 @@ function badgeClass(badge: string): string {
   line-height: 1;
 }
 .mj-center__ended {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   height: 27px;
   color: $ftl-color-mj-muted;
   font-size: $ftl-font-xs;
-  line-height: 27px;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

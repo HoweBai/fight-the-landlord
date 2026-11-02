@@ -908,6 +908,8 @@ function onMeldPopDone(key: string) {
           :filtered-options="discardClickTarget ? filteredClaimsForDiscard : undefined"
           :busy="busy"
           :show-pass="canPass"
+          :preview-w="layout.centerTiles.claim.w"
+          :preview-h="layout.centerTiles.claim.h"
           @claim="submitClaim"
           @pass="submitPass"
         />

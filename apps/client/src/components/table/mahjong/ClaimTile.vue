@@ -10,6 +10,7 @@
  */
 import { computed } from 'vue';
 import type { MahjongClaimOption } from '@fight-the-landlord/protocol';
+import MahjongTile from './MahjongTile.vue';
 
 const props = withDefaults(defineProps<{
   options: MahjongClaimOption[];
@@ -17,7 +18,10 @@ const props = withDefaults(defineProps<{
   showPass?: boolean;
   /** Batch 4 A 组：弃牌点击后 Board.vue 传入的过滤结果。传入则优先使用。 */
   filteredOptions?: MahjongClaimOption[];
-}>(), { busy: false, showPass: true });
+  /** 顶部牌面预览尺寸（真源 layout.centerTiles.claim）。 */
+  previewW?: number;
+  previewH?: number;
+}>(), { busy: false, showPass: true, previewW: 34, previewH: 45 });
 
 const emit = defineEmits<{
   (e: 'claim', opt: MahjongClaimOption): void;
@@ -31,12 +35,18 @@ const sortedOptions = computed(() => {
   return [...source].sort((a, b) => (b.fan ?? 0) - (a.fan ?? 0));
 });
 
+/** 预览优先过滤结果（非空）；过滤为空时回退全量，避免丢“响应哪张”的锚点。 */
+const previewTile = computed(() => {
+  const source = props.filteredOptions?.length ? props.filteredOptions : props.options;
+  return source.find((o) => o.tile !== undefined)?.tile ?? null;
+});
+
 /** claim 候选 label：用 opt.claim 四值（hu/gang/peng/pass），不是 opt.kind（阻断 B1 修法）。 */
 function claimLabel(opt: MahjongClaimOption): string {
   switch (opt.claim) {
     case 'peng': return '碰';
     case 'gang': return '杠'; // 暗杠/补杠区分逻辑留在 Board.vue（现有 L192-196）
-    case 'hu':   return opt.fan ? `${opt.fan} 番胡` : '胡';
+    case 'hu':   return '胡';
     case 'pass': return '过';
   }
 }
@@ -49,8 +59,12 @@ function optClass(opt: MahjongClaimOption): string {
 </script>
 
 <template>
-  <view class="mj-claim-tile mj-claim-tile--navy anim-claim-pulse">
-    <text class="mj-claim-tile__prompt">可响应</text>
+  <view class="mj-claim-tile mj-claim-tile--panel anim-claim-pulse">
+    <view v-if="previewTile" class="mj-claim-tile__preview">
+      <text class="mj-claim-tile__prompt">可响应</text>
+      <MahjongTile :tile="previewTile" :w="previewW" :h="previewH" direction="my" />
+    </view>
+    <text v-else class="mj-claim-tile__prompt">可响应</text>
     <view class="mj-claim-tile__opts">
       <button
         v-for="(opt, i) in sortedOptions"
@@ -60,7 +74,8 @@ function optClass(opt: MahjongClaimOption): string {
         :disabled="busy"
         @click="emit('claim', opt)"
       >
-        {{ claimLabel(opt) }}
+        <text class="mj-claim-tile__opt-label">{{ claimLabel(opt) }}</text>
+        <text v-if="opt.claim === 'hu' && opt.fan" class="mj-claim-tile__fan">{{ opt.fan }}番</text>
       </button>
       <button
         v-if="showPass"
@@ -80,16 +95,12 @@ function optClass(opt: MahjongClaimOption): string {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px;
   border-radius: $ftl-radius-md;
   border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.6);
-  background: linear-gradient(
-    180deg,
-    rgba($ftl-color-mj-navy-light, 0.92),
-    rgba($ftl-color-mj-navy, 0.94)
-  );
+  background: linear-gradient(180deg, $ftl-color-mj-panel-light, $ftl-color-mj-panel);
   backdrop-filter: blur(12px);
-  box-shadow: 0 6px 20px rgba($ftl-color-mj-navy, 0.45), inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.2);
+  box-shadow: 0 6px 20px rgba($ftl-color-mj-panel, 0.45), inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.2);
 }
 .mj-claim-tile__prompt {
   font-size: $ftl-font-sm;
@@ -98,18 +109,40 @@ function optClass(opt: MahjongClaimOption): string {
   text-align: center;
   letter-spacing: 2px;
 }
-.mj-claim-tile__opts {
+.mj-claim-tile__preview {
   display: flex;
-  gap: 10px;
+  align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  gap: 6px;
+  height: 45px;
+}
+.mj-claim-tile__opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  justify-items: stretch;
+}
+.mj-claim-tile__opt {
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+.mj-claim-tile__opt-label {
+  font-size: $ftl-font-md;
+  line-height: 1;
+}
+.mj-claim-tile__fan {
+  margin-top: 2px;
+  font-size: $ftl-font-mj-mini;
+  line-height: 1;
+  color: $ftl-color-mj-on-gold;
 }
 
 // —— 按钮（参考斗地主 btn / btn--primary 风格）——
 .btn {
   @include ftl-btn;
   // 次按钮（碰/杠）：暖色金边 + 金色投影，比默认灰按钮更有存在感
-  min-width: 72px;
+  min-width: 68px;
   min-height: $ftl-control-h;
   padding: 0 $ftl-space-4;
   font-size: $ftl-font-md;

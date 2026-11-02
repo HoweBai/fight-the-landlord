@@ -346,19 +346,22 @@ describe('T12：四家分区重排', () => {
         }),
       }),
     });
+    // 顶部预览取第一张 tile；番数做徽标
+    expect(wrapper.find('.mj-claim-tile__preview image').attributes('src')).toContain('/my/wan-1.png');
+    expect(wrapper.find('.mj-claim-tile__fan').text()).toBe('2番');
     // 自家弃牌不是本次 claim 来源：点击不过滤
     await wrapper.find('.mj-river--my .mj-tile').trigger('click');
-    const before = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    const before = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
     expect(before).toContain('碰');
-    expect(before).toContain('2 番胡');
+    expect(before).toContain('胡');
     // 来源座（对家）弃牌：过滤到只剩碰
     const topTile = wrapper.find('.mj-river--top .mj-tile');
     await topTile.trigger('click');
-    expect(wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text())).toEqual(['碰']);
+    expect(wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text())).toEqual(['碰']);
     await topTile.trigger('click');
-    const all = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    const all = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
     expect(all).toContain('碰');
-    expect(all).toContain('2 番胡');
+    expect(all).toContain('胡');
   });
 });
 import { nextTick } from 'vue';
