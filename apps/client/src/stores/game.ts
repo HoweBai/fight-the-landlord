@@ -404,7 +404,7 @@ export const useGameStore = defineStore('game', {
       | {
           gameType: 'mahjong';
           winnerSeats: number[];
-          endReason: 'threeWinners' | 'wallEmpty';
+          endReason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu';
           huazhuSeats: number[];
         }
       | null,

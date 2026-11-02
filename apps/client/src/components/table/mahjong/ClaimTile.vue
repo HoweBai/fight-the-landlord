@@ -110,7 +110,7 @@ function optClass(opt: MahjongClaimOption): string {
   @include ftl-btn;
   // 次按钮（碰/杠）：暖色金边 + 金色投影，比默认灰按钮更有存在感
   min-width: 72px;
-  min-height: 52px;
+  min-height: $ftl-control-h;
   padding: 0 $ftl-space-4;
   font-size: $ftl-font-md;
   border-color: rgba($ftl-color-mj-gold, 0.55);
@@ -155,7 +155,7 @@ function optClass(opt: MahjongClaimOption): string {
     inset 0 3px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
-// 杠（次按钮加强）：金色渐变
+// 杠（次按钮加强）：金色渐变 + 海军蓝字（金底用深色字，对比度 ≥4.5）
 .mj-claim-tile__opt--gang {
   background: linear-gradient(
     180deg,
@@ -163,7 +163,7 @@ function optClass(opt: MahjongClaimOption): string {
     rgba($ftl-color-mj-gold-deep, 0.55)
   ) !important;
   border-color: rgba($ftl-color-mj-gold, 0.75) !important;
-  color: $ftl-color-mj-gold !important;
+  color: $ftl-color-mj-on-gold !important;
 }
 
 // 过：弱化处理

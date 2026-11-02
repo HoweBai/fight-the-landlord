@@ -2,9 +2,9 @@
 /**
  * 单张麻将牌（哑组件）。只把 `Tile` 翻译成牌面素材路径。
  *
- * 素材：幼麟棋牌 4 方向 Atlas 提取——
- *   my (75×113 正), top (55×84 倒置), left/right (49×40 横置)，
- *   每个方向目录自带牌背。
+ * 素材：FluffyStuff/riichi-mahjong-tiles（CC0）合成——
+ *   my/top (180×240 竖置), left/right (240×180 横置)，
+ *   每个方向目录自带牌背；生成脚本 `scripts/build-mahjong-tile-set.py`。
  * 不传 `direction` → 默认 `my/`（根目录平铺旧资源已于 2026-10-29 清理）。
  * 牌面路径是**纯展示映射**，不含任何规则判定。
  * 见 `THIRD-PARTY-NOTICES.md`。
@@ -99,6 +99,13 @@ const tileStyle = computed(() =>
 .mj-tile--lg {
   width: 60px;
   height: 80px;
+}
+/* 左右家横置牌：240×180 素材，容器交换宽高 */
+.mj-tile--dir-left,
+.mj-tile--dir-right {
+  &.mj-tile--sm { width: 45px; height: 34px; }
+  &.mj-tile--md { width: 61px; height: 46px; }
+  &.mj-tile--lg { width: 80px; height: 60px; }
 }
 .mj-tile--selected {
   transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));

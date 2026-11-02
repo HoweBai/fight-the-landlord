@@ -677,8 +677,14 @@ export function validateOutbound(msg: unknown): ServerMessage {
           throw new ProtocolError('$.payload.winnerSeats must be an array');
         }
         p.winnerSeats.forEach((s, i) => assertInt(s, `$.payload.winnerSeats[${i}]`, 0, 3));
-        if (p.endReason !== 'threeWinners' && p.endReason !== 'wallEmpty') {
-          throw new ProtocolError("$.payload.endReason must be 'threeWinners' | 'wallEmpty'");
+        if (
+          p.endReason !== 'threeWinners' &&
+          p.endReason !== 'wallEmpty' &&
+          p.endReason !== 'wallEmptyWithHu'
+        ) {
+          throw new ProtocolError(
+            "$.payload.endReason must be 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu'",
+          );
         }
         if (!Array.isArray(p.huazhuSeats)) {
           throw new ProtocolError('$.payload.huazhuSeats must be an array');

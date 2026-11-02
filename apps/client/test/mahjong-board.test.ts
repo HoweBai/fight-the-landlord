@@ -458,3 +458,37 @@ describe('T13：摸牌分离与 display 下标', () => {
     expect(emitted.tiles).toHaveLength(3);
   });
 });
+
+describe('中心盘接线（ended / claim 过滤 / 托管）', () => {
+  it('ended：中央圆盘显示终', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'ended' }) }),
+    });
+    expect(wrapper.find('.mj-center__value').text()).toContain('终');
+  });
+
+  it('play 阶段自己的自摸/杠候选不显示为「可响应」', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'play',
+          activeSeats: [0],
+          claimsForMe: [{ claim: 'hu', tile: tile(0, 5), fan: 2 }],
+        }),
+      }),
+    });
+    expect(wrapper.find('.mj-center__claim').exists()).toBe(false);
+    expect(wrapper.find('.mj__actions').text()).toContain('胡');
+  });
+
+  it('托管遮罩可取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ trustees: [true, false, false, false] }),
+      }),
+    });
+    expect(wrapper.find('.mj__trustee-mask').exists()).toBe(true);
+    await wrapper.find('.mj__trustee-cancel').trigger('click');
+    expect(wrapper.emitted('trustee')?.[0]).toEqual([false]);
+  });
+});

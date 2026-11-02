@@ -12,6 +12,8 @@ import MahjongTile from './MahjongTile.vue';
 
 /** 右列最多展示的听牌张数；超出的用 +N 收敛。 */
 const MAX_TING_TILES = 12;
+/** 有可响应牌时听牌只出一行（9 张），给 claim 牌面留高度。 */
+const MAX_TING_TILES_WITH_CLAIM = 9;
 
 const props = withDefaults(
   defineProps<{
@@ -62,8 +64,9 @@ const claimLabel = computed(() =>
     ? `${MAHJONG_SUIT_NAMES[props.claimTile.s]}${props.claimTile.r}`
     : '',
 );
-const visibleTing = computed(() => props.tingTiles.slice(0, MAX_TING_TILES));
-const extraTing = computed(() => Math.max(0, props.tingTiles.length - MAX_TING_TILES));
+const tingCap = computed(() => (props.claimTile ? MAX_TING_TILES_WITH_CLAIM : MAX_TING_TILES));
+const visibleTing = computed(() => props.tingTiles.slice(0, tingCap.value));
+const extraTing = computed(() => Math.max(0, props.tingTiles.length - tingCap.value));
 /** 右列没有内容时隐藏，圆盘在卡片内居中（天月式中心盘）。 */
 const hasSide = computed(
   () => Boolean(props.claimTile) || visibleTing.value.length > 0 || Boolean(props.endedText),
@@ -133,7 +136,7 @@ const hasSide = computed(
   gap: 4px;
   width: 100%;
   height: 100%;
-  padding: 6px 8px;
+  padding: 4px 8px;
   overflow: hidden;
   border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.55);
   border-radius: $ftl-radius-lg;
@@ -151,23 +154,24 @@ const hasSide = computed(
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 22px;
+  height: 30px;
   min-width: 0;
   white-space: nowrap;
 }
 .mj-center__wall {
   color: $ftl-color-mj-gold;
-  font-size: 12px;
+  font-size: $ftl-font-xs;
   font-weight: 700;
 }
 .mj-center__sep {
   color: rgba($ftl-color-mj-muted, 0.6);
-  font-size: 11px;
+  font-size: $ftl-font-xs;
 }
 .mj-center__phase {
   overflow: hidden;
+  min-width: 0;
   color: $ftl-color-mj-muted;
-  font-size: 12px;
+  font-size: $ftl-font-xs;
   text-overflow: ellipsis;
 }
 
@@ -224,7 +228,7 @@ const hasSide = computed(
 .mj-center__unit {
   margin-top: 2px;
   color: $ftl-color-mj-muted;
-  font-size: 11px;
+  font-size: $ftl-font-xs;
   line-height: 1;
 }
 
@@ -250,40 +254,40 @@ const hasSide = computed(
 }
 .mj-center__label {
   color: $ftl-color-mj-gold;
-  font-size: 10px;
+  font-size: $ftl-font-xs;
   white-space: nowrap;
 }
 .mj-center__extra {
   color: $ftl-color-mj-cyan;
-  font-size: 10px;
+  font-size: $ftl-font-xs;
   font-weight: 700;
 }
 .mj-center__ended {
   overflow: hidden;
   max-width: 100%;
   color: $ftl-color-mj-muted;
-  font-size: 10px;
+  font-size: $ftl-font-xs;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mj-center__compact-claim {
   overflow: hidden;
   color: $ftl-color-mj-gold;
-  font-size: 11px;
+  font-size: $ftl-font-xs;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* —— 紧凑：横排，90 圆盘 + 单行文字 —— */
+/* —— 紧凑：竖排，90 圆盘 + 单行文字（设计最小画布下一般不会触发） —— */
 .mj-center--compact {
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 6px;
   white-space: nowrap;
 }
 .mj-center--compact .mj-center__strip {
-  height: auto;
+  height: 28px;
   flex: 0 0 auto;
   gap: 4px;
 }
@@ -291,11 +295,11 @@ const hasSide = computed(
 .mj-center--compact .mj-center__phase,
 .mj-center--compact .mj-center__wall,
 .mj-center--compact .mj-center__compact-clock {
-  font-size: 11px;
+  font-size: $ftl-font-xs;
   line-height: 1.2;
 }
 .mj-center--compact .mj-center__body {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   gap: 6px;
 }
 .mj-center--compact .mj-center__dial {
@@ -303,7 +307,7 @@ const hasSide = computed(
   height: 90px;
 }
 .mj-center--compact .mj-center__value {
-  font-size: 28px;
+  font-size: $ftl-font-lg;
 }
 .mj-center--compact .mj-center__side {
   flex: 0 0 auto;

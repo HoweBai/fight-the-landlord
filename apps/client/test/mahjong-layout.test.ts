@@ -167,11 +167,11 @@ describe('mahjongTableLayout：跨设备矩阵', () => {
         expect(l.centerZone.width).toBeGreaterThan(0);
         expect(l.centerZone.height).toBeGreaterThan(0);
         expectInside(l.centerCard, l.centerZone);
-        expect(l.centerCard.height).toBeGreaterThanOrEqual(144 * l.s);
+        expect(l.centerCard.height).toBeGreaterThanOrEqual(148 * l.s);
       });
 
       it('中央紧凑条件与内容预算一致', () => {
-        expect(l.centerCompact).toBe(l.centerCard.height < 144 * l.s);
+        expect(l.centerCompact).toBe(l.centerCard.height < 148 * l.s);
         expect(l.centerCompact).toBe(false);
         expect(l.centerZone.height).toBeGreaterThanOrEqual(40);
       });

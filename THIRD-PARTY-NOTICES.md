@@ -52,8 +52,9 @@ recorded license. Their terms are unknown; they are not covered by the root
   Man/Pin/Sou 1–9 字形 + `Back.png` 合成，经旋转/缩放/改色/64 色量化生成；脚本
   `scripts/build-mahjong-tile-set.py`；源图 vendored 在
   `scripts/assets/mahjong/fluffystuff/`（含 `LICENSE.md`）。
-- `apps/client/src/pages/table/static/audio/mahjong/*.mp3`（碰/杠/胡/刮风/下雨/
-  发牌/洗牌/理牌/倒计时/两首 BGM）同出该仓库的音频目录。
+- `apps/client/src/pages/table/static/audio/Mj_*.mp3`（11 条麻将音效/BGM）。
+  来源为早期第三方素材（**幼麟棋牌** `babykylin/babykylin_scmj` 音频目录），
+  未取得独立书面授权；不适用根 `LICENSE`，权属与再分发条款仍待核实。
 
 上述**音频**素材**未取得独立书面授权**，权属与再分发条款仍待核实，不适用根 `LICENSE`。
 

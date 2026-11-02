@@ -290,7 +290,7 @@ export function mahjongTableLayout(
   const centerBottom = Math.max(centerTop, h - bottomZoneH);
   const centerZone = rect(centerLeft, centerTop, centerRight - centerLeft, centerBottom - centerTop);
 
-  const compactZone = centerZone.height < 156 * s;
+  const compactZone = centerZone.height < 160 * s;
   const centerCardW = Math.max(
     0,
     Math.min((compactZone ? 260 : 340) * s, centerZone.width - 16 * s),
@@ -299,7 +299,7 @@ export function mahjongTableLayout(
     0,
     Math.min((compactZone ? 120 : 170) * s, centerZone.height - 12 * s),
   );
-  const centerCompact = centerCardH < 144 * s;
+  const centerCompact = centerCardH < 148 * s;
   const centerCard = rect(
     centerZone.left + (centerZone.width - centerCardW) / 2,
     centerZone.top + (centerZone.height - centerCardH) / 2,

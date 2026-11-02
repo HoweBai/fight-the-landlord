@@ -698,9 +698,11 @@ const rulesSummary = computed(() => {
   background-image: none;
   &:hover {
     transform: translateY(-2px);
+    color: $ftl-color-mj-on-gold;
   }
   &:active {
     transform: translateY(4px);
+    color: $ftl-color-mj-on-gold;
     box-shadow:
       0 2px 0 $ftl-color-gold-deep,
       0 4px 8px rgb(255 152 0 / 0.35),

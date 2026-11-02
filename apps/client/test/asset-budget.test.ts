@@ -58,9 +58,9 @@ for (let s = 0; s <= 3; s++) {
 FACE_KEYS.push('4-20', '4-30');
 
 /**
- * 目录体积（KiB）。⚠️ 这四个目录都是**平的**（无子目录）—— 若哪天有人塞了子目录，
- * `statSync` 会拿到目录项自身的 size（一个远小于内容的假值）⇒ 判据静默变松。
- * 因此这里**显式拒绝**子目录，宁可红也不要一条「看起来在量、其实没量」的判据。
+ * 目录体积（KiB）。递归统计子目录（`table/ui/mahjong-table/`、`table/mahjong/` 都是子目录）。
+ * 2026-11-02 修复：递归必须返回**字节**；此前递归返回 KiB 又被父层当字节累加，
+ * 导致 `table/mahjong` 的 4 个子目录被算成 0.8KiB（实际 836KiB）。
  */
 function dirSizeBytes(dir: string): number {
   let bytes = 0;

@@ -560,7 +560,8 @@ const hasActions = computed(() => {
 const centerProps = computed(() => ({
   wallCount: wallCount.value,
   phaseText: phaseText.value,
-  claimTile: claimTile.value,
+  claimTile:
+    phase.value === 'claim' || phase.value === 'rob' ? claimTile.value : null,
   claimW: layout.value.centerTiles.claim.w,
   claimH: layout.value.centerTiles.claim.h,
   tingTiles: tingTiles.value,
@@ -897,8 +898,8 @@ function onMeldPopDone(key: string) {
         />
       </view>
 
-      <!-- 自己胡了（myRevealed 不为空）时，手牌已在 .mj__my-revealed 展示，
-           隐藏 .mj__hand 避免重复渲染。settlementRevealed 同理。 -->
+      <!-- 自己胡了（myRevealed 不为空）时，revealed 牌直接在本 .mj__hand 槽内渲染，
+           不再额外渲染普通手牌；settlementRevealed 同理。 -->
       <view
         v-if="myTrustee && !settlementRevealed && phase !== 'ended'"
         class="mj__trustee-mask"
@@ -1223,6 +1224,7 @@ function onMeldPopDone(key: string) {
   background-image: none;
   &:hover {
     transform: translateY(-2px);
+    color: $ftl-color-mj-on-gold;
     box-shadow:
       0 8px 0 $ftl-color-mj-gold-deep,
       0 12px 28px rgba($ftl-color-mj-gold, 0.55),
@@ -1230,6 +1232,7 @@ function onMeldPopDone(key: string) {
   }
   &:active {
     transform: translateY(4px);
+    color: $ftl-color-mj-on-gold;
     box-shadow:
       0 2px 0 $ftl-color-mj-gold-deep,
       0 4px 10px rgba($ftl-color-mj-gold-deep, 0.3),

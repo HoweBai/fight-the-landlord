@@ -91,6 +91,18 @@ describe('MahjongCenter', () => {
     expect(w.text()).toContain('+1');
   });
 
+  it('有 claim 时听牌只出一行：9 张 + "+4"', () => {
+    const tingTiles: Tile[] = Array.from({ length: 13 }, (_, i) => ({
+      s: 0 as const,
+      r: ((i % 9) + 1) as Tile['r'],
+    }));
+    const w = mount(MahjongCenter, {
+      props: { ...base, claimTile: { s: 0, r: 5 }, tingTiles },
+    });
+    expect(w.findAll('.mj-tile')).toHaveLength(10);
+    expect(w.text()).toContain('+4');
+  });
+
   it('紧凑模式：单行、不出牌面、只出文字', () => {
     const w = mount(MahjongCenter, {
       props: { ...base, compact: true, claimTile: { s: 0, r: 5 } },
@@ -116,9 +128,11 @@ describe('MahjongCenter', () => {
     expect(w.findAll('.mj-tile')[1]!.attributes('style')).toContain('height: 27px');
   });
 
-  it('源码闸：@import animations + 紧凑 11px', () => {
+  it('源码闸：@import animations + 紧凑字号走 token', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
     expect(src).toContain("@import '../../../styles/animations.scss'");
-    expect(src).toMatch(/\.mj-center--compact \.mj-center__strip,[\s\S]*?font-size: 11px/);
+    expect(src).toMatch(
+      /\.mj-center--compact \.mj-center__strip,[\s\S]*?font-size: \$ftl-font-xs/,
+    );
   });
 });

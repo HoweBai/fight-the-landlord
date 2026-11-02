@@ -271,7 +271,7 @@ if __name__ == '__main__':
 ```scss
 $ftl-color-mj-glass-soft: rgba(27, 41, 80, 0.35);
 $ftl-color-mj-shadow: rgba(10, 25, 50, 0.35);
-$ftl-color-mj-highlight: rgba(255, 255, 255, 0.18);
+$ftl-color-mj-highlight: rgba(255, 255, 255, 0.28);
 ```
 
 ### Step 1.5：文档
@@ -362,7 +362,7 @@ $ftl-color-mj-highlight: rgba(255, 255, 255, 0.18);
 | 1343×1000 | 1.045876 | 80.58/1181.84/108.771 | 499.025/355.598/177.799 | 388.581/355.598/177.799 | 153.443 | 226.258 | 9.46 |
 
 6. 保留/更新：
-   - `centerCompact === (centerCard.height < 144*s)`；矩阵内断言 false。
+   - `centerCompact === (centerCard.height < 148*s)`；矩阵内断言 false。
    - 比例：hand/own/top = `3/4`；left/right river = `49/37`；topBacks = `3/4`；leftBacks = `4/3`。
    - token 钉死：`handH=104`、`riverH=56`、`topBackH=47`、`sideBackH=34`、`sidePitch=26`、
      `sideRiverH=37`、`centerClaimH=45`、`centerTingH=27`。
@@ -370,7 +370,7 @@ $ftl-color-mj-highlight: rgba(255, 255, 255, 0.18);
      4:3: 539.692≤546.444）。
    - `hand.rect.left > selfChip.left + selfChip.width`。
    - `actions.maxWidth ≤ rightX - ownRiver.right - 8*s + 0.01`；构造 actionsRect 与 ownRiver 无重叠。
-   - `centerCard.height ≥ 144*s`（非紧凑）。
+   - `centerCard.height ≥ 148*s`（非紧凑）。
 7. 跑 `pnpm -C apps/client test -- mahjong-layout` → **红**。
 
 ### Step 2.2：改布局
@@ -381,10 +381,10 @@ $ftl-color-mj-highlight: rgba(255, 255, 255, 0.18);
 - `sideBackW = T.sideBackH * SIDE_TILE_RATIO * s`。
 - 中央卡（在 `centerZone` 之后）：
 ```ts
-const compactZone = centerZone.height < 156 * s;
+const compactZone = centerZone.height < 160 * s;
 const centerCardW = Math.max(0, Math.min((compactZone ? 260 : 340) * s, centerZone.width - 16 * s));
 const centerCardH = Math.max(0, Math.min((compactZone ? 120 : 170) * s, centerZone.height - 12 * s));
-const centerCompact = centerCardH < 144 * s;
+const centerCompact = centerCardH < 148 * s;
 ```
 - `actions.maxWidth = Math.max(120 * s, Math.min(T.actionsMaxW * s, rightX - (ownRiverLeft + riverW) - inner))`。
 - 其余公式不动。
@@ -709,3 +709,25 @@ describe('麻将主题源码闸', () => {
 - `asset-budget` / `mahjong-assets` / `ui-tokens` / `mahjong-theme`：全绿。
 - 视觉：见上；本机无 Docker，未跑真栈 e2e。
 
+
+## 代码审查记录（终审，2026-11-02）
+
+独立终审（opus）结论：Critical 0 / Important 4 / Minor 9。
+
+| 编号 | 等级 | 结论 | 处置 |
+|---|---|---|---|
+| I1 主按钮 hover 被 `.btn:hover` 覆盖成白字 | Important | 成立 | Board/Settlement 的 `.btn--primary:hover/active` 补 `color: $ftl-color-mj-on-gold`；主题闸加源码断言 |
+| I2 中央盘 10–12px 字号在 k≈0.52 真机只有 5–6 CSS px | Important | 成立 | 正文/标签升到 `$ftl-font-xs`（22px）；顶条 30、padding 4、圆盘 110 = 148；最差卡 153.4；claim 时听牌限 9 张一行 |
+| I3 `game.finished` 的 `wallEmptyWithHu` 被客户端校验拒绝 | Important | 成立 | `messages.ts`/`validate.ts`/`stores/game.ts` 补第三值；protocol 用例覆盖 |
+| I4 音频条目「同出该仓库」指向 FluffyStuff | Important | 成立 | 改为独立描述幼麟音频来源；修正音频路径 |
+| M1 删除 left/right 横置尺寸类 | Minor | 成立 | 补回 45×34 / 61×46 / 80×60；测试改断言横置 |
+| M2 tray padding 未进布局预算 | Minor | 成立 | `margin: -$ftl-space-2` 抵消 padding；源码闸锁 |
+| M3 杠按钮金底金字对比度低 | Minor | 成立 | 改海军蓝字 |
+| M4 Claim 按钮 52px 低于触控下限 | Minor | 成立 | 改 `$ftl-control-h`（88） |
+| M5 play 阶段自摸/杠候选显示「可响应」 | Minor | 成立 | centerProps 仅 claim/rob 传 claimTile；Board 用例 |
+| M6 compact 分支不可达/阈值不符 | Minor | 部分 | 阈值改 148/160，compact 作为小画布防御保留；登记 |
+| M7 SeatChip 角标/徽标对比度 | Minor | 成立 | 庄金底海军蓝字、缺/番型海军蓝底青字、活跃态 token |
+| M8 测试缺口 | Minor | 部分 | 补 Board ended/claim 过滤/托管取消、整 SFC 死 prop 闸、top 方向像素；1778 截图已补；App 真机待补 |
+| M9 文档/数字漂移 | Minor | 成立 | 同步 tile 注释、Board 注释、asset 注释、spec/plan 字号/体积数字 |
+
+最终验证：client 1767 passed / 2 skipped；protocol 325；shared 446；vue-tsc 0；H5 build DONE。

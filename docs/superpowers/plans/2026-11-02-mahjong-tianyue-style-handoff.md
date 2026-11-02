@@ -48,14 +48,16 @@ Plan：`docs/superpowers/plans/2026-11-02-mahjong-tianyue-style.md`
 
 ## 验证
 
-- `pnpm -C apps/client test`：**1762 passed / 2 skipped**。
+- `pnpm -C apps/client test`：**1767 passed / 2 skipped**（终审修复后）。
 - `pnpm -C apps/client run lint`：**0 错**（合并后先 `pnpm -C packages/protocol build`）。
+- `pnpm -C apps/client run build:h5`：**DONE**（SCSS 真编译）。
 - `pnpm -C packages/protocol test`：**325 passed**。
 - `pnpm -C packages/shared test`：**446 passed**。
 - `asset-budget` / `mahjong-assets` / `ui-tokens` / `mahjong-theme`：全绿。
 - 视觉 harness（真实组件 + Chrome headless，未入库）截图：
-  `.superpowers/mahjong-visual/tianyue-1334x750.png`、
-  `tianyue-1334x1000.png`、`tianyue-1623x750.png`、`tianyue-claim-1334x750.png`。
+  `tianyue-1334x750-v3.png`、`tianyue-1334x1000.png`、`tianyue-1623x750.png`、
+  `tianyue-1778x750-v3.png`、`tianyue-844x390-v3.png`（k=0.52 真机模拟）、
+  `tianyue-claim-1334x750-v3.png`。
 - **未跑真栈**：本机无 Docker；`scripts/browser-e2e.mjs` 需要 9 容器。真栈截图待补。
 
 ## 已知边界/后续

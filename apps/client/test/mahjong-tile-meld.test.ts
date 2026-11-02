@@ -34,13 +34,14 @@ describe('MahjongTile 显式尺寸', () => {
     expect(back.attributes('src')).toBe('/pages/table/static/mahjong/left/back.png');
   });
 
-  it('牌面尺寸 3:4，方向不再有独立尺寸覆盖', () => {
+  it('牌面尺寸 3:4，左右家横置交换宽高', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongTile.vue', 'utf8');
     expect(src).toMatch(/\.mj-tile--sm\s*\{[^}]*width:\s*34px;[^}]*height:\s*45px/);
     expect(src).toMatch(/\.mj-tile--md\s*\{[^}]*width:\s*46px;[^}]*height:\s*61px/);
     expect(src).toMatch(/\.mj-tile--lg\s*\{[^}]*width:\s*60px;[^}]*height:\s*80px/);
-    expect(src).not.toContain('.mj-tile--dir-top');
-    expect(src).not.toContain('.mj-tile--dir-left');
+    expect(src).toMatch(
+      /\.mj-tile--dir-left,[\s\S]*?\.mj-tile--sm\s*\{[^}]*width:\s*45px;[^}]*height:\s*34px/,
+    );
     expect(src).toContain('border-radius: 12%');
     expect(src).toContain('$ftl-color-mj-gold');
   });
@@ -106,8 +107,9 @@ describe('MahjongMeld 可变尺寸与杠/暗杠', () => {
   it('副露底托类', () => {
     const w = mount(MahjongMeld, { props: { meld: meld('peng', [wan1, wan1, wan1]) } });
     expect(w.classes()).toContain('mj-meld--tray');
-    expect(readFileSync('src/components/table/mahjong/MahjongMeld.vue', 'utf8')).toContain(
-      '$ftl-color-mj-glass-soft',
-    );
+    const src = readFileSync('src/components/table/mahjong/MahjongMeld.vue', 'utf8');
+    expect(src).toContain('$ftl-color-mj-glass-soft');
+    // 负 margin 抵消 padding：底托不改变布局足迹（4 杠组仍 ≤ 牌河宽）
+    expect(src).toContain('margin: -$ftl-space-2');
   });
 });

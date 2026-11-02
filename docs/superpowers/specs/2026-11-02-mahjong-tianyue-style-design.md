@@ -67,13 +67,13 @@
 | D5 | 牌面宽高比 3:4（0.75），输出 180×240 / 240×180 | 匹配 FluffyStuff 源图 600×800；天月牌面也接近 0.75 |
 | D6 | 手牌高度 108→104；牌面宽度 71.7→78（变宽） | 保证 `s=1` 时手牌行 1130 ≤ 0.88W（1174），且 `hand.left=102 > selfChip.right=68`，不破坏左侧自家人像卡 |
 | D7 | 牌河高 50→56；顶牌背高 54→47；侧牌背槽高 45→34、侧牌河高 40→37 | 四方向比例统一；14 张顶牌背 519.5 ≤ 牌河宽 526，不溢出 |
-| D8 | 中央卡 340×170，圆盘 110，顶部信息条 22，右列 210 | 最差（上下家都有副露）中心区高 165.4，卡高 153.4；110+22+12=144 ≤153.4，放得下；详见 5.2 |
+| D8 | 中央卡 340×170，圆盘 110，顶部信息条 30，右列 210 | 最差（上下家都有副露）中心区高 165.4，卡高 153.4；110+30+8=148 ≤153.4，放得下；详见 5.2 |
 | D9 | 倒计时：`active && seconds>0` 显示秒数，否则显示牌墙数；`active && seconds>0 && seconds<=5` 红色脉冲；结束态显示「终」 | `seconds` 是当前窗口剩余秒（含对手窗口），不能无条件显示；`seconds=0` 是超时哨兵，不能显示 0s |
 | D10 | 新增 `ended?: boolean` prop，由 Board 按 `phase==='ended'` 传入 | `endedText` 在血战中途是「已胡 N 家」，不是结束态；不能拿它判断终局 |
 | D11 | 桌面木框用伪元素/inset 渐变绘制，不改 `.mj` 的 border 宽度 | `.mj` 是 `box-sizing:border-box`，绝对定位子元素以 padding box 为基准；border 从 3px 加到 10px 会让全桌内容偏移 7px |
 | D12 | 动作区 `maxWidth` 收紧到自家牌河右侧（约 172px @1334），按钮换行 | 旧布局 claim 面板会盖住自家牌河右端 2–4 列；新牌河更宽，必须限制 |
-| D13 | 素材生成用 Python + Pillow，输出调色板 PNG（64 色） | 112 张约 450KB（旧 980KB）；生成结果入库；Pillow 仅开发期依赖 |
-| D14 | 新增 `table/mahjong` 素材预算 768KiB，并纳入 `asset-budget.test.ts` | 现目录未被预算覆盖；新目标 450KB 有机械闸 |
+| D13 | 素材生成用 Python + Pillow，输出调色板 PNG（64 色） | 112 张约 588KiB（旧 836KiB）；生成结果入库；Pillow 仅开发期依赖 |
+| D14 | 新增 `table/mahjong` 素材预算 768KiB，并纳入 `asset-budget.test.ts` | 现目录未被预算覆盖；新目标 588KiB 有机械闸 |
 | D15 | 红/金底一律用深海军蓝文字；桌面上的裸文字必须加海军蓝底 | 白 on 金 1.66:1、金 on 青 1.59:1，均不达标；详见 5.6 |
 | D16 | 红色脉冲复用 `anim-urgent-pulse` | 已有 reduced-motion 降级；不新造 keyframe |
 | D17 | 保留现有 7 档视口矩阵，补 1343×1000；紧凑阈值按内容预算定 | 防止新 token 在 21:9/方屏下溢出 |
@@ -137,7 +137,7 @@ scripts/assets/mahjong/fluffystuff/
 - 中央卡：
   - 宽 `min(340*s, centerZone.width - 16*s)`。
   - 高 `min(170*s, centerZone.height - 12*s)`。
-  - `centerCompact = centerCard.height < 144*s`。
+  - `centerCompact = centerCard.height < 148*s`。
   - 紧凑卡：`min(260*s, ...) × min(120*s, ...)`，圆盘 90，单行文字。
 - 动作区：`maxWidth = min(T.actionsMaxW*s, actions.rightX - (ownRiver.rect.left+ownRiver.rect.width) - inner*s)`，最小值 120*s。
 - 1334×750 验算（s=1）：
@@ -148,7 +148,7 @@ scripts/assets/mahjong/fluffystuff/
 | 单家副露 | 218.2 | 170 | 否 |
 | 上下家都有副露 | 165.4 | 153.4 | 否 |
 
-- 中央卡内容预算：顶部条 22 + 上下 padding 12 + 底行 110（圆盘）= 144；最差卡高 153.4，余 9.4。
+- 中央卡内容预算：顶部条 30 + 上下 padding 8 + 底行 110（圆盘）= 148；最差卡高 153.4，余 5.4。
   - 底行右列宽 210：claim 34×45 + ting 20×27（最多两行 57）+ gap 6 = 108 ≤ 底行 110。
   - 9 张听牌单行 204 ≤ 210；13 张两行 57 高。
 
@@ -159,7 +159,7 @@ scripts/assets/mahjong/fluffystuff/
 - `.mj` 背景（CSS 层序：**最上层写最前**）：
   ```scss
   background:
-    repeating-radial-gradient(circle at 50% 45%, transparent 0 58px, rgba(255,255,255,.035) 58px 59px),
+    repeating-radial-gradient(circle at 50% 45%, transparent 0 58px, $ftl-color-mj-highlight 58px 59px),
     radial-gradient(ellipse at 50% 45%, rgba(255,255,255,.18), transparent 62%),
     linear-gradient(180deg, $ftl-color-mj-table-light 0%, $ftl-color-mj-table-mid 45%, $ftl-color-mj-table-deep 100%);
   ```
@@ -303,7 +303,7 @@ $ftl-color-mj-on-gold: #1b2950;
 - `hand.tile.w/h ≈ 3/4`；`centerTiles.claim.w/h ≈ 34/45`。
 - 动作区：`actions.maxWidth ≤ actions.rightX - (ownRiver.left+ownRiver.width) - inner`；构造动作矩形与 `ownRiver.rect` 无重叠。
 - 所有输出有限正数；不出现 NaN/负尺寸。
-- 紧凑只在 `centerCard.height < 144*s` 时触发。
+- 紧凑只在 `centerCard.height < 148*s` 时触发。
 
 ### 6.3 组件（`mahjong-*.test.ts`）
 
@@ -357,7 +357,7 @@ $ftl-color-mj-on-gold: #1b2950;
 
 - **素材缺失**：`<image>` 404 显示空白；素材完整性/哈希测试在 CI 拦住；不做运行时兜底图。
 - **听牌过多**：右列最多两行，超出 `+N`；不横向滚动。
-- **紧凑模式**：卡片高 <144s 时圆盘 90 + 单行文字；隐藏听牌牌面；claim 出文字。
+- **紧凑模式**：卡片高 <148s 时圆盘 90 + 竖排文字；隐藏听牌牌面；claim 出文字。
 - **倒计时**：`seconds=0` 或非 active 显示牌墙数；不显示 `0s`；urgent 仅在 `active && seconds>0 && <=5`。
 - **结束态**：只看 `ended`；`endedText` 不控制终局。
 - **侧家已胡亮牌**：沿用 `revealed` 分支；白面 + dim。
@@ -370,12 +370,12 @@ $ftl-color-mj-on-gold: #1b2950;
 | 项 | 等级 | 处置/说明 |
 |---|---|---|
 | 牌面比例变化导致全量牌位连锁 | 高 | 先改布局纯函数 + 测试，再改组件；1334×750 逐项验算 |
-| 中央卡在最差副露下只有 153.4 高 | 高 | 110 圆盘 + 22 顶条 + 12 padding = 144，余 9.4；测试锁 |
+| 中央卡在最差副露下只有 153.4 高 | 高 | 110 圆盘 + 30 顶条 + 8 padding = 148，余 5.4；测试锁 |
 | 侧区从 199 宽变 216.3 | 中 | 仍 < 画布 1/4；测试锁 centerZone 宽 |
 | 白牌/蓝背与亮青桌面区分 | 中 | 米色边 + drop-shadow；蓝背深于桌面；对比度表 |
 | `backdrop-filter` 低端机掉帧 | 中 | 只在小面积按钮/卡片用 blur；桌面不用 blur |
 | App 端 PNG 透明边缘 | 中 | 预生成四方向；border-radius 12% + drop-shadow；模拟器走查 |
-| 素材体积 | 低 | 量化 64 色，实测 ~4KB/张；总 ~450KB；预算 768KiB |
+| 素材体积 | 低 | 量化 64 色，实测 ~4KB/张；总 ~588KiB；预算 768KiB |
 | 许可 | 低 | FluffyStuff CC0；NOTICE 替换旧声明 |
 | 删除 z-suffix | 低 | 全仓 grep 无引用；随素材提交删除 |
 | **有意偏离天月** | — | ① 牌背用海军蓝（天月偏中蓝）；② 中央无东南西北/四家分数（四川麻将无此数据，改牌墙/阶段/倒计时）；③ side chip 横排（56px 高度限制）；④ 手牌 104 高（0.88W 约束下最大值）；⑤ 不做二次元立绘 |
@@ -428,13 +428,13 @@ $ftl-color-mj-on-gold: #1b2950;
 
 | 编号 | 等级 | 结论 | 处置 |
 |---|---|---|---|
-| B1 中央卡 260×220 装不下内容 | 阻断 | 成立 | 改 340×170；顶条 22 + 圆盘 110 + padding 12 = 144；最差卡高 153.4；右列 210；B1 的像素预算写进 5.2/6.2 |
-| B2 紧凑阈值 240 使副露时退化 | 阻断 | 成立 | 阈值改为 `centerCard.height < 144*s`；750 高 + 1/4 副露均非紧凑；矩阵测试锁定 |
+| B1 中央卡 260×220 装不下内容 | 阻断 | 成立 | 改 340×170；顶条 30 + 圆盘 110 + padding 8 = 148；最差卡高 153.4；右列 210；B1 的像素预算写进 5.2/6.2 |
+| B2 紧凑阈值 240 使副露时退化 | 阻断 | 成立 | 阈值改为 `centerCard.height < 148*s`；750 高 + 1/4 副露均非紧凑；矩阵测试锁定 |
 | B3 `endedText` 语义读反 | 阻断 | 成立 | 新增 `ended` prop；终态只看 `ended`；`endedText` 降为次要行；补 3 条组件测试 |
 | H1 sideBackW 公式矛盾 | 高 | 成立 | 新增 `SIDE_TILE_RATIO=4/3`；`sideBackW=sideBackH*4/3`；测试锁 4/3 与 sideZoneW≈216 |
 | H2 seconds/urgent 语义冲突 | 高 | 成立 | 圆盘值改为 `active && seconds>0 ? seconds : wallCount`；urgent 加 `seconds>0`；补 12s/0s 测试 |
 | H3 对比度不足 | 高 | 成立 | 5.6 对比度表；金底海军蓝字；桌面裸字加海军蓝底；urgent 改 `#ff8a8a` |
-| H4 素材体积不可达 | 高 | 成立 | 改 64 色量化，实测 ~450KB；新增 `table/mahjong` 768KiB 预算；源图体积登记 |
+| H4 素材体积不可达 | 高 | 成立 | 改 64 色量化，实测 ~588KiB；新增 `table/mahjong` 768KiB 预算；源图体积登记 |
 | H5 lietxia 许可失实 | 高 | 成立 | 改用 FluffyStuff CC0；NOTICE 只声明 CC0；不再写 M+ |
 | H6 ui-tokens 闸 | 高 | 成立 | 组件只用 `$ftl-color-mj-*`；描边一律 `$ftl-hairline`；写入 5.4 |
 | H7 基线红 | 高 | 成立 | 任务 0 修 6 个 TS 错 + 2 条陈旧测试；基线绿后再开工 |

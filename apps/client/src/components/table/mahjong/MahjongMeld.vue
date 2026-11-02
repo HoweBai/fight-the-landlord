@@ -110,6 +110,8 @@ function onAnimEnd(e: AnimationEvent): void {
 /** 天月风：白牌贴在亮青桌面上发飘，加一层极淡海军蓝底托 */
 .mj-meld--tray {
   padding: $ftl-space-2;
+  /* 负 margin 抵消 padding：底托视觉外扩，但不改变布局足迹（4 杠组仍 ≤ 牌河宽） */
+  margin: -$ftl-space-2;
   border-radius: $ftl-radius-md;
   background: $ftl-color-mj-glass-soft;
 }

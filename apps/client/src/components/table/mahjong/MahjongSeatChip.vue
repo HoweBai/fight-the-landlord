@@ -184,12 +184,14 @@ const metaText = computed(() => {
 .mj-chip__corner--dealer {
   top: -2px;
   right: -2px;
-  background: $ftl-color-accent;
+  background: $ftl-color-mj-gold;
+  color: $ftl-color-mj-on-gold;
 }
 .mj-chip__corner--lack {
   bottom: -2px;
   left: -2px;
-  background: rgba(120, 170, 255, 0.85);
+  background: $ftl-color-mj-navy;
+  color: $ftl-color-mj-cyan;
 }
 .mj-chip__corner--hu {
   top: -2px;
@@ -248,7 +250,7 @@ const metaText = computed(() => {
   background: rgba($ftl-color-danger, 0.3);
 }
 .mj-chip__badge--fan {
-  background: rgba($ftl-color-mj-cyan, 0.22);
+  background: $ftl-color-mj-navy;
   color: $ftl-color-mj-cyan;
 }
 .mj-chip__self-info {
@@ -272,18 +274,18 @@ const metaText = computed(() => {
 .mj-chip--active-strong {
   border-radius: $ftl-radius-md;
   animation: ftl-active-glow 1.2s ease-in-out infinite;
-  box-shadow: 0 0 14px rgba($ftl-color-gold, 0.5);
+  box-shadow: 0 0 14px rgba($ftl-color-mj-gold, 0.5);
 }
 .mj-chip--active-weak {
   border-radius: $ftl-radius-md;
   animation: ftl-active-glow 2.2s ease-in-out infinite;
-  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.25);
+  box-shadow: 0 0 6px rgba($ftl-color-mj-gold, 0.25);
 }
 @media (prefers-reduced-motion: reduce) {
   .mj-chip--active-strong,
   .mj-chip--active-weak {
     animation: none !important;
-    box-shadow: 0 0 8px rgba($ftl-color-gold, 0.2);
+    box-shadow: 0 0 8px rgba($ftl-color-mj-gold, 0.2);
   }
 }
 </style>

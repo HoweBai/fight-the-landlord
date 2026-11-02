@@ -81,9 +81,11 @@ describe('麻将素材完整性', () => {
   it('方向抽检：1 万/9 万红字重心', async () => {
     for (const name of ['wan-1', 'wan-9']) {
       const my = await redCentroid(join(ROOT, 'my', `${name}.png`));
+      const top = await redCentroid(join(ROOT, 'top', `${name}.png`));
       const left = await redCentroid(join(ROOT, 'left', `${name}.png`));
       const right = await redCentroid(join(ROOT, 'right', `${name}.png`));
       expect(my.y).toBeGreaterThan(0.55);
+      expect(top.y).toBeLessThan(0.45);
       expect(left.x).toBeLessThan(0.45);
       expect(right.x).toBeGreaterThan(0.55);
     }

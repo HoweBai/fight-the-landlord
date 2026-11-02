@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectSourceFiles } from './helpers/source-scan';
+import { collectSourceFiles, stripComments } from './helpers/source-scan';
 
 const files = collectSourceFiles();
 const vue = (p: string) => files.find((f) => f.path === `src/${p}`)!;
@@ -62,7 +62,24 @@ describe('麻将主题源码闸', () => {
       const s = style(vue(`components/table/mahjong/${c}`).content);
       expect(s).not.toContain('mj-tile--rotate');
       expect(s).not.toContain('mj-meld--vertical');
+      // 整份 SFC（去注释）也不得重新引入死 prop
+      const whole = stripComments(vue(`components/table/mahjong/${c}`).content);
+      expect(whole).not.toMatch(/rotate\?:/);
+      expect(whole).not.toMatch(/vertical\?:/);
+      expect(whole).not.toMatch(/props\.(rotate|vertical)/);
+      expect(whole).not.toMatch(/\b(rotate|vertical)=/);
     }
+  });
+
+  it('主按钮 hover 保持海军蓝字（不被 .btn:hover 白字覆盖）', () => {
+    const board = style(vue(BOARD).content);
+    expect(board).toMatch(
+      /\.btn--primary\s*\{[\s\S]*?&:hover\s*\{[^}]*color:\s*\$ftl-color-mj-on-gold/,
+    );
+    const settle = style(vue('components/MahjongSettlement.vue').content);
+    expect(settle).toMatch(
+      /\.btn--primary\s*\{[\s\S]*?&:hover\s*\{[^}]*color:\s*\$ftl-color-mj-on-gold/,
+    );
   });
 
   it('uni.scss 定义全部 mj token', () => {
