@@ -70,7 +70,7 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
 /**
  * `GET /api/config` —— 玩家客户端的配置**子集**（规格 §2.4 / C7）。
  *
- * 判据写死：`data` 的键集**恰好** `CLIENT_CONFIG_KEYS`（多玩法配置平行化起 = 二十一键：
+ * 判据写死：`data` 的键集**恰好** `CLIENT_CONFIG_KEYS`（多玩法配置平行化起 = 二十三键：
  * `baseScoreLevels` / `friendRoomEnabled` / `freeRoomEnabled` / `goldRoomEnabled` /
  * `cardCounterEnabled` / `cardCounterPricePerGameCoins` / `cardCounterPricePerHourCoins` / `reliefEnabled` / `entryMultiplier` /
  * `rechargeEnabled` / `withdrawEnabled` /
@@ -85,8 +85,8 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
  *  - `version` = **全局** MAX（每键 version 的最大值；不是子集几键的 MAX —— 规格 §2.1/§2.3）；
  *  - 每次请求都查库（`list()` 不缓存）—— 缓存会把「后台改了要生效」变成「改了要重启」。
  *
- * ⚠️ 缺行的兜底（**只在这里**，RPC 快照不兜）：子集形状恒二十一键、缺行取**与种子一致的默认**
- * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；101 键齐全由迁移
+ * ⚠️ 缺行的兜底（**只在这里**，RPC 快照不兜）：子集形状恒二十三键、缺行取**与种子一致的默认**
+ * （空表 / 逐键见下）。子集是玩家面，形状变化会打到全部客户端；113 键齐全由迁移
  * 种子保证，缺行只可能是建库事故 —— 此时「空档位 + 入口按种子」的既有客户端 fail-safe
  * 语义（§2.8）比 500 更稳。值的**合法性**由写入口的 `parseConfigValue` 保证；档位表在读取时
  * 复用同一个 parser 复核（坏值 ⇒ 空表，不 500）。
@@ -97,7 +97,7 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
  *  - `reliefEnabled ?? false`（缺 ⇒ 关：说不清就不开）；
  *  - `entryMultiplier ?? 10`（与种子一致：门槛提示退回初始倍率；服务端仍权威）。
  *    ⚠️ 客户端侧「响应整键缺失 ⇒ 不做门槛提示」是**另一回事**（旧版服务端的响应形态，
- *    T10 的客户端用例承担）；本控制器恒产出二十一键，不制造那种形态。
+ *    T10 的客户端用例承担）；本控制器恒产出二十三键，不制造那种形态。
  *  - 支付七键（支付片 T5，⚙️11）：两开关 `?? false`（钱面 fail-safe：说不清就不开）、
  *    `coinPerYuan ?? 100` / `withdrawMinCoins ?? 1000` / `withdrawMaxCoinsPerOrder ?? 50000` /
  *    `withdrawDailyMaxCoins ?? 100000`（与种子一致）、`rechargePackages ?? []`
@@ -261,7 +261,7 @@ export class ClientConfigController {
         ),
         reliefEnabled: (byKey.get('currency.reliefEnabled') ?? false) as boolean,
         entryMultiplier: ddzEntryMultiplier,
-        // 平行化：恒下发合法值或 null（缺失/非法 ⇒ null），保持 21 键精确集。
+        // 平行化：恒下发合法值或 null（缺失/非法 ⇒ null），保持 23 键精确集。
         reliefThresholdCoins: readReliefThreshold(byKey),
         // 支付七键（支付片 T5；缺行默认方向见文件头「缺行默认逐键」）
         rechargeEnabled: (byKey.get('pay.rechargeEnabled') ?? false) as boolean,

@@ -27,7 +27,7 @@
  *  ① 键空间面（ad-channel 管理面）：掩码读（value 恒 null+指纹=宿主复算）· super_admin
  *     写读回 · 非 SA（operator/finance/viewer）×（PUT/DELETE）⇒ 403 · 种子密钥生效
  *     （末态 = 四键空间回种子）。
- *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 22 键（排序字面，含第 15 键
+ *  ② 键面（**此处起重启状态=开关关**）：`/api/config` 恰 23 键（排序字面，含第 15 键
  *     `reliefAdpid`）· 内部键零泄漏（`ad.`/`currency.` 前缀扫描）· 管理面 65 键 ·
  *     adpid 空串种子方向 + 非空下发生效 + 还原（末态 = adpid=''）。
  *  ③ 签发面（前置 = ③ 内 PUT `reliefEnabled=true` 并等到快照生效；末态 = 开关 ON）：
@@ -820,12 +820,12 @@ export async function runSlice24(): Promise<Checks> {
     checks.that(activeLeft.length === 0, `① 三枚一次性账号均已 disabled（不留活跃凭据）—— 残留 ${JSON.stringify(activeLeft)}`);
 
     /* ── ② 键面 ─────────────────────────────────────────────────────────── */
-    step('② 键面：/api/config 恰 22 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
+    step('② 键面：/api/config 恰 23 键（排序字面）· 内部键零泄漏（ad./currency. 前缀扫描）· 管理面 65 键 · adpid 空串种子方向 + 非空下发生效 + 还原');
     const uCfg = await registerUser(61);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     expectHttp(checks, cfgA as { status: number; body: Envelope | null }, 200, ErrCode.OK, '② GET /api/config（玩家面）');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 22 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, '② /api/config 键集（排序后）恰 23 键逐字（reliefAdpid 插于 rechargePackages/reliefEnabled 间）');
     checks.eq((cfgA.body?.data as Record<string, unknown>)?.[AD_KEY_CLIENT], '', `② ${AD_KEY_CLIENT} 空串种子方向（fail 方向 = 空串 ⇒ 入口不渲染）`);
     const cfgRaw = JSON.stringify(cfgA.body?.data ?? null);
     checks.that(

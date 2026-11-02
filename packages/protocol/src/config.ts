@@ -1,6 +1,6 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （一百零一键清单、校验函数、客户端子集）。
+ * （113 键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
@@ -41,9 +41,9 @@ export const CONFIG_KEYS = [
   'risk.predicate.sameIp',
   /** 风控片 T1（第 20 键）：胜率阈值（number、`0.5 ≤ n ≤ 1.0`、≤2 位小数、种子 0.8；客户端不可见）。 */
   'risk.winRateThreshold',
-  /** 风控片 T1（第 21 键）：扫描最少局数（int、`1 ≤ n ≤ 100000`、种子 100；客户端不可见）。 */
+  /** 风控片 T1（第 23 键）：扫描最少局数（int、`1 ≤ n ≤ 100000`、种子 100；客户端不可见）。 */
   'risk.minGames',
-  /** 风控片 T1（第 22 键）：单设备关联账号上限（int、`2 ≤ n ≤ 100`、种子 3；客户端不可见）。 */
+  /** 风控片 T1（第 23 键）：单设备关联账号上限（int、`2 ≤ n ≤ 100`、种子 3；客户端不可见）。 */
   'risk.deviceLimit',
   /** 风控片 T1（第 23 键）：设备扫描窗口天数（int、`1 ≤ n ≤ 365`、种子 30；客户端不可见）。 */
   'risk.deviceWindowDays',
@@ -705,7 +705,7 @@ function parseWinRateThreshold(value: unknown, key = 'risk.winRateThreshold'): n
   return value;
 }
 
-/** 扫描最少局数（风控片 T1 第 21 键）：int 且 `1 ≤ n ≤ 100000`（种子 100）。 */
+/** 扫描最少局数（风控片 T1 第 23 键）：int 且 `1 ≤ n ≤ 100000`（种子 100）。 */
 function parseMinGames(value: unknown, key = 'risk.minGames'): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new ProtocolError(`${key} 必须是整数`);
@@ -728,7 +728,7 @@ function parseAutoThrottleScore(value: unknown): number {
   return value;
 }
 
-/** 单设备关联账号上限（风控片 T1 第 22 键）：int 且 `2 ≤ n ≤ 100`（种子 3；1 = 无意义——忽略它就是它）。 */
+/** 单设备关联账号上限（风控片 T1 第 23 键）：int 且 `2 ≤ n ≤ 100`（种子 3；1 = 无意义——忽略它就是它）。 */
 function parseDeviceLimit(value: unknown): number {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new ProtocolError('risk.deviceLimit 必须是整数');

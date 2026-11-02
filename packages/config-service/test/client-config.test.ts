@@ -321,7 +321,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('不泄漏内部键：出站 JSON 里没有任何 101 键键名（外层恰好二十二键 + 值域检查）', async () => {
+  it('不泄漏内部键：出站 JSON 里没有任何 113 键键名（外层恰好二十三键 + 值域检查）', async () => {
     const probe = await startHttpProbe(makeService(seedDb()).svc);
     try {
       const text = JSON.stringify((await probe.get('/api/config')).body);
@@ -369,7 +369,7 @@ describe('GET /api/config（C7 半边）', () => {
     }
   });
 
-  it('缺行兜底 = 形状恒二十二键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
+  it('缺行兜底 = 形状恒二十三键 + 与种子一致的默认（空表 / 逐键见断言）—— 行缺失不得改子集形状', async () => {
     const { svc, db } = makeService(seedDb());
     db.rows.delete('game.levels.doudizhu');
     db.rows.delete('game.baseScoreLevels');
