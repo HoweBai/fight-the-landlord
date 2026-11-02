@@ -58,12 +58,12 @@ v1 上线后用户指出与实机仍有明显差距。采样对比：
 | D1 | 桌面 `#7FA8C0 → #5C93AC → #436C87` | 对齐实机蓝青；仅改 3 个 token |
 | D2 | 中央盘/ClaimTile 用炭黑 `#3A3D42` / `#4A4D54`；顶栏/座位卡用蓝灰 `#1E3352` / `#2C4270` | 天月中央是炭黑，UI 是蓝灰 |
 | D3 | 木框 `#6B5A4A / #5A4D42 / #4A3F36` | 实机是深灰棕 |
-| D4 | 牌面：`ImageOps.grayscale(Front)` → `colorize(black #CDD2DA, mid #EEF1F4, white #FFFFFF)` → 恢复 alpha → 叠字形 | 冷白（B≥G≥R），字形颜色不变 |
-| D5 | 牌背：`ImageOps.grayscale(Back)` → `colorize(black #233764, mid #5B7EC0, white #A0B2D6)` → 恢复 alpha | 目标 `#5B7EC0`；实测均值约 `[85,119,182]` |
+| D4 | 牌面：`ImageOps.grayscale(Front)` → `colorize(black #BEC3CD, mid #E8ECF1, white #F0F4FA)` → 恢复 alpha → 叠字形；64 色量化 | 实测低饱和均值约 `[239,243,249]`（B>G>R，11 级明暗），字形颜色不变 |
+| D5 | 牌背：`ImageOps.grayscale(Back)` → `colorize(black #233764, mid #5B7EC0, white #A0B2D6)` → 恢复 alpha；64 色量化 | 实测均值约 `[84,118,181]`，旧背 `[44,49,187]` 会被新测试判红 |
 | D6 | 中央卡 340×≤145.4；内容 8 padding + 28 顶条 + 80 四家/圆盘 + 27 听牌 = 143；**无布局边框、无 flex gap**；金边用 inset box-shadow | 手牌 116 后最差中央井 153.4，卡高 `min(170, 井高-8)=145.4`；余 2.4 |
-| D7 | 四家标签：左右各 100px 列；每列上下两个；[对, 左, 右, 我] → [左上, 左下, 右上, 右下]；前缀 14px，局分 22px，状态 18px；每格 22+18=40 高 | 340 内 100+80+100=280，放得下；前缀消除四角歧义 |
-| D8 | 中央分数 = **局分 delta**（`pendingScoreChanges` 按 seat 求和），不是钱包余额 | 自由场余额为 null；天月显示局分；钱包余额已在座位卡 |
-| D9 | 状态 = `庄` 前缀 + 第二状态（胡 > 出局 > 听 > 缺X），如 `庄·缺万`、`听`、`胡` | 庄不再被缺门遮住；一个徽标行放得下 |
+| D7 | 四家标签：左右各 100px 列；每列上下两个；[对, 左, 右, 我] → [左上, 左下, 右上, 右下]；前缀 `$ftl-font-mj-mini` 14px，分数 22px，状态 `$ftl-font-mj-badge` 18px；每格 line-height 1 + 22+18=40 高 | 340 内 100+80+100=280；显式 line-height/gap/padding 防止 body 被撑破 |
+| D8 | 中央分数 = **杠分/临时分投影**（`pendingScoreChanges` 按 seat 求和），**不是完整局分、也不是钱包余额** | 纯客户端只有这个字段；胡/查叫/花猪在结算才出；自由场有杠时也会非 0。spec/handoff 明确标注 |
+| D9 | 状态拆成 `dealer: boolean`（金色“庄”）+ `badge: string`（胡 > 出局 > 听 > 缺X）；渲染为 `庄·缺万` | 庄不再被缺门遮住；两段可分别着色 |
 | D10 | 可响应牌移到 ClaimTile 顶部（34×45，尺寸取 `centerTiles.claim`）；预览取**未过滤** options 的第一张 tile | 中央腾给四家；过滤为空时仍能看到牌 |
 | D11 | 手牌 116 高；宽度兜底 0.88W → 0.95W | 手牌 15.5% 屏高（可达上限；17–18% 需叠牌，另立片） |
 | D12 | 自家人像：`left = centerZone.left`（左家区右缘 + inner），`top = handTop - selfChipH - 20` | 避开左家副露/牌河；手牌选中上浮 10 后仍有 10px 间隙；约 17% 屏宽，接近实机 |
@@ -72,6 +72,9 @@ v1 上线后用户指出与实机仍有明显差距。采样对比：
 | D15 | `MahjongCenter` 新增 `seats` prop（必填，默认 []）；移除 `claimTile/claimW/claimH` | 中央只做分数/状态/听牌；可响应归 ClaimTile |
 | D16 | 色值全部进 `uni.scss` token；组件不写裸 hex | 现有 ui-tokens 闸 |
 | D17 | 本片取代 v1 的 D5/D8/D3 及 §8 相关偏离；在 v1 状态行登记 | 避免两份 spec 取错基线 |
+| D18 | ClaimTile 选项改 2 列网格：按钮文案只留 `胡/碰/杠/过`，番数做 14px 小徽标；按钮 min-width 68、gap 6、面板 padding 10 | 4 个 88px 按钮单列会高约 500；2 列约 275，更接近实机横向动作条 |
+| D19 | `endedText` 由 Board 在 ended 时传真实文案（`已胡 N 家` / `牌墙摸空` / `本局结束`），不能传空串 | 否则新 Center 的 ended 行永远空白 |
+| D20 | 紧凑模式单行 = `牌墙 N · 阶段 · 秒`（有秒时）；不显示 claim 文案 | 移除 claim 后 compact 需新文案 |
 
 ## 5. 实现设计
 
@@ -97,8 +100,11 @@ $ftl-color-mj-wood-deep: #4a3f36;
 `scripts/build-mahjong-tile-set.py`：
 - `composed()`：
   ```python
+  from PIL import Image, ImageOps
   gray = ImageOps.grayscale(front)
-  face = ImageOps.colorize(gray, black=(205,210,218), mid=(238,241,244), white=(255,255,255)).convert('RGBA')
+  face = ImageOps.colorize(
+      gray, black=(190,195,205), mid=(232,236,241), white=(240,244,250)
+  ).convert('RGBA')
   face.putalpha(front.split()[3])
   return Image.alpha_composite(face, glyph)
   ```
@@ -108,7 +114,7 @@ $ftl-color-mj-wood-deep: #4a3f36;
   out = ImageOps.colorize(gray, black=(35,55,100), mid=(91,126,192), white=(160,178,214)).convert('RGBA')
   out.putalpha(back.split()[3])
   ```
-- 其余（旋转/缩放/64 色量化/manifest）不变；目标牌面 `#EEF1F4`、牌背 `#5B7EC0`。
+- 其余（旋转/缩放/64 色量化/manifest）不变；实测牌面低饱和均值约 `[239,243,249]`（11 级明暗）、牌背约 `[84,118,181]`。
 - NOTICE 的修改描述加“灰度着色、冷白/宝蓝”。
 
 ### 5.3 布局
@@ -172,41 +178,46 @@ maxFan?: number | null;
     .mj-center__col（100）：上=右家，下=自己
   .mj-center__ting（27）：听 N 张 + 最多 8 张 20×27 + 14px 番徽标
 ```
-- 四家格：`prefix` 14px（对/左/右/我）+ `score` 22px（`0`/`+1200`/`-800`）；`badge` 18px（`庄·缺万`/`听`/`胡`/`出局`/空）；两行 line-height 1，总高 40；两格 80。
-- 余额格式：`score` 直接显示；超过 6 位用 `万` 紧凑（如 `12.3万`）；不再有 null。
+- 四家格：`prefix` `$ftl-font-mj-mini` 14px（对/左/右/我）+ `score` 22px（`0`/`+1200`/`-800`）；`dealer` 金色“庄” + `badge` `$ftl-font-mj-badge` 18px（胡/出局/听/缺X/空），渲染成 `庄·缺万`；cell `height:40px; line-height:1; gap:0; padding:0`，两格 80。
+- 分数格式：`score` 直接显示；`abs >= 1_000_000` 用 `万` 紧凑（如 `123.5万`）；无 seats 不渲染列。
 - 徽标色：胡=金底海军蓝字；听=青底海军蓝字；缺/出局=海军蓝底浅字；庄前缀=金色。
-- 听牌：最多 8 张 + `听 {{tingTiles.length}} 张`；`maxFan` 用 14px 金色徽标 `{{maxFan}}番`。
+- 听牌：最多 8 张 + `听 {{tingTiles.length}} 张`；`maxFan` 用 `$ftl-font-mj-mini` 14px 金色徽标 `{{maxFan}}番`。
 - `ended`：隐藏听牌行，显示 `endedText`（22px）。
-- 紧凑：保留；隐藏四家/听牌，只出 90 圆盘 + 单行文字（小画布防御）。
+- 紧凑：隐藏四家/听牌，只出 90 圆盘 + 单行 `牌墙 N · 阶段 · 秒`（小画布防御）。
 
 ### 5.5 ClaimTile 牌面预览
 
 - 新增 `previewW?: number`（默认 34）、`previewH?: number`（默认 45）。
-- `previewTile = props.options.find(o => o.tile)?.tile ?? null`（**未过滤**，避免过滤为空时丢锚点）。
+- `source = filteredOptions?.length ? filteredOptions : options`；`previewTile = source.find(o => o.tile)?.tile ?? null`。
 - 模板顶部：`可响应` + `MahjongTile`（preview 尺寸）；无 tile 只出文字。
+- 选项改 **2 列网格**：按钮文案只留 `胡/碰/杠/过`；番数做 `$ftl-font-mj-mini` 14px 小徽标；按钮 min-width 68、gap 6、面板 padding 10；面板高约 275。
 - 面板根类 `mj-claim-tile--panel`；背景 `$ftl-color-mj-panel`；按钮仍金/蓝。
 - Board 传 `:preview-w="layout.centerTiles.claim.w"`、`:preview-h="...h"`。
 
 ### 5.6 MahjongBoard 接线
 
-`centerProps`：
+`centerProps`（`view` 是 `ComputedRef`，统一用 `props.view?.` 与 `seatView(seat)`）：
 ```ts
+const v = props.view;
 const pending = new Map<number, number>();
-for (const c of view.pendingScoreChanges ?? []) pending.set(c.seat, (pending.get(c.seat) ?? 0) + c.delta);
+for (const c of v?.pendingScoreChanges ?? []) {
+  pending.set(c.seat, (pending.get(c.seat) ?? 0) + c.delta);
+}
 const seatScore = (seat: number) => pending.get(seat) ?? 0;
 const badgeFor = (seat: number) => {
-  const parts: string[] = [];
-  if (seat === view.dealerSeat) parts.push('庄');
-  const second = hu ? '胡' : isOut ? '出局' : ting ? '听' : lack ? `缺${...}` : '';
-  if (second) parts.push(second);
-  return parts.join('·');
+  const hu = v?.huInfos.some((h) => h.seat === seat) ?? false;
+  const out = v?.isOut[seat] ?? false;
+  const ting = v?.tingSeats.includes(seat) ?? false;
+  const lack = v?.lackSuits[seat] ?? null;
+  return hu ? '胡' : out ? '出局' : ting ? '听' : lack !== null ? `缺${MAHJONG_SUIT_NAMES[lack]}` : '';
 };
 const centerSeats = [
-  { label:'对', score: seatScore(top), badge: badgeFor(top) },
-  { label:'左', score: seatScore(left), badge: badgeFor(left) },
-  { label:'右', score: seatScore(right), badge: badgeFor(right) },
-  { label:'我', score: seatScore(me), badge: badgeFor(me) },
+  { label:'对', score: seatScore(topSeat.value), dealer: v?.dealerSeat === topSeat.value, badge: badgeFor(topSeat.value) },
+  { label:'左', score: seatScore(leftSeat.value), dealer: v?.dealerSeat === leftSeat.value, badge: badgeFor(leftSeat.value) },
+  { label:'右', score: seatScore(rightSeat.value), dealer: v?.dealerSeat === rightSeat.value, badge: badgeFor(rightSeat.value) },
+  { label:'我', score: seatScore(me.value), dealer: v?.dealerSeat === me.value, badge: badgeFor(me.value) },
 ];
+// endedText：ended 时传 `已胡 N 家` / `牌墙摸空` / `本局结束`，不得空串
 ```
 - 移除 `claimTile/claimW/claimH` 从 centerProps。
 - ClaimTile 传 preview 尺寸。
@@ -284,7 +295,7 @@ const centerSeats = [
 - `apps/client/src/game/mahjong-layout.ts`
 - `apps/client/src/components/table/mahjong/MahjongCenter.vue`
 - `MahjongBoard.vue` / `ClaimTile.vue`
-- 测试：`mahjong-layout.test.ts` / `mahjong-center.test.ts` / `mahjong-board.test.ts` / `mahjong-assets.test.ts` / `mahjong-theme.test.ts` / `mahjong-claim-tile.test.ts`
+- 测试：`mahjong-layout.test.ts` / `mahjong-center.test.ts` / `mahjong-board.test.ts` / `mahjong-assets.test.ts` / `mahjong-theme.test.ts` / `mahjong-claim-tile.test.ts`（ClaimTile 源闸/预览在后者）
 - 文档：本 spec + plan + handoff；v1 spec 状态行；NOTICE
 
 ## 10. 审查记录
