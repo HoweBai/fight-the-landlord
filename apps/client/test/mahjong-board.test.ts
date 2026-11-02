@@ -251,7 +251,7 @@ describe('T12：四家分区重排', () => {
   });
 
   it('提供画布尺寸时手牌尺寸与纯函数逐值一致', () => {
-    // 用 4:3：s≈1.127，手牌 80.9×121.9；1623×750 的 s 与兜底同为 1，验不出注入
+    // 用 4:3：s≈1.009，手牌约 87.8×117；1623×750 的 s 与兜底同为 1，验不出注入
     const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
     const wrapper = mount(MahjongBoard, {
       props: props(),

@@ -60,14 +60,32 @@ describe('MahjongCenter（天月对齐 v2）', () => {
           { label: '对', score: 0, dealer: false, badge: '' },
           { label: '左', score: -800, dealer: false, badge: '' },
           { label: '右', score: 1200, dealer: false, badge: '' },
-          { label: '我', score: 1230000, dealer: false, badge: '' },
+          { label: '我', score: 123000, dealer: false, badge: '' },
         ],
       },
     });
     expect(w.text()).toContain('0');
     expect(w.text()).toContain('-800');
     expect(w.text()).toContain('+1200');
-    expect(w.text()).toContain('123.0万');
+    expect(w.text()).toContain('12.3万');
+  });
+
+  it('分数阈值：99999 原样，100000 走万', () => {
+    const w = mount(MahjongCenter, {
+      props: {
+        ...base,
+        seats: [
+          { label: '对', score: 99999, dealer: false, badge: '' },
+          { label: '左', score: 100000, dealer: false, badge: '' },
+          { label: '右', score: -100000, dealer: false, badge: '' },
+          { label: '我', score: 0, dealer: false, badge: '' },
+        ],
+      },
+    });
+    const cells = w.findAll('.mj-center__cell');
+    expect(cells[0]!.text()).toContain('+99999');
+    expect(cells[1]!.text()).toContain('10.0万');
+    expect(cells[2]!.text()).toContain('-10.0万');
   });
 
   it('无 seats 不渲染四家列', () => {
@@ -120,9 +138,36 @@ describe('MahjongCenter（天月对齐 v2）', () => {
       props: { ...base, tingTiles: ting13, maxFan: 5 },
     });
     expect(w.findAll('.mj-tile')).toHaveLength(8);
+    expect(w.find('.mj-center__ting .mj-tile').attributes('style')).toContain('width: 20px');
+    expect(w.find('.mj-center__ting .mj-tile').attributes('style')).toContain('height: 27px');
     expect(w.text()).toContain('听 13 张');
     expect(w.text()).toContain('5番');
     expect(w.find('.mj-center__fan').exists()).toBe(true);
+  });
+
+  it('badge 颜色类：胡/听/出局', () => {
+    const w = mount(MahjongCenter, {
+      props: {
+        ...base,
+        seats: [
+          { label: '对', score: 0, dealer: false, badge: '胡' },
+          { label: '左', score: 0, dealer: false, badge: '听' },
+          { label: '右', score: 0, dealer: false, badge: '出局' },
+          { label: '我', score: 0, dealer: false, badge: '缺万' },
+        ],
+      },
+    });
+    expect(w.find('.mj-center__badge--hu').text()).toBe('胡');
+    expect(w.find('.mj-center__badge--ting').text()).toBe('听');
+    expect(w.find('.mj-center__badge--muted').text()).toBe('出局');
+  });
+
+  it('ended 无胡：牌墙摸空', () => {
+    const w = mount(MahjongCenter, {
+      props: { ...base, ended: true, endedText: '牌墙摸空' },
+    });
+    expect(w.find('.mj-center__value').text()).toContain('终');
+    expect(w.find('.mj-center__ended').text()).toContain('牌墙摸空');
   });
 
   it('紧凑：单行、无牌面', () => {
@@ -141,6 +186,7 @@ describe('MahjongCenter（天月对齐 v2）', () => {
     const root = /\.mj-center\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
     expect(root).not.toMatch(/\bborder\s*:/);
     expect(root).not.toMatch(/\bgap\s*:/);
+    expect(root).toContain('padding: 4px 8px');
     expect(root).toContain('box-shadow');
     const dial = /\.mj-center__dial\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
     expect(dial).toContain('width: 80px');
@@ -155,8 +201,21 @@ describe('MahjongCenter（天月对齐 v2）', () => {
     const cell = /\.mj-center__cell\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
     expect(cell).toContain('height: 40px');
     expect(cell).toContain('line-height: 1');
-    expect(s).toContain('$ftl-font-mj-mini');
-    expect(s).toContain('$ftl-font-mj-badge');
+    expect(cell).toContain('padding: 0');
+    expect(cell).toContain('gap: 0');
+    const ting = /\.mj-center__ting\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(ting).toContain('height: 27px');
+    const phase = /\.mj-center__phase\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(phase).toContain('white-space: nowrap');
+    const fan = /\.mj-center__fan\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(fan).toContain('$ftl-font-mj-mini');
+    const prefix = /\.mj-center__prefix\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(prefix).toContain('$ftl-font-mj-mini');
+    // 每个关键选择器只允许一个块（防末尾追加覆盖）
+    for (const sel of ['.mj-center__dial', '.mj-center__strip', '.mj-center__body', '.mj-center__col', '.mj-center__cell']) {
+      const count = s.split('\n').filter((line) => line.trim().startsWith(`${sel} {`)).length;
+      expect(count, sel).toBe(1);
+    }
     expect(src).toContain("@import '../../../styles/animations.scss'");
   });
 });

@@ -65,7 +65,9 @@ describe('ClaimTile', () => {
   it('源码闸：炭黑 panel token、2 列网格、无旧绿色', () => {
     const src = readFileSync('src/components/table/mahjong/ClaimTile.vue', 'utf8');
     expect(src).toContain('$ftl-color-mj-panel');
-    expect(src).toContain('grid-template-columns: repeat(2');
+    const style = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    const opts = /\.mj-claim-tile__opts\s*\{([^}]*)\}/.exec(style)?.[1] ?? '';
+    expect(opts).toContain('grid-template-columns: repeat(2');
     expect(src).toContain('$ftl-font-mj-mini');
     expect(src).not.toMatch(/rgba\(\s*30\s*,\s*60\s*,\s*40/);
     expect(src).not.toMatch(/rgba\(\s*60\s*,\s*110\s*,\s*75/);

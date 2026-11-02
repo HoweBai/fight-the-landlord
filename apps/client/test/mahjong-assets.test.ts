@@ -122,6 +122,7 @@ describe('麻将素材色温（天月对齐 v2）', () => {
   it('牌面：冷白（低饱和亮像素 228–250、B≥G≥R、B-R≥3）', async () => {
     const { data, width, height } = await imageData(join(ROOT, 'my/wan-1.png'));
     let r = 0, g = 0, b = 0, n = 0;
+    const brights: number[] = [];
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const i = (y * width + x) * 4;
@@ -130,6 +131,7 @@ describe('麻将素材色温（天月对齐 v2）', () => {
         const bright = (R + G + B) / 3;
         if (A > 200 && sat < 18 && bright > 225) {
           r += R; g += G; b += B; n += 1;
+          brights.push(bright);
         }
       }
     }
@@ -140,6 +142,9 @@ describe('麻将素材色温（天月对齐 v2）', () => {
     expect(ab).toBeGreaterThanOrEqual(ag);
     expect(ag).toBeGreaterThanOrEqual(ar);
     expect(ab - ar).toBeGreaterThanOrEqual(3);
+    const mean = brights.reduce((x, y) => x + y, 0) / brights.length;
+    const std = Math.sqrt(brights.reduce((x, y) => x + (y - mean) ** 2, 0) / brights.length);
+    expect(std).toBeGreaterThanOrEqual(1);
 
   });
 

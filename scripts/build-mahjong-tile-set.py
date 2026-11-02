@@ -4,7 +4,7 @@
 源图：scripts/assets/mahjong/fluffystuff/（Front.png + Man/Pin/Sou 1-9 + Back.png）
 输出：apps/client/src/pages/table/static/mahjong/{my,top,left,right}/ + manifest.json
 
-依赖：Pillow、numpy（见 scripts/assets/mahjong/requirements.txt）。
+依赖：Pillow（见 scripts/assets/mahjong/requirements.txt）。
 生成结果入库；本脚本不参与构建。
 """
 from PIL import Image, ImageOps
@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 
-import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "scripts/assets/mahjong/fluffystuff")

@@ -179,7 +179,7 @@ maxFan?: number | null;
   .mj-center__ting（27）：听 N 张 + 最多 8 张 20×27 + 14px 番徽标
 ```
 - 四家格：`prefix` `$ftl-font-mj-mini` 14px（对/左/右/我）+ `score` 22px（`0`/`+1200`/`-800`）；`dealer` 金色“庄” + `badge` `$ftl-font-mj-badge` 18px（胡/出局/听/缺X/空），渲染成 `庄·缺万`；cell `height:40px; line-height:1; gap:0; padding:0`，两格 80。
-- 分数格式：`score` 直接显示；`abs >= 1_000_000` 用 `万` 紧凑（如 `123.5万`）；无 seats 不渲染列。
+- 分数格式：`score` 直接显示；`abs >= 100_000` 用 `万` 紧凑（如 `123.5万`）；无 seats 不渲染列。
 - 徽标色：胡=金底海军蓝字；听=青底海军蓝字；缺/出局=海军蓝底浅字；庄前缀=金色。
 - 听牌：最多 8 张 + `听 {{tingTiles.length}} 张`；`maxFan` 用 `$ftl-font-mj-mini` 14px 金色徽标 `{{maxFan}}番`。
 - `ended`：隐藏听牌行，显示 `endedText`（22px）。
@@ -259,7 +259,8 @@ const centerSeats = [
 
 - 精确集合/manifest/方向/back alpha 保持。
 - 牌面色温：低饱和亮像素 B≥G≥R，平均 225–250；`my/top` 四角 alpha=0。
-- 牌背：中心区域 B>R+50、B>G+30、|B-192|≤30；四角 alpha=0。
+- 牌面：低饱和亮像素均值 228–250、B≥G≥R、B-R≥3、亮度标准差 ≥1（防单色平涂）。
+- 牌背：中心区域 R≥70、G≥100、|B-181|≤15；四角 alpha=0。
 
 ### 6.5 视觉
 

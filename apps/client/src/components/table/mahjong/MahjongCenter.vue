@@ -56,7 +56,7 @@ const hasSeats = computed(() => props.seats.length > 0);
 const visibleTing = computed(() => props.tingTiles.slice(0, MAX_TING_TILES));
 
 function scoreText(n: number): string {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 10000).toFixed(1)}万`;
+  if (Math.abs(n) >= 100_000) return `${(n / 10000).toFixed(1)}万`;
   return n > 0 ? `+${n}` : String(n);
 }
 
@@ -170,6 +170,7 @@ function badgeClass(badge: string): string {
   color: $ftl-color-mj-gold;
   font-size: $ftl-font-xs;
   font-weight: 700;
+  white-space: nowrap;
 }
 .mj-center__sep {
   color: rgba($ftl-color-mj-muted, 0.6);
@@ -181,6 +182,7 @@ function badgeClass(badge: string): string {
   color: $ftl-color-mj-muted;
   font-size: $ftl-font-xs;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mj-center__body {
@@ -329,6 +331,7 @@ function badgeClass(badge: string): string {
   color: $ftl-color-mj-gold;
   font-size: $ftl-font-xs;
   line-height: 1;
+  white-space: nowrap;
 }
 .mj-center__fan {
   padding: 0 3px;

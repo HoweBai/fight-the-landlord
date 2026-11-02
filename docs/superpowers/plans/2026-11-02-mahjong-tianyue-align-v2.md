@@ -162,7 +162,7 @@ const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
 - **删除**：`MAHJONG_SUIT_NAMES` 导入（claimLabel 用）、`MAX_TING_TILES_WITH_CLAIM`、`claimLabel`、`extraTing`、`hasSide`。
 - 模板：strip 28 / body 80（左列 100 + 圆盘 80 + 右列 100）/ ting 27。
 - 四家格：cell 40、line-height 1、gap 0、padding 0；prefix 14、score 22、dealer 金色 + badge 18。
-- 分数：`abs>=1_000_000` → `(n/10000).toFixed(1)万`；否则原样。
+- 分数：`abs>=100_000` → `(n/10000).toFixed(1)万`；否则原样。
 - 听牌：最多 8；`听 {{tingTiles.length}} 张`；fan 14。
 - ended：隐藏 ting，显示 endedText（Board 必须传真实文案）。
 - CSS：炭黑 `panel/panel-light`；无布局 border；金边 `box-shadow: inset 0 0 0 $ftl-hairline $ftl-color-mj-gold`；无 gap；padding 4 8；dial 80×80 + `box-sizing:border-box`；strip 28。
@@ -212,7 +212,7 @@ const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
 
 ## Task 5：独立代码审查（必须）
 
-- 派独立 reviewer 审 `BASE..HEAD`（BASE = `e3e0e563`，含 spec/plan；或本片开始前的 `e3e0e563`）对照 spec/plan。
+- 派独立 reviewer 审 `BASE..HEAD`（BASE = `5c624742`，含 spec/plan）对照 spec/plan。
 - 重点：布局 8 档、中央 143 内容、四家 100/22/18、牌面/牌背色、ClaimTile 2 列/预览、Board 接线、测试假绿、回归面。
 - Critical/Important 必须修；Minor 登记或顺手修。
 - 审查结论写进本计划「代码审查记录」；修完再进 Task 6。
@@ -299,6 +299,25 @@ const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
 | L10 缺计划审查记录/v1 状态/版本断言 | 低 | 成立 | 本节 + v1 状态已加注 + pack 后 grep |
 | L11 Center strip 30→28 | 低 | 成立 | 显式 28 + 源闸 |
 | L12 badge 单字符串双色 | 低 | 成立 | 拆 `dealer:boolean` + `badge:string` |
-| L13 null seats/阈值 | 低 | 成立 | 删 null；`>=1_000_000` 走万 |
+| L13 null seats/阈值 | 低 | 成立 | 删 null；`>=100_000` 走万 |
 | L14 compact 文案 | 低 | 成立 | `牌墙 · 阶段 · 秒`；测试 |
 | L15 预览测试只查出现 | 低 | 成立 | 断言 src 与 DOM 顺序 |
+
+
+## 代码审查记录（终审 opus，2026-11-02）
+
+独立终审结论：Critical 0 / Important 2 / Minor 9。
+
+| 编号 | 等级 | 结论 | 处置 |
+|---|---|---|---|
+| I1 中央 phase 在 H5 折行裁切 | Important | 成立 | `.mj-center__phase` 加 `white-space: nowrap`；wall/ting-label 同步；源闸锁 |
+| I2 内容 143 未锁到 CSS | Important | 成立 | 源闸补 root padding 4/8、ting 27、cell gap0/padding0、关键选择器唯一块；Task 6 CDP 量高 |
+| M3 6 位分数溢出 100px 列 | Minor | 成立 | 万阈值 1,000,000 → 100,000；补 99999/100000 用例 |
+| M4 Task 3 提交非全绿 | Minor | 登记 | 1px/line-height 闸在 Task 4 修复；历史不改写，后续任务验证集含 ui-tokens |
+| M5 __pycache__ 未忽略 | Minor | 成立 | 删除 + `.gitignore` 加 `__pycache__/` |
+| M6 numpy 未使用 | Minor | 成立 | 删 import/docstring/requirements |
+| M7 色温测试偏弱 | Minor | 成立 | 面加亮度 std≥1；spec 背阈值同步 R≥70/G≥100/|B-181|≤15 |
+| M8 听牌尺寸/badge/ended 未锁 | Minor | 成立 | 补 ting 20×27、badge 类、牌墙摸空用例；fan/prefix 源闸 |
+| M9 源闸可绕过 | Minor | 成立 | ClaimTile 去注释+opts 块；Center 关键选择器唯一块 |
+| M10 board 陈旧注释 | Minor | 成立 | 4:3 s≈1.009/手牌约 87.8×117 |
+| M11 plan BASE 写错 | Minor | 成立 | 改为 `5c624742` |
