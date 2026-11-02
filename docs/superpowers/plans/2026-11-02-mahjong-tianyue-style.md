@@ -11,9 +11,11 @@ Spec：`docs/superpowers/specs/2026-11-02-mahjong-tianyue-style-design.md`（v2�
 - **TDD**：每个任务先写/改失败测试 → 跑红 → 最小实现 → 跑绿 → 提交。
 - **token 纪律**：组件样式只用 `$ftl-*` / 新增 `$ftl-color-mj-*`；不写裸 hex；描边一律
   `$ftl-hairline`（2px），不写 `1px`；不新增 `@keyframes`（复用 `anim-urgent-pulse`）。
+  重复的半透明底色抽成 `$ftl-color-mj-glass*` token；组件里允许 `rgba($ftl-color-mj-navy, .x)`。
 - **素材**：FluffyStuff CC0（pin `26e127ba2117f45cdce5ea0225748cc0cfad3169`）；生成结果入库；
-  Pillow/numpy 仅开发期。
+  Pillow/numpy 仅开发期，依赖写入 `scripts/assets/mahjong/requirements.txt`。
 - **提交**：每任务一个 commit，信息末尾 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`。
+- **只 add 本任务文件**：不 `git add -A`；起始工作区已有 6 个 `*z.png` 删除，统一留到 Task 1 提交。
 - **验证命令**：
   - `pnpm -C apps/client test`
   - `pnpm -C apps/client run lint`
@@ -24,7 +26,7 @@ Spec：`docs/superpowers/specs/2026-11-02-mahjong-tianyue-style-design.md`（v2�
 
 ## Task 0：基线转绿（prep）
 
-### Files
+### Files（只 add 这三个）
 - `apps/client/src/components/table/mahjong/MahjongTile.vue`
 - `apps/client/src/components/table/mahjong/MahjongMeld.vue`
 - `apps/client/test/mahjong-board.test.ts`
@@ -36,7 +38,8 @@ Spec：`docs/superpowers/specs/2026-11-02-mahjong-tianyue-style-design.md`（v2�
 - `pnpm -C apps/client test -- mahjong` 2 红：
   - `mahjong-board.test.ts:195` 期望 `.mj__hand` 隐藏、`.mj__my-revealed` 存在（模板已改为
     在 `.mj__hand` 内 `v-if="myRevealed"` 渲染）。
-  - `mahjong-board.test.ts:219` 找 `.mj__phase`（模板里是 `.mj-center__phase`）。
+  - `mahjong-board.test.ts:219` 找 `.mj__phase`（模板里是 `.mj-center__phase`），且在
+    `activeSeats=[1,2]` 时 `.mj__actions` 不渲染（`hasActions=false`），`.text()` 会抛错。
 
 ### Steps
 1. `MahjongTile.vue`：
@@ -49,46 +52,45 @@ Spec：`docs/superpowers/specs/2026-11-02-mahjong-tianyue-style-design.md`（v2�
    - `withDefaults` 删除 `vertical: false`。
    - 模板 class 删除 `{ 'mj-meld--vertical': vertical }`。
 3. `mahjong-board.test.ts`：
-   - 第一个失败用例改为：
+   - 第一个失败用例整段替换：
      - `expect(wrapper.find('.mj__hand').exists()).toBe(true)`；
      - `expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(revealedTiles.length)`；
      - `expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0)`。
-   - 第二个失败用例改为：
+   - 第二个失败用例整段替换：
      - `expect(wrapper.find('.mj-center__phase').text()).toContain('等待其他玩家响应')`；
-     - `expect(wrapper.find('.mj__actions').text()).not.toContain('等待其他玩家响应')`。
+     - `expect(wrapper.find('.mj__actions').exists()).toBe(false)`（该窗口自己不在 active，
+       动作栏本来就不渲染；不要对空 wrapper 调 `.text()`）。
 4. 跑：
    - `pnpm -C apps/client run lint` → 0 错误。
    - `pnpm -C apps/client test -- mahjong` → 全绿。
-5. Commit：`fix(client): 麻将基线修复（删死 prop、修陈旧断言）`。
-
-### 判别力
-- 删除前两条测试必红；修复后绿。lint 的 6 个错误逐条消失。
+5. Commit（只 add 上述 3 个文件）：`fix(client): 麻将基线修复（删死 prop、修陈旧断言）`。
 
 ---
 
 ## Task 1：素材管线 + 主题 token + 预算闸
 
 ### Files
-- New `scripts/assets/mahjong/fluffystuff/`（29 张 PNG + `LICENSE.md` + `README.md`）
+- New `scripts/assets/mahjong/fluffystuff/`（29 张 PNG + `LICENSE.md`）
+- New `scripts/assets/mahjong/requirements.txt`
 - New `scripts/build-mahjong-tile-set.py`
 - Replace `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/*.png`
 - New `apps/client/src/pages/table/static/mahjong/manifest.json`
 - `apps/client/src/uni.scss`
 - `THIRD-PARTY-NOTICES.md`
 - `apps/client/src/static/ASSETS.md`
-- `scripts/extract-mahjong-tiles.mjs`（文件头加退役说明）
+- `scripts/extract-mahjong-tiles.mjs`（顶部退出）
 - `apps/client/test/asset-budget.test.ts`
 - New `apps/client/test/mahjong-assets.test.ts`
 
-### Step 1.1：先写失败测试（预算 + 素材完整性）
+### Step 1.1：先写失败测试
 `asset-budget.test.ts`：
 - `BUDGET_KIB` 增加 `'table/mahjong': 768`。
 - `BUDGET_DIRS` 增加 `'table/mahjong': join(TABLE_STATIC, 'mahjong')`。
-- 判别力自证 `Object.keys(BUDGET_KIB)).toHaveLength(6)` 改 `7`。
+- 自证 `toHaveLength(6)` 改 `7`。
 - 增加 `expect(dirSizeKiB(join(TABLE_STATIC,'mahjong'))).toBeGreaterThan(300)`。
-- 跑 `pnpm -C apps/client test -- asset-budget` → **红**（当前 980KiB > 768）。
+- 跑 `pnpm -C apps/client test -- asset-budget` → **红**（当前实测约 836KiB > 768）。
 
-新建 `mahjong-assets.test.ts`（此时新文件不存在 → 红）：
+新建 `mahjong-assets.test.ts`：
 ```ts
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -100,8 +102,7 @@ import { SRC_ROOT } from './helpers/source-scan';
 const ROOT = join(SRC_ROOT, 'pages/table/static/mahjong');
 const DIRS = ['my', 'top', 'left', 'right'] as const;
 const SUITS = ['wan', 'tong', 'tiao'] as const;
-
-function sha(buf: Buffer) { return createHash('sha256').update(buf).digest('hex'); }
+const sha = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
 
 async function redCentroid(path: string) {
   const img = await loadImage(readFileSync(path));
@@ -110,63 +111,81 @@ async function redCentroid(path: string) {
   ctx.drawImage(img, 0, 0);
   const { data, width, height } = ctx.getImageData(0, 0, img.width, img.height);
   let sx = 0, sy = 0, n = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = (y * width + x) * 4;
-      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!, a = data[i + 3]!;
-      if (a > 128 && r > 120 && r > g * 1.5 && r > b * 1.5) { sx += x; sy += y; n += 1; }
-    }
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const i = (y * width + x) * 4;
+    const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!, a = data[i + 3]!;
+    if (a > 128 && r > 120 && r > g * 1.5 && r > b * 1.5) { sx += x; sy += y; n += 1; }
   }
   return { x: sx / n / width, y: sy / n / height, n };
 }
 
 describe('麻将素材完整性', () => {
-  it('四方向 27 面 + 背牌', () => {
+  it('四方向恰好 27 面 + back', () => {
     for (const dir of DIRS) {
-      const files = readdirSync(join(ROOT, dir));
-      expect(files).toContain('back.png');
-      for (const s of SUITS) for (let r = 1; r <= 9; r += 1) {
-        expect(files).toContain(`${s}-${r}.png`);
-      }
-      expect(files.filter((f) => f.endsWith('z.png'))).toEqual([]);
+      const files = readdirSync(join(ROOT, dir)).filter((f) => f.endsWith('.png')).sort();
+      const expected = [...SUITS.flatMap((s) => Array.from({ length: 9 }, (_, i) => `${s}-${i + 1}.png`)), 'back.png'].sort();
+      expect(files).toEqual(expected);
     }
   });
 
-  it('manifest 哈希/尺寸一致', () => {
+  it('manifest 哈希/尺寸/方向一致', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
     expect(manifest.source).toContain('FluffyStuff/riichi-mahjong-tiles');
     expect(manifest.license).toBe('CC0-1.0');
+    expect(manifest.commit).toBe('26e127ba2117f45cdce5ea0225748cc0cfad3169');
+    expect(manifest.files).toHaveLength(112);
     for (const e of manifest.files) {
-      const buf = readFileSync(join(ROOT, e.file));
-      expect(sha(buf)).toBe(e.sha256);
-      expect(e.width).toBe(e.file.startsWith('my/') || e.file.startsWith('top/') ? 180 : 240);
-      expect(e.height).toBe(e.file.startsWith('my/') || e.file.startsWith('top/') ? 240 : 180);
+      const file = String(e.file).replace(/\\/g, '/');
+      expect(file.startsWith(`${e.direction}/`)).toBe(true);
+      expect(sha(readFileSync(join(ROOT, file)))).toBe(e.sha256);
+      const portrait = e.direction === 'my' || e.direction === 'top';
+      expect(e.width).toBe(portrait ? 180 : 240);
+      expect(e.height).toBe(portrait ? 240 : 180);
     }
   });
 
   it('同方向 27 面互不相同', () => {
     for (const dir of DIRS) {
-      const hashes = SUITS.flatMap((s) =>
-        Array.from({ length: 9 }, (_, i) =>
-          sha(readFileSync(join(ROOT, dir, `${s}-${i + 1}.png`)))));
+      const hashes = SUITS.flatMap((s) => Array.from({ length: 9 }, (_, i) =>
+        sha(readFileSync(join(ROOT, dir, `${s}-${i + 1}.png`)))));
       expect(new Set(hashes).size).toBe(27);
     }
   });
 
-  it('方向抽检：1 万红字重心', async () => {
-    const my = await redCentroid(join(ROOT, 'my/wan-1.png'));
-    const left = await redCentroid(join(ROOT, 'left/wan-1.png'));
-    const right = await redCentroid(join(ROOT, 'right/wan-1.png'));
-    expect(my.y).toBeGreaterThan(0.55);
-    expect(left.x).toBeLessThan(0.45);
-    expect(right.x).toBeGreaterThan(0.55);
+  it('方向抽检：1 万/9 条红字重心', async () => {
+    for (const name of ['wan-1', 'tiao-9']) {
+      const my = await redCentroid(join(ROOT, 'my', `${name}.png`));
+      const left = await redCentroid(join(ROOT, 'left', `${name}.png`));
+      const right = await redCentroid(join(ROOT, 'right', `${name}.png`));
+      expect(my.y).toBeGreaterThan(0.55);
+      expect(left.x).toBeLessThan(0.45);
+      expect(right.x).toBeGreaterThan(0.55);
+    }
+  });
+
+  it('back.png 四角保留透明', async () => {
+    const img = await loadImage(readFileSync(join(ROOT, 'my', 'back.png')));
+    const canvas = createCanvas(img.width, img.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const { data, width } = ctx.getImageData(0, 0, img.width, img.height);
+    for (const [x, y] of [[0, 0], [width - 1, 0], [0, img.height - 1], [width - 1, img.height - 1]]) {
+      expect(data[(y * width + x) * 4 + 3]).toBe(0);
+    }
   });
 });
 ```
 - 跑 `pnpm -C apps/client test -- mahjong-assets` → **红**（文件缺失）。
+- 说明：`tiao-9` 的 9 条是否含红色？Fluffy 的 Sou9 含红色竹节；实测源图 `Sou9` 有红点。
+  若抽检失败，改用 `wan-9`（红萬）作为第二张。
 
-### Step 1.2：vendor 源图
+### Step 1.2：vendor 源图 + 依赖
 ```bash
+cat > scripts/assets/mahjong/requirements.txt <<'TXT'
+Pillow>=10
+numpy>=1.26
+TXT
+python -m pip install -r scripts/assets/mahjong/requirements.txt
 mkdir -p scripts/assets/mahjong/fluffystuff
 BASE="https://raw.githubusercontent.com/FluffyStuff/riichi-mahjong-tiles/26e127ba2117f45cdce5ea0225748cc0cfad3169/Export/Regular"
 for f in Front Back Man1 Man2 Man3 Man4 Man5 Man6 Man7 Man8 Man9 \
@@ -177,7 +196,7 @@ done
 curl -fsSL "https://raw.githubusercontent.com/FluffyStuff/riichi-mahjong-tiles/26e127ba2117f45cdce5ea0225748cc0cfad3169/LICENSE.md" \
   -o scripts/assets/mahjong/fluffystuff/LICENSE.md
 ```
-- 校验：`file` 每张为 600×800 PNG；`LICENSE.md` 含 CC0。
+- 校验：每张 600×800；`LICENSE.md` 含 CC0；总大小约 1.6MB。
 
 ### Step 1.3：生成脚本
 `scripts/build-mahjong-tile-set.py`：
@@ -185,17 +204,17 @@ curl -fsSL "https://raw.githubusercontent.com/FluffyStuff/riichi-mahjong-tiles/2
 #!/usr/bin/env python3
 """从 FluffyStuff CC0 源图生成四方向麻将牌面（180x240 / 240x180，64 色量化）。"""
 from PIL import Image
-import numpy as np, hashlib, json, os, shutil
+import numpy as np, hashlib, json, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'scripts/assets/mahjong/fluffystuff')
 OUT = os.path.join(ROOT, 'apps/client/src/pages/table/static/mahjong')
 SUITS = {'Man': 'wan', 'Pin': 'tong', 'Sou': 'tiao'}
-DIRS = {'my': 0, 'top': 180, 'left': -90, 'right': 90}  # PIL 正角度=逆时针
+ANGLES = {'my': 0, 'top': 180, 'left': -90, 'right': 90}  # PIL 正角度=逆时针
 
-def composed(name: str) -> Image.Image:
+def composed(stem: str) -> Image.Image:
     front = Image.open(os.path.join(SRC, 'Front.png')).convert('RGBA')
-    glyph = Image.open(os.path.join(SRC, name)).convert('RGBA')
+    glyph = Image.open(os.path.join(SRC, f'{stem}.png')).convert('RGBA')
     return Image.alpha_composite(front, glyph)
 
 def navy_back() -> Image.Image:
@@ -205,68 +224,70 @@ def navy_back() -> Image.Image:
     hue = Image.merge('HSV', (Image.fromarray(h), s, v)).convert('RGBA')
     navy = Image.new('RGBA', hue.size, (27, 41, 80, 255))
     rgb = Image.blend(hue.convert('RGB'), navy.convert('RGB'), 0.38)
-    out = rgb.convert('RGBA'); out.putalpha(hue.split()[3])
+    out = rgb.convert('RGBA')
+    out.putalpha(back.split()[3])  # 保留源牌背的透明圆角
     return out
 
-def emit(im: Image.Image, path: str, portrait: bool) -> dict:
+def emit(im: Image.Image, direction: str, name: str) -> dict:
+    portrait = direction in ('my', 'top')
     im = im.resize((180, 240) if portrait else (240, 180), Image.LANCZOS)
     q = im.quantize(colors=64, method=Image.FASTOCTREE, dither=Image.NONE)
+    path = os.path.join(OUT, direction, f'{name}.png')
     q.save(path, optimize=True)
     buf = open(path, 'rb').read()
-    return {'file': path, 'sha256': hashlib.sha256(buf).hexdigest(),
+    return {'file': f'{direction}/{name}.png', 'direction': direction,
+            'sha256': hashlib.sha256(buf).hexdigest(),
             'width': q.width, 'height': q.height}
 
 def main() -> None:
-    files = []
-    faces = {f'{suit}-{r}': composed(f'{name}{r}') for name, suit in SUITS.items() for r in range(1, 10)}
+    faces = {f'{suit}-{r}': composed(f'{src}{r}') for src, suit in SUITS.items() for r in range(1, 10)}
     back = navy_back()
-    for d, angle in DIRS.items():
-        out_dir = os.path.join(OUT, d)
+    files = []
+    for direction, angle in ANGLES.items():
+        out_dir = os.path.join(OUT, direction)
         os.makedirs(out_dir, exist_ok=True)
         for f in os.listdir(out_dir):
             if f.endswith('.png'):
                 os.remove(os.path.join(out_dir, f))
-        portrait = d in ('my', 'top')
-        for key, im in faces.items():
-            files.append(emit(im.rotate(angle, expand=True), os.path.join(out_dir, f'{key}.png'), portrait))
-        files.append(emit(back.rotate(angle, expand=True), os.path.join(out_dir, 'back.png'), portrait))
-    manifest = {
-        'source': 'FluffyStuff/riichi-mahjong-tiles',
-        'commit': '26e127ba2117f45cdce5ea0225748cc0cfad3169',
-        'license': 'CC0-1.0',
-        'files': [dict(e, file=os.path.relpath(e['file'], OUT)) for e in files],
-    }
+        for name, im in faces.items():
+            files.append(emit(im.rotate(angle, expand=True), direction, name))
+        files.append(emit(back.rotate(angle, expand=True), direction, 'back'))
+    manifest = {'source': 'FluffyStuff/riichi-mahjong-tiles',
+                'commit': '26e127ba2117f45cdce5ea0225748cc0cfad3169',
+                'license': 'CC0-1.0', 'files': files}
     with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as fh:
-        json.dump(manifest, fh, ensure_ascii=False, indent=2)
-        fh.write('\n')
+        json.dump(manifest, fh, ensure_ascii=False, indent=2); fh.write('\n')
 
 if __name__ == '__main__':
     main()
 ```
 - 运行：`python scripts/build-mahjong-tile-set.py`。
-- 预期：四方向各 28 张；`manifest.json` 112 条；目录约 450–500KB。
+- 预期：四方向各 28 张；manifest 112 条；目录约 585KiB（实测）。
+- 注意：`file` 已是正斜杠相对路径，测试端仍做 `replace(/\\/g,'/')` 兜底。
+- 6 张旧 `left/*z.png` 的删除随本任务提交。
 
 ### Step 1.4：主题 token
-`apps/client/src/uni.scss` 追加 §5.4 的 15 个 `$ftl-color-mj-*` token。
+`apps/client/src/uni.scss` 追加 §5.4 的 `$ftl-color-mj-*` token，并追加：
+```scss
+$ftl-color-mj-glass-soft: rgba(27, 41, 80, 0.35);
+$ftl-color-mj-shadow: rgba(10, 25, 50, 0.35);
+$ftl-color-mj-highlight: rgba(255, 255, 255, 0.18);
+```
 
 ### Step 1.5：文档
-- `THIRD-PARTY-NOTICES.md`：删除旧 babykylin **牌面** bullet，替换为：
-  - `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/*.png` 由
-    FluffyStuff/riichi-mahjong-tiles（CC0 1.0，commit `26e127ba…`）合成/旋转/缩放/改色/量化生成；
-    脚本 `scripts/build-mahjong-tile-set.py`；源图 vendored 在 `scripts/assets/mahjong/fluffystuff/`。
-  - 保留音频 bullet（仍来自 babykylin，条款待核实）。
-- `scripts/extract-mahjong-tiles.mjs` 文件头加：
-  `/** @deprecated 2026-11-02 起由 scripts/build-mahjong-tile-set.py 取代；保留仅作历史追溯。 */`
-- `apps/client/src/static/ASSETS.md` 增加麻将目录行：源图约 1.2MB（vendored）、输出约
-  450KB/112 张、预算 768KiB。
+- `THIRD-PARTY-NOTICES.md`：删除旧 babykylin **牌面** bullet，替换为 FluffyStuff CC0
+  （commit、脚本、vendored 路径）；保留音频 bullet 与“条款待核实”。
+- `scripts/extract-mahjong-tiles.mjs` 顶部加：
+  ```js
+  console.error('已退役：2026-11-02 起由 scripts/build-mahjong-tile-set.py 取代；拒绝运行以免覆盖新素材。');
+  process.exit(1);
+  ```
+- `ASSETS.md` 增加：源图约 1.6MB（vendored）、输出约 585KiB/112 张 + manifest、预算 768KiB。
 
 ### Step 1.6：跑绿
 - `pnpm -C apps/client test -- asset-budget mahjong-assets` → 绿。
-- `pnpm -C apps/client test -- ui-tokens` → 绿（新 token 在 uni.scss，组件未改）。
+- `pnpm -C apps/client test -- ui-tokens` → 绿。
 - Commit：`feat(client): 麻将牌面换 FluffyStuff CC0 素材 + 64 色量化 + 素材预算闸`。
-
-### 判别力
-- 预算测试在旧素材上红、新素材上绿；素材测试在生成前红、生成后绿；方向抽检能抓到 left/right 对调。
 
 ---
 
@@ -275,41 +296,90 @@ if __name__ == '__main__':
 ### Files
 - `apps/client/src/game/mahjong-layout.ts`
 - `apps/client/test/mahjong-layout.test.ts`
-- `apps/client/src/components/table/mahjong/MahjongBoard.vue`（仅消费字段，无视觉改动）
+- `apps/client/src/components/table/mahjong/MahjongBoard.vue`（仅消费字段）
 
 ### Step 2.1：先改测试（红）
-`mahjong-layout.test.ts`：
 1. `VIEWPORTS` 保留 7 档，追加 `{ name: '1343x1000', w: 1343, h: 1000 }`。
-2. 手牌行宽常量 `1041.5398230088495` → `1130`。
-3. `hand.rect.top = v.h - (12 + 104) * s`。
-4. 中央井高（WORST：top 1 副露、self 1 副露）：
-   `expect(l.centerZone.height).toBeCloseTo(v.h - (64 + 229.8 + 290.8) * l.s, 3)`。
-5. 紧凑判据：`expect(l.centerCompact).toBe(l.centerCard.height < 144 * l.s)`；
-   矩阵内断言 `false`；`centerZone.height >= 40`。
-6. 比例：
-   - hand/own/top = `3/4`；
-   - left/right river = `49/37`；
-   - topBacks = `3/4`；
-   - leftBacks = `4/3`。
-7. token 钉死：`handH=104`、`riverH=56`、`topBackH=47`、`sideBackH=34`、`sidePitch=26`、
-   `sideRiverH=37`、`centerClaimH=45`、`centerTingH=27`。
-8. 1334×750 中央卡：EMPTY → `340×170`；WORST → `340×153.4`（`toBeCloseTo(...,1)`）。
-9. 新增：
-   - `expect(l.hand.rect.left).toBeGreaterThan(l.selfChip.left + l.selfChip.width)`；
-   - `expect(l.topBacks.tile.w * 14 + l.topBacks.gap * 13).toBeLessThanOrEqual(l.topBacks.rect.width + 0.01)`；
-   - `const actionsRect = { left: l.actions.rightX - l.actions.maxWidth, top: l.actions.bottomY - l.actions.minHeight, width: l.actions.maxWidth, height: l.actions.minHeight };` 与 `l.ownRiver.rect` 无重叠；
-   - `expect(l.actions.maxWidth).toBeLessThanOrEqual(l.actions.rightX - (l.ownRiver.rect.left + l.ownRiver.rect.width) - 8 * l.s + 0.01)`；
-   - `expect(l.centerCard.height).toBeGreaterThanOrEqual(144 * l.s)`（非紧凑时）。
-10. 跑 `pnpm -C apps/client test -- mahjong-layout` → **红**。
+2. `expectedS` 的手牌行宽常量 `1041.5398230088495` → `1130`。
+3. **整段替换** 1334×750 精确值块（`:219-297`）为下表（全部 `toBeCloseTo(…, 3)`）：
+
+| 字段 | EMPTY |
+|---|---|
+| s | 1 |
+| topZone | left 404, top 64, width 526, height 177 |
+| topBacks.rect | top 72, height 47 |
+| topRiver.rect | top 127, height 114 |
+| centerZone | left 224.3333, top 241, width 885.3333, height 271 |
+| centerCompact | false |
+| centerCard | left 497, top 291.5, width 340, height 170 |
+| hand.rect | left 102, top 634, width 1130, height 104 |
+| hand.tile | 78×104 |
+| ownRiver.rect | left 404, top 512, width 526, height 114 |
+| leftZone | left 0, top 122, width 216.3333, height 462 |
+| leftChip | 12,122,180,56 |
+| leftBacks.rect | 12,186,45.3333,398 |
+| leftBacks.tile | 45.3333×34 |
+| leftBacks.pitch | 26 |
+| leftRiver.rect | 65.3333,186,151,310 |
+| rightZone.left | 1117.6667 |
+| rightChip.left | 1142 |
+| rightBacks.rect.left | 1276.6667 |
+| rightRiver.rect.left | 1117.6667 |
+| selfChip | 12,648,56,76 |
+| actions | rightX 1109.6667, bottomY 626, rightOffset 224.3333, bottomOffset 124, maxWidth 171.6667, minHeight 80 |
+| centerTiles | claim 34×45, ting 20×27 |
+
+4. **整段替换** 全副露块（`:299-328`）为：
+
+| 字段 | WORST |
+|---|---|
+| topZone.height | 229.8 |
+| topRiver.rect.top | 179.8 |
+| ownRiver.rect.top | 459.2 |
+| centerZone.top | 293.8 |
+| centerZone.height | 165.4 |
+| centerCompact | false |
+| centerCard | left 497, top 299.8, width 340, height 153.4 |
+| leftZone | top 107.9, height 490.2 |
+| leftRiver.rect.top | 171.9 |
+| leftRiver.meld.height | 108.2 |
+| leftRiver.meld.groupGap | 4 |
+| topRiver.meld.groupGap | 8 |
+| leftRiver.meld.rect.top | 489.9 |
+| leftRiver.meld.rect.height | 108.2 |
+| topRiver.meld.height | 44.8 |
+| topRiver.meld.rect.top | 127 |
+| ownRiver.meld.rect.top | 581.2 |
+| actions.maxWidth | 171.6667 |
+
+5. 矩阵内的公式断言改为独立期望表（至少 3 档，防实现/测试同错）：
+
+| 视口 | s | hand left/width/height | centerEmpty: zoneH/cardW/cardH | centerWorst: zoneH/cardW/cardH | actions.maxWidth | leftZone.width | hand.left-selfChip.right |
+|---|---|---|---|---|---|---|---|
+| 1334×750 | 1 | 102/1130/104 | 271/340/170 | 165.4/340/153.4 | 171.667 | 216.333 | 34 |
+| 1334×1000 | 1.038867 | 80.04/1173.92/108.042 | 502.383/353.215/176.607 | 392.678/353.215/176.607 | 152.414 | 224.742 | 9.397 |
+| 1623×750 | 1 | 246.5/1130/104 | 271/340/170 | 165.4/340/153.4 | 316.167 | 216.333 | 178.5 |
+| 1343×1000 | 1.045876 | 80.58/1181.84/108.771 | 499.025/355.598/177.799 | 388.581/355.598/177.799 | 153.443 | 226.258 | 9.46 |
+
+6. 保留/更新：
+   - `centerCompact === (centerCard.height < 144*s)`；矩阵内断言 false。
+   - 比例：hand/own/top = `3/4`；left/right river = `49/37`；topBacks = `3/4`；leftBacks = `4/3`。
+   - token 钉死：`handH=104`、`riverH=56`、`topBackH=47`、`sideBackH=34`、`sidePitch=26`、
+     `sideRiverH=37`、`centerClaimH=45`、`centerTingH=27`。
+   - 顶牌背 14 张：`topBacks.tile.w*14 + gap*13 ≤ topBacks.rect.width`（1334×750: 519.5≤526；
+     4:3: 539.692≤546.444）。
+   - `hand.rect.left > selfChip.left + selfChip.width`。
+   - `actions.maxWidth ≤ rightX - ownRiver.right - 8*s + 0.01`；构造 actionsRect 与 ownRiver 无重叠。
+   - `centerCard.height ≥ 144*s`（非紧凑）。
+7. 跑 `pnpm -C apps/client test -- mahjong-layout` → **红**。
 
 ### Step 2.2：改布局
 `mahjong-layout.ts`：
-- `const TILE_RATIO = 3 / 4;`
-- 新增 `const SIDE_TILE_RATIO = 4 / 3;`
+- `const TILE_RATIO = 3 / 4;`；新增 `const SIDE_TILE_RATIO = 4 / 3;`
 - token：`handH: 104`、`riverH: 56`、`topBackH: 47`、`sideBackH: 34`、`sidePitch: 26`、
   `sideRiverH: 37`、`centerClaimH: 45`、`centerTingH: 27`。
 - `sideBackW = T.sideBackH * SIDE_TILE_RATIO * s`。
-- 中央卡：
+- 中央卡（在 `centerZone` 之后）：
 ```ts
 const compactZone = centerZone.height < 156 * s;
 const centerCardW = Math.max(0, Math.min((compactZone ? 260 : 340) * s, centerZone.width - 16 * s));
@@ -324,47 +394,45 @@ const centerCompact = centerCardH < 144 * s;
 - `pnpm -C apps/client run lint` → 绿。
 - Commit：`feat(mahjong): 牌桌比例/中央卡/动作区布局重算（3:4 牌面）`。
 
-### 判别力
-- 旧 token 下新断言必红；新 token 下绿；7+1 矩阵覆盖 21:9/方屏/4:3。
-
 ---
 
 ## Task 3：牌面/牌背/牌河/副露视觉
 
 ### Files
-- `apps/client/src/components/table/mahjong/MahjongTile.vue`
-- `MahjongHandBacks.vue`
-- `MahjongRiver.vue`
-- `MahjongMeld.vue`
+- `MahjongTile.vue` / `MahjongHandBacks.vue` / `MahjongRiver.vue` / `MahjongMeld.vue`
 - `apps/client/test/mahjong-tile-meld.test.ts`
 - `apps/client/test/mahjong-river.test.ts`
 - `apps/client/test/mahjong-hand-backs.test.ts`
 
 ### Step 3.1：先改测试（红）
-- `mahjong-tile-meld.test.ts` 新增：
+- `mahjong-tile-meld.test.ts`：
   - `src` 映射：`direction='left'` + `wan1` → `/pages/table/static/mahjong/left/wan-1.png`；
     `back` → `/back.png`。
-  - `MahjongTile` 不再接受/渲染 `rotate`：`mount(...,{props:{tile:wan1, rotate:'left'}} as any)`
-    的根 class 不含 `mj-tile--rotate`（或源码闸覆盖）。
-  - `MahjongMeld` 根 class 含 `mj-meld--tray`（新底托类）。
-- `mahjong-river.test.ts`：最新牌 class `.mj-river__tile--latest` 仍存在；可响应描边 class
-  `.mj-river__tile--filtered` 仍存在；副露标签 class 仍存在。
-- `mahjong-hand-backs.test.ts`：背牌 class `mj-tile--back` 仍存在；侧家 13 张渲染。
-- 跑 `pnpm -C apps/client test -- mahjong-tile-meld mahjong-river mahjong-hand-backs` → **红**
-  （新类/映射未实现）。
+  - `direction + size` 尺寸：`top/sm` → style `width:34px;height:45px`；`left/sm` → `45px×34px`。
+  - `MahjongMeld` 根 class 含 `mj-meld--tray`。
+- `mahjong-river.test.ts`：
+  - 最新牌 `.mj-river__tile--latest` 存在；可响应 `.mj-river__tile--filtered` 存在。
+  - 源码闸：River 的 `<style>` 含 `$ftl-color-mj-gold` 与 `$ftl-color-mj-cyan`，不含旧绿色。
+- `mahjong-hand-backs.test.ts`：背牌 `mj-tile--back` 仍存在；侧家 13 张渲染。
+- 跑定向测试 → **红**（新尺寸/类/源码闸未实现）。
 
 ### Step 3.2：改组件
-- `MahjongTile.vue` CSS：
-  - size 档位：`my/top` 34×45 / 46×61 / 60×80；`left/right` 45×34 / 61×46 / 80×60。
-  - `border-radius: 12%`；`filter: drop-shadow(0 2px 3px rgba(10,25,50,.35))`。
+- `MahjongTile.vue`：
+  - 基础档位：`sm 34×45`、`md 46×61`、`lg 60×80`。
+  - **删除/同步** `.mj-tile--dir-top`、`.mj-tile--dir-left/right` 旧尺寸覆盖（新素材同比例，
+    不再需要方向特例）；方向仅影响素材目录。
+  - `border-radius: 12%`；`filter: drop-shadow(0 $ftl-space-1 $ftl-space-2 $ftl-color-mj-shadow)`。
   - 选中态 `box-shadow: 0 0 0 $ftl-hairline $ftl-color-mj-gold`。
-- `MahjongHandBacks.vue`：背牌加 `inset 0 $ftl-hairline 0 rgba(255,255,255,.18)` 亮边。
-- `MahjongRiver.vue`：最新牌金色外环 + `translateY(-2px)`；可响应描边改
-  `$ftl-color-mj-cyan`；副露标签海军蓝底 + 金边。
-- `MahjongMeld.vue`：根类加 `mj-meld--tray`；CSS 底托 `rgba(27,41,80,.35)` + 圆角。
+- `MahjongHandBacks.vue`：背牌 `box-shadow: inset 0 $ftl-hairline 0 $ftl-color-mj-highlight`。
+- `MahjongRiver.vue`：
+  - 最新牌 `box-shadow: 0 0 $ftl-space-2 $ftl-color-mj-gold` + `transform: translateY(-$ftl-space-1)`。
+  - 可响应 `outline: $ftl-hairline solid $ftl-color-mj-cyan`。
+  - 副露标签背景 `rgba($ftl-color-mj-navy, .8)` + `$ftl-hairline solid $ftl-color-mj-gold`。
+- `MahjongMeld.vue`：根类加 `mj-meld--tray`；CSS `background: $ftl-color-mj-glass-soft;
+  border-radius: $ftl-radius-md; padding: $ftl-space-1`。
 
 ### Step 3.3：跑绿
-- 定向测试绿；`pnpm -C apps/client run lint` 绿。
+- 定向测试绿；lint 绿。
 - Commit：`feat(mahjong): 牌面/牌背/牌河/副露天月风视觉`。
 
 ---
@@ -372,87 +440,48 @@ const centerCompact = centerCardH < 144 * s;
 ## Task 4：中央圆盘重做
 
 ### Files
-- `apps/client/src/components/table/mahjong/MahjongCenter.vue`
-- `apps/client/src/components/table/mahjong/MahjongBoard.vue`（`centerProps` 加 `ended`）
+- `MahjongCenter.vue`
+- `MahjongBoard.vue`（`centerProps` 加 `ended`）
 - `apps/client/test/mahjong-center.test.ts`
-- `apps/client/test/mahjong-board.test.ts`（中心文案锚点）
+- `apps/client/test/mahjong-board.test.ts`
 
 ### Step 4.1：重写测试（红）
-`mahjong-center.test.ts` 全量改写：
+`mahjong-center.test.ts`：
 ```ts
 const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
   claimW: 34, claimH: 45, tingW: 20, tingH: 27 };
 
-it('active + seconds>0：圆盘显示秒数', () => {
-  const w = mount(Center, { props: base });
-  expect(w.find('.mj-center__value').text()).toContain('12');
-  expect(w.text()).toContain('牌墙 42');
-  expect(w.text()).toContain('请出牌');
-});
-
-it('active=false：圆盘显示牌墙数，不显示 12', () => {
-  const w = mount(Center, { props: { ...base, active: false } });
-  expect(w.find('.mj-center__value').text()).toContain('42');
-  expect(w.find('.mj-center__value').text()).not.toContain('12');
-});
-
-it('active + seconds=0：显示牌墙数，无 urgent', () => {
-  const w = mount(Center, { props: { ...base, seconds: 0 } });
-  expect(w.find('.mj-center__value').text()).toContain('42');
-  expect(w.find('.mj-center__dial').classes()).not.toContain('mj-center__dial--urgent');
-});
-
-it('active + seconds=5：urgent + anim-urgent-pulse', () => {
-  const w = mount(Center, { props: { ...base, seconds: 5 } });
-  expect(w.find('.mj-center__dial').classes()).toContain('mj-center__dial--urgent');
-  expect(w.find('.mj-center__dial').classes()).toContain('anim-urgent-pulse');
-});
-
-it('ended：圆盘显示终，endedText 仍是次要行', () => {
-  const w = mount(Center, { props: { ...base, ended: true, endedText: '已胡 2 家' } });
-  expect(w.find('.mj-center__value').text()).toContain('终');
-  expect(w.text()).toContain('已胡 2 家');
-});
-
-it('未结束的 endedText 不抢圆盘', () => {
-  const w = mount(Center, { props: { ...base, endedText: '已胡 1 家' } });
-  expect(w.find('.mj-center__value').text()).toContain('12');
-  expect(w.text()).toContain('已胡 1 家');
-});
-
-it('claim + ting + maxFan', () => {
-  const w = mount(Center, { props: { ...base, claimTile: { s: 0, r: 5 },
-    tingTiles: [{ s: 0, r: 5 }, { s: 0, r: 8 }], maxFan: 5 } });
-  expect(w.findAll('image')).toHaveLength(3);
-  expect(w.text()).toContain('可响应');
-  expect(w.text()).toContain('5 番');
-  expect(w.findAll('.mj-tile')[0]!.attributes('style')).toContain('width: 34px');
-  expect(w.findAll('.mj-tile')[1]!.attributes('style')).toContain('width: 20px');
-});
-
-it('紧凑：单行、无牌面', () => {
-  const w = mount(Center, { props: { ...base, compact: true, claimTile: { s: 0, r: 5 } } });
-  expect(w.classes()).toContain('mj-center--compact');
-  expect(w.findAll('image')).toHaveLength(0);
-  expect(w.text()).toContain('可响应');
-});
+it('active + seconds>0：圆盘显示秒数', ...);        // value 12；text 牌墙 42/请出牌
+it('active=false：圆盘显示牌墙数', ...);           // value 42；不含 12
+it('active + seconds=0：显示牌墙数，无 urgent', ...);
+it('active + seconds=6：非 urgent', ...);
+it('active + seconds=5：urgent + anim-urgent-pulse', ...);
+it('ended：圆盘显示终，endedText 次要行', ...);
+it('未结束的 endedText 不抢圆盘', ...);            // value 12；text 已胡 1 家
+it('claim + ting + maxFan', ...);                  // 3 张 image；34px/20px
+it('13 张听牌：最多两行、12 张 + “+1”', ...);      // .mj-tile ≤12；text +1
+it('紧凑：单行、无牌面', ...);
+it('默认尺寸 claimH=45/tingH=27', ...);            // 不传 claimH/tingH
+it('源码闸：@import animations + compact 11px', ...);
 ```
 - 跑 `pnpm -C apps/client test -- mahjong-center` → **红**。
 
 ### Step 4.2：实现
-- `MahjongCenter.vue` 重写模板：
+- `<style scoped lang="scss">` 顶部加 `@import '../../../styles/animations.scss';`（否则
+  `anim-urgent-pulse` 在浏览器不生效）。
+- 模板：
   - `.mj-center__strip`：`牌墙 {{ wallCount }}` + `{{ phaseText }}`。
   - `.mj-center__body`：`.mj-center__dial`（110）+ `.mj-center__side`（210）。
   - `.mj-center__dial`：环 + `.mj-center__value` + `.mj-center__unit`；`--urgent` +
     `anim-urgent-pulse`。
-  - `.mj-center__side`：claim（34×45）、ting（20×27，最多两行，`+N`）、`endedText`。
-- props 增加 `ended?: boolean`（默认 false）。
-- `dialValue` / `dialUnit` / `urgent` 计算见 spec 5.3。
-- CSS 用 `$ftl-color-mj-*`；圆盘 `border-radius: 50%`；海军蓝玻璃 + 双金边；12 刻度用
+  - `.mj-center__side`：claim（34×45）、ting（20×27，最多两行，`MAX_TING_TILES=12`，超出 `+N`）、
+    `endedText`。
+- props 增加 `ended?: boolean`（默认 false）；`claimH`/`tingH` 默认值改 45/27。
+- `dialValue` / `dialUnit` / `urgent` 见 spec 5.3。
+- CSS 用 `$ftl-color-mj-*`；圆盘 50%；海军蓝玻璃 + 双金边；12 刻度用
   `repeating-conic-gradient`（不要 1px）。
-- 紧凑：圆盘 90，单行文字；隐藏牌面。
+- 紧凑：圆盘 90，单行文字；隐藏牌面；保留 11px 字号源码闸。
 - `MahjongBoard.vue` 的 `centerProps` 增加 `ended: phase.value === 'ended'`。
-- `mahjong-board.test.ts` 的 `.mj-center__phase` 保留（新模板保留该类名）。
 
 ### Step 4.3：跑绿
 - `pnpm -C apps/client test -- mahjong-center mahjong-board` 绿；lint 绿。
@@ -460,39 +489,44 @@ it('紧凑：单行、无牌面', () => {
 
 ---
 
-## Task 5：座位卡 + ClaimTile + HuBanner
+## Task 5：座位卡 + ClaimTile + HuBanner + 结算主按钮
 
 ### Files
-- `MahjongSeatChip.vue`
-- `ClaimTile.vue`
-- `MahjongHuBanner.vue`
+- `MahjongSeatChip.vue` / `ClaimTile.vue` / `MahjongHuBanner.vue`
+- `apps/client/src/components/MahjongSettlement.vue`（仅 `.btn--primary` 文字色）
 - `apps/client/test/mahjong-seat-chip.test.ts`
-- New `apps/client/test/mahjong-claim-tile.test.ts`（若 ClaimTile 无独立测试）
+- New `apps/client/test/mahjong-claim-tile.test.ts`
 
 ### Step 5.1：先改测试（红）
-- SeatChip：保留 `.mj-chip__avatar-box` 尺寸断言；新增 `.mj-chip__avatar` 的圆角/金边类
-  `mj-chip__avatar--gold`；self 余额有 `mj-chip__self-pill`；角标仍在 `.mj-chip__avatar-box` 内。
-- ClaimTile：主按钮 `.mj-claim-tile__opt--hu`、次按钮、过按钮类；点击 emit 不变；文本不变。
-- HuBanner：根类含 `mj-hu-banner--navy`；文本「自摸/胡牌」「N 番」不变。
+- SeatChip：保留 `.mj-chip__avatar-box` 尺寸断言；新增 `image.mj-chip__avatar--gold`；
+  self 余额 `mj-chip__self-pill`；角标仍在 `.mj-chip__avatar-box` 内（不被裁切）。
+  说明：现有 `<image>` 自身已 `border-radius: pill`，不需要 frame/clip 两层；spec 的
+  “frame/clip” 按“外层不被裁切、image 自身圆形”实现，测试锁“角标存在且 image 有金边类”。
+- ClaimTile：根类 `mj-claim-tile--navy`；主/次/过类；点击 emit；源码闸无旧绿色
+  （`rgba(30, 60, 40` / `rgba(60, 110, 75` / `rgba(35, 75, 50`）。
+- HuBanner：根类 `mj-hu-banner--navy`；源码闸无橙色（`rgba(255, 180, 60` / `rgba(220, 100, 30`）。
 - 跑定向测试 → **红**。
 
 ### Step 5.2：实现
 - SeatChip：
-  - `.mj-chip__avatar` 加 `mj-chip__avatar--gold` 类；CSS `border: $ftl-hairline solid $ftl-color-mj-gold`、
-    `box-shadow: 0 0 $ftl-space-2 rgba(...)`；`border-radius: $ftl-radius-pill` 保留。
-  - `.mj-chip--side` 加海军蓝玻璃底 + 金边 + 圆角；名字白、meta `$ftl-color-mj-muted`。
-  - `.mj-chip__self-info` 加 `mj-chip__self-pill` 类：海军蓝底 + 金边 + 圆角 + padding。
-  - badges 用海军蓝/金色系。
-- ClaimTile：弹层海军蓝玻璃 + 金边；次按钮海军蓝；主按钮金底 + 海军蓝文字。
+  - `.mj-chip__avatar` 加 `mj-chip__avatar--gold`；`border: $ftl-hairline solid $ftl-color-mj-gold`；
+    `box-shadow: 0 0 $ftl-space-2 rgba($ftl-color-mj-gold, .35)`；保留 `border-radius: pill`。
+  - `.mj-chip--side` 海军蓝玻璃底（`$ftl-color-mj-glass`）+ 金边 + 圆角。
+  - `.mj-chip__self-info` 加 `mj-chip__self-pill`：`background: $ftl-color-mj-glass` +
+    金边 + 圆角 + padding。
+  - badges 用 `$ftl-color-mj-*`。
+  - `.mj-chip__corner--hu`：金底 + 海军蓝文字（`$ftl-color-mj-on-gold`）。
+- ClaimTile：根类 `mj-claim-tile--navy`；弹层/次按钮海军蓝；主按钮金底 + 海军蓝文字。
 - HuBanner：根类 `mj-hu-banner--navy`；海军蓝底 + 金边 + 金字。
+- MahjongSettlement：`.btn--primary { color: $ftl-color-mj-on-gold; }`（最小对比度修）。
 
 ### Step 5.3：跑绿
 - 定向测试绿；lint 绿。
-- Commit：`feat(mahjong): 座位卡圆形金框/ClaimTile/HuBanner 天月风`。
+- Commit：`feat(mahjong): 座位卡/ClaimTile/HuBanner/结算主按钮天月风`。
 
 ---
 
-## Task 6：牌桌背景 + 顶栏 + 按钮 + 主题源码闸
+## Task 6：牌桌背景 + 顶栏 + 按钮 + 裸文字对比度 + 主题源码闸
 
 ### Files
 - `MahjongBoard.vue`
@@ -500,26 +534,83 @@ it('紧凑：单行、无牌面', () => {
 - `apps/client/test/mahjong-board.test.ts`
 
 ### Step 6.1：先写主题闸（红）
-`mahjong-theme.test.ts`（用 `collectSourceFiles` / `SRC_ROOT`）：
-- `MahjongBoard.vue` 样式含 `$ftl-color-mj-table-light` / `-mid` / `-deep` / `$ftl-color-mj-navy`。
-- 不含 `$ftl-color-mahjong-table`、`rgba(20, 50, 30`、`rgba(0, 25, 12`。
-- `MahjongTile.vue` / `MahjongMeld.vue` 不含 `rotate` / `vertical` 死 prop 文本。
-- `uni.scss` 含全部 `$ftl-color-mj-*` token。
-- 跑 → **红**（Board 仍是旧背景）。
+`mahjong-theme.test.ts`：
+```ts
+import { describe, expect, it } from 'vitest';
+import { collectSourceFiles } from './helpers/source-scan';
 
-### Step 6.2：实现 Board 视觉
-- `.mj` 替换背景为 spec 5.3 的三层（最上层写最前）。
+const files = collectSourceFiles();
+const vue = (p: string) => files.find((f) => f.path === `src/${p}`)!;
+function style(content: string): string {
+  return [...content.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) => m[1]!.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '))
+    .join('\n');
+}
+const BOARD = 'components/table/mahjong/MahjongBoard.vue';
+
+describe('麻将主题源码闸', () => {
+  it('Board 用新 token，且旧绿色 token/字面量消失', () => {
+    const s = style(vue(BOARD).content);
+    for (const t of ['$ftl-color-mj-table-light', '$ftl-color-mj-table-mid', '$ftl-color-mj-table-deep', '$ftl-color-mj-navy']) {
+      expect(s).toContain(t);
+    }
+    expect(s).not.toMatch(/\$ftl-color-mahjong-table/);
+    expect(s).not.toMatch(/rgba\(\s*20\s*,\s*50\s*,\s*30/);
+    expect(s).not.toMatch(/rgba\(\s*0\s*,\s*25\s*,\s*12/);
+  });
+
+  it('各麻将组件样式含 mj token，旧绿/橙字面量消失', () => {
+    const comps = ['MahjongTile.vue', 'MahjongRiver.vue', 'MahjongMeld.vue', 'MahjongSeatChip.vue',
+      'ClaimTile.vue', 'MahjongHuBanner.vue', 'MahjongCenter.vue'];
+    for (const c of comps) expect(style(vue(`components/table/mahjong/${c}`).content)).toContain('$ftl-color-mj-');
+    for (const c of ['ClaimTile.vue', 'MahjongHuBanner.vue', 'MahjongRiver.vue']) {
+      const s = style(vue(`components/table/mahjong/${c}`).content);
+      expect(s).not.toMatch(/rgba\(\s*30\s*,\s*60\s*,\s*40/);
+      expect(s).not.toMatch(/rgba\(\s*60\s*,\s*110\s*,\s*75/);
+      expect(s).not.toMatch(/rgba\(\s*255\s*,\s*180\s*,\s*60/);
+      expect(s).not.toMatch(/rgba\(\s*220\s*,\s*100\s*,\s*30/);
+    }
+  });
+
+  it('死 prop 不残留', () => {
+    for (const c of ['MahjongTile.vue', 'MahjongMeld.vue']) {
+      const s = style(vue(`components/table/mahjong/${c}`).content);
+      expect(s).not.toContain('mj-tile--rotate');
+      expect(s).not.toContain('mj-meld--vertical');
+    }
+  });
+
+  it('uni.scss 定义全部 mj token', () => {
+    const s = files.find((f) => f.path === 'src/uni.scss')!.content;
+    for (const t of ['table-light', 'table-mid', 'table-deep', 'navy', 'glass', 'gold', 'cyan', 'urgent', 'muted', 'on-gold']) {
+      expect(s).toContain(`$ftl-color-mj-${t}:`);
+    }
+  });
+});
+```
+- 跑 `pnpm -C apps/client test -- mahjong-theme` → **红**。
+
+### Step 6.2：实现 Board
+- `.mj` 背景三层（最上层写最前）：
+  ```scss
+  background:
+    repeating-radial-gradient(circle at 50% 45%, transparent 0 58px, $ftl-color-mj-highlight 58px 59px),
+    radial-gradient(ellipse at 50% 45%, rgba(255,255,255,.18), transparent 62%),
+    linear-gradient(180deg, $ftl-color-mj-table-light 0%, $ftl-color-mj-table-mid 45%, $ftl-color-mj-table-deep 100%);
+  ```
 - 删除旧 `border` 和全部旧绿色 `box-shadow`。
-- 加 `.mj::before` 木框（border-image + token；`pointer-events:none`）。
+- `.mj::before` 木框（`border-image` + token；`pointer-events:none`；`z-index:0`）。
 - 顶栏：海军蓝玻璃 + 金 hairline；文字白。
 - `.btn` / `.btn--small` / `.btn--primary`：海军蓝/金；主按钮金底 + 海军蓝文字。
 - 托管遮罩、长按提示弹层：海军蓝玻璃 + 金边。
 - `mj__lack--recommend`：金底 + 海军蓝文字。
+- **裸文字对比度**：`.mj__waiting`、`.mj__hint`、`.mj__warn` 加海军蓝玻璃底 + 浅色文字；
+  `.mj__warn` 用 `$ftl-color-mj-urgent`。
 - 不写 `1px`；不写裸 hex。
 
 ### Step 6.3：跑绿
 - `pnpm -C apps/client test -- mahjong-theme mahjong-board ui-tokens` 绿；lint 绿。
-- Commit：`feat(mahjong): 亮青桌面/木框/蓝金顶栏与按钮`。
+- Commit：`feat(mahjong): 亮青桌面/木框/蓝金顶栏与按钮/裸文字对比度`。
 
 ---
 
@@ -528,15 +619,22 @@ it('紧凑：单行、无牌面', () => {
 ### Steps
 1. `pnpm -C apps/client test` → 全绿。
 2. `pnpm -C apps/client run lint` → 0 错。
-3. 素材预算：`pnpm -C apps/client test -- asset-budget` → 绿。
+3. `pnpm -C apps/client test -- asset-budget mahjong-assets mahjong-theme` → 绿。
 4. 真浏览器：
-   - 启动 H5 dev server；用 CDP/截图脚本在 1334×750、1334×1000、1623×750、1778×750 各截一张。
-   - 若 Docker 栈不可用：用 `.superpowers/mahjong-layout-research/mockup.html` 更新为新主题做
-     静态视觉对照，并在交付报告里明确「真栈截图待补」。
-   - 检查项见 spec 6.6。
-5. 更新 spec 状态、`docs/superpowers/plans/*-handoff.md`（如有）。
+   - 若 Docker 栈可用：`node scripts/browser-e2e.mjs --keep-open` 进入麻将局后截图；
+   - 若不可用：用 `.superpowers/mahjong-layout-research/v2-mockups/mockup.html`（实际路径）
+     更新为新主题，用本机 Chromium headless 截图：
+     ```bash
+     CHROME=$(ls ~/.cache/ms-playwright/chromium-*/chrome-win/chrome.exe | head -1)
+     "$CHROME" --headless=new --disable-gpu --window-size=1334,750 \
+       --screenshot=.superpowers/mahjong-layout-research/v2-mockups/tianyue-1334x750.png \
+       "file:///D:/Code/pokergame/.superpowers/mahjong-layout-research/v2-mockups/mockup.html"
+     ```
+     同样出 1334×1000、1623×750、1778×750；检查项见 spec 6.6。
+   - 交付报告必须写明实际用了哪条路径；不可用真栈时明确“真栈截图待补”。
+5. 更新 spec 状态/交接文档。
 6. 最终 commit；`git status` 干净。
-7. 推 `dev`（零 CI）。不合并 master、不打 tag、不部署（用户未要求）。
+7. 推 `dev`（零 CI）。不合并 master、不打 tag、不部署。
 8. 交付报告：变更、测试证据、提交 SHA、未闭合项。
 
 ### 验证矩阵
@@ -547,7 +645,7 @@ it('紧凑：单行、无牌面', () => {
 | 素材 | `pnpm -C apps/client test -- asset-budget mahjong-assets` | 绿 |
 | token | `pnpm -C apps/client test -- ui-tokens` | 绿 |
 | 主题 | `pnpm -C apps/client test -- mahjong-theme` | 绿 |
-| 视觉 | 真浏览器截图 | 对照 spec 6.6 |
+| 视觉 | 真浏览器/静态 mockup 截图 | 对照 spec 6.6 |
 
 ## 风险与回滚
 
@@ -555,3 +653,35 @@ it('紧凑：单行、无牌面', () => {
 - 素材整批替换：回滚需同时恢复旧 PNG（commit 历史保留）。
 - 基线修复（Task 0）独立提交，便于单独回滚。
 - 若真浏览器验证不可用，交付报告必须写明，不把「单测绿」当视觉验收。
+
+---
+
+## 计划审查记录
+
+独立 reviewer（sonnet，2026-11-02）结论：阻断 3 / 高 6 / 低 14。逐条处置：
+
+| 编号 | 等级 | 结论 | 处置 |
+|---|---|---|---|
+| B1 Task 0 `.mj__actions` 空 wrapper `.text()` 抛错 | 阻断 | 成立 | Task 0 改为整段替换：断言 `.mj__actions` 不存在；删除旧 `.mj__my-revealed` 两行 |
+| B2 `composed()` 漏 `.png` | 阻断 | 成立 | 脚本改为 `composed(f'{src}{r}')` 内部补 `.png` |
+| B3 manifest 反斜杠 | 阻断 | 成立 | 脚本直接写 `f'{direction}/{name}.png'`；测试再 `replace(/\\/g,'/')` 兜底 |
+| H1 布局旧精确锚点未更新 | 高 | 成立 | Task 2 列出 1334×750 EMPTY/WORST 全量新值 + 4 档独立期望表 |
+| H2 视觉变化假红/无判别力 | 高 | 成立 | 加 `mj-meld--tray`、`mj-chip__avatar--gold`、`mj-chip__self-pill`、`mj-hu-banner--navy`、`mj-claim-tile--navy`；主题闸扫旧绿/橙字面量 |
+| H3 `anim-urgent-pulse` 未 import | 高 | 成立 | Task 4 在 Center 样式顶部 `@import animations.scss`；源码闸锁 |
+| H4 `navy_back` 丢 alpha | 高 | 成立 | `out.putalpha(back.split()[3])`；素材测试加 back 四角 alpha=0 |
+| H5 主题闸范围/写法 | 高 | 成立 | 按文件 + `stripComments` + 只扫 `<style>`；容错正则；覆盖 ClaimTile/HuBanner/River |
+| H6 Center 9/13 张预算无测试 | 高 | 成立 | 加 13 张用例：最多 12 张 + `+1`；`MAX_TING_TILES=12` |
+| L1 数字/许可证/字段不一致 | 低 | 成立 | 旧 836KiB、新 585KiB、源 1.6MB；`LICENSE.md`；manifest 加 `direction` |
+| L2 Python 依赖未声明 | 低 | 成立 | 新增 `scripts/assets/mahjong/requirements.txt` + pip 安装步骤 |
+| L3 旧脚本仍可运行 | 低 | 成立 | 顶部 `console.error` + `process.exit(1)` |
+| L4 公式自证 | 低 | 成立 | 加 4 档独立期望表（含 hand/center/actions/side/selfGap） |
+| L5 Center 默认 claimH/tingH 旧值 | 低 | 成立 | 默认改 45/27；加默认尺寸测试 |
+| L6 SeatChip spec frame/clip 与 plan 不一致 | 低 | 成立 | 采用“外层不裁切 + image 自身 pill + 金边类”；spec 描述按此实现 |
+| L7 丢 seconds=6/紧凑字号闸 | 低 | 成立 | 加 seconds=6 非 urgent；保留紧凑 11px 源码闸 |
+| L8 裸文字/白字金底对比度 | 低 | 成立 | Task 6 给 waiting/hint/warn 加海军蓝底；Task 5 改 Hu 角标/结算主按钮文字色 |
+| L9 缺计划审查记录 | 低 | 成立 | 本节 |
+| L10 mockup 路径/截图命令 | 低 | 成立 | 改为 `v2-mockups/mockup.html`；给出 Chromium headless 命令 |
+| L11 起始 z 删除混入 Task 0 | 低 | 成立 | Global Constraints + Task 0 明确只 add 3 个文件；Task 1 提交素材删除 |
+| L12 dir-* 旧尺寸覆盖残留 | 低 | 成立 | Task 3 删除/同步 `.mj-tile--dir-*` 尺寸覆盖；加 direction+size 断言 |
+| L13 素材测试只 toContain | 低 | 成立 | 改为精确集合/长度 28；manifest 112 条；1/9 两张方向抽检 |
+| L14 CSS 示例裸 rgba/2px | 低 | 成立 | 新增 `$ftl-color-mj-glass-soft/shadow/highlight`；描边走 `$ftl-hairline` |
