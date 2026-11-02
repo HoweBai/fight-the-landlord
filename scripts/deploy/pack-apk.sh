@@ -11,7 +11,7 @@
 # 本脚本：写端点文件 → 云打包 → 下载 → **校验产物含端点** → 可选发布。
 #
 # 环境变量：HX_CLI（默认 E:/Softwares/HBuilder X/cli.exe）、
-#           APK_NAME（默认 优比棋牌.apk）、APK_PACKAGE（默认 com.yobeeo.pokergame）。
+#           APK_NAME（默认取 scripts/deploy/apk-name.txt）、APK_PACKAGE（默认 com.yobeeo.pokergame）。
 # ⚠️ 版本号在 apps/client/src/manifest.json（versionCode 必须递增）。
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -27,7 +27,8 @@ case "$HOST" in
   localhost* | 127.* | 0.0.0.0*) printf '❌ 真机不可达的地址：%s（用域名或局域网 IP）\n' "$HOST" >&2; exit 1 ;;
 esac
 HX_CLI="${HX_CLI:-E:/Softwares/HBuilder X/cli.exe}"
-APK_NAME="${APK_NAME:-优比棋牌.apk}"
+# 文件名真源：scripts/deploy/apk-name.txt（必须 ASCII —— 中文路径会被聊天软件/浏览器截断）。
+APK_NAME="${APK_NAME:-$(cat scripts/deploy/apk-name.txt)}"
 APK_PACKAGE="${APK_PACKAGE:-com.yobeeo.pokergame}"
 [ -x "$HX_CLI" ] || {
   printf '❌ 找不到 HBuilderX CLI：%s（可用 HX_CLI 覆盖）\n' "$HX_CLI" >&2

@@ -61,9 +61,10 @@ jobs:
             exit 1
           fi
           APK="$(ls deploy/download/*.apk | head -1)"
-          # 资产名为 ASCII（gh/Windows 会丢中文）；线上文件名必须是 uni-ad 表单里的「优比棋牌.apk」。
-          if [ "$(basename "$APK")" != "优比棋牌.apk" ]; then
-            mv "$APK" "deploy/download/优比棋牌.apk"
+          # 资产名与线上名统一取真源（纯 ASCII）；旧资产名（中文/旧 ASCII）在这里归一。
+          APK_NAME="$(cat scripts/deploy/apk-name.txt)"
+          if [ "$(basename "$APK")" != "$APK_NAME" ]; then
+            mv "$APK" "deploy/download/$APK_NAME"
           fi
           ls -l deploy/download
       - name: 构建并推送 14 个镜像
