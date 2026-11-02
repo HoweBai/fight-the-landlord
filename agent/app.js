@@ -593,11 +593,21 @@ function renderInviteSection(a) {
 
 async function loadInviteCodes() {
   const filter = $('invite-status-filter')?.value ?? '';
-  const qs = filter === '' ? '' : `?status=${encodeURIComponent(filter)}`;
-  const res = await api(`/api/agent/invite-codes${qs}`);
-  if (maybeMustChange(res)) return;
-  if (res.status !== 200 || !res.body?.data) return handleError(res, '加载邀请码失败');
-  inviteCodes = res.body.data.rows ?? [];
+  const rows = [];
+  let cursor;
+  for (let page = 0; page < 20; page += 1) {
+    const qs = new URLSearchParams();
+    if (filter !== '') qs.set('status', filter);
+    if (cursor !== undefined) qs.set('cursor', cursor);
+    qs.set('limit', '100');
+    const res = await api(`/api/agent/invite-codes?${qs.toString()}`);
+    if (maybeMustChange(res)) return;
+    if (res.status !== 200 || !res.body?.data) return handleError(res, '加载邀请码失败');
+    rows.push(...(res.body.data.rows ?? []));
+    cursor = res.body.data.nextCursor ?? undefined;
+    if (cursor === undefined) break;
+  }
+  inviteCodes = rows;
   const box = $('invite-list');
   if (!box) return;
   box.textContent = '';
@@ -622,26 +632,58 @@ async function loadInviteCodes() {
 }
 
 async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('已复制');
+      return;
+    } catch {
+      // fall through to execCommand
+    }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.append(area);
+  area.select();
   try {
-    await navigator.clipboard?.writeText(text);
-    showToast('已复制');
+    const ok = typeof document.execCommand === 'function' && document.execCommand('copy');
+    showToast(ok ? '已复制' : '复制失败，请手动选择');
   } catch {
     showToast('复制失败，请手动选择');
+  } finally {
+    area.remove();
   }
 }
 
+let inviteBusy = false;
+
 async function generateInviteCodes() {
-  const count = Number($('invite-gen-count')?.value ?? 1);
-  const res = await api('/api/agent/invite-codes', {
-    method: 'POST',
-    body: JSON.stringify({ count }),
-  });
-  if (maybeMustChange(res)) return;
-  if (res.status !== 200) return handleError(res, '生成邀请码失败');
-  const generated = res.body?.data?.codes?.length ?? 0;
-  showToast(`已生成 ${generated} 枚邀请码`);
-  await loadInviteCodes();
-  await loadMe();
+  if (inviteBusy) return;
+  inviteBusy = true;
+  const genBtn = $('invite-gen-btn');
+  if (genBtn) genBtn.disabled = true;
+  try {
+    const count = Number($('invite-gen-count')?.value ?? 1);
+    const res = await api('/api/agent/invite-codes', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    });
+    if (maybeMustChange(res)) return;
+    if (res.status !== 200) return handleError(res, '生成邀请码失败');
+    const generated = res.body?.data?.codes?.length ?? 0;
+    showToast(`已生成 ${generated} 枚邀请码`);
+    await loadInviteCodes();
+    await loadMe();
+  } finally {
+    inviteBusy = false;
+    if (genBtn) {
+      genBtn.disabled =
+        state.agent?.inviteEnabled === false || state.agent?.settingsEnabled === false;
+    }
+  }
 }
 
 async function copyAllActiveCodes() {

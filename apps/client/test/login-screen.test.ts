@@ -115,6 +115,18 @@ describe('➊ 登录/注册屏', () => {
 
   it('邀请码开关开：注册态多一个邀请码字段；提交带 trim+大写码（2026-10-26）', async () => {
     const { wrapper, auth } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            code: 0,
+            data: { version: 1, agentInviteEnabled: true, agentInviteRequired: false },
+          }),
+      })),
+    );
     useGameStore().$patch({ agentInviteEnabled: true, clientConfigVersion: 1 });
     const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
 
@@ -127,6 +139,7 @@ describe('➊ 登录/注册屏', () => {
     expect(wrapper.findAll('.login__field input')).toHaveLength(5);
     await wrapper.find('.login__field--invite input').setValue(' abcd2345 ');
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(signUp).toHaveBeenCalledWith('13800000010', 'secret123', '阿豆', 'ABCD2345');
   });
 
@@ -177,6 +190,18 @@ describe('➊ 登录/注册屏', () => {
 
   it('必填开：标签「邀请码（必填）」；空码拦截不发请求', async () => {
     const { wrapper, auth } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            code: 0,
+            data: { version: 1, agentInviteEnabled: true, agentInviteRequired: true },
+          }),
+      })),
+    );
     useGameStore().$patch({
       agentInviteEnabled: true,
       agentInviteRequired: true,

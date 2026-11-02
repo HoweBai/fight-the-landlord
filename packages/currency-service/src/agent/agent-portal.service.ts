@@ -9,7 +9,7 @@ import { AGENT_INVITE_BATCH_MAX, AGENT_INVITE_DAILY_MAX } from './agent.constant
 import { agentInviteGeneratedTotal, agentInviteRejectedTotal } from './agent.metrics';
 import { AgentSettlementService, type SettlementLine, type SettlementRow } from './agent-settlement.service';
 import { AgentUserClient } from './agent-user.client';
-import { toDate, toSafeInt } from './agent.util';
+import { toDate, toSafeInt, shanghaiDayRange } from './agent.util';
 
 const AGENT_ROW_SQL =
   'SELECT `id`, `name`, `phone`, `rate_bp`, `status`, `region`, `contact_name`, `payout_name`, ' +
@@ -211,9 +211,10 @@ export class AgentPortalService {
         agentInviteRejectedTotal.inc({ reason: 'module_off' });
         throw new DomainError(ErrCode.FORBIDDEN, '代理模块未开放');
       }
+      const { start } = shanghaiDayRange(new Date());
       const today = (await manager.query(
-        'SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `created_at` >= CURDATE()',
-        [agentId],
+        'SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `created_at` >= ?',
+        [agentId, start],
       )) as Array<Record<string, unknown>>;
       if (Number(today[0]?.cnt ?? 0) + count > AGENT_INVITE_DAILY_MAX) {
         agentInviteRejectedTotal.inc({ reason: 'daily_cap' });

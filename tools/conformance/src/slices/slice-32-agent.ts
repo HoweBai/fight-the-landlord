@@ -51,6 +51,7 @@ import {
 } from '../lib/http';
 import { mysqlExec, mysqlNum, mysqlRows, mysqlText } from '../lib/mysql';
 import { rpcCall, type RpcEndpoint } from '../lib/rpc';
+import { countSnapshotApplied } from '../lib/snapshot-log';
 
 /** 仓库根（`dist/slices/*.js` 与 `dist/lib/*.js` 同深度）。 */
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -250,22 +251,8 @@ function composeLogs(service: string, sinceSeconds: number): string {
   return `${r.stdout ?? ''}${r.stderr ?? ''}`;
 }
 
-function appliedVersionCount(service: string, version: number): number {
-  return composeLogs(service, 1800)
-    .split('\n')
-    .filter((line) => {
-      const at = line.indexOf('{');
-      if (at < 0) return false;
-      try {
-        const rec = JSON.parse(line.slice(at)) as { msg?: unknown };
-        return (
-          String(rec.msg ?? '').includes('config snapshot applied') &&
-          new RegExp(`version=${version}\\b`).test(String(rec.msg))
-        );
-      } catch {
-        return false;
-      }
-    }).length;
+function appliedVersionCount(service: string, version: number, sinceMs: number): number {
+  return countSnapshotApplied(composeLogs(service, 1800), version, sinceMs);
 }
 
 /**
@@ -285,16 +272,16 @@ async function putConfigAndWaitBoth(
   const gv0 = before.body?.data?.version ?? 0;
   const kv0 = before.body?.data?.config?.[key]?.version ?? 0;
   const expected = Math.max(gv0, kv0 + 1);
-  const baselineCurrency = appliedVersionCount('currency-service', expected);
-  const baselineUser = appliedVersionCount('user-service', expected);
+  // 时间锚必须在 PUT 之前取（见 lib/snapshot-log.ts：滑动窗口 + 基线计数会 47→47 假红）。
+  const sinceMs = Date.now();
   const put = await adminPutConfig(key, value, admin);
   if (put.status !== 200 || put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`PUT ${key} 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
   const started = Date.now();
   while (Date.now() - started < 30_000) {
-    const currency = appliedVersionCount('currency-service', expected) > baselineCurrency;
-    const user = appliedVersionCount('user-service', expected) > baselineUser;
+    const currency = appliedVersionCount('currency-service', expected, sinceMs) > 0;
+    const user = appliedVersionCount('user-service', expected, sinceMs) > 0;
     if (currency && user) return;
     await sleep(500);
   }
@@ -1348,22 +1335,19 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
         info(`收尾：恢复 settings 失败：${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    // invite / required 开关
-    if (invite0 !== true) {
-      try {
-        await putConfigAndWaitBoth(admin, INVITE_KEY, invite0);
-        info(`收尾：${INVITE_KEY} 恢复为 ${JSON.stringify(invite0)}`);
-      } catch (err) {
-        info(`收尾：恢复 ${INVITE_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
-      }
+    // invite / required 开关：**无条件**恢复（切片可能已把值翻到相反态；条件恢复会在
+    // required0=false 时跳过，把 true 留在共享栈上毒化后续 slice）。
+    try {
+      await putConfigAndWaitBoth(admin, INVITE_KEY, invite0);
+      info(`收尾：${INVITE_KEY} 恢复为 ${JSON.stringify(invite0)}`);
+    } catch (err) {
+      info(`收尾：恢复 ${INVITE_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
     }
-    if (required0 !== false) {
-      try {
-        await putConfigAndWaitBoth(admin, REQUIRED_KEY, required0);
-        info(`收尾：${REQUIRED_KEY} 恢复为 ${JSON.stringify(required0)}`);
-      } catch (err) {
-        info(`收尾：恢复 ${REQUIRED_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
-      }
+    try {
+      await putConfigAndWaitBoth(admin, REQUIRED_KEY, required0);
+      info(`收尾：${REQUIRED_KEY} 恢复为 ${JSON.stringify(required0)}`);
+    } catch (err) {
+      info(`收尾：恢复 ${REQUIRED_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

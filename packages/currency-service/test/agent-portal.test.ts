@@ -45,7 +45,7 @@ function makeDb(opts: {
       return [{ ...(opts.agentRow ?? AGENT_ROW), status: opts.agentStatus ?? 'active' }];
     }
     if (sql.includes('COUNT(*) AS `cnt` FROM `agent_invite_codes`')) {
-      if (sql.includes('CURDATE()')) return [{ cnt: opts.dailyCount ?? 0 }];
+      if (sql.includes('`created_at` >= ?')) return [{ cnt: opts.dailyCount ?? 0 }];
       return [{ cnt: opts.activeCount ?? 0 }];
     }
     if (sql.includes('FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?')) {

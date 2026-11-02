@@ -6906,8 +6906,9 @@ async function ensureConfigSnapshot() {
 }
 
 /** 只刷新配置快照（不触发 loadAll 的全量重渲染）；三态控件保存后回显用。 */
-async function refreshConfigSnapshot() {
+async function refreshConfigSnapshot(epoch = agentsState.epoch) {
   const res = await api('/api/admin/config');
+  if (!agentsResponseFresh(epoch)) return false;
   if (res.status === 200 && res.body?.data?.config) {
     currentConfig = res.body.data.config;
     return true;
@@ -7068,6 +7069,7 @@ async function loadAgentSettings() {
 }
 
 /** 邀请码三态行（关闭/选填/必填）：每次激活重建；无快照时给占位。 */
+let inviteSaving = false;
 function renderAgentInviteRow() {
   const host = $('ag-invite-row');
   if (!host) return;
@@ -7090,21 +7092,30 @@ function renderAgentInviteRow() {
   select.id = 'ag-invite-mode';
   select.disabled = !canWriteConfigKey('agent.inviteRequired');
   select.addEventListener('change', async () => {
-    const next = select.value;
-    let ok = true;
-    if (next === 'required') {
-      ok = (await putConfigKey('agent.inviteRequired', true)).ok === true;
-      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
-    } else if (next === 'optional') {
-      ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
-      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
-    } else {
-      ok = (await putConfigKey('agent.inviteEnabled', false)).ok === true;
-      if (ok) ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+    if (inviteSaving) return;
+    inviteSaving = true;
+    select.disabled = true;
+    const epoch = agentsState.epoch;
+    try {
+      const next = select.value;
+      let ok = true;
+      if (next === 'required') {
+        ok = (await putConfigKey('agent.inviteRequired', true)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+      } else if (next === 'optional') {
+        ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+      } else {
+        ok = (await putConfigKey('agent.inviteEnabled', false)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+      }
+      if (!ok) showMsg('保存失败，已重新读取当前配置', 'err');
+      const refreshed = await refreshConfigSnapshot(epoch);
+      if (!refreshed) showMsg('配置刷新失败，请重试', 'err');
+      if (agentsResponseFresh(epoch)) renderAgentInviteRow();
+    } finally {
+      inviteSaving = false;
     }
-    if (!ok) showMsg('保存失败，已重新读取当前配置', 'err');
-    await refreshConfigSnapshot();
-    renderAgentInviteRow();
   });
   host.append(el('label', 'field-label', '注册邀请码'), select);
   host.append(el('p', 'hint', '必填仅在代理模块启用时生效。'));

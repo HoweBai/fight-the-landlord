@@ -83,10 +83,10 @@ const busy = ref(false);
 
 const isRegister = computed(() => mode.value === 'register');
 /**
- * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**首次切到注册**时懒拉一次
+ * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**每次进入注册态**懒拉一次
  * `GET /api/config/boot`（公开白名单；只回 version + agentInviteEnabled/Required）。
- * boot 失败 ⇒ 兜底展示输入框（服务端权威：不需要码时填了也不会绑；需要码时用户能填）。
- * 全量配置已加载 ⇒ 直接短路（required 已随全量配置下发）。
+ * 即使全量配置已加载也刷新：退出登录会保留旧配置快照，运营刚开启必填时旧 false
+ * 会把字段永久藏住（只能杀进程恢复）。boot 失败 ⇒ 兜底展示输入框。
  */
 const showInviteCode = computed(
   () => isRegister.value && (game.agentInviteEnabled === true || inviteBootFailed.value),
@@ -95,7 +95,6 @@ const inviteRequired = computed(
   () => showInviteCode.value && game.agentInviteRequired === true,
 );
 function ensureInviteConfig(): Promise<void> {
-  if (game.clientConfigVersion > 0) return Promise.resolve();
   if (inviteLoadPromise !== null) return inviteLoadPromise;
   inviteLoadPromise = (async () => {
     inviteConfigLoading.value = true;
