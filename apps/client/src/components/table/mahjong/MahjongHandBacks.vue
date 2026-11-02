@@ -83,4 +83,8 @@ const overlapTop = computed(() =>
   /* 列顶与同侧牌河顶对齐；14 张预算的剩余高度放在脚下 */
   justify-content: flex-start;
 }
+/* 天月风：蓝色牌背顶部一道高光，增强立牌感 */
+.mj-backs :deep(.mj-tile--back) {
+  box-shadow: inset 0 $ftl-hairline 0 $ftl-color-mj-highlight;
+}
 </style>

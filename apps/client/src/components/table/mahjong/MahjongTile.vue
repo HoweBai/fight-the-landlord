@@ -79,62 +79,37 @@ const tileStyle = computed(() =>
 </template>
 
 <style scoped lang="scss">
-/** 牌面比例 75:113 ≈ 0.664；宽度按档位，高度由比例推出。 */
+/** 牌面比例 3:4；圆角跟随素材（约 12%），drop-shadow 跟随 alpha。 */
 .mj-tile {
   display: block;
   flex: 0 0 auto;
-  border-radius: 3px;
+  border-radius: 12%;
   background: transparent;
-  transition: transform 0.08s, box-shadow 0.08s;
+  filter: drop-shadow(0 2px 3px $ftl-color-mj-shadow);
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.08s;
 }
-/**
- * 所有档位等比例放大 1.3×（方案：2026-10-29 牌面尺寸升级）。
- * 原始素材 my=75×113 (0.664), top=55×84 (0.655), l/r=49×40 (1.225)。
- * 放大后容器撑满素材利用率 ~80%，改善当前手牌/弃牌/对手牌都偏小的问题。
- * 所有档位保持素材原始比例，仅缩放倍率不同档。
- */
 .mj-tile--sm {
   width: 34px;
-  height: 51px;
+  height: 45px;
 }
 .mj-tile--md {
   width: 46px;
-  height: 69px;
+  height: 61px;
 }
 .mj-tile--lg {
   width: 60px;
-  height: 90px;
+  height: 80px;
 }
 .mj-tile--selected {
   transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
-  box-shadow: 0 0 0 2px $ftl-color-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 $ftl-hairline $ftl-color-mj-gold;
+  filter: drop-shadow(0 0 4px rgba($ftl-color-mj-gold, 0.65));
 }
 .mj-tile--disabled {
   opacity: 0.45;
 }
 .mj-tile--dim {
   opacity: 0.5;
-  filter: grayscale(0.6);
-}
-/**
- * top 方向素材 55×84 (0.655) 与 my 方向 75×113 (0.664) 比例有差，
- * 竖置牌（非横置）需要独立容器尺寸避免 aspectFit letterbox。
- * 牌背同样跳过（四个方向同一张 83×125 图）。
- * 放大后保持各自素材原始比例。
- */
-.mj-tile--dir-top:not(.mj-tile--back) {
-  &.mj-tile--sm { width: 33px; height: 50px; }
-  &.mj-tile--md { width: 45px; height: 69px; }
-  &.mj-tile--lg { width: 59px; height: 90px; }
-}
-/**
- * left/right 方向的牌面素材是横置（49×40，宽>高），容器需按横牌比例调整。
- * 牌背（.mj-tile--back）图是竖的，四个方向都是同一张，所以保持默认竖牌容器尺寸。
- */
-.mj-tile--dir-left:not(.mj-tile--back),
-.mj-tile--dir-right:not(.mj-tile--back) {
-  &.mj-tile--sm { width: 51px; height: 42px; }
-  &.mj-tile--md { width: 66px; height: 54px; }
-  &.mj-tile--lg { width: 88px; height: 72px; }
+  filter: grayscale(0.6) drop-shadow(0 2px 3px $ftl-color-mj-shadow);
 }
 </style>
