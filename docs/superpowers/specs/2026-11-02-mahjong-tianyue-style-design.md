@@ -2,6 +2,8 @@
 
 日期：2026-11-02
 状态：已实现并验证（v2）；已合并 origin/dev 并推送 dev
+> 注：本片已被 `2026-11-02-mahjong-tianyue-align-v2-design.md` 部分取代
+> （手牌 104→116、0.88W→0.95W、中央加四家局分、牌背改亮宝蓝、中央盘改炭黑）。
 范围：纯客户端展示层（麻将牌桌）
 参考：天月麻雀（Amatsuki Mahjong）牌桌截图；当前实现 `apps/client/src/components/table/mahjong/*`
 
