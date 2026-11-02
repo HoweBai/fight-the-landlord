@@ -1416,7 +1416,7 @@ export async function runSlice17(): Promise<Checks> {
     // （§2.5/⚙️11；逐字名单，不随协议常量漂）。
     checks.eq(
       c14Keys.sort().join(','),
-      'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      'agentInviteEnabled,agentInviteRequired,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
       '⑪ C14 键集（排序后）恰好客户端 22 键',
     );
     // 内部键**显式名单**（T12 起含 rakePercent/reliefAmount；前缀兜底断言在 slice-18 A 组）。

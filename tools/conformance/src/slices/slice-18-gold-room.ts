@@ -133,7 +133,7 @@ const adSecret = (): string => (cachedAdSecret ??= loadAdCallbackSecret());
  *  阶段 2 已删除派生字段 `entryFeePercents`；
  *  `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间，UTF-16 `'A'<'E'`）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,agentInviteRequired,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 
 /** §12.1 A 组：内部键零泄漏的**显式名单**（+ 全量 `currency.` 前缀扫描兜底）。 */
 const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'] as const;

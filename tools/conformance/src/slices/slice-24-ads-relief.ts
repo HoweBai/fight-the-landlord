@@ -164,7 +164,7 @@ const RELIEF_AMOUNT_SEED = 200;
 /** `/api/config` 的**恰好**键集（排序后逐字；记牌器收费片起 = 20 键——阶段 2 已删除派生字段 `entryFeePercents`；
  *  广告片起 `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,agentInviteRequired,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 /** §2.7 新告警两条（⓪ 的「规则 27 就位」面）。 */
 const AD_ALERT_RULES = ['ReliefCallbackBroken', 'ReliefGrantZero'] as const;
 /** C2（2026-10-26）：资金↔记录对账三条规则（总数 35→38）。 */

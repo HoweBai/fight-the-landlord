@@ -67,6 +67,7 @@ const AID = (s: string): string => `s30-${RUN_TAG}-${s}`;
 const ROOM = (s: string): string => `s30-${RUN_TAG}-${s}`;
 
 const INVITE_KEY = 'agent.inviteEnabled';
+const REQUIRED_KEY = 'agent.inviteRequired';
 
 /** 随机 11 位手机号（用户/代理各自唯一；运行期生成，不固定）。 */
 function phoneOf(prefix = '137'): string {
@@ -139,6 +140,41 @@ async function createAgent(
     throw new ConformanceError(`建代理失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
   }
   return res.body.data;
+}
+
+/** step ②（尚无代理 token）与预铸未消费码：管理员 rotate 铸一枚新码。 */
+async function mintCodeViaRotate(admin: string, agentId: string): Promise<string> {
+  const res = await postJson<{ code: string }>(
+    `/api/admin/agents/${encodeURIComponent(agentId)}/invite-code/rotate`,
+    {},
+    admin,
+  );
+  if (res.status !== 200 || res.body?.code !== ErrCode.OK || typeof res.body.data?.code !== 'string') {
+    throw new ConformanceError(`admin rotate 铸码失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  return res.body.data.code;
+}
+
+/** step ③ 之后：代理自助生成一枚新码。 */
+async function mintCodeViaAgent(token: string): Promise<string> {
+  const res = await postJson<{ codes: string[] }>('/api/agent/invite-codes', { count: 1 }, token);
+  if (
+    res.status !== 200 ||
+    res.body?.code !== ErrCode.OK ||
+    !Array.isArray(res.body.data?.codes) ||
+    typeof res.body.data.codes[0] !== 'string'
+  ) {
+    throw new ConformanceError(`agent 生成一枚码失败：HTTP ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  return res.body.data.codes[0]!;
+}
+
+async function activeInviteCodes(token: string): Promise<string[]> {
+  const res = await getJson<{ rows: Array<{ code: string }> }>(
+    '/api/agent/invite-codes?status=active',
+    token,
+  );
+  return (res.body?.data?.rows ?? []).map((r) => String(r.code));
 }
 
 interface AgentLoginData {
@@ -214,8 +250,8 @@ function composeLogs(service: string, sinceSeconds: number): string {
   return `${r.stdout ?? ''}${r.stderr ?? ''}`;
 }
 
-function appliedVersionCount(version: number): number {
-  return composeLogs('currency-service', 1800)
+function appliedVersionCount(service: string, version: number): number {
+  return composeLogs(service, 1800)
     .split('\n')
     .filter((line) => {
       const at = line.indexOf('{');
@@ -232,8 +268,11 @@ function appliedVersionCount(version: number): number {
     }).length;
 }
 
-/** PUT 配置键并轮询 currency-service 的「config snapshot applied version=…」。 */
-async function putConfigAndWait(
+/**
+ * PUT 配置键并同时等待 currency-service 与 user-service 的缓存生效。
+ * 必填判定在 user-service、绑定开关在 currency-service ⇒ 必须两边都到位才算生效。
+ */
+async function putConfigAndWaitBoth(
   admin: string,
   key: string,
   value: unknown,
@@ -246,19 +285,23 @@ async function putConfigAndWait(
   const gv0 = before.body?.data?.version ?? 0;
   const kv0 = before.body?.data?.config?.[key]?.version ?? 0;
   const expected = Math.max(gv0, kv0 + 1);
-  const baseline = appliedVersionCount(expected);
+  const baselineCurrency = appliedVersionCount('currency-service', expected);
+  const baselineUser = appliedVersionCount('user-service', expected);
   const put = await adminPutConfig(key, value, admin);
   if (put.status !== 200 || put.body?.code !== ErrCode.OK) {
     throw new ConformanceError(`PUT ${key} 失败：HTTP ${put.status} ${JSON.stringify(put.body)}`);
   }
   const started = Date.now();
   while (Date.now() - started < 30_000) {
-    if (appliedVersionCount(expected) > baseline) return;
+    const currency = appliedVersionCount('currency-service', expected) > baselineCurrency;
+    const user = appliedVersionCount('user-service', expected) > baselineUser;
+    if (currency && user) return;
     await sleep(500);
   }
   throw new ConformanceError(
-    `currency-service 未在 30s 内应用配置 version=${expected}（key=${key}）——` +
-      `最近日志：${tail(composeLogs('currency-service', 120), 6)}`,
+    `配置 version=${expected} 未在 30s 内被两服务同时应用（key=${key}）——` +
+      `currency 最近：${tail(composeLogs('currency-service', 120), 4)} / ` +
+      `user 最近：${tail(composeLogs('user-service', 120), 4)}`,
   );
 }
 
@@ -270,6 +313,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
 
   let settings0: { enabled: boolean; minSettlementYuan: number } | null = null;
   let invite0: unknown = false;
+  let required0: unknown = false;
   let agentA: AgentCreated | null = null;
   let agentB: AgentCreated | null = null;
   let u1: HarnessUser | null = null;
@@ -297,6 +341,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     settings0 = settingsRes.body.data;
     const inviteRes = await adminGetConfig<{ config: Record<string, { value: unknown }> }>(admin);
     invite0 = inviteRes.body?.data?.config?.[INVITE_KEY]?.value ?? false;
+    required0 = inviteRes.body?.data?.config?.[REQUIRED_KEY]?.value ?? false;
 
     // 总是「先关再开」：在 settings_history 里切出一个**从本次运行开始**的启用区间
     // （共享脏栈上也能把旧区间的台费流水排除在 missingEvent 统计之外；fresh 栈的
@@ -317,14 +362,18 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       `PATCH /api/admin/agents/settings {enabled:true} ⇒ 200/true —— 实际 HTTP ${on.status} ${JSON.stringify(on.body)}`,
     );
     checks.eq(on.body?.data?.minSettlementYuan, 0, '准入：最低结算额临时置 0（小额用例）');
+    // 必填 preflight：主动写 false（共享脏栈若上次崩溃留下 true，必须先复位，否则探针注册被拒）。
+    await putConfigAndWaitBoth(admin, REQUIRED_KEY, false);
+    checks.ok(`PUT ${REQUIRED_KEY}=false → 两服务缓存生效（preflight 复位）`);
     // 总是写一次 true（同值也写）：既保证 currency 缓存生效，也让断言条数与环境无关。
-    await putConfigAndWait(admin, INVITE_KEY, true);
-    checks.ok(`PUT ${INVITE_KEY}=true → currency-service 缓存生效`);
+    await putConfigAndWaitBoth(admin, INVITE_KEY, true);
+    checks.ok(`PUT ${INVITE_KEY}=true → 两服务缓存生效`);
 
     const adminCfg = await adminGetConfig<{ config: Record<string, unknown> }>(admin);
     const cfgKeys = Object.keys(adminCfg.body?.data?.config ?? {});
     checks.eq(cfgKeys.length, CONFIG_KEYS.length, `管理端配置键数恰 ${CONFIG_KEYS.length}（protocol CONFIG_KEYS）`);
     checks.that(cfgKeys.includes(INVITE_KEY), `管理端配置含 ${INVITE_KEY}`);
+    checks.that(cfgKeys.includes(REQUIRED_KEY), `管理端配置含 ${REQUIRED_KEY}`);
 
     const probeReg = await register({ nickname: `s30-probe-${RUN_TAG}` });
     const probe = asUser(probeReg.status, probeReg.body, '探针注册');
@@ -336,21 +385,29 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       true,
       'GET /api/config agentInviteEnabled=true（客户端可见裸名）',
     );
+    checks.eq(
+      clientCfg.body?.data?.agentInviteRequired,
+      false,
+      'GET /api/config agentInviteRequired=false（preflight 复位）',
+    );
 
     // r3 Critical #1：未登录的注册页必须能拿到邀请码开关（公开 /api/config/boot）。
-    const bootCfg = await getJson<{ version: number; agentInviteEnabled: boolean }>(
-      '/api/config/boot',
-    );
+    const bootCfg = await getJson<{
+      version: number;
+      agentInviteEnabled: boolean;
+      agentInviteRequired: boolean;
+    }>('/api/config/boot');
     checks.that(
       bootCfg.status === 200 &&
         bootCfg.body?.code === ErrCode.OK &&
-        bootCfg.body.data?.agentInviteEnabled === true,
-      `无令牌 GET /api/config/boot ⇒ 200/true —— 实际 HTTP ${bootCfg.status} ${JSON.stringify(bootCfg.body)}`,
+        bootCfg.body.data?.agentInviteEnabled === true &&
+        bootCfg.body.data?.agentInviteRequired === false,
+      `无令牌 GET /api/config/boot ⇒ 200/true/false —— 实际 HTTP ${bootCfg.status} ${JSON.stringify(bootCfg.body)}`,
     );
     checks.eq(
       Object.keys(bootCfg.body?.data ?? {}).sort().join(','),
-      'agentInviteEnabled,version',
-      'boot 面只回两键（不暴露其余配置）',
+      'agentInviteEnabled,agentInviteRequired,version',
+      'boot 面只回三键（不暴露其余配置）',
     );
 
     // ══════════════════════════════════════════════════════════════════════
@@ -428,7 +485,8 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // ② 注册绑定（邀请码 / 2×2 开关矩阵 / 无效码）
     // ══════════════════════════════════════════════════════════════════════
     step('② 邀请码绑定：U1→A；invite 关 ⇒ ignored；settings 关 ⇒ ignored；无效码 400/11006 且不建用户');
-    const u1Reg = await register({ inviteCode: agentA.inviteCode, nickname: `s30-u1-${RUN_TAG}` });
+    const u1Code = await mintCodeViaRotate(admin, agentA.account.id);
+    const u1Reg = await register({ inviteCode: u1Code, nickname: `s30-u1-${RUN_TAG}` });
     u1 = asUser(u1Reg.status, u1Reg.body, 'U1 注册');
     checks.eq(
       mysqlText(`SELECT \`agent_id\` FROM \`agent_bindings\` WHERE \`owner_id\` = '${u1.id}'`),
@@ -441,11 +499,12 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       '绑定 phone_hash 长度 = 64（HMAC-SHA256 hex）',
     );
 
-    await putConfigAndWait(admin, INVITE_KEY, false);
+    const ignoredInviteCode = await mintCodeViaRotate(admin, agentA.account.id);
+    await putConfigAndWaitBoth(admin, INVITE_KEY, false);
     const ignoredByInvitePhone = phoneOf();
     const ignoredByInvite = await register({
       phone: ignoredByInvitePhone,
-      inviteCode: agentA.inviteCode,
+      inviteCode: ignoredInviteCode,
       nickname: `s30-ign-${RUN_TAG}`,
     });
     checks.eq(ignoredByInvite.status, 201, 'invite 关：带有效码仍可注册（fail-open 到未归属）');
@@ -454,7 +513,12 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       0,
       'invite 关：不产生绑定行',
     );
-    await putConfigAndWait(admin, INVITE_KEY, true);
+    checks.eq(
+      mysqlText(`SELECT \`status\` FROM \`agent_invite_codes\` WHERE \`code\` = '${ignoredInviteCode}'`),
+      'active',
+      'invite 关：码不消费',
+    );
+    await putConfigAndWaitBoth(admin, INVITE_KEY, true);
 
     const badPhone = phoneOf();
     const bad = await register({
@@ -472,16 +536,18 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       '无效邀请码 fail-closed：不建用户',
     );
 
-    const u4Reg = await register({ inviteCode: agentA.inviteCode, nickname: `s30-u4-${RUN_TAG}` });
+    const u4Code = await mintCodeViaRotate(admin, agentA.account.id);
+    const u4Reg = await register({ inviteCode: u4Code, nickname: `s30-u4-${RUN_TAG}` });
     const u4 = asUser(u4Reg.status, u4Reg.body, 'U4 注册');
 
     // settings 关 ⇒ ignored（2×2 的另一半）
+    const ignoredSettingsCode = await mintCodeViaRotate(admin, agentA.account.id);
     const off = await patchJson('/api/admin/agents/settings', { enabled: false }, admin);
     checks.that(off.status === 200 && off.body?.data?.enabled === false, 'PATCH settings {enabled:false} ⇒ 200/false');
     const offPhone = phoneOf();
     const ignoredBySettings = await register({
       phone: offPhone,
-      inviteCode: agentA.inviteCode,
+      inviteCode: ignoredSettingsCode,
       nickname: `s30-off-${RUN_TAG}`,
     });
     checks.eq(ignoredBySettings.status, 201, 'settings 关：带有效码仍可注册');
@@ -490,8 +556,66 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       0,
       'settings 关：不产生绑定行',
     );
+    checks.eq(
+      mysqlText(`SELECT \`status\` FROM \`agent_invite_codes\` WHERE \`code\` = '${ignoredSettingsCode}'`),
+      'active',
+      'settings 关：码不消费',
+    );
     const backOn = await patchJson('/api/admin/agents/settings', { enabled: true }, admin);
     checks.that(backOn.status === 200 && backOn.body?.data?.enabled === true, 'PATCH settings {enabled:true} 复原');
+
+    // 一次性语义（2026-11-03）
+    const reuseCode = await mintCodeViaRotate(admin, agentA.account.id);
+    const reuseFirst = await register({ inviteCode: reuseCode, nickname: `s30-reuse1-${RUN_TAG}` });
+    checks.eq(reuseFirst.status, 201, '一次性码：首次注册 201');
+    const reuseSecond = await register({ inviteCode: reuseCode, nickname: `s30-reuse2-${RUN_TAG}` });
+    checks.that(
+      reuseSecond.status === 400 &&
+        reuseSecond.body?.code === ErrCode.AGENT_INVITE_INVALID &&
+        String(reuseSecond.body?.message ?? '').includes('已被使用'),
+      `同码第二次 ⇒ 400/11006「已被使用」—— 实际 HTTP ${reuseSecond.status} ${JSON.stringify(reuseSecond.body)}`,
+    );
+
+    const raceCode = await mintCodeViaRotate(admin, agentA.account.id);
+    const [inviteRace1, inviteRace2] = await Promise.all([
+      register({ inviteCode: raceCode, nickname: `s30-race1-${RUN_TAG}` }),
+      register({ inviteCode: raceCode, nickname: `s30-race2-${RUN_TAG}` }),
+    ]);
+    const raceWins = [inviteRace1, inviteRace2].filter((r) => r.status === 201).length;
+    checks.eq(raceWins, 1, '并发同码：恰一人成功');
+    checks.that(
+      [inviteRace1, inviteRace2].some(
+        (r) => r.status === 400 && r.body?.code === ErrCode.AGENT_INVITE_INVALID,
+      ),
+      '并发同码：另一人 400/11006',
+    );
+
+    const oldCode = await mintCodeViaRotate(admin, agentA.account.id);
+    await mintCodeViaRotate(admin, agentA.account.id); // rotate 作废旧码
+    const oldCodeReg = await register({ inviteCode: oldCode, nickname: `s30-oldcode-${RUN_TAG}` });
+    checks.that(
+      oldCodeReg.status === 400 &&
+        oldCodeReg.body?.code === ErrCode.AGENT_INVITE_INVALID &&
+        String(oldCodeReg.body?.message ?? '').includes('邀请码无效'),
+      `rotate 后旧码 ⇒ 400/11006「无效」—— 实际 HTTP ${oldCodeReg.status} ${JSON.stringify(oldCodeReg.body)}`,
+    );
+
+    // 必填矩阵：开 ⇒ 缺码 400「请填写邀请码」；带有效码 201
+    await putConfigAndWaitBoth(admin, REQUIRED_KEY, true);
+    const missingCode = await register({ nickname: `s30-required-${RUN_TAG}` });
+    checks.that(
+      missingCode.status === 400 &&
+        missingCode.body?.code === ErrCode.AGENT_INVITE_INVALID &&
+        String(missingCode.body?.message ?? '').includes('请填写邀请码'),
+      `必填开 + 缺码 ⇒ 400/11006「请填写邀请码」—— 实际 HTTP ${missingCode.status} ${JSON.stringify(missingCode.body)}`,
+    );
+    const requiredCode = await mintCodeViaRotate(admin, agentA.account.id);
+    const requiredReg = await register({
+      inviteCode: requiredCode,
+      nickname: `s30-required-ok-${RUN_TAG}`,
+    });
+    checks.eq(requiredReg.status, 201, '必填开 + 有效码 ⇒ 201');
+    await putConfigAndWaitBoth(admin, REQUIRED_KEY, false);
 
     // ══════════════════════════════════════════════════════════════════════
     // ③ 代理登录/守卫
@@ -524,11 +648,17 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     const secondLogin = await agentLogin(agentA.account.phone, 'agent-pass-1');
     tokenA = String(secondLogin.body?.data?.token ?? '');
     checks.that(tokenA !== '', '改密后新密码登录 ⇒ token');
-    const me = await getJson<{ inviteCode: string }>('/api/agent/me', tokenA);
-    checks.eq(me.body?.data?.inviteCode, agentA.inviteCode, 'GET /api/agent/me inviteCode = A 的 active 码');
+    const me = await getJson<{ inviteCode: string | null }>('/api/agent/me', tokenA);
+    const actives = await activeInviteCodes(tokenA);
+    const meCode = me.body?.data?.inviteCode ?? null;
+    checks.that(
+      meCode === null || actives.includes(meCode),
+      'GET /api/agent/me inviteCode 属于 active 集合（或 null）',
+    );
     tokenB = await agentReady(agentB, 'agent-pass-2');
 
-    // 冻结仍可登录 + 只读（spec D10）
+    // 冻结仍可登录 + 只读（spec D10）；冻结代理生成码 ⇒ 11007
+    const frozenCode = await mintCodeViaRotate(admin, agentA.account.id);
     const freeze = await postJson(
       `/api/admin/agents/${agentA.account.id}/status`,
       { status: 'frozen', reason: 's30' },
@@ -540,6 +670,19 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     tokenA = String(frozenLogin.body?.data?.token ?? tokenA);
     const frozenRead = await getJson('/api/agent/overview', tokenA);
     checks.eq(frozenRead.status, 200, '冻结代理 GET /api/agent/overview ⇒ 200');
+    const frozenGen = await postJson('/api/agent/invite-codes', { count: 1 }, tokenA);
+    checks.that(
+      frozenGen.status === 403 && frozenGen.body?.code === ErrCode.AGENT_FROZEN,
+      `冻结代理生成码 ⇒ 403/11007 —— 实际 HTTP ${frozenGen.status} ${JSON.stringify(frozenGen.body)}`,
+    );
+    const frozenCodeReg = await register({
+      inviteCode: frozenCode,
+      nickname: `s30-frozen-code-${RUN_TAG}`,
+    });
+    checks.that(
+      frozenCodeReg.status === 400 && frozenCodeReg.body?.code === ErrCode.AGENT_INVITE_INVALID,
+      `冻结代理的码注册 ⇒ 400/11006 —— 实际 HTTP ${frozenCodeReg.status} ${JSON.stringify(frozenCodeReg.body)}`,
+    );
     const unfreeze = await postJson(
       `/api/admin/agents/${agentA.account.id}/status`,
       { status: 'active', reason: 's30' },
@@ -603,7 +746,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     step('⑤ 自玩（同手机号）份额 0 顺延；冻结份额 0 且推进档位');
     const selfReg = await register({
       phone: agentA.account.phone,
-      inviteCode: agentA.inviteCode,
+      inviteCode: await mintCodeViaRotate(admin, agentA.account.id),
       nickname: `s30-self-${RUN_TAG}`,
     });
     const selfUser = asUser(selfReg.status, selfReg.body, '自玩玩家注册（与 A 同号）');
@@ -665,7 +808,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // ⑥ 并发首建额度 + SAVEPOINT
     // ══════════════════════════════════════════════════════════════════════
     step('⑥ 并发：同 owner 两条 entry_fee 并发（额度行首建原子 upsert，无 1213/gap）；SAVEPOINT 语句级失败');
-    const freshReg = await register({ inviteCode: agentA.inviteCode, nickname: `s30-fresh-${RUN_TAG}` });
+    const freshReg = await register({
+      inviteCode: await mintCodeViaAgent(tokenA),
+      nickname: `s30-fresh-${RUN_TAG}`,
+    });
     const fresh = asUser(freshReg.status, freshReg.body, '并发首建玩家注册');
     // 钱包需要余额（否则 apply 先撞 14001，测不到额度首建）；再删掉 recharge 建出的额度行，
     // 让两条并发 entry_fee 真正走「额度行首建」路径（base=0，但 upsert/FOR UPDATE 全套执行）。
@@ -715,7 +861,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     );
 
     // SAVEPOINT：把佣金表临时改名 ⇒ 钩子在写佣金行时语句级失败。
-    const spReg = await register({ inviteCode: agentA.inviteCode, nickname: `s30-sp-${RUN_TAG}` });
+    const spReg = await register({
+      inviteCode: await mintCodeViaRotate(admin, agentA.account.id),
+      nickname: `s30-sp-${RUN_TAG}`,
+    });
     const spUser = asUser(spReg.status, spReg.body, 'SAVEPOINT 玩家注册');
     await recharge(spUser, 100, 'sp');
     const spConsumedBefore = mysqlNum(
@@ -769,7 +918,10 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     // ⑦ 结算
     // ══════════════════════════════════════════════════════════════════════
     step('⑦ 结算：幂等 / pending 闸 / 低 id 晚提交 409 / 驳回重申请 / 打款 / 撤回');
-    const ubReg = await register({ inviteCode: agentB.inviteCode, nickname: `s30-ub-${RUN_TAG}` });
+    const ubReg = await register({
+      inviteCode: await mintCodeViaRotate(admin, agentB.account.id),
+      nickname: `s30-ub-${RUN_TAG}`,
+    });
     const ub = asUser(ubReg.status, ubReg.body, 'B 名下玩家注册');
     await recharge(ub, 100, 'ub');
     const ubFee1 = await entryFee(ub, 10, ROOM('b1'), 'b1');
@@ -1138,6 +1290,12 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       roleTokens.operator,
     );
     checks.eq(operatorConfigWrite.status, 403, 'operator PUT agent.inviteEnabled ⇒ 403（P-ag0）');
+    const operatorRequiredWrite = await putJson(
+      `/api/admin/config/${REQUIRED_KEY}`,
+      { value: true },
+      roleTokens.operator,
+    );
+    checks.eq(operatorRequiredWrite.status, 403, 'operator PUT agent.inviteRequired ⇒ 403（P-ag0）');
 
     // ══════════════════════════════════════════════════════════════════════
     // 收尾
@@ -1190,13 +1348,21 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
         info(`收尾：恢复 settings 失败：${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    // invite 开关
+    // invite / required 开关
     if (invite0 !== true) {
       try {
-        await putConfigAndWait(admin, INVITE_KEY, invite0);
+        await putConfigAndWaitBoth(admin, INVITE_KEY, invite0);
         info(`收尾：${INVITE_KEY} 恢复为 ${JSON.stringify(invite0)}`);
       } catch (err) {
         info(`收尾：恢复 ${INVITE_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (required0 !== false) {
+      try {
+        await putConfigAndWaitBoth(admin, REQUIRED_KEY, required0);
+        info(`收尾：${REQUIRED_KEY} 恢复为 ${JSON.stringify(required0)}`);
+      } catch (err) {
+        info(`收尾：恢复 ${REQUIRED_KEY} 失败：${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

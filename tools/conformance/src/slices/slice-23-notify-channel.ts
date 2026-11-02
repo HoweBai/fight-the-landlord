@@ -728,7 +728,7 @@ export async function runSlice23(): Promise<Checks> {
     }
 
     /* ── ② 不进广播（前置 = ①末态；无状态变更）─────────────────────────────── */
-    step('② 不进广播：RPC config.snapshot 无 notify. 子串 + 恰 65 键 · GET /api/config 恰 21 键 · 三容器 env 无退役九键（防回流）');
+    step('② 不进广播：RPC config.snapshot 无 notify. 子串 + 恰 65 键 · GET /api/config 恰 23 键 · 三容器 env 无退役九键（防回流）');
     const snap = await rpcCall<{ config: Record<string, unknown>; version: number }>(CONFIG_RPC, RPC_PATTERNS.configSnapshot, {}, 3_000);
     const snapSer = JSON.stringify(snap);
     checks.that(snap.ok === true && !snapSer.includes('notify.'), `② config.snapshot ok:true 且响应串**无** notify. 子串 —— ok=${snap.ok}`);
