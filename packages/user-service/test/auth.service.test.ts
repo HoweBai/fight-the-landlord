@@ -15,11 +15,12 @@ import {
 } from '../src/currency/currency.client';
 
 function fakeRedis() {
-  const store = new Set<string>();
+  const store = new Map<string, string>();
   return {
-    set: vi.fn(async (k: string) => { store.add(k); return 'OK'; }),
+    set: vi.fn(async (k: string, v: string) => { store.set(k, v); return 'OK'; }),
     del: vi.fn(async (k: string) => (store.delete(k) ? 1 : 0)),
     exists: vi.fn(async (k: string) => (store.has(k) ? 1 : 0)),
+    eval: vi.fn(async () => 1),
   } as any;
 }
 
@@ -27,6 +28,7 @@ describe('AuthService（§5.1 / §7.2）', () => {
   let repo: any;
   let service: AuthService;
   let tokens: TokenService;
+  let redisMock: ReturnType<typeof fakeRedis>;
   /** 配置缓存假件（货币片 T6：`signupGrant()`；设备绑定片：`deviceBindingEnabled()` 的读点）。 */
   let configCache: {
     signupGrant: ReturnType<typeof vi.fn>;
@@ -50,6 +52,7 @@ describe('AuthService（§5.1 / §7.2）', () => {
       update: vi.fn(async () => undefined),
     };
     const redis = fakeRedis();
+    redisMock = redis;
     tokens = new TokenService(new JwtService({ secret: 'test-secret' }), redis);
     // 缺省即「生产默认」：`currency.signupGrant` 种子 0（规格 §2.8）⇒ 注册不碰货币服务；
     // 设备绑定开关种子 false ⇒ 绑定闸短路（既有用例零变化）。
@@ -232,6 +235,37 @@ describe('AuthService（§5.1 / §7.2）', () => {
       } finally {
         Logger.overrideLogger(false as never);
       }
+    });
+
+    it('同手机号锁：SET NX 拿不到 ⇒ 429/10006，不建用户', async () => {
+      redisMock.set.mockResolvedValueOnce(null);
+      const err = (await service
+        .register({ phone: '13800000080', password: 'passw0rd', nickname: '阿豆' } as any)
+        .catch((e: unknown) => e)) as DomainError;
+      expect(err).toMatchObject({ code: ErrCode.RATE_LIMITED });
+      expect(toHttpException(err).getStatus()).toBe(429);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('同手机号锁：成功/失败都释放（Lua 条件删）', async () => {
+      await service.register({ phone: '13800000081', password: 'passw0rd', nickname: '阿豆' } as any);
+      expect(redisMock.eval).toHaveBeenCalledTimes(1);
+
+      redisMock.eval.mockClear();
+      configCache.agentInviteEnabled.mockReturnValue(true);
+      configCache.agentInviteRequired.mockReturnValue(true);
+      await expect(
+        service.register({ phone: '13800000082', password: 'passw0rd', nickname: '阿豆' } as any),
+      ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID });
+      expect(redisMock.eval).toHaveBeenCalledTimes(1);
+    });
+
+    it('Redis 异常 ⇒ fail-open，注册照常', async () => {
+      redisMock.set.mockRejectedValueOnce(new Error('redis down'));
+      const res = await service.register({
+        phone: '13800000083', password: 'passw0rd', nickname: '阿豆',
+      } as any);
+      expect(res.accessToken).toBeTruthy();
     });
   });
 
