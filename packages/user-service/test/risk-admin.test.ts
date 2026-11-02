@@ -1495,26 +1495,29 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
   });
 
   it('GET users/:userId：详情形状逐字（stats/devices+others≤20/entries≤10/hits/accountStatus/limitSource）', async () => {
+    // 设备窗口按服务端真实 `Date.now()` 计算；这里用相对当前时间的日期，
+    // 避免固定 T0 随墙钟推移把窗口内设备挤到窗口外（2026-11-03 起已实际发生）。
+    const deviceNow = Date.now();
     db.users.set('u-A', 'active');
     db.winStats.set('u-A', { games: 12, wins: 9 });
     // 设备：三台 —— 一台在窗口外（仅进原文、不进 deviceCount）
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-old',
-      first_seen_at: new Date(T0 - 100 * DAY_MS),
-      last_seen_at: new Date(T0 - 40 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 100 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 40 * DAY_MS),
     });
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-1',
-      first_seen_at: new Date(T0 - 10 * DAY_MS),
-      last_seen_at: new Date(T0 - 1 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 10 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 1 * DAY_MS),
     });
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-2',
-      first_seen_at: new Date(T0 - 5 * DAY_MS),
-      last_seen_at: new Date(T0 - 2 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 5 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 2 * DAY_MS),
     });
     // dev-1 的关联账号：25 个 ⇒ others 截断 20；其一已封禁
     db.users.set('other-0', 'banned');
@@ -1524,8 +1527,8 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
       db.devices.push({
         user_id: id,
         device_id: 'dev-1',
-        first_seen_at: new Date(T0 - 86_400_000),
-        last_seen_at: new Date(T0 - 3_600_000),
+        first_seen_at: new Date(deviceNow - 86_400_000),
+        last_seen_at: new Date(deviceNow - 3_600_000),
       });
     }
     // 条目 12 条 ⇒ entries 截断 10
@@ -1565,8 +1568,8 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
     });
     expect(data.devices).toHaveLength(3); // 原文 3 台（含窗口外）
     const d1 = data.devices.find((d: { deviceId: string }) => d.deviceId === 'dev-1');
-    expect(d1.firstSeenAt).toBe(T0 - 10 * DAY_MS);
-    expect(d1.lastSeenAt).toBe(T0 - 1 * DAY_MS);
+    expect(d1.firstSeenAt).toBe(deviceNow - 10 * DAY_MS);
+    expect(d1.lastSeenAt).toBe(deviceNow - 1 * DAY_MS);
     expect(d1.others).toHaveLength(20); // ≤20
     expect(d1.others[0]).toEqual({ userId: 'other-0', accountStatus: 'banned' });
     expect(data.devices.find((d: { deviceId: string }) => d.deviceId === 'dev-old').others).toEqual([]);
