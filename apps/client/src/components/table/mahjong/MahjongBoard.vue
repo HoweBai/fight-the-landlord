@@ -337,11 +337,6 @@ function claimKey(opt: MahjongClaimOption, index: number): string {
   return `${opt.claim}:${opt.tile ? tileType(opt.tile) : 'x'}:${index}`;
 }
 
-/** 当前窗口里第一个可响应的牌（用于中央提示）。 */
-const claimTile = computed<Tile | null>(
-  () => myClaims.value.find((o) => o.tile !== undefined)?.tile ?? null,
-);
-
 function nameOf(seat: number): string {
   if (seat === me.value) return '我';
   return props.seatNames[seat] || `玩家${seat}`;
@@ -557,13 +552,38 @@ const hasActions = computed(() => {
     phase.value === 'claim'
   );
 });
+/** 中央四家：杠分/临时分投影 + 庄/缺/听/胡/出局。 */
+const centerSeats = computed(() => {
+  const v = props.view;
+  const pending = new Map<number, number>();
+  for (const c of v?.pendingScoreChanges ?? []) {
+    pending.set(c.seat, (pending.get(c.seat) ?? 0) + c.delta);
+  }
+  const score = (seat: number) => pending.get(seat) ?? 0;
+  const badgeFor = (seat: number): string => {
+    const hu = v?.huInfos?.some((h) => h.seat === seat) ?? false;
+    const out = v?.isOut?.[seat] ?? false;
+    const ting = v?.tingSeats?.includes(seat) ?? false;
+    const lack = v?.lackSuits?.[seat] ?? null;
+    return hu ? '胡' : out ? '出局' : ting ? '听' : lack !== null ? `缺${MAHJONG_SUIT_NAMES[lack]}` : '';
+  };
+  return [
+    { label: '对', score: score(topSeat.value), dealer: v?.dealerSeat === topSeat.value, badge: badgeFor(topSeat.value) },
+    { label: '左', score: score(leftSeat.value), dealer: v?.dealerSeat === leftSeat.value, badge: badgeFor(leftSeat.value) },
+    { label: '右', score: score(rightSeat.value), dealer: v?.dealerSeat === rightSeat.value, badge: badgeFor(rightSeat.value) },
+    { label: '我', score: score(me.value), dealer: v?.dealerSeat === me.value, badge: badgeFor(me.value) },
+  ];
+});
+
+/** 终局摘要：已胡 N 家 / 牌墙摸空。 */
+const endedSummary = computed(() =>
+  endReason.value > 0 ? `已胡 ${endReason.value} 家` : '牌墙摸空',
+);
+
 const centerProps = computed(() => ({
   wallCount: wallCount.value,
   phaseText: phaseText.value,
-  claimTile:
-    phase.value === 'claim' || phase.value === 'rob' ? claimTile.value : null,
-  claimW: layout.value.centerTiles.claim.w,
-  claimH: layout.value.centerTiles.claim.h,
+  seats: centerSeats.value,
   tingTiles: tingTiles.value,
   tingW: layout.value.centerTiles.ting.w,
   tingH: layout.value.centerTiles.ting.h,
@@ -572,12 +592,7 @@ const centerProps = computed(() => ({
   active: amActive.value && !props.settlementRevealed,
   compact: layout.value.centerCompact,
   ended: phase.value === 'ended',
-  endedText:
-    phase.value === 'ended'
-      ? ''
-      : endReason.value > 0
-        ? `已胡 ${endReason.value} 家`
-        : '',
+  endedText: phase.value === 'ended' ? endedSummary.value : '',
 }));
 
 // —— Batch 2 新增逻辑 ——

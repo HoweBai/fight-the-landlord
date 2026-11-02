@@ -459,26 +459,71 @@ describe('T13：摸牌分离与 display 下标', () => {
   });
 });
 
-describe('中心盘接线（ended / claim 过滤 / 托管）', () => {
-  it('ended：中央圆盘显示终', () => {
+describe('中心盘接线（四家 / ended / 托管）', () => {
+  it('ended：圆盘终 + 真实 endedText', () => {
     const wrapper = mount(MahjongBoard, {
-      props: props({ view: view({ state: 'ended' }) }),
+      props: props({
+        view: view({ state: 'ended', isOut: [true, true, true, false] }),
+      }),
     });
     expect(wrapper.find('.mj-center__value').text()).toContain('终');
+    expect(wrapper.find('.mj-center__ended').text()).toContain('已胡 3 家');
   });
 
-  it('play 阶段自己的自摸/杠候选不显示为「可响应」', () => {
+  it('四家：杠分/临时分按 seat 对位', () => {
     const wrapper = mount(MahjongBoard, {
       props: props({
         view: view({
-          state: 'play',
-          activeSeats: [0],
-          claimsForMe: [{ claim: 'hu', tile: tile(0, 5), fan: 2 }],
+          pendingScoreChanges: [
+            { seat: 1, delta: 1200 },
+            { seat: 2, delta: -800 },
+          ],
         }),
       }),
     });
-    expect(wrapper.find('.mj-center__claim').exists()).toBe(false);
-    expect(wrapper.find('.mj__actions').text()).toContain('胡');
+    const cells = wrapper.findAll('.mj-center__cell');
+    // [对=seat2, 左=seat3, 右=seat1, 我=seat0]
+    expect(cells[0]!.text()).toContain('-800');
+    expect(cells[1]!.text()).toContain('0');
+    expect(cells[2]!.text()).toContain('+1200');
+    expect(cells[3]!.text()).toContain('0');
+  });
+
+  it('四家：庄/缺/听/胡/出局优先级', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          dealerSeat: 0,
+          lackSuits: [0, 1, 2, 1],
+          tingSeats: [3],
+          isOut: [false, false, true, false],
+          huInfos: [
+            {
+              seat: 1,
+              fromSeat: 0,
+              tile: tile(0, 1),
+              fan: 1,
+              multiplier: 1,
+              items: ['平胡'],
+              selfDraw: false,
+            },
+          ],
+        }),
+      }),
+    });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells[0]!.text()).toContain('出局'); // top=2 出局优先于缺条
+    expect(cells[1]!.text()).toContain('听'); // left=3 ting
+    expect(cells[2]!.text()).toContain('胡'); // right=1 hu
+    expect(cells[3]!.text()).toContain('庄'); // me dealer
+    expect(cells[3]!.text()).toContain('缺万');
+  });
+
+  it('无 pending：四家全 0', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells).toHaveLength(4);
+    for (const c of cells) expect(c.text()).toContain('0');
   });
 
   it('托管遮罩可取消', async () => {

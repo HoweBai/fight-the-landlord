@@ -1,27 +1,22 @@
 <script setup lang="ts">
 /**
- * 中央井（哑组件）：天月风蓝金圆盘。
+ * 中央井（哑组件）：天月风炭黑盘。
  *
- * 圆盘中心：`ended` → 终；`active && seconds > 0` → 秒数；否则牌墙数。
- * 右侧列：可响应牌 / 听牌（最多 12 张，超出 +N）/ endedText 次要行。
- * 紧凑模式（布局给 `compact`）：90 圆盘 + 单行文字，不出牌面。
+ * 上缘牌墙/阶段；中央 80 圆盘倒计时；左右两列四家**杠分/临时分投影**
+ * （不是完整局分/钱包余额）；下缘听牌（最多 8 张 + 总数）。
+ * 可响应牌在 ClaimTile 面板，不在这里。
  */
 import { computed } from 'vue';
-import { MAHJONG_SUIT_NAMES, type Tile } from '@fight-the-landlord/protocol';
+import type { Tile } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
 
-/** 右列最多展示的听牌张数；超出的用 +N 收敛。 */
-const MAX_TING_TILES = 12;
-/** 有可响应牌时听牌只出一行（9 张），给 claim 牌面留高度。 */
-const MAX_TING_TILES_WITH_CLAIM = 9;
+const MAX_TING_TILES = 8;
 
 const props = withDefaults(
   defineProps<{
     wallCount: number;
     phaseText: string;
-    claimTile?: Tile | null;
-    claimW?: number;
-    claimH?: number;
+    seats?: Array<{ label: string; score: number; dealer: boolean; badge: string }>;
     tingTiles?: readonly Tile[];
     tingW?: number;
     tingH?: number;
@@ -33,9 +28,7 @@ const props = withDefaults(
     endedText?: string;
   }>(),
   {
-    claimTile: null,
-    claimW: 34,
-    claimH: 45,
+    seats: () => [],
     tingTiles: () => [],
     tingW: 20,
     tingH: 27,
@@ -59,18 +52,19 @@ const dialUnit = computed(() => {
   if (props.ended) return '';
   return props.active && props.seconds > 0 ? 's' : '张';
 });
-const claimLabel = computed(() =>
-  props.claimTile
-    ? `${MAHJONG_SUIT_NAMES[props.claimTile.s]}${props.claimTile.r}`
-    : '',
-);
-const tingCap = computed(() => (props.claimTile ? MAX_TING_TILES_WITH_CLAIM : MAX_TING_TILES));
-const visibleTing = computed(() => props.tingTiles.slice(0, tingCap.value));
-const extraTing = computed(() => Math.max(0, props.tingTiles.length - tingCap.value));
-/** 右列没有内容时隐藏，圆盘在卡片内居中（天月式中心盘）。 */
-const hasSide = computed(
-  () => Boolean(props.claimTile) || visibleTing.value.length > 0 || Boolean(props.endedText),
-);
+const hasSeats = computed(() => props.seats.length > 0);
+const visibleTing = computed(() => props.tingTiles.slice(0, MAX_TING_TILES));
+
+function scoreText(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `${(n / 10000).toFixed(1)}万`;
+  return n > 0 ? `+${n}` : String(n);
+}
+
+function badgeClass(badge: string): string {
+  if (badge === '胡') return 'mj-center__badge--hu';
+  if (badge === '听') return 'mj-center__badge--ting';
+  return 'mj-center__badge--muted';
+}
 </script>
 
 <template>
@@ -86,6 +80,20 @@ const hasSide = computed(
     </view>
 
     <view class="mj-center__body">
+      <view v-if="hasSeats && !compact" class="mj-center__col">
+        <view v-for="s in seats.slice(0, 2)" :key="`l-${s.label}`" class="mj-center__cell">
+          <view class="mj-center__line">
+            <text class="mj-center__prefix">{{ s.label }}</text>
+            <text class="mj-center__score">{{ scoreText(s.score) }}</text>
+          </view>
+          <view class="mj-center__badge-line">
+            <text v-if="s.dealer" class="mj-center__dealer">庄</text>
+            <text v-if="s.dealer && s.badge" class="mj-center__dot">·</text>
+            <text v-if="s.badge" class="mj-center__badge" :class="badgeClass(s.badge)">{{ s.badge }}</text>
+          </view>
+        </view>
+      </view>
+
       <view
         class="mj-center__dial"
         :class="{ 'mj-center__dial--urgent': urgent, 'anim-urgent-pulse': urgent }"
@@ -94,32 +102,35 @@ const hasSide = computed(
         <text v-if="dialUnit" class="mj-center__unit">{{ dialUnit }}</text>
       </view>
 
-      <view v-if="hasSide" class="mj-center__side">
-        <template v-if="!compact">
-          <view v-if="claimTile" class="mj-center__claim">
-            <text class="mj-center__label">可响应</text>
-            <MahjongTile :tile="claimTile" :w="claimW" :h="claimH" direction="my" />
+      <view v-if="hasSeats && !compact" class="mj-center__col">
+        <view v-for="s in seats.slice(2, 4)" :key="`r-${s.label}`" class="mj-center__cell">
+          <view class="mj-center__line">
+            <text class="mj-center__prefix">{{ s.label }}</text>
+            <text class="mj-center__score">{{ scoreText(s.score) }}</text>
           </view>
-          <view v-if="visibleTing.length > 0" class="mj-center__ting">
-            <text class="mj-center__label">
-              听<template v-if="maxFan !== null">（{{ maxFan }} 番）</template>
-            </text>
-            <MahjongTile
-              v-for="(t, i) in visibleTing"
-              :key="`ting-${i}`"
-              :tile="t"
-              :w="tingW"
-              :h="tingH"
-              direction="my"
-            />
-            <text v-if="extraTing > 0" class="mj-center__extra">+{{ extraTing }}</text>
+          <view class="mj-center__badge-line">
+            <text v-if="s.dealer" class="mj-center__dealer">庄</text>
+            <text v-if="s.dealer && s.badge" class="mj-center__dot">·</text>
+            <text v-if="s.badge" class="mj-center__badge" :class="badgeClass(s.badge)">{{ s.badge }}</text>
           </view>
-        </template>
-        <text v-else-if="claimTile" class="mj-center__compact-claim">
-          可响应 {{ claimLabel }}
-        </text>
-        <text v-if="endedText" class="mj-center__ended">{{ endedText }}</text>
+        </view>
       </view>
+    </view>
+
+    <view v-if="!compact && !ended && tingTiles.length > 0" class="mj-center__ting">
+      <text class="mj-center__ting-label">听 {{ tingTiles.length }} 张</text>
+      <MahjongTile
+        v-for="(t, i) in visibleTing"
+        :key="`ting-${i}`"
+        :tile="t"
+        :w="tingW"
+        :h="tingH"
+        direction="my"
+      />
+      <text v-if="maxFan !== null" class="mj-center__fan">{{ maxFan }}番</text>
+    </view>
+    <view v-else-if="!compact && ended && endedText" class="mj-center__ended">
+      {{ endedText }}
     </view>
   </view>
 </template>
@@ -133,18 +144,15 @@ const hasSide = computed(
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: 4px;
   width: 100%;
   height: 100%;
   padding: 4px 8px;
   overflow: hidden;
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.55);
   border-radius: $ftl-radius-lg;
-  background:
-    linear-gradient(180deg, rgba($ftl-color-mj-navy-light, 0.92), rgba($ftl-color-mj-navy, 0.94));
+  background: linear-gradient(180deg, $ftl-color-mj-panel-light, $ftl-color-mj-panel);
   box-shadow:
-    inset 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, 0.22),
-    0 6px 18px rgba($ftl-color-mj-navy, 0.45);
+    inset 0 0 0 $ftl-hairline $ftl-color-mj-gold,
+    0 6px 18px rgba($ftl-color-mj-panel, 0.45);
   color: $ftl-color-mj-muted;
   text-align: center;
 }
@@ -154,7 +162,7 @@ const hasSide = computed(
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 30px;
+  height: 28px;
   min-width: 0;
   white-space: nowrap;
 }
@@ -177,14 +185,90 @@ const hasSide = computed(
 
 .mj-center__body {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 0 80px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  height: 80px;
   min-height: 0;
 }
+.mj-center__col {
+  display: flex;
+  flex: 0 0 100px;
+  flex-direction: column;
+  justify-content: center;
+  width: 100px;
+  height: 80px;
+  gap: 0;
+  min-width: 0;
+}
+.mj-center__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0;
+  gap: 0;
+  line-height: 1;
+  min-width: 0;
+}
+.mj-center__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  height: 22px;
+}
+.mj-center__prefix {
+  color: $ftl-color-mj-muted;
+  font-size: $ftl-font-mj-mini;
+  line-height: 1;
+}
+.mj-center__score {
+  color: $ftl-color-mj-gold;
+  font-size: $ftl-font-xs;
+  font-weight: 700;
+  line-height: 1;
+}
+.mj-center__badge-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 18px;
+}
+.mj-center__dealer {
+  color: $ftl-color-mj-gold;
+  font-size: $ftl-font-mj-badge;
+  font-weight: 700;
+  line-height: 1;
+}
+.mj-center__dot {
+  color: $ftl-color-mj-muted;
+  font-size: $ftl-font-mj-badge;
+  line-height: 1;
+}
+.mj-center__badge {
+  padding: 0 3px;
+  border-radius: 999px;
+  font-size: $ftl-font-mj-badge;
+  line-height: 1;
+  white-space: nowrap;
+}
+.mj-center__badge--hu {
+  background: $ftl-color-mj-gold;
+  color: $ftl-color-mj-on-gold;
+}
+.mj-center__badge--ting {
+  background: $ftl-color-mj-cyan;
+  color: $ftl-color-mj-on-gold;
+}
+.mj-center__badge--muted {
+  background: rgba($ftl-color-mj-navy, 0.85);
+  color: $ftl-color-mj-muted;
+}
 
-/* 110 圆盘：内圈实底 + 12 刻度（repeating-conic）+ 外圈渐变 */
 .mj-center__dial {
   position: relative;
   display: flex;
@@ -192,27 +276,28 @@ const hasSide = computed(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 110px;
-  height: 110px;
+  box-sizing: border-box;
+  width: 80px;
+  height: 80px;
   border: $ftl-hairline solid $ftl-color-mj-gold;
   border-radius: 50%;
   background:
-    radial-gradient(circle, $ftl-color-mj-navy 0 52%, transparent 52%),
+    radial-gradient(circle, $ftl-color-mj-panel 0 52%, transparent 52%),
     repeating-conic-gradient(
       from 0deg,
       rgba($ftl-color-mj-gold, 0.5) 0deg 1.5deg,
       transparent 1.5deg 30deg
     ),
-    radial-gradient(circle, $ftl-color-mj-navy-light 0%, $ftl-color-mj-navy 100%);
+    radial-gradient(circle, $ftl-color-mj-panel-light 0%, $ftl-color-mj-panel 100%);
   box-shadow:
-    inset 0 0 12px rgba($ftl-color-mj-gold, 0.2),
-    0 0 10px rgba($ftl-color-mj-navy, 0.5);
+    inset 0 0 10px rgba($ftl-color-mj-gold, 0.2),
+    0 0 8px rgba($ftl-color-mj-panel, 0.5);
 }
 .mj-center__dial--urgent {
   border-color: $ftl-color-mj-urgent;
   box-shadow:
-    inset 0 0 12px rgba($ftl-color-mj-urgent, 0.35),
-    0 0 14px rgba($ftl-color-mj-urgent, 0.45);
+    inset 0 0 10px rgba($ftl-color-mj-urgent, 0.35),
+    0 0 12px rgba($ftl-color-mj-urgent, 0.45);
 }
 .mj-center__dial--urgent .mj-center__value,
 .mj-center__dial--urgent .mj-center__unit {
@@ -220,75 +305,59 @@ const hasSide = computed(
 }
 .mj-center__value {
   color: $ftl-color-mj-gold;
-  font-size: 40px;
+  font-size: $ftl-font-xl;
   font-weight: 800;
   line-height: 1;
-  text-shadow: 0 2px 6px rgba($ftl-color-mj-navy, 0.8);
+  text-shadow: 0 2px 6px rgba($ftl-color-mj-panel, 0.8);
 }
 .mj-center__unit {
-  margin-top: 2px;
+  margin-top: 1px;
   color: $ftl-color-mj-muted;
-  font-size: $ftl-font-xs;
+  font-size: $ftl-font-mj-mini;
   line-height: 1;
 }
 
-.mj-center__side {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  max-width: 210px;
-  overflow: hidden;
-}
-.mj-center__claim,
 .mj-center__ting {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
   gap: 3px;
-  max-width: 100%;
-}
-.mj-center__label {
-  color: $ftl-color-mj-gold;
-  font-size: $ftl-font-xs;
+  height: 27px;
+  overflow: hidden;
   white-space: nowrap;
 }
-.mj-center__extra {
-  color: $ftl-color-mj-cyan;
+.mj-center__ting-label {
+  color: $ftl-color-mj-gold;
   font-size: $ftl-font-xs;
-  font-weight: 700;
+  line-height: 1;
+}
+.mj-center__fan {
+  padding: 0 3px;
+  border-radius: 999px;
+  background: rgba($ftl-color-mj-gold, 0.2);
+  color: $ftl-color-mj-gold;
+  font-size: $ftl-font-mj-mini;
+  line-height: 1;
 }
 .mj-center__ended {
   overflow: hidden;
-  max-width: 100%;
+  height: 27px;
   color: $ftl-color-mj-muted;
   font-size: $ftl-font-xs;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mj-center__compact-claim {
-  overflow: hidden;
-  color: $ftl-color-mj-gold;
-  font-size: $ftl-font-xs;
+  line-height: 27px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* —— 紧凑：竖排，90 圆盘 + 单行文字（设计最小画布下一般不会触发） —— */
+/* —— 紧凑：小画布防御，隐藏四家/听牌 —— */
 .mj-center--compact {
-  flex-direction: column;
-  align-items: stretch;
   gap: 2px;
   padding: 0 6px;
   white-space: nowrap;
 }
 .mj-center--compact .mj-center__strip {
   height: 28px;
-  flex: 0 0 auto;
+  flex: 0 0 28px;
   gap: 4px;
 }
 .mj-center--compact .mj-center__strip,
@@ -299,8 +368,8 @@ const hasSide = computed(
   line-height: 1.2;
 }
 .mj-center--compact .mj-center__body {
-  flex: 1 1 auto;
-  gap: 6px;
+  flex: 0 0 90px;
+  height: 90px;
 }
 .mj-center--compact .mj-center__dial {
   width: 90px;
@@ -308,9 +377,5 @@ const hasSide = computed(
 }
 .mj-center--compact .mj-center__value {
   font-size: $ftl-font-lg;
-}
-.mj-center--compact .mj-center__side {
-  flex: 0 0 auto;
-  max-width: none;
 }
 </style>
