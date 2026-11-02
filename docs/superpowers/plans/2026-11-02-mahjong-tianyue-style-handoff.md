@@ -10,7 +10,8 @@ Plan：`docs/superpowers/plans/2026-11-02-mahjong-tianyue-style.md`
 - 设计对抗审查：阻断 3 / 高 9 / 低 14，全部处置（见 spec §10）。
 - 计划对抗审查：阻断 3 / 高 6 / 低 14，全部处置（见 plan「计划审查记录」）。
 - 实现：Task 0–6 完成；Task 7 全量验证完成。
-- 未部署；未合并 master；未打 tag。
+- 已合并远端 `origin/dev`（2026-10-31 的牌桌视觉/1px/测试/protocol/settlement 批），冲突已解决。
+- 已推 `dev`（`aabbfdb2..1171770c`）；未部署；未合并 master；未打 tag。
 
 ## 提交
 
@@ -28,7 +29,8 @@ Plan：`docs/superpowers/plans/2026-11-02-mahjong-tianyue-style.md`
 | `98d6cff3` | Task 4 中央圆盘 |
 | `68003079` | Task 5 座位卡/ClaimTile/HuBanner/结算主按钮 |
 | `b1359fe2` | Task 6 桌面/木框/顶栏/按钮/对比度 |
-| （待提交） | Task 7 视觉走查修复 + 本交接 |
+| `25c3a872` | Task 7 视觉走查修复 + 交接 |
+| `1171770c` | 合并 origin/dev（冲突取本片新版；保留对端 settlement/protocol/版本） |
 
 ## 变更摘要
 
@@ -47,7 +49,9 @@ Plan：`docs/superpowers/plans/2026-11-02-mahjong-tianyue-style.md`
 ## 验证
 
 - `pnpm -C apps/client test`：**1762 passed / 2 skipped**。
-- `pnpm -C apps/client run lint`：**0 错**。
+- `pnpm -C apps/client run lint`：**0 错**（合并后先 `pnpm -C packages/protocol build`）。
+- `pnpm -C packages/protocol test`：**325 passed**。
+- `pnpm -C packages/shared test`：**446 passed**。
 - `asset-budget` / `mahjong-assets` / `ui-tokens` / `mahjong-theme`：全绿。
 - 视觉 harness（真实组件 + Chrome headless，未入库）截图：
   `.superpowers/mahjong-visual/tianyue-1334x750.png`、
