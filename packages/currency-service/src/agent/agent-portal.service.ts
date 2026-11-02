@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { DomainError } from '../http/errors';
+import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentInviteService } from './agent-invite.service';
+import { AgentSettingsService } from './agent-settings.service';
+import { AGENT_INVITE_BATCH_MAX, AGENT_INVITE_DAILY_MAX } from './agent.constants';
 import { AgentSettlementService, type SettlementLine, type SettlementRow } from './agent-settlement.service';
 import { AgentUserClient } from './agent-user.client';
 import { toDate, toSafeInt } from './agent.util';
@@ -67,7 +70,18 @@ export interface AgentProfile {
   region: string | null;
   contactName: string | null;
   inviteCode: string | null;
+  inviteCodesActive: number;
+  inviteEnabled: boolean;
+  settingsEnabled: boolean;
+  required: boolean;
   payout: { name: string | null; accountMasked: string | null; bank: string | null };
+}
+
+export interface InviteCodeRow {
+  code: string;
+  status: string;
+  createdAt: unknown;
+  usedAt: unknown;
 }
 
 export interface PlayerRow {
@@ -126,12 +140,16 @@ export class AgentPortalService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
     @Inject(AgentInviteService) private readonly invite: AgentInviteService,
+    @Inject(AgentSettingsService) private readonly settings: AgentSettingsService,
+    @Inject(ConfigCacheService) private readonly config: ConfigCacheService,
     @Inject(AgentSettlementService) private readonly settlements: AgentSettlementService,
     @Inject(AgentUserClient) private readonly users: AgentUserClient,
   ) {}
 
   async profile(agentId: string): Promise<AgentProfile> {
     const row = await this.agentRow(agentId);
+    const settings = await this.settings.getOrDefault();
+    const inviteEnabled = this.config.hasSnapshot() && this.config.agentInviteEnabled();
     return {
       id: String(row.id),
       name: String(row.name),
@@ -141,11 +159,104 @@ export class AgentPortalService {
       region: row.region === null ? null : String(row.region),
       contactName: row.contact_name === null ? null : String(row.contact_name),
       inviteCode: await this.invite.activeCode(agentId),
+      inviteCodesActive: await this.countActiveCodes(agentId),
+      inviteEnabled,
+      settingsEnabled: settings.enabled,
+      required: inviteEnabled && this.config.agentInviteRequired(),
       payout: {
         name: row.payout_name === null ? null : String(row.payout_name),
         accountMasked: maskAccount(row.payout_account === null ? null : String(row.payout_account)),
         bank: row.payout_bank === null ? null : String(row.payout_bank),
       },
+    };
+  }
+
+  private async countActiveCodes(agentId: string): Promise<number> {
+    const rows = (await this.dataSource.query(
+      "SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `status` = 'active'",
+      [agentId],
+    )) as Array<Record<string, unknown>>;
+    return Number(rows[0]?.cnt ?? 0);
+  }
+
+  /**
+   * 代理自助批量生成一次性邀请码（2026-11-03）。
+   * 事务第一条语句锁代理行（锁序 agent → code，与 rotate/冻结一致）；随后读设置与当日计数。
+   */
+  async generateInviteCodes(agentId: string, count: number): Promise<{ codes: string[] }> {
+    if (!Number.isInteger(count) || count < 1 || count > AGENT_INVITE_BATCH_MAX) {
+      throw new DomainError(ErrCode.BAD_PARAM, '生成数量须为 1–50');
+    }
+    if (!this.config.hasSnapshot() || !this.config.agentInviteEnabled()) {
+      throw new DomainError(ErrCode.FORBIDDEN, '邀请码功能未开放');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const rows = (await manager.query(
+        'SELECT `status` FROM `agent_accounts` WHERE `id` = ? FOR UPDATE',
+        [agentId],
+      )) as Array<Record<string, unknown>>;
+      if (rows.length === 0) throw new DomainError(ErrCode.BAD_PARAM, '代理不存在');
+      if (String(rows[0]!.status) !== 'active') {
+        throw new DomainError(ErrCode.AGENT_FROZEN, '代理已被冻结');
+      }
+      const settings = await this.settings.getOrDefault(manager);
+      if (!settings.enabled) throw new DomainError(ErrCode.FORBIDDEN, '代理模块未开放');
+      const today = (await manager.query(
+        'SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `created_at` >= CURDATE()',
+        [agentId],
+      )) as Array<Record<string, unknown>>;
+      if (Number(today[0]?.cnt ?? 0) + count > AGENT_INVITE_DAILY_MAX) {
+        throw new DomainError(ErrCode.BAD_PARAM, '今日生成数量已达上限');
+      }
+      const codes = await this.invite.createMany(manager, agentId, count);
+      return { codes };
+    });
+  }
+
+  /** 代理自己的码列表（keyset；cursor = 上一页最后一条 code）。 */
+  async listInviteCodes(
+    agentId: string,
+    status: string | undefined,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<{ rows: InviteCodeRow[]; nextCursor: string | null }> {
+    const cursorRow = cursor === undefined
+      ? null
+      : ((await this.dataSource.query(
+          'SELECT `created_at`, `code` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?',
+          [agentId, cursor],
+        )) as Array<Record<string, unknown>>);
+    if (cursor !== undefined && cursorRow!.length === 0) {
+      throw new DomainError(ErrCode.BAD_PARAM, 'cursor 非法');
+    }
+
+    const where = ['`agent_id` = ?'];
+    const params: unknown[] = [agentId];
+    if (status !== undefined) {
+      where.push('`status` = ?');
+      params.push(status);
+    }
+    if (cursorRow !== null) {
+      where.push('(`created_at` < ? OR (`created_at` = ? AND `code` < ?))');
+      params.push(cursorRow[0]!.created_at, cursorRow[0]!.created_at, cursorRow[0]!.code);
+    }
+    params.push(limit + 1);
+
+    const raw = (await this.dataSource.query(
+      'SELECT `code`, `status`, `created_at`, `used_at` FROM `agent_invite_codes` ' +
+        `WHERE ${where.join(' AND ')} ORDER BY \`created_at\` DESC, \`code\` DESC LIMIT ?`,
+      params,
+    )) as Array<Record<string, unknown>>;
+    const hasMore = raw.length > limit;
+    const page = hasMore ? raw.slice(0, limit) : raw;
+    return {
+      rows: page.map((r) => ({
+        code: String(r.code),
+        status: String(r.status),
+        createdAt: r.created_at,
+        usedAt: r.used_at,
+      })),
+      nextCursor: hasMore ? String(page[page.length - 1]!.code) : null,
     };
   }
 

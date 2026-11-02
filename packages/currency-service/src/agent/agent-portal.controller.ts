@@ -98,6 +98,41 @@ export class AgentPortalController {
     }
   }
 
+  @Post('invite-codes')
+  @HttpCode(200)
+  @UseGuards(AgentGuard)
+  async generateInviteCodes(@Req() req: AgentRequest, @Body() body: { count?: unknown }) {
+    try {
+      const count = Number(body?.count);
+      return {
+        code: ErrCode.OK,
+        data: await this.portal.generateInviteCodes(agentIdOf(req), count),
+      };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Get('invite-codes')
+  @UseGuards(AgentGuard)
+  async listInviteCodes(@Req() req: AgentRequest, @Query() query: Record<string, unknown>) {
+    try {
+      const status = query.status === undefined ? undefined : String(query.status);
+      if (status !== undefined && !['active', 'used', 'revoked'].includes(status)) {
+        throw new DomainError(ErrCode.BAD_PARAM, 'status 非法');
+      }
+      const cursor = query.cursor === undefined ? undefined : String(query.cursor);
+      const rawLimit = Number(query.limit ?? 50);
+      const limit = Number.isInteger(rawLimit) && rawLimit > 0 && rawLimit <= 100 ? rawLimit : 50;
+      return {
+        code: ErrCode.OK,
+        data: await this.portal.listInviteCodes(agentIdOf(req), status, cursor, limit),
+      };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
   @Get('overview')
   @UseGuards(AgentGuard)
   async overview(@Req() req: AgentRequest) {

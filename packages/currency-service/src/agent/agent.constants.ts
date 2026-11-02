@@ -48,6 +48,10 @@ export type AgentSettlementStatus = (typeof AGENT_SETTLEMENT_STATUSES)[number];
 export const AGENT_STATUSES = ['active', 'frozen'] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
+/** 代理自助生成邀请码：单次上限与单代理每日上限（2026-11-03）。 */
+export const AGENT_INVITE_BATCH_MAX = 50;
+export const AGENT_INVITE_DAILY_MAX = 200;
+
 /** 比例链每级结果的原因（有界枚举）。 */
 export const AGENT_PAYOUT_REASONS = [
   'normal',
