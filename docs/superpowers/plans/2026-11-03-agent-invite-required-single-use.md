@@ -12,7 +12,7 @@
 
 - 只改本计划列出的文件；工作区现有的麻将改动（`apps/client/src/components/table/mahjong/*` 等）**不得** stage/commit。
 - 每个任务严格 TDD：先写失败测试 → 运行确认红 → 最小实现 → 运行确认绿 → commit。
-- 每个 commit 末尾带：`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`。
+- 每个 commit 末尾带：`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`（下文 commit 片段为简洁省略该行，执行时必须补上）。
 - 不新增错误码；复用 `11006`（邀请码）、`11007`（代理冻结）、`10001`（参数）、`10003`（权限）、`10006`（限流）。
 - 配置键计数：protocol `CONFIG_KEYS` 112 → 113；`CLIENT_CONFIG_KEYS` 22 → 23；boot 2 → 3 字段；admin `verify-admin-static` 113/97/97/90/44/44/6。
 - `agent.*` 配置写权限仅 `super_admin`（已有 P-ag0 前缀规则）。
@@ -32,6 +32,8 @@
 
 **Interfaces:**
 - Produces: `ConfigKey` 含 `'agent.inviteRequired'`；`ClientConfig.agentInviteRequired: boolean`；`AgentBindIgnoreReason = 'settings_disabled' | 'invite_disabled' | 'config_unavailable'`；`AgentBindData.reason?: AgentBindIgnoreReason`。
+
+> ⚠️ 本任务把 `ClientConfig.agentInviteRequired` 设为必填。Task 1–9 期间**不要**跑 `apps/client` 的 typecheck（客户端 fixture 在 Task 10 才补齐）；全量客户端验证放在 Task 18。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -163,17 +165,26 @@ git commit -m "feat(protocol): 新增 agent.inviteRequired 与 bind 忽略原因
   }, 20000);
 ```
 
-把原「二十二键」用例的逐字名单加入 `'agentInviteRequired'`（排序在 `agentInviteEnabled` 后），标题与 `toHaveLength(22)` 改为 23。再补充缺行/坏值：
+把原「二十二键」用例的逐字名单加入 `'agentInviteRequired'`（排序在 `agentInviteEnabled` 后），标题与 `toHaveLength(22)` 改为 23。**三处都要改**：
+
+1. boot 精确键集（`['agentInviteEnabled','version']` → 三键，见上）；
+2. 子集逐字排序名单（约 `client-config.test.ts:43-66`）；
+3. 「残留旧键行不泄漏」用例的标题「仍二十二键」与 `toHaveLength(22)`（约 `:249-263`）。
+
+再补充缺行/坏值：
 
 ```ts
-  it('agent.inviteRequired 缺行/坏值 ⇒ false', async () => {
-    const { svc, db } = makeService(seedDb());
-    db.rows.delete('agent.inviteRequired');
-    const probe = await startHttpProbe(svc);
-    try {
-      expect((await probe.get('/api/config')).body.data.agentInviteRequired).toBe(false);
-    } finally {
-      await probe.close();
+  it('agent.inviteRequired 缺行/坏值 ⇒ false（不 500）', async () => {
+    for (const value of [undefined, 'yes', 1, null]) {
+      const { svc, db } = makeService(seedDb());
+      if (value === undefined) db.rows.delete('agent.inviteRequired');
+      else db.rows.set('agent.inviteRequired', { value, version: 2, updatedAt: 'x', updatedBy: 'x' });
+      const probe = await startHttpProbe(svc);
+      try {
+        expect((await probe.get('/api/config')).body.data.agentInviteRequired).toBe(false);
+      } finally {
+        await probe.close();
+      }
     }
   });
 ```
@@ -266,7 +277,18 @@ git commit -m "feat(config): 下发 agent.inviteRequired 并补种子迁移"
 
 - [ ] **Step 1: 写失败测试**
 
-`auth.service.test.ts` 的 `configCache` 假件增加：
+`auth.service.test.ts` 的 `configCache` 假件增加（**同时扩展变量类型注解**，否则 TS2353）：
+
+```ts
+  let configCache: {
+    signupGrant: ReturnType<typeof vi.fn>;
+    deviceBindingEnabled: ReturnType<typeof vi.fn>;
+    agentInviteEnabled: ReturnType<typeof vi.fn>;
+    agentInviteRequired: ReturnType<typeof vi.fn>;
+  };
+```
+
+`beforeEach` 里：
 
 ```ts
     configCache = {
@@ -411,7 +433,9 @@ git commit -m "feat(user): 注册按 enabled && required 强制邀请码"
 
 **Files:**
 - Modify: `packages/user-service/src/auth/auth.service.ts`
+- Modify: `packages/user-service/src/http/errors.ts`（补 `RATE_LIMITED → 429`）
 - Test: `packages/user-service/test/auth.service.test.ts`
+- Test: `packages/user-service/test/http-errors.test.ts`（若存在；否则在 auth 测试里直接断言 `toHttpException`）
 
 **Interfaces:**
 - Produces: `register()` 对同手机号并发返回 `10006`；锁 key `register:phone:<sha256>`、TTL 10s、token/Lua 释放。
@@ -432,16 +456,26 @@ function fakeRedis() {
 }
 ```
 
-在 `beforeEach` 里保留 `const redis = fakeRedis();` 并把它挂到测试变量 `redisMock` 上。
+在测试文件顶层声明可复用变量，并在 `beforeEach` 注入：
+
+```ts
+  let redisMock: ReturnType<typeof fakeRedis>;
+  beforeEach(async () => {
+    redisMock = fakeRedis();
+    // ...构造 TokenService / AuthService 时使用 redisMock
+  });
+```
 
 新增用例：
 
 ```ts
   it('同手机号锁：SET NX 拿不到 ⇒ 429/10006，不建用户', async () => {
     redisMock.set.mockResolvedValueOnce(null);
-    await expect(
-      service.register({ phone: '13800000080', password: 'passw0rd', nickname: '阿豆' } as any),
-    ).rejects.toMatchObject({ code: ErrCode.RATE_LIMITED });
+    const err = (await service
+      .register({ phone: '13800000080', password: 'passw0rd', nickname: '阿豆' } as any)
+      .catch((e: unknown) => e)) as DomainError;
+    expect(err).toMatchObject({ code: ErrCode.RATE_LIMITED });
+    expect(toHttpException(err).getStatus()).toBe(429);
     expect(repo.create).not.toHaveBeenCalled();
   });
 
@@ -481,6 +515,12 @@ Expected: FAIL（没有锁；`redisMock.eval` 未被调用）。
 
 ```ts
 import { createHash, randomUUID } from 'crypto';
+```
+
+`packages/user-service/src/http/errors.ts` 的 `HTTP_STATUS` 增加：
+
+```ts
+  [ErrCode.RATE_LIMITED]: 429,
 ```
 
 把现有 `register` 主体改名为 `private async registerLocked(dto: RegisterDto)`，新 `register` 包裹：
@@ -545,8 +585,11 @@ git commit -m "feat(user): 同手机号注册短锁防止并发烧码"
 
 **Files:**
 - Create: `packages/currency-service/src/migrations/1798600000000-AgentInviteSingleUse.ts`
+- Create: `packages/currency-service/src/agent/agent-sql.util.ts`（共享 `affectedRowsOf`）
 - Modify: `packages/currency-service/src/agent/agent-invite.service.ts`
+- Modify: `packages/currency-service/src/agent/agent-bindings.service.ts`（改为导入共享 util）
 - Create: `packages/currency-service/test/agent-invite-single-use.migration.test.ts`
+- Create: `packages/currency-service/test/agent-sql.util.test.ts`
 - Modify: `packages/currency-service/test/agent-invite.test.ts`
 
 **Interfaces:**
@@ -600,6 +643,14 @@ git commit -m "feat(user): 同手机号注册短锁防止并发烧码"
     expect(update.sql).toContain("SET `status` = 'revoked'");
     expect(update.sql).toContain("`status` = 'active'");
     expect(calls.some((c) => c.sql.startsWith('INSERT INTO `agent_invite_codes`'))).toBe(true);
+  });
+
+  it('rotate：无 active 时 revoked=0，仍插入新码', async () => {
+    const { manager } = fakeManager({ revokeAffected: 0 });
+    const svc = new AgentInviteService({} as never);
+    const r = await svc.rotate(manager, 'ag_1');
+    expect(r.revoked).toBe(0);
+    expect(r.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
   });
 ```
 
@@ -674,6 +725,35 @@ export class AgentInviteSingleUse1798600000000 implements MigrationInterface {
 }
 ```
 
+共享 util `agent-sql.util.ts`（把 `agent-bindings.service.ts` 里的私有 `affectedRowsOf` 原样搬出并导出；bindings 改为导入）：
+
+```ts
+export function affectedRowsOf(result: unknown, context: string): number {
+  const n = (result as { affectedRows?: unknown } | null)?.affectedRows;
+  if (typeof n !== 'number' || !Number.isInteger(n)) {
+    throw new Error(`${context}：驱动未返回 affectedRows（收到 ${JSON.stringify(result)}）`);
+  }
+  return n;
+}
+```
+
+`agent-sql.util.test.ts`：
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { affectedRowsOf } from '../src/agent/agent-sql.util';
+
+describe('affectedRowsOf', () => {
+  it('正常返回整数；缺失/非整数抛错', () => {
+    expect(affectedRowsOf({ affectedRows: 1 }, 'x')).toBe(1);
+    expect(affectedRowsOf({ affectedRows: 0 }, 'x')).toBe(0);
+    expect(() => affectedRowsOf({}, 'x')).toThrow(/affectedRows/);
+    expect(() => affectedRowsOf({ affectedRows: 1.5 }, 'x')).toThrow(/affectedRows/);
+    expect(() => affectedRowsOf(null, 'x')).toThrow(/affectedRows/);
+  });
+});
+```
+
 `agent-invite.service.ts`：
 
 ```ts
@@ -719,7 +799,7 @@ export interface ResolvedInvite {
   }
 ```
 
-复用文件内已有的 `affectedRowsOf`（若无则按 `agent-bindings.service.ts` 同款实现）。
+复用 `agent-sql.util.ts` 的 `affectedRowsOf`（Task 5 新建；不要在本文件再定义一份）。
 
 - [ ] **Step 4: 运行确认绿**
 
@@ -867,6 +947,14 @@ function makeDb(
 
 （实现时按 `makeDb` 实际结构保存原始 query。）
 
+**必须同步改写既有用例**（否则 Task 6 落地即红）：
+
+- `makeDb` 的 `agentStatus` 改为可变引用（`statusRef.value`），`FOR UPDATE` 查询返回它；原「frozen」循环用例改为 `makeDb({}, 'frozen')`，不再依赖 `resolved.status`。
+- 原「已有绑定 ⇒ already_bound」用例的既有绑定 `agent_id` 改为与默认 `resolved.agentId` 相同的 `'a'`；另加一条「绑定属于其他代理 ⇒ 11006 邀请码无效」。
+- `makeDb` 的 `transaction` 必须实现**快照/回滚**：回调前保存 `codeStatus.value`、`bindings`、`history`，回调抛错时恢复；否则回滚用例不可能通过（仓库单测不用真 DB，真实原子性由 Task 16 的 slice-32 覆盖）。
+- claim 的 fake 必须记录参数并断言 `used_by === ownerId`、`used_at` 非空，不能只返回 `affectedRows: 1`。
+- `INSERT IGNORE` 0 行分支改为**当前读**复查：`SELECT agent_id FROM agent_bindings WHERE owner_id = ? FOR UPDATE`；存在同代理 ⇒ `already_bound`，否则抛内部错误回滚（不能用 RR 快照读判）。
+
 `agent-bind.rpc.test.ts` 增加 reason 透传：
 
 ```ts
@@ -895,6 +983,8 @@ Expected: FAIL。
 
 ```ts
 import type { AgentBindIgnoreReason } from '@fight-the-landlord/protocol';
+import { normalizeInviteCode } from './agent-invite.service';
+import { affectedRowsOf } from './agent-sql.util';
 
 export interface BindResult {
   status: 'bound' | 'already_bound' | 'ignored';
@@ -974,7 +1064,15 @@ const BIND_SELECT_BY_OWNER_SQL =
         phoneMasked,
       ]);
       if (affectedRowsOf(inserted, 'agent_bindings INSERT IGNORE') !== 1) {
-        throw new Error(`agent_bindings INSERT IGNORE 0 行（ownerId=${input.ownerId}）`);
+        // 当前读复查（不能用 RR 快照读）：并发同 ownerId 的重试 ⇒ already_bound
+        const again = (await manager.query(
+          'SELECT `agent_id` FROM `agent_bindings` WHERE `owner_id` = ? FOR UPDATE',
+          [input.ownerId],
+        )) as Array<Record<string, unknown>>;
+        if (again.length > 0 && String(again[0]!.agent_id) === resolved.agentId) {
+          return { status: 'already_bound' };
+        }
+        throw new Error(`agent_bindings INSERT IGNORE 0 行且无同代理绑定（ownerId=${input.ownerId}）`);
       }
       await manager.query(HISTORY_INSERT_SQL, [
         input.ownerId,
@@ -1011,10 +1109,12 @@ git commit -m "feat(currency): 一次性邀请码原子消费与三档分类"
 
 **Files:**
 - Modify: `packages/currency-service/src/agent/agent.constants.ts`
+- Modify: `packages/currency-service/src/config/config-cache.service.ts`（补 `agentInviteRequired()`）
 - Modify: `packages/currency-service/src/agent/agent-portal.service.ts`
 - Modify: `packages/currency-service/src/agent/agent-portal.controller.ts`
 - Modify: `packages/currency-service/src/agent/agent.module.ts`（如需注入 ConfigCacheService/AgentSettingsService）
 - Test: `packages/currency-service/test/agent-portal.test.ts`
+- Test: `packages/currency-service/test/config-cache.test.ts`（若存在；否则在 portal 测试里覆盖 getter）
 
 **Interfaces:**
 - Produces:
@@ -1022,6 +1122,12 @@ git commit -m "feat(currency): 一次性邀请码原子消费与三档分类"
   - `AgentPortalService.generateInviteCodes(agentId: string, count: number): Promise<{ codes: string[] }>`
   - `AgentPortalService.listInviteCodes(agentId: string, status: string | undefined, cursor: string | undefined, limit: number): Promise<{ rows: InviteCodeRow[]; nextCursor: string | null }>`
   - `AgentProfile` 增加 `inviteCodesActive: number`、`inviteEnabled: boolean`、`settingsEnabled: boolean`、`required: boolean`
+  - `ConfigCacheService.agentInviteRequired(): boolean`
+
+> ⚠️ 测试脚手架必须按现有形态扩展，不能改 `makeService` 第二参的语义：
+> - `makeService(db, nicknamesOk = true, opts: { agentStatus?, inviteEnabled?, settingsEnabled?, hasSnapshot? } = {})`；新用例用第三参，既有 `makeService(db, false)` 保持不变。
+> - `makeDb` 增加 `transaction` / `manager`（`generateInviteCodes` 用事务）、`inviteCodes` 行集、`activeCount`、`dailyCount`、`agentStatus`；实现 `countActiveCodes` 的 SQL 分支。
+> - 事务内调用 `settings.getOrDefault(manager)`（必须传 manager）；事务外 `profile()` 可用无参形式。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1042,7 +1148,7 @@ git commit -m "feat(currency): 一次性邀请码原子消费与三档分类"
 
   it('generate：冻结/功能关闭/count 非法/超日限拒绝', async () => {
     const db = makeDb();
-    const svc = makeService(db, { agentStatus: 'frozen' });
+    const svc = makeService(db, true, { agentStatus: 'frozen' });
     await expect(svc.generateInviteCodes('ag_1', 5)).rejects.toMatchObject({ code: ErrCode.AGENT_FROZEN });
 
     const off = makeService(makeDb(), { inviteEnabled: false });
@@ -1082,6 +1188,15 @@ export const AGENT_INVITE_BATCH_MAX = 50;
 export const AGENT_INVITE_DAILY_MAX = 200;
 ```
 
+`packages/currency-service/src/config/config-cache.service.ts` 在 `agentInviteEnabled()` 旁增加：
+
+```ts
+  /** 代理邀请码必填开关（缺失/坏值/快照不可用 ⇒ false）。 */
+  agentInviteRequired(): boolean {
+    return this.snapshot?.['agent.inviteRequired']?.value === true;
+  }
+```
+
 `AgentPortalService` 构造器增加 `AgentSettingsService`、`ConfigCacheService`。`profile`：
 
 ```ts
@@ -1095,7 +1210,19 @@ export const AGENT_INVITE_DAILY_MAX = 200;
         this.config.agentInviteRequired(),
 ```
 
-注意 `settings.getOrDefault()` 需要 `EntityManager`；查看该服务签名，改用 `this.dataSource.query('SELECT enabled FROM agent_settings WHERE id = 1')` 或 `settings.getOrDefault(this.dataSource.manager)`。实现时按实际签名调整。
+`countActiveCodes`：
+
+```ts
+  private async countActiveCodes(agentId: string): Promise<number> {
+    const rows = (await this.dataSource.query(
+      "SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `status` = 'active'",
+      [agentId],
+    )) as Array<Record<string, unknown>>;
+    return Number(rows[0]?.cnt ?? 0);
+  }
+```
+
+注意 `getOrDefault(manager?)` 的 manager 是可选参数：事务外 `profile()` 用无参（自开事务）；`generateInviteCodes` 内**必须传 `manager`**，才能读到同一事务的设置。
 
 `generateInviteCodes`：
 
@@ -1232,9 +1359,9 @@ git commit -m "feat(agent): 自助批量生成与一次性码列表"
 
 **Interfaces:**
 - Produces:
-  - `AgentAccountsService.listInviteCodes(id, status, cursor, limit)`
+  - `AgentAccountsService.listInviteCodes(id, status, cursor, limit): Promise<{ rows, nextCursor, counts }>`
   - `AgentAccountsService.revokeInviteCode(id, code, actor)`
-  - `rotateInviteCode` 保持返回 `{ code }`，audit 记录 `{ code, revoked }`
+  - `rotateInviteCode` 保持返回 `{ code }`，audit 只记录 `{ revoked, codeTail }`（避免 finance 经 `/api/admin/agent-audit` 读到 active bearer credential）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1261,17 +1388,31 @@ git commit -m "feat(agent): 自助批量生成与一次性码列表"
   });
 ```
 
+在 `agent-accounts.test.ts`（或同文件的服务层 describe）补返回形状：
+
+```ts
+  it('listInviteCodes：used 行带 usedByMaskedPhone；counts 三状态补零；revoked 行 usedBy 为空', async () => {
+    // fake DB 对 rows/count 两条 SQL 返回固定行
+    const page = await svc.listInviteCodes('ag_1', undefined, undefined, 20);
+    expect(page.rows[0]).toMatchObject({
+      code: 'ABCD2345', status: 'used', usedByMaskedPhone: '138****0000',
+    });
+    expect(page.rows[1]).toMatchObject({ status: 'revoked', usedByMaskedPhone: null });
+    expect(page.counts).toEqual({ active: 0, used: 1, revoked: 1 });
+  });
+```
+
 - [ ] **Step 2: 运行确认红**
 
 ```bash
-pnpm -C packages/currency-service test -- test/agent-admin.test.ts
+pnpm -C packages/currency-service test -- test/agent-admin.test.ts test/agent-accounts.test.ts
 ```
 
 Expected: FAIL（方法不存在）。
 
 - [ ] **Step 3: 实现**
 
-`agent-accounts.service.ts`：
+`agent-accounts.service.ts`（`affectedRowsOf` 从 `agent-sql.util` 导入）：
 
 ```ts
   async listInviteCodes(
@@ -1279,8 +1420,74 @@ Expected: FAIL（方法不存在）。
     status: string | undefined,
     cursor: string | undefined,
     limit: number,
-  ): Promise<{ rows: Array<Record<string, unknown>>; nextCursor: string | null; counts: Record<string, number> }> {
-    // 与 AgentPortalService.listInviteCodes 同款 keyset；额外 LEFT JOIN agent_bindings 取 phone_masked
+  ): Promise<{
+    rows: Array<{
+      code: string;
+      status: string;
+      createdAt: unknown;
+      usedAt: unknown;
+      usedByMaskedPhone: string | null;
+    }>;
+    nextCursor: string | null;
+    counts: { active: number; used: number; revoked: number };
+  }> {
+    const cursorRow = cursor === undefined
+      ? null
+      : ((await this.dataSource.query(
+          'SELECT `created_at`, `code` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?',
+          [id, cursor],
+        )) as Array<Record<string, unknown>>);
+    if (cursor !== undefined && cursorRow!.length === 0) {
+      throw new DomainError(ErrCode.BAD_PARAM, 'cursor 非法');
+    }
+
+    const where = ['c.`agent_id` = ?'];
+    const params: unknown[] = [id];
+    if (status !== undefined) {
+      where.push('c.`status` = ?');
+      params.push(status);
+    }
+    if (cursorRow !== null) {
+      where.push('(c.`created_at` < ? OR (c.`created_at` = ? AND c.`code` < ?))');
+      params.push(cursorRow[0]!.created_at, cursorRow[0]!.created_at, cursorRow[0]!.code);
+    }
+    params.push(limit + 1);
+
+    const raw = (await this.dataSource.query(
+      'SELECT c.`code`, c.`status`, c.`created_at`, c.`used_at`, ' +
+        'b.`phone_masked` AS `used_by_masked_phone` ' +
+        'FROM `agent_invite_codes` c ' +
+        'LEFT JOIN `agent_bindings` b ON b.`owner_id` = c.`used_by` ' +
+        `WHERE ${where.join(' AND ')} ` +
+        'ORDER BY c.`created_at` DESC, c.`code` DESC LIMIT ?',
+      params,
+    )) as Array<Record<string, unknown>>;
+    const hasMore = raw.length > limit;
+    const page = hasMore ? raw.slice(0, limit) : raw;
+
+    const countRows = (await this.dataSource.query(
+      'SELECT `status`, COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? GROUP BY `status`',
+      [id],
+    )) as Array<Record<string, unknown>>;
+    const counts = { active: 0, used: 0, revoked: 0 };
+    for (const row of countRows) {
+      const key = String(row.status);
+      if (key === 'active' || key === 'used' || key === 'revoked') {
+        counts[key] = Number(row.cnt ?? 0);
+      }
+    }
+
+    return {
+      rows: page.map((r) => ({
+        code: String(r.code),
+        status: String(r.status),
+        createdAt: r.created_at,
+        usedAt: r.used_at,
+        usedByMaskedPhone: r.used_by_masked_phone === null ? null : String(r.used_by_masked_phone),
+      })),
+      nextCursor: hasMore ? String(page[page.length - 1]!.code) : null,
+      counts,
+    };
   }
 
   async revokeInviteCode(id: string, code: string, actor: string): Promise<void> {
@@ -1292,23 +1499,28 @@ Expected: FAIL（方法不存在）。
       if (affectedRowsOf(result, 'agent_invite_codes revoke') !== 1) {
         throw new DomainError(ErrCode.BAD_PARAM, '邀请码不存在或已失效');
       }
-      await this.audit(manager, actor, 'agent.invite.revoke', id, null, { code }, null);
+      await this.audit(manager, actor, 'agent.invite.revoke', id, null, { codeTail: code.slice(-2) }, null);
     });
   }
 ```
 
-`rotateInviteCode` 中 `const rotated = await this.invite.rotate(manager, id);`，audit 用 `{ code: rotated.code, revoked: rotated.revoked }`，返回 `{ code: rotated.code }`。
-
-`AgentAdminController`：
+`rotateInviteCode`：
 
 ```ts
-  @Get('admin/agents/:id/invite-codes')
-  async listInviteCodes(@Param('id') id: string, @Query() query: Record<string, unknown>) { ... }
-
-  @Post('admin/agents/:id/invite-codes/:code/revoke')
-  @HttpCode(200)
-  async revokeInviteCode(@Req() req: AdminRequest, @Param('id') id: string, @Param('code') code: string) { ... }
+      const rotated = await this.invite.rotate(manager, id);
+      await this.audit(
+        manager,
+        actor,
+        'agent.invite.rotate',
+        id,
+        null,
+        { revoked: rotated.revoked, codeTail: rotated.code.slice(-2) },
+        null,
+      );
+      return { code: rotated.code };
 ```
+
+`AgentAdminController`：列表接口解析 `status/cursor/limit`（同 portal 规则，非法 status ⇒ 400）；撤销接口透传 `adminActorOf(req)`。
 
 - [ ] **Step 4: 运行确认绿**
 
@@ -1346,22 +1558,33 @@ git commit -m "feat(agent-admin): 码列表与单码撤销"
 
 - [ ] **Step 1: 写失败测试**
 
-`gateway.controller.test.ts`：
+`gateway.controller.test.ts`（在 agent 路由 describe 的 `make()` 里补 `forwardToCurrencySvc`，并显式给 `req.query`；`strictQueryOf` 读的是 `req.query`，只给 `originalUrl` 会丢参）：
 
 ```ts
-  it('agent invite-codes：生成/列表显式转发，query 白名单', async () => {
-    const { controller, proxy } = make();
-    await controller.generateAgentInviteCodes({ count: 5 }, res, req('/api/agent/invite-codes'));
+  it('agent invite-codes：生成/列表显式转发，query 白名单；未知键 400', async () => {
+    const proxy = { forwardToCurrencySvc: vi.fn(async () => undefined) };
+    const controller = new GatewayController(proxy as unknown as ProxyGateway);
+    const res = {} as never;
+    const req = (url: string, query: Record<string, unknown>) => ({ originalUrl: url, headers: {}, query });
+
+    await controller.generateAgentInviteCodes({ count: 5 }, res, req('/api/agent/invite-codes', {}));
     expect(proxy.forwardToCurrencySvc).toHaveBeenCalledWith(
       'POST', '/api/agent/invite-codes', { count: 5 }, res, {},
     );
+
     await controller.listAgentInviteCodes(
       res,
-      { originalUrl: '/api/agent/invite-codes?status=active&cursor=ABCD&limit=20&x=1', headers: {} },
+      req('/api/agent/invite-codes?status=active&cursor=ABCD&limit=20', {
+        status: 'active', cursor: 'ABCD', limit: '20',
+      }),
     );
     expect(proxy.forwardToCurrencySvc).toHaveBeenLastCalledWith(
       'GET', '/api/agent/invite-codes?status=active&cursor=ABCD&limit=20', null, res, {},
     );
+
+    await expect(
+      controller.listAgentInviteCodes(res, req('/api/agent/invite-codes?x=1', { x: '1' })),
+    ).rejects.toThrow(/未知查询参数/);
   });
 ```
 
@@ -1540,7 +1763,7 @@ Expected: FAIL。
 
 - 更新注释：boot 三字段。
 
-`rest.ts`：`BootConfig` / boot 返回类型加 `agentInviteRequired: boolean`。
+`rest.ts`：实际类型名是 `BootClientConfig`（不是 `BootConfig`）；在其接口里加 `agentInviteRequired: boolean`，并更新 boot 注释为三字段。
 
 - [ ] **Step 4: 运行确认绿**
 
@@ -1636,7 +1859,36 @@ git commit -m "feat(client): 接线 agentInviteRequired"
     await flushPromises();
     expect(signUp).toHaveBeenCalled();
   });
+
+  it('boot 挂起时双击只注册一次', async () => {
+    const { wrapper, auth } = mountLogin();
+    let resolveFetch!: (v: unknown) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { resolveFetch = r; })));
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+    await wrapper.find('.login__field--phone input').setValue('13800000022');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    const btn = wrapper.find('.login__actions .btn--primary');
+    await btn.trigger('click');
+    await btn.trigger('click');
+    resolveFetch({
+      ok: true, status: 200,
+      text: async () => JSON.stringify({ code: 0, data: { version: 1, agentInviteEnabled: false, agentInviteRequired: false } }),
+    });
+    await flushPromises();
+    expect(signUp).toHaveBeenCalledTimes(1);
+  });
 ```
+
+**既有用例必须同步调整**（否则 Step 4 红）：
+
+- 切注册但未 stub fetch 的保锚用例（约 `:74-86`）加成功 stub `{agentInviteEnabled:false,agentInviteRequired:false}`，保持 4 个输入框。
+- 注册提交断言 `signUp` 的用例（约 `:88-100`）加 stub 并在点击后 `await flushPromises()`。
+- 昵称空/超长校验用例（约 `:163-186`）加 stub 并 `await flushPromises()` 后再断言 notice。
+- 其余点击后同步断言的用例（约 `:212-222`）同样补 `flushPromises`。
+- `:140-161` 已 patch `clientConfigVersion: 1`，走 fast path，无需改。
 
 - [ ] **Step 2: 运行确认红**
 
@@ -1654,6 +1906,7 @@ Expected: FAIL。
 const inviteConfigLoading = ref(false);
 const inviteBootFailed = ref(false);
 let inviteLoadPromise: Promise<void> | null = null;
+const INVITE_BOOT_TIMEOUT_MS = 3000;
 
 const showInviteCode = computed(
   () => isRegister.value && (game.agentInviteEnabled === true || inviteBootFailed.value),
@@ -1663,13 +1916,20 @@ const inviteRequired = computed(
 );
 
 function ensureInviteConfig(): Promise<void> {
+  // fast path：全量配置已加载 ⇒ required 已在 store 里，不再拉 boot
+  if (game.clientConfigVersion > 0) return Promise.resolve();
   if (inviteLoadPromise !== null) return inviteLoadPromise;
   inviteLoadPromise = (async () => {
     inviteConfigLoading.value = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const ok = await refreshInviteBootConfig();
+      const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), INVITE_BOOT_TIMEOUT_MS);
+      });
+      const ok = await Promise.race([refreshInviteBootConfig(), timeout]);
       inviteBootFailed.value = !ok;
     } finally {
+      if (timer !== undefined) clearTimeout(timer);
       inviteConfigLoading.value = false;
       inviteLoadPromise = null;
     }
@@ -1686,10 +1946,34 @@ function ensureInviteConfig(): Promise<void> {
   if (inviteRequired.value && !inviteCode.value.trim()) return '请填写邀请码';
 ```
 
-`submit()` 开头（`if (busy.value) return;` 之后）加：
+`submit()` 改为**先置 busy 再 await**（双击守卫必须在 await 之前）：
 
 ```ts
-  if (isRegister.value) await ensureInviteConfig();
+async function submit() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    if (isRegister.value) await ensureInviteConfig();
+    const invalid = validate();
+    if (invalid) {
+      setFieldError(invalid);
+      return;
+    }
+    notices.dismiss('field');
+    let signed: boolean;
+    if (isRegister.value) {
+      const code = showInviteCode.value ? inviteCode.value.trim().toUpperCase() : '';
+      signed = code
+        ? await auth.signUp(phone.value.trim(), password.value, nickname.value.trim(), code)
+        : await auth.signUp(phone.value.trim(), password.value, nickname.value.trim());
+    } else {
+      signed = await auth.signIn(phone.value.trim(), password.value);
+    }
+    if (signed) restartGameSession();
+  } finally {
+    busy.value = false;
+  }
+}
 ```
 
 模板标签：
@@ -1723,27 +2007,35 @@ git commit -m "feat(client): 注册页邀请码必填与 boot 竞态兜底"
 - Modify: `admin/app.js`
 - Modify: `admin/index.html`
 - Modify: `scripts/verify-admin-static.mjs`
+- Modify: `scripts/admin-agents-probe.mjs`
 
 **Interfaces:**
 - Consumes: Task 1 的键名；Task 9 的 admin 路由。
-- Produces: `CONFIG_IA` / `CONFIG_CONTROLS` / `CONFIG_NOTES` / `BOOL_KEYS` 覆盖新键；`#ag-invite-row` 三态控件；计数 113/97/97/90/44/44/6。
+- Produces: `CONFIG_IA` / `CONFIG_CONTROLS` / `CONFIG_NOTES` 覆盖新键；`#ag-invite-row` 三态 `<select>`；计数 **113/97/97/97/90/44/44/6**（proto / active / IA / NOTE / entries / BOOL / NUMBER / TABS）。
 
-- [ ] **Step 1: 改门禁脚本先红**
+- [ ] **Step 1: 改门禁脚本与 probe 先红**
 
-`verify-admin-static.mjs`：
+`scripts/verify-admin-static.mjs`：
 
 - protocol 计数 112 → 113
-- active/ia/note 96 → 97
+- active/ia/note 96 → 97（三处）
 - entries 89 → 90
 - `BOOL_KEYS.length` 43 → 44
-- 在 `BOOL_KEYS` 数组加 `'agent.inviteRequired'`
-- 在精确键清单（若有）加 `'agent.inviteRequired'`
+- 在 `BOOL_KEYS` 数组加 `'agent.inviteRequired'`（`BOOL_KEYS` **只在**该脚本里，不在 admin/app.js）
+
+`scripts/admin-agents-probe.mjs`：
+
+- mock 配置同时维护 `agent.inviteEnabled` + `agent.inviteRequired` 两个键，PUT 时更新对应键；GET 快照同时返回两键。
+- 行断言从 `input` 改为 `select`：`inviteRow.querySelector('select')`；断言 options 为 `off/optional/required`、当前值为 `off`；触发 `change` 到 `required` 后断言两次 PUT。
+- finance 用例断言 `select.disabled === true`。
+- 删除/改写 `.row-ver` 与「保存」按钮断言（三态控件即时保存，不再有按钮）。
 
 ```bash
 pnpm verify:admin
+pnpm verify:admin-agents
 ```
 
-Expected: FAIL（app.js 未覆盖新键）。
+Expected: FAIL（app.js 未覆盖新键 / probe 旧断言）。
 
 - [ ] **Step 2: 实现 admin/app.js**
 
@@ -1755,21 +2047,42 @@ Expected: FAIL（app.js 未覆盖新键）。
   'agent.inviteRequired': { label: '注册邀请码必填', type: 'bool' },
 ```
 
-`CONFIG_NOTES` 加：
+`CONFIG_NOTES` 加（**必须是 `[[label,text],...]` 形状**，`notes[0][1]` 与 `notes.slice(1)` 依赖它）：
 
 ```js
-  'agent.inviteRequired': ['仅在「注册邀请码入口」开启时生效；开启后新用户必须填写有效代理邀请码。'],
+  'agent.inviteRequired': [
+    ['作用', '玩家注册时是否必须填写有效代理邀请码。'],
+    ['取值', '严格 true / false；默认 false（关闭）。'],
+    ['生效', '保存后后端 ≤60s 内生效；客户端注册页下次拉取 boot 后显示「邀请码（必填）」。'],
+    ['注意', '仅在「注册邀请码入口」（agent.inviteEnabled）开启时生效；代理模块未启用时必填无实际绑定效果。'],
+  ],
 ```
 
-`BOOL_KEYS` 加 `'agent.inviteRequired'`。
+新增只刷新配置快照的 helper（不要用 `ensureConfigSnapshot`，它非空即短路）：
 
-`renderAgentInviteRow()` 改为三态：
+```js
+async function refreshConfigSnapshot() {
+  const res = await api('/api/admin/config');
+  if (res.status === 200 && res.body?.data?.config) {
+    currentConfig = res.body.data.config;
+    return true;
+  }
+  return false;
+}
+```
+
+`renderAgentInviteRow()` 改为三态（保留空快照占位；写入失败即回显）：
 
 ```js
 function renderAgentInviteRow() {
   const host = $('ag-invite-row');
   if (!host) return;
   host.textContent = '';
+  if (Object.keys(currentConfig).length === 0) {
+    const loading = agentsState.settingsReq.loading || Boolean(configSnapshotReq);
+    host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
+    return;
+  }
   const enabled = currentConfig['agent.inviteEnabled']?.value === true;
   const required = currentConfig['agent.inviteRequired']?.value === true;
   const mode = !enabled ? 'off' : required ? 'required' : 'optional';
@@ -1783,17 +2096,19 @@ function renderAgentInviteRow() {
   select.disabled = !canWriteConfigKey('agent.inviteRequired');
   select.addEventListener('change', async () => {
     const next = select.value;
+    let ok = true;
     if (next === 'required') {
-      await putConfigKey('agent.inviteRequired', true);
-      await putConfigKey('agent.inviteEnabled', true);
+      ok = (await putConfigKey('agent.inviteRequired', true)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
     } else if (next === 'optional') {
-      await putConfigKey('agent.inviteRequired', false);
-      await putConfigKey('agent.inviteEnabled', true);
+      ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
     } else {
-      await putConfigKey('agent.inviteEnabled', false);
-      await putConfigKey('agent.inviteRequired', false);
+      ok = (await putConfigKey('agent.inviteEnabled', false)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
     }
-    await loadConfigSnapshot();
+    if (!ok) showMsg('保存失败，已重新读取当前配置', 'err');
+    await refreshConfigSnapshot();
     renderAgentInviteRow();
   });
   host.append(el('label', 'field-label', '注册邀请码'), select);
@@ -1801,9 +2116,7 @@ function renderAgentInviteRow() {
 }
 ```
 
-（`putConfigKey` / `loadConfigSnapshot` 按 admin/app.js 现有函数名调整；若不存在，复用现有 `putConfigKey` / `fetchConfig` 的实际名字。）
-
-`applyAgentRole` 增加对 `#ag-invite-row select` 的禁用。
+`applyAgentRole` 增加对 `#ag-invite-row select` 的禁用（按角色）。
 
 `admin/index.html` 确保 `#ag-invite-row` 位于 `#ag-settings-form` 之外（现有结构保持）。
 
@@ -1811,6 +2124,7 @@ function renderAgentInviteRow() {
 
 ```bash
 pnpm verify:admin
+pnpm verify:admin-agents
 ```
 
 Expected: PASS。
@@ -1818,7 +2132,7 @@ Expected: PASS。
 - [ ] **Step 4: Commit**
 
 ```bash
-git add admin/app.js admin/index.html scripts/verify-admin-static.mjs
+git add admin/app.js admin/index.html scripts/verify-admin-static.mjs scripts/admin-agents-probe.mjs
 git commit -m "feat(admin): 注册邀请码必填三态控件"
 ```
 
@@ -1848,14 +2162,15 @@ Expected: FAIL。
 
 `agent/app.js`「我的」页：
 
-- 若 `a.inviteEnabled === false || a.settingsEnabled === false`，显示 banner「邀请码功能当前未开放」并禁用生成。
-- 若 `a.required === true`，显示「必填中」。
-- 列表区 `#invite-list`：调用 `GET /api/agent/invite-codes?status=...`，行显示码、状态、创建/使用时间；`active` 行提供「复制」。
-- 生成区：`<select id="invite-gen-count">`（1/5/10/20/50）+ `#invite-gen-btn`；点击 `POST /api/agent/invite-codes {count}`，成功后刷新列表与 `/me`。
+- **容器位置**：新增 `<section id="me-invite-card">` 放在 `#me-body` **之外**、`#tab-me` 之内（`#me-body` 每次 `loadMe()` 会 `textContent=''`，放进去会被清空）。内部含 `#invite-status`（banner）、`#invite-gen-count`、`#invite-gen-btn`、`#invite-list`。
+- `loadMe()` 成功分支末尾调用 `renderInviteSection(a)`；生成成功后先 `await loadInviteCodes()`，再 `await loadMe()`。
+- banner：`a.inviteEnabled === false || a.settingsEnabled === false` ⇒ 「邀请码功能当前未开放」并禁用生成；`a.required === true` ⇒ 「必填中」。
+- 列表：`GET /api/agent/invite-codes?status=...`；行显示码、状态、创建/使用时间；`active` 行提供「复制」；`#invite-status` 切换筛选。
+- 生成：`#invite-gen-count`（1/5/10/20/50）+ `#invite-gen-btn`；点击 `POST /api/agent/invite-codes`，body 必须是 `JSON.stringify({ count })`；收到响应先 `maybeMustChange(res)`，其余错误走 `handleError(res, '生成邀请码失败')`。
 - 「复制全部未使用」：把 active 码按行拼接复制。
-- 空态：`inviteCode === null` 显示「暂无可用邀请码，请生成或联系管理员」。
+- 空态：`inviteCode === null` 且列表无 active ⇒ 「暂无可用邀请码，请生成或联系管理员」。
 
-`agent/index.html` 增加上述 id 的容器。
+`agent/index.html` 增加上述 id 的容器（放在 `#me-body` 外）。
 
 - [ ] **Step 3: 运行确认绿**
 
@@ -1878,45 +2193,48 @@ git commit -m "feat(agent): 一次码生成与列表"
 
 **Files:**
 - Modify: `packages/shared/src/logging/redact.ts`
-- Test: `packages/shared/test/redact.test.ts`
+- Test: `packages/shared/src/logging/redact.test.ts`
 
 **Interfaces:**
-- Produces: `inviteCode` / `invite_code` 键值被替换为 `[REDACTED_INVITE_CODE]`；通用 `code` 不误伤。
+- Produces: `inviteCode` / `invite_code` 键值被替换为既有 `[REDACTED]`；通用 `code` 不误伤。
 
 - [ ] **Step 1: 写失败测试**
 
+在 `packages/shared/src/logging/redact.test.ts`（不是 `test/` 目录）追加，使用实际导出 `redactText` / `redactValue` / `REDACTED`：
+
 ```ts
   it('邀请码键脱敏：inviteCode / invite_code；通用 code 不误伤', () => {
-    expect(redactLogLine('{"inviteCode":"ABCD2345"}')).toContain('[REDACTED_INVITE_CODE]');
-    expect(redactLogLine('{"invite_code":"ABCD2345"}')).toContain('[REDACTED_INVITE_CODE]');
-    expect(redactLogLine('{"code":0}')).toContain('"code":0');
+    expect(redactText('{"inviteCode":"ABCD2345"}')).toContain('[REDACTED]');
+    expect(redactText('{"invite_code":"ABCD2345"}')).toContain('[REDACTED]');
+    expect(redactText('{"code":0}')).toContain('"code":0');
+    expect(redactValue({ inviteCode: 'ABCD2345' })).toEqual({ inviteCode: REDACTED });
+    expect(redactValue({ invite_code: 'ABCD2345' })).toEqual({ invite_code: REDACTED });
+    expect(redactValue({ code: 0 })).toEqual({ code: 0 });
   });
 ```
-
-（按该测试文件实际导出名调整。）
 
 - [ ] **Step 2: 运行确认红**
 
 ```bash
-pnpm -C packages/shared test -- test/redact.test.ts
+pnpm -C packages/shared test -- src/logging/redact.test.ts
 ```
 
 Expected: FAIL。
 
 - [ ] **Step 3: 实现**
 
-在 `redact.ts` 的密钥键正则里增加 `inviteCode|invite_code`（不要加裸 `code`）：
+`redact.ts`：
 
-```ts
-const SECRET_KEY = /...|(^|[._])(inviteCode|invite_code)$|.../i;
-```
-
-按现有正则拼接方式并入。
+- 把 `inviteCode|invite_code` 并入 `SECRET_KEY` 的**键名 alternation**（保持现有捕获组数量与 `(_m, prefix, value)` 下标不变；不要新增捕获组）。
+- 把 `inviteCode|invite_code` 并入 `SECRET_KEY_NAME`（对象路径规则）。
+- 沿用 `REDACTED = '[REDACTED]'`；不新增 `[REDACTED_INVITE_CODE]`。
+- 不加裸 `code`（避免误伤 HTTP `code` / 业务码）。
 
 - [ ] **Step 4: 运行确认绿**
 
 ```bash
 pnpm -C packages/shared test
+pnpm -C packages/shared run lint
 ```
 
 Expected: PASS。
@@ -1924,7 +2242,7 @@ Expected: PASS。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/shared/src/logging/redact.ts packages/shared/test/redact.test.ts
+git add packages/shared/src/logging/redact.ts packages/shared/src/logging/redact.test.ts
 git commit -m "feat(shared): 邀请码日志脱敏"
 ```
 
@@ -1940,10 +2258,11 @@ git commit -m "feat(shared): 邀请码日志脱敏"
 - Modify: `packages/currency-service/src/agent/agent-portal.service.ts`
 - Modify: `deploy/monitoring/grafana/dashboards/05-currency.json`
 - Modify: `deploy/monitoring/prometheus/rules/ftl-alerts.yml`
+- Modify: `scripts/verify-monitoring.mjs`（EXPECTED_ALERTS + 头注释 41→44）
 
 **Interfaces:**
 - Produces metrics:
-  - `user_registration_failures_total{reason}`
+  - `user_registration_failures_total{reason}`（reason 固定枚举：`invite_missing|invite_invalid|phone_taken|rate_limited|upstream|db`）
   - `agent_invite_generated_total`
   - `agent_invite_rejected_total{reason}`
   - `agent_invite_consumed_total{result}`
@@ -1985,13 +2304,24 @@ export const agentBindIgnoredTotal = createCounter('agent_bind_ignored_total', '
 
 在 `bindFromSignup` 的三个 ignored 分支和 `bound` 分支打点；在 `generateInviteCodes` 成功/拒绝处打点。
 
-`05-currency.json` 增加代理邀请码面板（生成量、消费量、ignored、rejected）；`ftl-alerts.yml` 增加三条告警（`config_unavailable` > 0、`invite_missing` 突增、生成量异常）。
+`05-currency.json` 增加代理邀请码面板（生成量、消费量、ignored、rejected）；`ftl-alerts.yml` 增加三条规则，**必须同时更新门禁**：
+
+- 规则名（加入 `scripts/verify-monitoring.mjs` 的 `EXPECTED_ALERTS`）：
+  - `AgentBindIgnoredConfigUnavailable`
+  - `AgentInviteMissingSpike`
+  - `AgentInviteGeneratedSpike`
+- 每条按现有 `- alert:` 格式写 `expr` / `for` / `labels` / `annotations`；`expr` 分别基于：
+  - `increase(agent_bind_ignored_total{reason="config_unavailable"}[5m]) > 0`
+  - `increase(user_registration_failures_total{reason="invite_missing"}[5m]) > 20`
+  - `increase(agent_invite_generated_total[5m]) > 500`
+- YAML 头注释从 `**41 条**` / `41 条 = 38 类` 改为 `**44 条**` / `44 条 = 41 类`；`verify-monitoring.mjs` 的 `alertNames.length` 断言随 `EXPECTED_ALERTS` 自动变为 44。
 
 - [ ] **Step 4: 运行确认绿**
 
 ```bash
 pnpm -C packages/user-service test
 pnpm -C packages/currency-service test
+pnpm verify:monitoring
 ```
 
 - [ ] **Step 5: Commit**
@@ -2003,7 +2333,8 @@ git add packages/user-service/src/metrics/player.metrics.ts \
   packages/currency-service/src/agent/agent-bindings.service.ts \
   packages/currency-service/src/agent/agent-portal.service.ts \
   deploy/monitoring/grafana/dashboards/05-currency.json \
-  deploy/monitoring/prometheus/rules/ftl-alerts.yml
+  deploy/monitoring/prometheus/rules/ftl-alerts.yml \
+  scripts/verify-monitoring.mjs
 git commit -m "feat(observability): 邀请码生成/消费/忽略指标"
 ```
 
@@ -2021,31 +2352,70 @@ git commit -m "feat(observability): 邀请码生成/消费/忽略指标"
 - Modify: `tools/conformance/src/slices/slice-24-ads-relief.ts`
 
 **Interfaces:**
-- Consumes: Task 7/8/9 的生成/列表/撤销 API；Task 2 的 boot 三字段。
+- Consumes: Task 7/8/9 的生成/列表/撤销 API；Task 2 的 boot 三字段；**Task 6 的 claim 与 used/invalid 文案区分**（并发/「已被使用」用例依赖它，不能只靠本任务）。
+- Produces: `registerWithFreshCode` / `mintCodeViaRotate` / `putConfigAndWaitBoth` 三个 slice 内辅助。
 
 - [ ] **Step 1: 更新键表（其余 slice）**
 
 在 slice-14 / 17 / 18 / 21 / 24 的逐字 22 键字符串里，`agentInviteEnabled` 后插入 `agentInviteRequired`；slice-23 的「恰 21 键」文案改为 23。
 
-- [ ] **Step 2: 重写 slice-32 注册辅助**
+- [ ] **Step 2: 重写 slice-32 注册辅助与用例**
 
-- 新增 `registerWithFreshCode(agentToken, phone, nickname)`：先 `POST /api/agent/invite-codes {count:1}`，再用返回码注册。
-- 所有原复用 `agentA.inviteCode` 的成功注册改用新码；`agentB` 同理。
-- `enabled=false` 的重复 bind 用例保留，断言 `ignored` 且码仍 active（通过后续 `invite-codes` 列表确认）。
-- boot 断言改为三键 `agentInviteEnabled,agentInviteRequired,version`。
-- `/me` 断言 `inviteCode` 属于 active 集合，不断言固定码。
-- 新增：同码第二次 ⇒ `400/11006 邀请码已被使用`；并发同码（barrier）⇒ 恰一人成功；rotate 后旧码 ⇒ `邀请码无效`；冻结代理生成 ⇒ `11007`；冻结代理码注册 ⇒ `11006`。
-- `putConfigAndWait` 扩展为同时等待 currency-service 与 user-service 的 `config snapshot applied version=…`；新增 `putConfigAndWaitBoth`。
-- finally 同时恢复 `agent.inviteEnabled`、`agent.inviteRequired`、`agent_settings.enabled`；preflight 断言 required=false。
-- operator `PUT agent.inviteRequired` ⇒ 403。
+**token 生命周期（关键）**：`tokenA` 在 step ③ 改密后才首次产生（约 `:525`）。step ②（u1/u4 注册）**没有代理 token**，不能用 `POST /api/agent/invite-codes`。采用：
 
-- [ ] **Step 3: 类型检查/构建**
+```ts
+  /** 用管理员 rotate 铸一枚新码（step ② 与预铸未消费码用）。 */
+  async function mintCodeViaRotate(adminToken: string, agentId: string): Promise<string> {
+    const res = await postJson<{ code: string }>(
+      `/api/admin/agents/${encodeURIComponent(agentId)}/invite-code/rotate`,
+      {},
+      adminToken,
+    );
+    checks.eq(res.status, 200, 'admin rotate 铸码');
+    return String(res.body?.data?.code ?? '');
+  }
+
+  /** step ③ 之后：代理自助生成一枚新码。 */
+  async function mintCodeViaAgent(token: string): Promise<string> {
+    const res = await postJson<{ codes: string[] }>('/api/agent/invite-codes', { count: 1 }, token);
+    checks.eq(res.status, 200, 'agent 生成一枚码');
+    return String(res.body?.data?.codes?.[0] ?? '');
+  }
+```
+
+- **预铸未消费码**：在 step ② 开始前用 admin rotate 为 agentA 铸 2–3 枚码，分别保存在 `pendingCodes` 数组；u1/u4 各取一枚；`ignored` 用例用其中一枚并断言它仍 `active`（`invite-codes?status=active` 列表包含它）；`/me` 断言前确保至少一枚 active。
+- **每次成功注册用新码**：step ③ 之后（有 tokenA）用 `mintCodeViaAgent(tokenA)`；step ② 用 `mintCodeViaRotate(admin, agentAId)`。`agentB` 同理（step ② 用 admin rotate，之后用 tokenB）。
+- **boot 断言**改为三键 `agentInviteEnabled,agentInviteRequired,version`。
+- **`/me` 断言**：
+  ```ts
+  const active = await getJson<{ rows: Array<{ code: string }> }>('/api/agent/invite-codes?status=active', tokenA);
+  const me = await getJson<{ inviteCode: string | null }>('/api/agent/me', tokenA);
+  checks.that(me.body?.data?.inviteCode === null || active.body!.data.rows.some((r) => r.code === me.body!.data.inviteCode), 'inviteCode 属于 active 集合');
+  ```
+- **新增用例**：
+  - 同码第二次 ⇒ `400/11006 邀请码已被使用`。
+  - 并发同码（两个 `register` 用 `Promise.all` + barrier）⇒ 恰一人成功，另一人 `400/11006`。
+  - rotate 后旧码 ⇒ `400/11006 邀请码无效`。
+  - 冻结代理生成 ⇒ `11007`：**必须放在 `frozenLogin` 拿到新 token 之后、解冻之前**（约 `:540-543`），用 `frozenToken`，不要用旧 `tokenA`（冻结已递增 token_version）。
+  - 冻结代理的未消费码注册 ⇒ `11006`：冻结前先铸好一枚码。
+- **preflight（⓪）**：
+  - 捕获 `invite0` 与 `required0`；
+  - **主动写** `putConfigAndWaitBoth(admin, 'agent.inviteRequired', false)`（不是只断言），再写 `agent.inviteEnabled=true`；
+  - 探针注册（不带码）在 required=false 下运行；
+  - `finally` 恢复 `required0` 与 `invite0`（不是硬编码 false），并恢复 `agent_settings.enabled`；catch 中也尝试恢复一次。
+- **`putConfigAndWaitBoth`**：先对两个键各 PUT 一次（或先 required 再 enabled），再以**最终全局 version** 同时轮询 currency-service 与 user-service 的 `config snapshot applied version=…`（不要分别等各自版本，否则必超时）。
+- operator `PUT agent.inviteRequired` ⇒ 403（P-ag0）。
+
+- [ ] **Step 3: 构建并运行 slice**
 
 ```bash
 pnpm -C tools/conformance run build
+node tools/conformance/dist/run.js slice-32-agent
 ```
 
-（若 package.json 无 build，运行 `pnpm -C tools/conformance exec tsc --noEmit`。）
+（runner 键是 `slice-32-agent`，不是 `slice-32`；需要真栈，按仓库 conformance 启动方式执行。）
+
+Expected: PASS。若本地无真栈，至少 build + lint 必须 PASS，并在交付报告中明确「slice 未在本机运行」。
 
 - [ ] **Step 4: Commit**
 
@@ -2083,11 +2453,13 @@ git commit -m "test(conformance): 一次性邀请码与必填矩阵"
 - boot 两字段 → 三字段
 - 11006 文案：三档 message
 - `docs/client-protocol.md` 的口径同步
+- admin 注释里的「85 active / 85 条备注 / 21 键 / 22 键」同步
+- 本 plan 与 spec 一并提交（Task 18 的 git status 预期依赖它们已入库）
 
 - [ ] **Step 2: 机械检查**
 
 ```bash
-rg -n "一百零一|101 键|二十一键|二十二键|只回两个字段|\{version, agentInviteEnabled\}" docs packages admin apps/client/src tools/conformance | head -50
+rg -n "一百零一|101 键|二十一键|二十二键|85 active|85 条备注|85 个 active|扩到 2[12] 键|2[12] 键|只有两键|只回两个字段|\{version, agentInviteEnabled\}" docs packages admin apps/client/src tools/conformance | head -80
 ```
 
 Expected: 剩余命中要么是历史记录/注释明确标注旧值，要么已更新。
@@ -2096,6 +2468,8 @@ Expected: 剩余命中要么是历史记录/注释明确标注旧值，要么已
 
 ```bash
 git add docs/client-protocol.md docs/design.md docs/ops/first-deploy.md \
+  docs/superpowers/specs/2026-11-03-agent-invite-required-single-use-design.md \
+  docs/superpowers/plans/2026-11-03-agent-invite-required-single-use.md \
   packages/protocol/src/config.ts packages/protocol/src/config.test.ts \
   packages/config-service/src/config/client-config.controller.ts \
   packages/api-gateway/src/gateway/gateway.controller.ts \
@@ -2134,16 +2508,32 @@ pnpm -C packages/api-gateway run lint
 
 Expected: PASS（无 `noUnusedLocals` / 类型错）。
 
-- [ ] **Step 3: 门禁**
+- [ ] **Step 3: 门禁（按 `scripts/ci.sh` 第 7/8 阶段逐条跑）**
 
 ```bash
 pnpm verify:admin
-node scripts/verify-agent-static.mjs
+pnpm verify:admin-players
+pnpm verify:admin-agents
+pnpm verify:admin-config-tabs
+pnpm verify:admin-mahjong-rules
+pnpm verify:agent
+pnpm verify:monitoring
+pnpm verify:k8s
+pnpm verify:shutdown
 ```
 
 Expected: PASS。
 
-- [ ] **Step 4: 全仓（按需）**
+- [ ] **Step 4: conformance（有真栈时）**
+
+```bash
+pnpm -C tools/conformance run build
+node tools/conformance/dist/run.js slice-32-agent
+```
+
+Expected: PASS。若本地无真栈，至少 build 必须 PASS，并在交付报告中明确「slice 未在本机运行」。
+
+- [ ] **Step 5: 全仓（按需）**
 
 ```bash
 pnpm exec turbo run test lint --force
@@ -2151,15 +2541,15 @@ pnpm exec turbo run test lint --force
 
 Expected: PASS（`Cached` 不算真跑；耗时长，时间允许时执行）。
 
-- [ ] **Step 5: 工作区检查**
+- [ ] **Step 6: 工作区检查**
 
 ```bash
 git status --short
 ```
 
-Expected: 只剩会话前已有的麻将改动（`apps/client/src/components/table/mahjong/*`、`apps/client/test/mahjong-*`、`apps/client/src/game/mahjong-layout.ts`、`docs/superpowers/*mahjong*`、`tmp-layout-out.txt`），本计划文件均已提交。
+Expected: 只剩会话前已有的麻将改动（`apps/client/src/components/table/mahjong/*`、`apps/client/test/mahjong-*`、`apps/client/src/game/mahjong-layout.ts`、`docs/superpowers/*mahjong*`、`tmp-layout-out.txt`），本计划的 spec/plan 与所有实现文件均已提交。
 
-- [ ] **Step 6: 交付报告**
+- [ ] **Step 7: 交付报告**
 
 向用户报告：变更内容、测试结果、commit SHA、是否推送/部署、已知残余（bind RPC 超时烧码、老客户端 boot 失败、码状态 oracle）。
 
@@ -2168,5 +2558,63 @@ Expected: 只剩会话前已有的麻将改动（`apps/client/src/components/tab
 ## Self-Review
 
 - **Spec coverage:** 配置键/boot/客户端/服务端强制/一次性消费/代理生成/管理后台/网关/conformance/指标/文档均有任务对应。
-- **Placeholder scan:** 任务中的「按实际函数名调整」仅出现在 admin/app.js 与 AgentPortalService 构造器两处（需实现时读现有符号）；其余步骤有具体代码或命令。
-- **Type consistency:** `ResolvedInvite` 的 `agentStatus/codeStatus`、`BindResult.reason`、`AgentProfile` 新字段、`AGENT_INVITE_DAILY_MAX/BATCH_MAX` 在各任务间一致。
+- **Placeholder scan:** 计划正文已无「TBD / 实现时按实际符号调整」类占位；所有实现步骤给出具体 SQL、函数签名或代码块。
+- **Type consistency:** `ResolvedInvite` 的 `agentStatus/codeStatus`、`BindResult.reason`、`AgentProfile` 新字段、`AGENT_INVITE_DAILY_MAX/BATCH_MAX`、`BootClientConfig` 在各任务间一致。
+
+---
+
+## Plan Review Record（2026-11-03）
+
+两份独立只读审查：Task 1–9 后端可执行性；Task 10–18 前端/conformance/门禁。阻断与高优先项已修入本 r2，低优先项已并入对应任务或登记。
+
+### 后端审查（Task 1–9）
+
+| # | 发现 | 处置 |
+|---|---|---|
+| B1 | currency `ConfigCacheService` 缺 `agentInviteRequired()` | Task 7 Files/实现补 getter |
+| B2 | `affectedRowsOf` 是 bindings 私有函数，accounts 不可用 | Task 5 新建 `agent-sql.util.ts`，bindings/accounts/invite 共用 |
+| B3 | Task 6 未导入 `normalizeInviteCode` | 实现片段补 import |
+| B4 | user-service `RATE_LIMITED` 未映射 429 | Task 4 补 `HTTP_STATUS` + 429 断言 |
+| H1 | 假 DB transaction 无回滚，回滚用例不可执行 | Task 6 明确 makeDb 快照/回滚；真实原子性交 Task 16 slice |
+| H2 | 既有 frozen/already_bound 用例会红 | Task 6 明确改写两类用例 + 异代理用例 |
+| H3 | rotate 返回结构变更未同步旧测试 | Task 5 明确改写旧 rotate 用例 |
+| H4 | 网关测试只给 `originalUrl`，`strictQueryOf` 读 `req.query` | Task 9 改用 `req.query` + 未知键 400 |
+| H5 | rotate 审计写完整新码，finance 可经 agent-audit 读取 | Task 8 审计只记 `{revoked, codeTail}`；revoke 同 |
+| H6 | Task 8 listInviteCodes 只有占位注释 | Task 8 补完整 SQL、counts、usedByMaskedPhone、服务层测试 |
+| H7 | agent-portal 测试脚手架第二参语义冲突 | Task 7 明确第三参 opts + makeDb 扩展 |
+| H8 | user-service configCache 类型注解未扩展 | Task 3 明确四 getter 注解 |
+| L1 | INSERT IGNORE 0 行竞态 | Task 6 改当前读复查 |
+| L2 | redisMock 声明位置 | Task 4 补声明片段 |
+| L3 | `getOrDefault` manager 可选 | Task 7 改为「事务内必须传 manager」 |
+| L4 | protocol 必填字段导致中间态客户端 lint 红 | Task 1 注明 Task 1–9 不跑客户端 typecheck |
+| L5 | 坏值用例只覆盖缺行 | Task 2 补 `'yes'/1/null` |
+| L6 | 成功用例未断言 used_by/used_at | Task 6 明确 fake 记录 claim 参数并断言 |
+| L7 | config-service 第二处 22 键断言漏改 | Task 2 列出三处 |
+
+### 前端/conformance 审查（Task 10–18）
+
+| # | 发现 | 处置 |
+|---|---|---|
+| B1 | 新增 3 条告警会打红 `verify:monitoring` | Task 15 补 EXPECTED_ALERTS/头注释/`verify:monitoring`，Task 18 加门禁 |
+| B2 | admin 三态 select 与 `admin-agents-probe` 的 input/保存/版本断言不兼容 | Task 12 Files/Step 1 同步改 probe；不复用 buildSimpleRow |
+| B3 | shared 脱敏测试名/导出/标记不符，lint 会红 | Task 14 改用 `redactText/redactValue/REDACTED`，改 SECRET_KEY + SECRET_KEY_NAME |
+| B4 | 提交前 await boot 会推红 login-screen 既有用例 | Task 11 保留 fast path、先置 busy、列出需补 stub/flush 的既有用例 |
+| H1 | 双击可发两次 signUp；boot 无超时 | Task 11 先置 busy + 3s 超时 race |
+| H2 | 删 fast path 导致重复拉 boot / 兜底影响保锚用例 | Task 11 恢复 `clientConfigVersion > 0` 短路 |
+| H3 | step ② 无 agent token，`registerWithFreshCode` 不可用 | Task 16 改用 admin rotate 铸码 |
+| H4 | 一次性码后 ignored/me 用例无未消费码 | Task 16 预铸 2–3 枚并断言 active 集合 |
+| H5 | 冻结后生成需新 token | Task 16 固定在 frozenLogin 之后 |
+| H6 | preflight 只断言不写 false，脏栈会毒化 | Task 16 主动写 false 并捕获 required0 |
+| H7 | 只 build 不跑 slice，conformance 问题逃逸 | Task 16/18 增加 `slice-32-agent` 运行 |
+| H8 | Task 18 门禁覆盖不全 | Task 18 逐条列 ci.sh 7/8 阶段 |
+| H9 | `loadConfigSnapshot` 不存在，ensureConfigSnapshot 不刷新 | Task 12 新增 `refreshConfigSnapshot()` |
+| H10 | 代理端新 id 放 `#me-body` 会被 loadMe 清空 | Task 13 放 `#me-body` 外 + loadMe 调用 render |
+| H11 | conformance 语义依赖 Task 6/8 | Task 16 Interfaces 显式声明 |
+| L1–L12 | BootClientConfig 名称、CONFIG_NOTES 形状、BOOL_KEYS 位置、计数少一个 97、空快照占位、putConfigKey 失败、文档检查、plan/spec 提交、commit 署名、代理端错误处置、putConfigAndWaitBoth 版本、监控部署说明 | 均已并入对应任务 |
+
+### 仍登记的残余
+
+- bind RPC 超时/响应丢失烧码：本期不做跨 RPC 幂等键，靠指标 + 管理员单码撤销/补发。
+- 老客户端 boot 失败：新客户端兜底展示输入框；required 开启前需用外部应用分发数据确认旧版占比。
+- 码状态 oracle：接受（8 位码约 2^40 + 注册侧限流）。
+- 本地无真栈时 slice-32 只能 build，交付报告必须如实说明未运行。

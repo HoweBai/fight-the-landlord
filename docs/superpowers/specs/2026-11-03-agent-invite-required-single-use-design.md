@@ -165,7 +165,7 @@ SELECT c.`agent_id`, a.`name`, a.`status` AS `agent_status`, c.`status` AS `code
 
 - `GET /api/admin/agents/:id/invite-codes?status=&cursor=&limit=`：返回同形状 + `counts:{active,used,revoked}` + `usedByMaskedPhone`（join `agent_bindings.phone_masked`；不给原始 ownerId）
 - `POST /api/admin/agents/:id/invite-codes/:code/revoke`：仅 `active` 且属于该代理；`active→revoked`，写 `agent_admin_audit`（action `agent.invite.revoke`）
-- `POST /api/admin/agents/:id/invite-code/rotate`：作废全部 active + 生成 1 枚新码；**响应保持现状 `{code}`**；audit 记录作废数量；新码计入当日生成数（实现简单，管理员轮换频率低）
+- `POST /api/admin/agents/:id/invite-code/rotate`：作废全部 active + 生成 1 枚新码；**响应保持现状 `{code}`**；audit 只记录 `{ revoked, codeTail }`（**不写完整新码**，避免 finance 经 `/api/admin/agent-audit` 读到 active bearer credential）；新码计入当日生成数（实现简单，管理员轮换频率低）
 
 ### 3.4 配置链
 
@@ -308,7 +308,7 @@ user-service `ConfigCacheService`：
 
 - 不打印完整邀请码；新日志用 `agentId + 码后 2 位 + status`
 - `packages/shared/src/logging/redact.ts` 增加 `inviteCode` / `invite_code` 键规则（不误伤通用 `code`）
-- admin audit 可保存完整码（既有 rotate 行为），仅 super_admin 可读
+- admin audit 只保存 `{ revoked, codeTail }`（rotate）或 `{ codeTail }`（revoke），不保存完整 active 码；仅 super_admin 可读 audit 面仍保持既有策略
 
 ## 4. 错误处理与边界
 
@@ -362,7 +362,7 @@ user-service `ConfigCacheService`：
 - 消费：`status=used`、`used_by`、`used_at` 正确
 - 重复使用 ⇒ `11006 邀请码已被使用`；revoked/冻结/不存在 ⇒ `邀请码无效`
 - 并发两注册同码 ⇒ 恰一人 `bound`，另一人 `11006`；DB 恰一行 used、一行 binding
-- 绑定写失败 ⇒ 事务回滚，码仍 `active`（真实 MySQL/Testcontainers 断言，禁止只 mock `affectedRows`）
+- 绑定写失败 ⇒ 事务回滚，码仍 `active`（单测用假 DB 的 transaction 快照/回滚模拟事务契约；真实 InnoDB 并发原子性由 conformance slice-32 在真栈覆盖，禁止只 mock `affectedRows`）
 - 功能关闭（`settings.enabled=false` 或 `inviteEnabled=false`）⇒ `ignored` + reason 且码不消费
 - currency 快照缺失 ⇒ `ignored: config_unavailable`
 - `already_bound` 预检：同 ownerId 重试不消费新码
@@ -454,8 +454,9 @@ user-service `ConfigCacheService`：
 - `packages/currency-service/src/agent/agent-admin.controller.ts`
 - `packages/currency-service/src/agent/agent-accounts.service.ts`
 - `packages/currency-service/src/agent/agent.constants.ts`
+- `packages/currency-service/src/agent/agent-sql.util.ts`（共享 `affectedRowsOf`）
 - `packages/currency-service/src/agent/agent.metrics.ts`
-- 对应测试：`agent-invite.test.ts`、`agent-bindings.test.ts`、`agent-bind.rpc.test.ts`、`agent-portal.test.ts`、`agent-admin.test.ts`、`agent-domain.migration.test.ts`、新增 `agent-invite-single-use.migration.test.ts`
+- 对应测试：`agent-invite.test.ts`、`agent-bindings.test.ts`、`agent-bind.rpc.test.ts`、`agent-portal.test.ts`、`agent-admin.test.ts`、`agent-domain.migration.test.ts`、新增 `agent-invite-single-use.migration.test.ts`、`agent-sql.util.test.ts`
 
 **网关**
 
@@ -480,6 +481,8 @@ user-service `ConfigCacheService`：
 - `admin/app.js`
 - `admin/index.html`
 - `scripts/verify-admin-static.mjs`
+- `scripts/admin-agents-probe.mjs`
+- `scripts/verify-monitoring.mjs`
 - `agent/app.js`
 - `agent/index.html`
 - `scripts/verify-agent-static.mjs`
@@ -519,7 +522,8 @@ user-service `ConfigCacheService`：
 2. config-service / user-service / 客户端 / 网关 / 后台 / 代理端一起发（`required` 默认 `false`）
 3. 开代理模块 `agent_settings.enabled` + `agent.inviteEnabled`；代理开始批量生成码
 4. super_admin 打开 `agent.inviteRequired`
-5. 观察：注册成功率、`user_registration_failures_total{reason}`、`agent_invite_consumed_total`、`agent_bind_ignored_total{reason}`、生成量
+5. 观察注册成功率、`user_registration_failures_total{reason}`、`agent_invite_consumed_total`、`agent_bind_ignored_total{reason}`、生成量
+6. **灰度口径**：`required=true` 后未升级客户端可能不显示邀请码字段（boot 失败时）或不做前端校验；开启前用外部应用分发数据确认旧版占比，必要时先推强制更新
 
 回滚：
 
