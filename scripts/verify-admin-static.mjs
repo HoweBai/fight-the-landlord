@@ -215,9 +215,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 112, `protocol CONFIG_KEYS 恰 112 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 96, `active = CONFIG_KEYS − LEGACY 恰 96 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 96, `CONFIG_IA 覆盖 96 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 113, `protocol CONFIG_KEYS 恰 113 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 97, `active = CONFIG_KEYS − LEGACY 恰 97 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 97, `CONFIG_IA 覆盖 97 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -298,7 +298,7 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 96, `CONFIG_NOTES 恰 96 条（实测 ${noteKeys.length}；麻将 +11）`);
+ok(noteKeys.length === 97, `CONFIG_NOTES 恰 97 条（实测 ${noteKeys.length}；麻将 +11）`);
 /* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
 const PDK_NOTE_KEYS = [
   'game.levels.paodekuai',
@@ -389,6 +389,7 @@ const BOOL_KEYS = [
   'client.appEnabled',
   'client.h5Enabled',
   'agent.inviteEnabled',
+  'agent.inviteRequired',
   'risk.withdrawReAuthEnabled',
   'game.doudizhu.cardCounterEnabled',
   // 跑得快 5 个场次/好友房/补位开关
@@ -479,12 +480,12 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 89, `CONFIG_CONTROLS 恰 89 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 90, `CONFIG_CONTROLS 恰 90 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
 ok(STRUCT_KEYS.every((k) => !entries.has(k)), '7 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '96 键 = 89 简单 ∪ 7 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 43 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '43 布尔键 type=bool');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '97 键 = 90 简单 ∪ 7 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '44 布尔键清单全部入表');
+ok(BOOL_KEYS.length === 44 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '44 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
 ok(numberKeys.length === 44, `数字键定论表 44 个（实测 ${numberKeys.length}）`);

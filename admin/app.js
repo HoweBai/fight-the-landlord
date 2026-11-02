@@ -162,6 +162,12 @@ const CONFIG_NOTES = {
     ['生效', '保存后客户端下次拉取配置即生效（通常 ≤60s；H5 可硬刷新立即生效）。'],
     ['注意', '真正的计佣开关在代理设置（`agent_settings.enabled`，仅超级管理员）；本键只管客户端是否显示输入框。两个开关都开才会绑定。'],
   ],
+  'agent.inviteRequired': [
+    ['作用', '玩家注册时是否必须填写有效代理邀请码。'],
+    ['取值', '严格 true / false；默认 false（关闭）。'],
+    ['生效', '保存后后端 ≤60s 内生效；客户端注册页下次拉取 boot 后显示「邀请码（必填）」。'],
+    ['注意', '仅在「注册邀请码入口」（agent.inviteEnabled）开启时生效；代理模块未启用时必填无实际绑定效果。'],
+  ],
   'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
     ['取值', '三键齐全 {beginner, intermediate, advanced}，各 ≥ 0，合计须 > 0；可写权重（如 15 / 35 / 50），保存时按合计归一化成占比。默认 0.15 / 0.35 / 0.5。'],
@@ -1022,7 +1028,7 @@ const CONFIG_IA = [
           {
             id: 'switches',
             name: '开关',
-            keys: ['agent.inviteEnabled'],
+            keys: ['agent.inviteEnabled', 'agent.inviteRequired'],
           },
         ],
       },
@@ -1188,6 +1194,7 @@ const CONFIG_CONTROLS = {
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
   'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
   'agent.inviteEnabled': { label: '注册邀请码入口', type: 'bool' },
+  'agent.inviteRequired': { label: '注册邀请码必填', type: 'bool' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },
@@ -6835,6 +6842,8 @@ function applyAgentRole() {
   $('ag-create-panel').hidden = true;
   for (const id of ['ag-adjust-agent', 'ag-adjust-delta', 'ag-adjust-reason']) $(id).disabled = !write;
   $('ag-adjust-create-btn').hidden = !write;
+  const inviteSelect = $('ag-invite-row')?.querySelector('select');
+  if (inviteSelect) inviteSelect.disabled = !canWriteConfigKey('agent.inviteRequired');
   agentsState.roleApplied = true;
 }
 
@@ -6894,6 +6903,16 @@ async function ensureConfigSnapshot() {
   } finally {
     if (configSnapshotReq?.promise === promise) configSnapshotReq = null;
   }
+}
+
+/** 只刷新配置快照（不触发 loadAll 的全量重渲染）；三态控件保存后回显用。 */
+async function refreshConfigSnapshot() {
+  const res = await api('/api/admin/config');
+  if (res.status === 200 && res.body?.data?.config) {
+    currentConfig = res.body.data.config;
+    return true;
+  }
+  return false;
 }
 
 /** 对账首次激活：种默认区间并跑一次（armed 只置一次）。 */
@@ -7048,7 +7067,7 @@ async function loadAgentSettings() {
   return true;
 }
 
-/** 邀请码开关行（配置中心同款 row）：每次激活重建；无快照时给占位。 */
+/** 邀请码三态行（关闭/选填/必填）：每次激活重建；无快照时给占位。 */
 function renderAgentInviteRow() {
   const host = $('ag-invite-row');
   if (!host) return;
@@ -7058,7 +7077,37 @@ function renderAgentInviteRow() {
     host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
     return;
   }
-  host.append(buildSimpleRow('agent.inviteEnabled'));
+  const enabled = currentConfig['agent.inviteEnabled']?.value === true;
+  const required = currentConfig['agent.inviteRequired']?.value === true;
+  const mode = !enabled ? 'off' : required ? 'required' : 'optional';
+  const select = el('select', 'input');
+  for (const [value, label] of [['off', '关闭'], ['optional', '选填'], ['required', '必填']]) {
+    const opt = el('option', '', label);
+    opt.value = value;
+    opt.selected = value === mode;
+    select.append(opt);
+  }
+  select.id = 'ag-invite-mode';
+  select.disabled = !canWriteConfigKey('agent.inviteRequired');
+  select.addEventListener('change', async () => {
+    const next = select.value;
+    let ok = true;
+    if (next === 'required') {
+      ok = (await putConfigKey('agent.inviteRequired', true)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+    } else if (next === 'optional') {
+      ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+    } else {
+      ok = (await putConfigKey('agent.inviteEnabled', false)).ok === true;
+      if (ok) ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+    }
+    if (!ok) showMsg('保存失败，已重新读取当前配置', 'err');
+    await refreshConfigSnapshot();
+    renderAgentInviteRow();
+  });
+  host.append(el('label', 'field-label', '注册邀请码'), select);
+  host.append(el('p', 'hint', '必填仅在代理模块启用时生效。'));
 }
 
 function renderAgentSettings() {

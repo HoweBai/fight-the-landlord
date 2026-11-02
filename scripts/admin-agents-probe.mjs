@@ -81,6 +81,7 @@ function makeDom(role) {
   window.addEventListener('error', (e) => errors.push(String(e.message)));
   window.confirm = () => true;
   let inviteValue = false;
+  let inviteRequired = false;
   let inviteVersion = 1;
   window.fetch = async (url, opts = {}) => {
     const u = String(url);
@@ -88,6 +89,9 @@ function makeDom(role) {
       bump('configWrite');
       if (u.includes('agent.inviteEnabled')) {
         inviteValue = Boolean(JSON.parse(opts.body).value);
+        inviteVersion += 1;
+      } else if (u.includes('agent.inviteRequired')) {
+        inviteRequired = Boolean(JSON.parse(opts.body).value);
         inviteVersion += 1;
       }
       return json(200, { code: 0, data: { version: inviteVersion, announced: true } });
@@ -106,7 +110,13 @@ function makeDom(role) {
       bump('config');
       return json(200, {
         code: 0,
-        data: { config: { 'agent.inviteEnabled': { value: inviteValue, version: inviteVersion } }, version: inviteVersion },
+        data: {
+          config: {
+            'agent.inviteEnabled': { value: inviteValue, version: inviteVersion },
+            'agent.inviteRequired': { value: inviteRequired, version: inviteVersion },
+          },
+          version: inviteVersion,
+        },
       });
     }
     return json(200, { code: 0, data: {} });
@@ -135,19 +145,22 @@ ok($(window, 'agent-panel-settings')?.hidden === false, '设置面板显示');
 ok(countOf('settings') >= 1, '激活设置页签才拉 settings');
 ok(countOf('config') === 0, 'config 快照已缓存不重复拉');
 const inviteRow = $(window, 'ag-invite-row');
-const inviteInput = inviteRow?.querySelector('input');
-const inviteSave = inviteRow
-  ? [...inviteRow.querySelectorAll('button')].find((b) => b.textContent === '保存')
-  : undefined;
-ok(inviteInput != null && inviteSave !== undefined, '邀请码行有开关与保存按钮');
-if (inviteInput) {
-  inviteInput.checked = true;
-  inviteInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+const inviteSelect = inviteRow?.querySelector('select');
+ok(inviteSelect != null, '邀请码行有三态下拉');
+ok(
+  inviteSelect &&
+    [...inviteSelect.options].map((o) => o.value).join(',') === 'off,optional,required',
+  '三态选项为 关闭/选填/必填',
+);
+ok(inviteSelect?.value === 'off', '初始为关闭');
+if (inviteSelect) {
+  inviteSelect.value = 'required';
+  inviteSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
 }
-if (inviteSave) inviteSave.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 await sleep(80);
-const inviteVer = $(window, 'ag-invite-row')?.querySelector('.row-ver')?.textContent;
-ok(inviteVer === 'v2', `邀请码保存后版本号刷新（实测 ${inviteVer ?? '缺失'}）`);
+const inviteSelectAfter = $(window, 'ag-invite-row')?.querySelector('select');
+ok(inviteSelectAfter?.value === 'required', '保存后回显必填');
+ok(countOf('configWrite') >= 2, '切必填写入 required + enabled 两键');
 ok(clickIf(window, 'agent-tab-settlements'), '结算页签可点');
 await sleep(60);
 ok($(window, 'agent-panel-settlements')?.hidden === false, '结算面板显示');
@@ -197,10 +210,8 @@ await sleep(60);
 clickIf(fin.window, 'agent-tab-settings');
 await sleep(80);
 const finRow = $(fin.window, 'ag-invite-row');
-const finInput = finRow?.querySelector('input');
-const finActions = finRow?.querySelector('.row-actions');
-ok(finInput != null && finInput.disabled === true, 'finance 邀请码输入禁用');
-ok(finActions != null && finActions.hidden === true, 'finance 隐藏行内保存动作');
+const finSelect = finRow?.querySelector('select');
+ok(finSelect != null && finSelect.disabled === true, 'finance 邀请码三态禁用');
 ok($(fin.window, 'ag-settings-save-btn').hidden === true, 'finance 无保存设置按钮');
 clickIf(fin.window, 'agent-tab-settlements');
 await sleep(60);
