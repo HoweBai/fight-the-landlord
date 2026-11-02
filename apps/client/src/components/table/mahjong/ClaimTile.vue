@@ -49,7 +49,7 @@ function optClass(opt: MahjongClaimOption): string {
 </script>
 
 <template>
-  <view class="mj-claim-tile anim-claim-pulse">
+  <view class="mj-claim-tile mj-claim-tile--navy anim-claim-pulse">
     <text class="mj-claim-tile__prompt">可响应</text>
     <view class="mj-claim-tile__opts">
       <button
@@ -82,14 +82,18 @@ function optClass(opt: MahjongClaimOption): string {
   gap: 10px;
   padding: 10px 12px;
   border-radius: $ftl-radius-md;
-  border: 2px solid rgba($ftl-color-gold, 0.7);
-  background: linear-gradient(180deg, rgba(30, 60, 40, 0.82), rgba(20, 45, 30, 0.88));
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.6);
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy-light, 0.92),
+    rgba($ftl-color-mj-navy, 0.94)
+  );
   backdrop-filter: blur(12px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 $ftl-hairline 0 rgba(255, 200, 100, 0.15);
+  box-shadow: 0 6px 20px rgba($ftl-color-mj-navy, 0.45), inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.2);
 }
 .mj-claim-tile__prompt {
   font-size: $ftl-font-sm;
-  color: $ftl-color-gold;
+  color: $ftl-color-mj-gold;
   font-weight: 700;
   text-align: center;
   letter-spacing: 2px;
@@ -109,56 +113,68 @@ function optClass(opt: MahjongClaimOption): string {
   min-height: 52px;
   padding: 0 $ftl-space-4;
   font-size: $ftl-font-md;
-  border-color: rgba($ftl-color-gold, 0.55);
+  border-color: rgba($ftl-color-mj-gold, 0.55);
   border-radius: $ftl-radius-md;
-  background: linear-gradient(180deg, rgba(60, 110, 75, 0.85), rgba(35, 75, 50, 0.9));
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy-light, 0.9),
+    rgba($ftl-color-mj-navy, 0.95)
+  );
   color: rgba($ftl-color-on-primary, 0.92);
   box-shadow:
-    0 4px 0 rgba(0, 0, 0, 0.35),
-    0 6px 14px rgba(0, 0, 0, 0.35),
-    inset 0 2px 0 rgba(255, 220, 120, 0.25);
+    0 4px 0 rgba($ftl-color-mj-navy, 0.55),
+    0 6px 14px rgba($ftl-color-mj-navy, 0.35),
+    inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.22);
   transition: transform 0.08s, box-shadow 0.08s;
   &:hover {
-    border-color: $ftl-color-gold;
+    border-color: $ftl-color-mj-gold;
     color: $ftl-color-on-primary;
   }
   &:active {
     transform: translateY(2px);
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 0 rgba($ftl-color-mj-navy, 0.5), inset 0 2px 4px rgba(0, 0, 0, 0.35);
   }
 }
 
-// 胡（主按钮）：完全继承斗地主 btn--primary 金色立体
+// 胡（主按钮）：金底 + 海军蓝文字（对比度 8.5:1）
 .mj-claim-tile__opt--hu {
-  border-color: $ftl-color-gold-deep !important;
-  background: $ftl-color-gold !important;
-  color: $ftl-color-on-primary !important;
+  border-color: $ftl-color-mj-gold-deep !important;
+  background: $ftl-color-mj-gold !important;
+  color: $ftl-color-mj-on-gold !important;
   box-shadow:
-    0 6px 0 $ftl-color-gold-deep,
-    0 10px 22px rgb(255 152 0 / 0.5),
-    inset 0 2px 0 rgb(255 255 255 / 0.65),
-    inset 0 -2px 0 rgb(0 0 0 / 0.1) !important;
+    0 6px 0 $ftl-color-mj-gold-deep,
+    0 10px 22px rgba($ftl-color-mj-gold, 0.5),
+    inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.1) !important;
 }
 .mj-claim-tile__opt--hu:active {
   transform: translateY(4px);
   box-shadow:
-    0 2px 0 $ftl-color-gold-deep,
-    0 4px 10px rgb(255 152 0 / 0.35),
-    inset 0 3px 8px rgb(0 0 0 / 0.2) !important;
+    0 2px 0 $ftl-color-mj-gold-deep,
+    0 4px 10px rgba($ftl-color-mj-gold-deep, 0.35),
+    inset 0 3px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
-// 杠（次按钮加强）：在基础上叠金色渐变
+// 杠（次按钮加强）：金色渐变
 .mj-claim-tile__opt--gang {
-  background: linear-gradient(180deg, rgba(120, 100, 50, 0.9), rgba(75, 60, 30, 0.95)) !important;
-  border-color: rgba($ftl-color-gold, 0.75) !important;
-  color: $ftl-color-gold-light !important;
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-gold, 0.35),
+    rgba($ftl-color-mj-gold-deep, 0.55)
+  ) !important;
+  border-color: rgba($ftl-color-mj-gold, 0.75) !important;
+  color: $ftl-color-mj-gold !important;
 }
 
-// 过：弱化处理，透明度降低 + 边框变淡 + 浅灰底
+// 过：弱化处理
 .mj-claim-tile__pass {
   opacity: 0.55;
-  border-color: rgba(140, 150, 170, 0.35) !important;
-  background: linear-gradient(180deg, rgba(70, 80, 95, 0.5), rgba(45, 55, 70, 0.6)) !important;
+  border-color: rgba($ftl-color-mj-muted, 0.35) !important;
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy, 0.55),
+    rgba($ftl-color-mj-navy, 0.7)
+  ) !important;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25), inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.05) !important;
   color: rgba($ftl-color-on-primary, 0.6) !important;
 }

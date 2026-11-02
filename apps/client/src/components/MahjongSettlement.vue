@@ -409,7 +409,7 @@ const endText = computed(() =>
 .btn--primary {
   border-color: $ftl-color-gold-deep;
   background: $ftl-color-gold;
-  color: $ftl-color-on-primary;
+  color: $ftl-color-mj-on-gold;
   border-radius: $ftl-radius-md;
   box-shadow:
     0 6px 0 $ftl-color-gold-deep,
