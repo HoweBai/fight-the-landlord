@@ -6,6 +6,7 @@ import { DomainError } from '../http/errors';
 import { AGENT_MAX_DEPTH, RATE_BP_MAX } from './agent.constants';
 import { AgentSettingsService } from './agent-settings.service';
 import { AgentInviteService } from './agent-invite.service';
+import { affectedRowsOf } from './agent-sql.util';
 import { generatePassword, hashPassword } from './agent-password';
 import { normalizePhone, toDate, toSafeInt } from './agent.util';
 
@@ -301,6 +302,107 @@ export class AgentAccountsService {
         null,
       );
       return { code: rotated.code };
+    });
+  }
+
+  /**
+   * 管理端码列表（2026-11-03，仅 super_admin 路由可达）。
+   * keyset `(created_at, code)`；`usedByMaskedPhone` 来自 agent_bindings.phone_masked。
+   */
+  async listInviteCodes(
+    id: string,
+    status: string | undefined,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<{
+    rows: Array<{
+      code: string;
+      status: string;
+      createdAt: unknown;
+      usedAt: unknown;
+      usedByMaskedPhone: string | null;
+    }>;
+    nextCursor: string | null;
+    counts: { active: number; used: number; revoked: number };
+  }> {
+    const cursorRow = cursor === undefined
+      ? null
+      : ((await this.dataSource.query(
+          'SELECT `created_at`, `code` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?',
+          [id, cursor],
+        )) as Array<Record<string, unknown>>);
+    if (cursor !== undefined && cursorRow!.length === 0) {
+      throw new DomainError(ErrCode.BAD_PARAM, 'cursor 非法');
+    }
+
+    const where = ['c.`agent_id` = ?'];
+    const params: unknown[] = [id];
+    if (status !== undefined) {
+      where.push('c.`status` = ?');
+      params.push(status);
+    }
+    if (cursorRow !== null) {
+      where.push('(c.`created_at` < ? OR (c.`created_at` = ? AND c.`code` < ?))');
+      params.push(cursorRow[0]!.created_at, cursorRow[0]!.created_at, cursorRow[0]!.code);
+    }
+    params.push(limit + 1);
+
+    const raw = (await this.dataSource.query(
+      'SELECT c.`code`, c.`status`, c.`created_at`, c.`used_at`, ' +
+        'b.`phone_masked` AS `used_by_masked_phone` ' +
+        'FROM `agent_invite_codes` c ' +
+        'LEFT JOIN `agent_bindings` b ON b.`owner_id` = c.`used_by` ' +
+        `WHERE ${where.join(' AND ')} ` +
+        'ORDER BY c.`created_at` DESC, c.`code` DESC LIMIT ?',
+      params,
+    )) as Array<Record<string, unknown>>;
+    const hasMore = raw.length > limit;
+    const page = hasMore ? raw.slice(0, limit) : raw;
+
+    const countRows = (await this.dataSource.query(
+      'SELECT `status`, COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? GROUP BY `status`',
+      [id],
+    )) as Array<Record<string, unknown>>;
+    const counts = { active: 0, used: 0, revoked: 0 };
+    for (const row of countRows) {
+      const key = String(row.status);
+      if (key === 'active' || key === 'used' || key === 'revoked') {
+        counts[key] = Number(row.cnt ?? 0);
+      }
+    }
+
+    return {
+      rows: page.map((r) => ({
+        code: String(r.code),
+        status: String(r.status),
+        createdAt: r.created_at,
+        usedAt: r.used_at,
+        usedByMaskedPhone: r.used_by_masked_phone === null ? null : String(r.used_by_masked_phone),
+      })),
+      nextCursor: hasMore ? String(page[page.length - 1]!.code) : null,
+      counts,
+    };
+  }
+
+  /** 单码撤销（仅 super_admin）：只允许 active；audit 不写完整码。 */
+  async revokeInviteCode(id: string, code: string, actor: string): Promise<void> {
+    return this.dataSource.transaction(async (manager) => {
+      const result = await manager.query(
+        "UPDATE `agent_invite_codes` SET `status` = 'revoked' WHERE `code` = ? AND `agent_id` = ? AND `status` = 'active'",
+        [code, id],
+      );
+      if (affectedRowsOf(result, 'agent_invite_codes revoke') !== 1) {
+        throw new DomainError(ErrCode.BAD_PARAM, '邀请码不存在或已失效');
+      }
+      await this.audit(
+        manager,
+        actor,
+        'agent.invite.revoke',
+        id,
+        null,
+        { codeTail: code.slice(-2) },
+        null,
+      );
     });
   }
 

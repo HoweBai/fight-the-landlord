@@ -28,6 +28,7 @@ function makeDb() {
   const rates: Array<Record<string, unknown>> = [];
   const statuses: Array<Record<string, unknown>> = [];
   const audit: Array<Record<string, unknown>> = [];
+  const codes: Array<Record<string, unknown>> = [];
   const manager = {
     query: async (sql: string, params?: unknown[]) => {
       const p = params ?? [];
@@ -124,8 +125,28 @@ function makeDb() {
         return undefined;
       }
       if (sql.includes('INSERT INTO `agent_admin_audit`')) {
-        audit.push({ actor: p[0], action: p[1], target: p[3] });
+        audit.push({ actor: p[0], action: p[1], target: p[3], after: p[5] });
         return undefined;
+      }
+      if (sql.includes('FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?')) {
+        return codes.filter((c) => c.code === p[1] && c.agent_id === p[0]);
+      }
+      if (sql.includes('FROM `agent_invite_codes` c')) return codes;
+      if (sql.includes('SELECT `status`, COUNT(*) AS `cnt` FROM `agent_invite_codes`')) {
+        const counts = { active: 0, used: 0, revoked: 0 };
+        for (const c of codes) {
+          const k = String(c.status);
+          if (k === 'active' || k === 'used' || k === 'revoked') counts[k] += 1;
+        }
+        return Object.entries(counts).map(([status, cnt]) => ({ status, cnt }));
+      }
+      if (sql.startsWith("UPDATE `agent_invite_codes` SET `status` = 'revoked'")) {
+        const row = codes.find(
+          (c) => c.code === p[0] && c.agent_id === p[1] && c.status === 'active',
+        );
+        if (row === undefined) return { affectedRows: 0 };
+        row.status = 'revoked';
+        return { affectedRows: 1 };
       }
       if (sql.includes('COUNT(*) AS `cnt` FROM `agent_accounts`')) return [{ cnt: 0 }];
       if (sql.includes('COUNT(*) AS `cnt` FROM `agent_bindings`')) return [{ cnt: 0 }];
@@ -138,7 +159,7 @@ function makeDb() {
     transaction: async <T>(cb: (m: EntityManager) => Promise<T>) => cb(manager),
     query: (sql: string, params?: unknown[]) => manager.query(sql, params),
   };
-  return { manager, dataSource, accounts, rates, statuses, audit };
+  return { manager, dataSource, accounts, rates, statuses, audit, codes };
 }
 
 function makeService(db: ReturnType<typeof makeDb>) {
@@ -286,5 +307,44 @@ describe('AgentAccountsService：改比例/重挂/状态/密码', () => {
     expect(r).toEqual({ code: 'NEWCODE1' });
     expect(invite.rotate).toHaveBeenCalled();
     expect(db.audit.some((a) => a.action === 'agent.invite.rotate')).toBe(true);
+  });
+});
+
+describe('AgentAccountsService：码列表/单码撤销（2026-11-03）', () => {
+  it('listInviteCodes：rows 映射 + counts + nextCursor', async () => {
+    const db = makeDb();
+    db.codes.push(
+      { code: 'CODE0003', status: 'active', created_at: new Date('2026-11-03T00:00:03Z'), used_at: null, used_by_masked_phone: null },
+      { code: 'CODE0002', status: 'used', created_at: new Date('2026-11-03T00:00:02Z'), used_at: new Date('2026-11-03T01:00:00Z'), used_by_masked_phone: '138****0000' },
+      { code: 'CODE0001', status: 'revoked', created_at: new Date('2026-11-03T00:00:01Z'), used_at: null, used_by_masked_phone: null },
+    );
+    const { svc } = makeService(db);
+    const page = await svc.listInviteCodes('ag_1', undefined, undefined, 2);
+    expect(page.rows).toHaveLength(2);
+    expect(page.rows[1]).toMatchObject({
+      code: 'CODE0002',
+      status: 'used',
+      usedByMaskedPhone: '138****0000',
+    });
+    expect(page.nextCursor).toBe('CODE0002');
+    expect(page.counts).toEqual({ active: 1, used: 1, revoked: 1 });
+  });
+
+  it('revokeInviteCode：active→revoked + audit 只记 codeTail', async () => {
+    const db = makeDb();
+    db.codes.push({ code: 'CODE0003', agent_id: 'ag_1', status: 'active' });
+    const { svc } = makeService(db);
+    await svc.revokeInviteCode('ag_1', 'CODE0003', 'admin');
+    expect(db.codes[0]!.status).toBe('revoked');
+    const audit = db.audit.find((a) => a.action === 'agent.invite.revoke');
+    expect(JSON.parse(String(audit!.after))).toEqual({ codeTail: '03' });
+  });
+
+  it('revokeInviteCode：非 active ⇒ BAD_PARAM', async () => {
+    const db = makeDb();
+    db.codes.push({ code: 'CODE0002', agent_id: 'ag_1', status: 'used' });
+    await expect(
+      makeService(db).svc.revokeInviteCode('ag_1', 'CODE0002', 'admin'),
+    ).rejects.toMatchObject({ code: ErrCode.BAD_PARAM });
   });
 });
