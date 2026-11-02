@@ -170,17 +170,20 @@ function badgeClass(badge: string): string {
   color: $ftl-color-mj-gold;
   font-size: $ftl-font-xs;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
 }
 .mj-center__sep {
   color: rgba($ftl-color-mj-muted, 0.6);
   font-size: $ftl-font-xs;
+  line-height: 1;
 }
 .mj-center__phase {
   overflow: hidden;
   min-width: 0;
   color: $ftl-color-mj-muted;
   font-size: $ftl-font-xs;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
