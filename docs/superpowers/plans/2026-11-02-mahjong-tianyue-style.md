@@ -685,3 +685,27 @@ describe('麻将主题源码闸', () => {
 | L12 dir-* 旧尺寸覆盖残留 | 低 | 成立 | Task 3 删除/同步 `.mj-tile--dir-*` 尺寸覆盖；加 direction+size 断言 |
 | L13 素材测试只 toContain | 低 | 成立 | 改为精确集合/长度 28；manifest 112 条；1/9 两张方向抽检 |
 | L14 CSS 示例裸 rgba/2px | 低 | 成立 | 新增 `$ftl-color-mj-glass-soft/shadow/highlight`；描边走 `$ftl-hairline` |
+
+## 执行期发现（Task 7 视觉走查）
+
+1. **`$ftl-space-1` 不存在**：间距阶从 `$ftl-space-2: 4px` 开始。`MahjongMeld`
+   底托 `padding: $ftl-space-1` 在单元测试里没被编译到（组件的 scoped SCSS 变量
+   解析由视觉 harness 才真正触发），改成 `$ftl-space-2`。
+2. **`dirSizeKiB` 旧 bug**：递归返回 KiB 又被父层当字节累加，麻将 4 个子目录
+   实际 836KiB 被算成 0.8KiB。修成 `dirSizeBytes` 递归 + 顶层除 1024；否则
+   `table/mahjong` 预算闸是假绿。
+3. **中央卡无 claim/ting 时右列留空**：新增 `hasSide`，无内容时隐藏右列，圆盘在卡内居中。
+4. **claim 阶段手牌被洗白**：`.mj-tile--disabled` 0.45 在亮青桌面上太淡，改 0.85；
+   仍不可点击，但牌面可读。
+5. **视觉 harness**：本机临时 Vite harness（真实 `MahjongBoard` 组件 + 本机 Chrome
+   headless）截图，未入库；截图在 `.superpowers/mahjong-visual/`：
+   `tianyue-1334x750.png`、`tianyue-1334x1000.png`、`tianyue-1623x750.png`、
+   `tianyue-claim-1334x750.png`。本机无 Docker，真栈截图待补。
+
+## 执行结果（2026-11-02）
+
+- `pnpm -C apps/client test`：**1762 passed / 2 skipped**（131 files）。
+- `pnpm -C apps/client run lint`：**0 错**。
+- `asset-budget` / `mahjong-assets` / `ui-tokens` / `mahjong-theme`：全绿。
+- 视觉：见上；本机无 Docker，未跑真栈 e2e。
+

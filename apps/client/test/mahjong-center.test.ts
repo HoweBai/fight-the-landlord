@@ -23,6 +23,11 @@ describe('MahjongCenter', () => {
     expect(w.text()).toContain('请出牌');
   });
 
+  it('无 claim/ting/endedText 时右列不渲染（圆盘居中）', () => {
+    const w = mount(MahjongCenter, { props: base });
+    expect(w.find('.mj-center__side').exists()).toBe(false);
+  });
+
   it('active=false：圆盘显示牌墙数，不显示 12', () => {
     const w = mount(MahjongCenter, { props: { ...base, active: false } });
     expect(w.find('.mj-center__value').text()).toContain('42');

@@ -106,7 +106,9 @@ const tileStyle = computed(() =>
   filter: drop-shadow(0 0 4px rgba($ftl-color-mj-gold, 0.65));
 }
 .mj-tile--disabled {
-  opacity: 0.45;
+  /* 不可点击但仍要看清手牌（天月风亮桌面下 0.45 会洗白） */
+  opacity: 0.85;
+  cursor: default;
 }
 .mj-tile--dim {
   opacity: 0.5;

@@ -64,6 +64,10 @@ const claimLabel = computed(() =>
 );
 const visibleTing = computed(() => props.tingTiles.slice(0, MAX_TING_TILES));
 const extraTing = computed(() => Math.max(0, props.tingTiles.length - MAX_TING_TILES));
+/** 右列没有内容时隐藏，圆盘在卡片内居中（天月式中心盘）。 */
+const hasSide = computed(
+  () => Boolean(props.claimTile) || visibleTing.value.length > 0 || Boolean(props.endedText),
+);
 </script>
 
 <template>
@@ -87,7 +91,7 @@ const extraTing = computed(() => Math.max(0, props.tingTiles.length - MAX_TING_T
         <text v-if="dialUnit" class="mj-center__unit">{{ dialUnit }}</text>
       </view>
 
-      <view class="mj-center__side">
+      <view v-if="hasSide" class="mj-center__side">
         <template v-if="!compact">
           <view v-if="claimTile" class="mj-center__claim">
             <text class="mj-center__label">可响应</text>
