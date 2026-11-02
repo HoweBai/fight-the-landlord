@@ -570,6 +570,7 @@ const centerProps = computed(() => ({
   seconds: props.seconds,
   active: amActive.value && !props.settlementRevealed,
   compact: layout.value.centerCompact,
+  ended: phase.value === 'ended',
   endedText:
     phase.value === 'ended'
       ? ''

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 /**
- * 中央井（哑组件）：牌墙/阶段/待响应牌/听牌/倒计时。
- * 井高不足时切单行紧凑模式（只出文字，不出牌面）。
+ * 中央井（哑组件）：天月风蓝金圆盘。
+ *
+ * 圆盘中心：`ended` → 终；`active && seconds > 0` → 秒数；否则牌墙数。
+ * 右侧列：可响应牌 / 听牌（最多 12 张，超出 +N）/ endedText 次要行。
+ * 紧凑模式（布局给 `compact`）：90 圆盘 + 单行文字，不出牌面。
  */
 import { computed } from 'vue';
 import { MAHJONG_SUIT_NAMES, type Tile } from '@fight-the-landlord/protocol';
 import MahjongTile from './MahjongTile.vue';
+
+/** 右列最多展示的听牌张数；超出的用 +N 收敛。 */
+const MAX_TING_TILES = 12;
 
 const props = withDefaults(
   defineProps<{
@@ -21,171 +27,213 @@ const props = withDefaults(
     seconds: number;
     active?: boolean;
     compact?: boolean;
+    ended?: boolean;
     endedText?: string;
   }>(),
   {
     claimTile: null,
     claimW: 34,
-    claimH: 51,
+    claimH: 45,
     tingTiles: () => [],
     tingW: 20,
-    tingH: 30,
+    tingH: 27,
     maxFan: null,
     active: false,
     compact: false,
+    ended: false,
     endedText: '',
   },
 );
 
-const urgent = computed(() => props.active && props.seconds > 0 && props.seconds <= 5);
+const urgent = computed(
+  () => props.active && props.seconds > 0 && props.seconds <= 5,
+);
+const dialValue = computed(() => {
+  if (props.ended) return '终';
+  if (props.active && props.seconds > 0) return String(props.seconds);
+  return String(props.wallCount);
+});
+const dialUnit = computed(() => {
+  if (props.ended) return '';
+  return props.active && props.seconds > 0 ? 's' : '张';
+});
 const claimLabel = computed(() =>
   props.claimTile
     ? `${MAHJONG_SUIT_NAMES[props.claimTile.s]}${props.claimTile.r}`
     : '',
 );
+const visibleTing = computed(() => props.tingTiles.slice(0, MAX_TING_TILES));
+const extraTing = computed(() => Math.max(0, props.tingTiles.length - MAX_TING_TILES));
 </script>
 
 <template>
   <view class="mj-center" :class="{ 'mj-center--compact': compact }">
-    <view class="mj-center__head">
-      <!-- 非紧凑：单行居中（phase 大字居中 + wall/clock 小字左右） -->
-      <template v-if="!compact">
-        <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
+    <view class="mj-center__strip">
+      <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
+      <text class="mj-center__sep">·</text>
+      <text class="mj-center__phase">{{ phaseText }}</text>
+      <template v-if="compact && active && seconds > 0">
         <text class="mj-center__sep">·</text>
-        <text class="mj-center__phase">{{ phaseText }}</text>
-        <template v-if="active">
-          <text class="mj-center__sep">·</text>
-          <text
-            class="mj-center__clock"
-            :class="{ 'mj-center__clock--urgent': urgent }"
-          >{{ seconds }}s</text>
-        </template>
-      </template>
-      <!-- 紧凑：单行（挤不下时降级） -->
-      <template v-else>
-        <text class="mj-center__wall">牌墙 {{ wallCount }}</text>
-        <text class="mj-center__sep">·</text>
-        <text class="mj-center__phase">{{ phaseText }}</text>
-        <template v-if="active">
-          <text class="mj-center__sep">·</text>
-          <text
-            class="mj-center__clock"
-            :class="{ 'mj-center__clock--urgent': urgent }"
-          >{{ seconds }}s</text>
-        </template>
+        <text class="mj-center__compact-clock">{{ seconds }}s</text>
       </template>
     </view>
-    <template v-if="!compact">
-      <view v-if="claimTile" class="mj-center__claim">
-        <MahjongTile :tile="claimTile" :w="claimW" :h="claimH" direction="my" />
-        <text class="mj-center__label">可响应</text>
+
+    <view class="mj-center__body">
+      <view
+        class="mj-center__dial"
+        :class="{ 'mj-center__dial--urgent': urgent, 'anim-urgent-pulse': urgent }"
+      >
+        <text class="mj-center__value">{{ dialValue }}</text>
+        <text v-if="dialUnit" class="mj-center__unit">{{ dialUnit }}</text>
       </view>
-      <view v-if="tingTiles.length > 0" class="mj-center__ting">
-        <text class="mj-center__label">
-          听<template v-if="maxFan !== null">（{{ maxFan }} 番）</template>
+
+      <view class="mj-center__side">
+        <template v-if="!compact">
+          <view v-if="claimTile" class="mj-center__claim">
+            <text class="mj-center__label">可响应</text>
+            <MahjongTile :tile="claimTile" :w="claimW" :h="claimH" direction="my" />
+          </view>
+          <view v-if="visibleTing.length > 0" class="mj-center__ting">
+            <text class="mj-center__label">
+              听<template v-if="maxFan !== null">（{{ maxFan }} 番）</template>
+            </text>
+            <MahjongTile
+              v-for="(t, i) in visibleTing"
+              :key="`ting-${i}`"
+              :tile="t"
+              :w="tingW"
+              :h="tingH"
+              direction="my"
+            />
+            <text v-if="extraTing > 0" class="mj-center__extra">+{{ extraTing }}</text>
+          </view>
+        </template>
+        <text v-else-if="claimTile" class="mj-center__compact-claim">
+          可响应 {{ claimLabel }}
         </text>
-        <MahjongTile
-          v-for="(t, i) in tingTiles"
-          :key="`ting-${i}`"
-          :tile="t"
-          :w="tingW"
-          :h="tingH"
-          direction="my"
-        />
+        <text v-if="endedText" class="mj-center__ended">{{ endedText }}</text>
       </view>
-      <text v-if="endedText" class="mj-center__ended">{{ endedText }}</text>
-    </template>
-    <text v-else-if="claimTile" class="mj-center__compact-claim">
-      可响应 {{ claimLabel }}
-    </text>
+    </view>
   </view>
 </template>
 
 <style scoped lang="scss">
+@import '../../../styles/animations.scss';
+
 .mj-center {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   gap: 4px;
   width: 100%;
   height: 100%;
   padding: 6px 8px;
   overflow: hidden;
-  border: $ftl-hairline solid rgba($ftl-color-gold, 0.35);
-  border-radius: $ftl-radius-md;
-  background: rgba(0, 0, 0, 0.38);
-  color: $ftl-color-text;
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.55);
+  border-radius: $ftl-radius-lg;
+  background:
+    linear-gradient(180deg, rgba($ftl-color-mj-navy-light, 0.92), rgba($ftl-color-mj-navy, 0.94));
+  box-shadow:
+    inset 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, 0.22),
+    0 6px 18px rgba($ftl-color-mj-navy, 0.45);
+  color: $ftl-color-mj-muted;
   text-align: center;
 }
-.mj-center--compact {
-  flex-direction: row;
-  gap: 6px;
-  padding: 0 8px;
-  white-space: nowrap;
-}
-.mj-center--compact .mj-center__wall,
-.mj-center--compact .mj-center__phase,
-.mj-center--compact .mj-center__clock {
-  font-size: 11px;
-  line-height: 1.2;
-}
-.mj-center__sep {
-  color: $ftl-color-text-muted;
-  font-size: 11px;
-  line-height: 1.2;
-}
-.mj-center__head {
+
+.mj-center__strip {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-width: 0;
-  width: 100%;
-  flex-wrap: nowrap;
-}
-// 紧凑模式覆盖为单行
-.mj-center--compact .mj-center__head {
   gap: 6px;
-  width: auto;
-}
-.mj-center--compact .mj-center__wall,
-.mj-center--compact .mj-center__phase,
-.mj-center--compact .mj-center__clock {
-  font-size: 11px;
-  line-height: 1.2;
-}
-.mj-center__sep {
-  color: $ftl-color-text-muted;
-  font-size: 11px;
-  line-height: 1.2;
+  height: 22px;
+  min-width: 0;
+  white-space: nowrap;
 }
 .mj-center__wall {
-  color: $ftl-color-gold-light;
-  font-size: $ftl-font-sm;
-  font-weight: 600;
-  white-space: nowrap;
+  color: $ftl-color-mj-gold;
+  font-size: 12px;
+  font-weight: 700;
+}
+.mj-center__sep {
+  color: rgba($ftl-color-mj-muted, 0.6);
+  font-size: 11px;
 }
 .mj-center__phase {
-  color: $ftl-color-gold;
-  font-size: $ftl-font-md;
-  font-weight: 700;
-  text-align: center;
-  white-space: nowrap;
   overflow: hidden;
+  color: $ftl-color-mj-muted;
+  font-size: 12px;
   text-overflow: ellipsis;
-  max-width: 100%;
-  line-height: 1.3;
 }
-.mj-center__clock {
-  color: $ftl-color-gold-light;
-  font-size: $ftl-font-sm;
-  font-weight: 600;
-  white-space: nowrap;
+
+.mj-center__body {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 0;
 }
-.mj-center__clock--urgent {
-  color: $ftl-color-danger;
+
+/* 110 圆盘：内圈实底 + 12 刻度（repeating-conic）+ 外圈渐变 */
+.mj-center__dial {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
+  height: 110px;
+  border: $ftl-hairline solid $ftl-color-mj-gold;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, $ftl-color-mj-navy 0 52%, transparent 52%),
+    repeating-conic-gradient(
+      from 0deg,
+      rgba($ftl-color-mj-gold, 0.5) 0deg 1.5deg,
+      transparent 1.5deg 30deg
+    ),
+    radial-gradient(circle, $ftl-color-mj-navy-light 0%, $ftl-color-mj-navy 100%);
+  box-shadow:
+    inset 0 0 12px rgba($ftl-color-mj-gold, 0.2),
+    0 0 10px rgba($ftl-color-mj-navy, 0.5);
+}
+.mj-center__dial--urgent {
+  border-color: $ftl-color-mj-urgent;
+  box-shadow:
+    inset 0 0 12px rgba($ftl-color-mj-urgent, 0.35),
+    0 0 14px rgba($ftl-color-mj-urgent, 0.45);
+}
+.mj-center__dial--urgent .mj-center__value,
+.mj-center__dial--urgent .mj-center__unit {
+  color: $ftl-color-mj-urgent;
+}
+.mj-center__value {
+  color: $ftl-color-mj-gold;
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 2px 6px rgba($ftl-color-mj-navy, 0.8);
+}
+.mj-center__unit {
+  margin-top: 2px;
+  color: $ftl-color-mj-muted;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.mj-center__side {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 210px;
+  overflow: hidden;
 }
 .mj-center__claim,
 .mj-center__ting {
@@ -194,23 +242,67 @@ const claimLabel = computed(() =>
   justify-content: center;
   flex-wrap: wrap;
   gap: 3px;
+  max-width: 100%;
 }
 .mj-center__label {
-  color: $ftl-color-text-muted;
+  color: $ftl-color-mj-gold;
   font-size: 10px;
   white-space: nowrap;
 }
-.mj-center__ended {
-  color: $ftl-color-text-muted;
+.mj-center__extra {
+  color: $ftl-color-mj-cyan;
   font-size: 10px;
+  font-weight: 700;
 }
-.mj-center--compact .mj-center__head {
-  flex: 0 0 auto;
+.mj-center__ended {
+  overflow: hidden;
+  max-width: 100%;
+  color: $ftl-color-mj-muted;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mj-center__compact-claim {
   overflow: hidden;
-  color: $ftl-color-gold-light;
+  color: $ftl-color-mj-gold;
   font-size: 11px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 紧凑：横排，90 圆盘 + 单行文字 —— */
+.mj-center--compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.mj-center--compact .mj-center__strip {
+  height: auto;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.mj-center--compact .mj-center__strip,
+.mj-center--compact .mj-center__phase,
+.mj-center--compact .mj-center__wall,
+.mj-center--compact .mj-center__compact-clock {
+  font-size: 11px;
+  line-height: 1.2;
+}
+.mj-center--compact .mj-center__body {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+.mj-center--compact .mj-center__dial {
+  width: 90px;
+  height: 90px;
+}
+.mj-center--compact .mj-center__value {
+  font-size: 28px;
+}
+.mj-center--compact .mj-center__side {
+  flex: 0 0 auto;
+  max-width: none;
 }
 </style>
