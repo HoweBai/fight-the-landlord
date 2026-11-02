@@ -88,6 +88,8 @@ describe('麻将主题源码闸', () => {
       'table-light',
       'table-mid',
       'table-deep',
+      'panel',
+      'panel-light',
       'navy',
       'glass',
       'gold',
@@ -98,5 +100,7 @@ describe('麻将主题源码闸', () => {
     ]) {
       expect(s).toContain(`$ftl-color-mj-${t}:`);
     }
+    expect(s).toContain('$ftl-font-mj-badge:');
+    expect(s).toContain('$ftl-font-mj-mini:');
   });
 });

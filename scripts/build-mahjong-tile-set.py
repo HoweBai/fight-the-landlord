@@ -7,7 +7,7 @@
 依赖：Pillow、numpy（见 scripts/assets/mahjong/requirements.txt）。
 生成结果入库；本脚本不参与构建。
 """
-from PIL import Image
+from PIL import Image, ImageOps
 import hashlib
 import json
 import os
@@ -24,22 +24,30 @@ SOURCE_COMMIT = "26e127ba2117f45cdce5ea0225748cc0cfad3169"
 
 
 def composed(stem: str) -> Image.Image:
-    """空白牌面 + 字形，保持 600x800 画布。"""
+    """冷白牌面 + 字形，保持 600x800 画布。"""
     front = Image.open(os.path.join(SRC, "Front.png")).convert("RGBA")
+    gray = ImageOps.grayscale(front)
+    face = ImageOps.colorize(
+        gray,
+        black=(190, 195, 205),
+        mid=(232, 236, 241),
+        white=(240, 244, 250),
+    ).convert("RGBA")
+    face.putalpha(front.split()[3])
     glyph = Image.open(os.path.join(SRC, f"{stem}.png")).convert("RGBA")
-    return Image.alpha_composite(front, glyph)
+    return Image.alpha_composite(face, glyph)
 
 
-def navy_back() -> Image.Image:
-    """红牌背 → 海军蓝，保留源图透明圆角与立体高光。"""
+def royal_back() -> Image.Image:
+    """红牌背 → 亮宝蓝（灰度着色），保留源图透明圆角与立体高光。"""
     back = Image.open(os.path.join(SRC, "Back.png")).convert("RGBA")
-    hsv = back.convert("HSV")
-    h, s, v = hsv.split()
-    h = ((np.array(h, dtype=np.int16) + 170) % 256).astype("uint8")
-    hue = Image.merge("HSV", (Image.fromarray(h), s, v)).convert("RGBA")
-    navy = Image.new("RGBA", hue.size, (27, 41, 80, 255))
-    rgb = Image.blend(hue.convert("RGB"), navy.convert("RGB"), 0.38)
-    out = rgb.convert("RGBA")
+    gray = ImageOps.grayscale(back)
+    out = ImageOps.colorize(
+        gray,
+        black=(35, 55, 100),
+        mid=(91, 126, 192),
+        white=(160, 178, 214),
+    ).convert("RGBA")
     out.putalpha(back.split()[3])
     return out
 
@@ -66,7 +74,7 @@ def main() -> None:
         for stem, suit in SUITS.items()
         for rank in range(1, 10)
     }
-    back = navy_back()
+    back = royal_back()
     files = []
     for direction, angle in ANGLES.items():
         out_dir = os.path.join(OUT, direction)

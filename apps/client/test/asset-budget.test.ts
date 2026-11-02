@@ -39,7 +39,7 @@ const BUDGET_KIB = {
   'table/av': 160, // 实测 136（2026-10-12 第二批头像素材）
   'table/audio': 2048, // 实测 ~1868（斗地主/跑得快 63 条 + 麻将 11 条；2026-10-28 麻将 T11，48kbps 单声道）
   'table/ui': 400, // 实测 ~329（bg_table）
-  'table/mahjong': 768, // 实测 ~585（FluffyStuff 112 张 64 色量化 + manifest）
+  'table/mahjong': 768, // 实测 ~529（FluffyStuff 112 张 64 色量化 + manifest）
   // —— 主包 ——
   'main/ui': 768, // 实测 ~574（登录/大厅/共用 UI；牌桌专用图已移分包）
   'main/audio': 320, // 实测 ~260（仅大厅 BGM MusicEx_Welcome）

@@ -107,3 +107,64 @@ describe('麻将素材完整性', () => {
     }
   });
 });
+
+async function imageData(path: string) {
+  const img = await loadImage(readFileSync(path));
+  const canvas = createCanvas(img.width, img.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return { ...ctx.getImageData(0, 0, img.width, img.height), width: img.width, height: img.height };
+}
+
+
+
+describe('麻将素材色温（天月对齐 v2）', () => {
+  it('牌面：冷白（低饱和亮像素 228–250、B≥G≥R、B-R≥3）', async () => {
+    const { data, width, height } = await imageData(join(ROOT, 'my/wan-1.png'));
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const i = (y * width + x) * 4;
+        const R = data[i]!, G = data[i + 1]!, B = data[i + 2]!, A = data[i + 3]!;
+        const sat = Math.max(R, G, B) - Math.min(R, G, B);
+        const bright = (R + G + B) / 3;
+        if (A > 200 && sat < 18 && bright > 225) {
+          r += R; g += G; b += B; n += 1;
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(100);
+    const ar = r / n, ag = g / n, ab = b / n;
+    expect(ar).toBeGreaterThanOrEqual(228);
+    expect(ar).toBeLessThanOrEqual(250);
+    expect(ab).toBeGreaterThanOrEqual(ag);
+    expect(ag).toBeGreaterThanOrEqual(ar);
+    expect(ab - ar).toBeGreaterThanOrEqual(3);
+
+  });
+
+  it('牌背：亮宝蓝（中心 R≥70/G≥100/|B-181|≤15）', async () => {
+    const { data, width, height } = await imageData(join(ROOT, 'my/back.png'));
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = Math.floor(height * 0.2); y < height * 0.8; y += 4) {
+      for (let x = Math.floor(width * 0.2); x < width * 0.8; x += 4) {
+        const i = (y * width + x) * 4;
+        if (data[i + 3]! < 200) continue;
+        r += data[i]!; g += data[i + 1]!; b += data[i + 2]!; n += 1;
+      }
+    }
+    expect(n).toBeGreaterThan(100);
+    expect(r / n).toBeGreaterThanOrEqual(70);
+    expect(g / n).toBeGreaterThanOrEqual(100);
+    expect(Math.abs(b / n - 181)).toBeLessThanOrEqual(15);
+  });
+
+  it('牌面四角 alpha=0（my/top）', async () => {
+    for (const dir of ['my', 'top']) {
+      const { data, width, height } = await imageData(join(ROOT, dir, 'wan-1.png'));
+      for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
+        expect(data[(y! * width + x!) * 4 + 3]).toBe(0);
+      }
+    }
+  });
+});

@@ -12,7 +12,7 @@ Spec：`docs/superpowers/specs/2026-11-02-mahjong-tianyue-align-v2-design.md`（
 - **token 纪律**：组件样式只用 `$ftl-*`；不写裸 hex；描边 `$ftl-hairline`；新增 `$ftl-font-mj-badge: 18px` / `$ftl-font-mj-mini: 14px` 作为登记例外。
 - **川麻语义**：中央四家数字是**杠分/临时分投影**（`pendingScoreChanges`），不是完整局分/钱包余额；spec/handoff 必须标注。
 - **不做角色立绘**：头像仍 `default.png`。
-- **素材**：灰度 colorize（冷白/宝蓝），64 色量化；生成结果入库；目标约 390–490KiB。
+- **素材**：灰度 colorize（冷白/宝蓝），64 色量化；生成结果入库；实测约 529KiB。
 - **命令**：用显式文件路径 `pnpm -C apps/client exec vitest run test/<file>.test.ts`，不用 `test -- <filter>`。
 - **提交**：每任务一个 commit，attribution 行照旧。
 
@@ -51,7 +51,7 @@ it('牌面四角 alpha=0（my/top）', async () => { ... });
 - `from PIL import Image, ImageOps`。
 - `composed()`：`grayscale(Front)` → `colorize(black=(190,195,205), mid=(232,236,241), white=(240,244,250))` → `putalpha(front.alpha)` → 叠字形。
 - `royal_back()`（替换 `navy_back()`）：`grayscale(Back)` → `colorize(black=(35,55,100), mid=(91,126,192), white=(160,178,214))` → `putalpha(back.alpha)`。
-- 运行脚本；manifest 更新；实测约 390–490KiB。
+- 运行脚本；manifest 更新；实测约 529KiB。
 - NOTICE 修改描述加“灰度着色、冷白/宝蓝”。
 
 ### Step 1.4：跑绿
@@ -294,7 +294,7 @@ const base = { wallCount: 42, phaseText: '请出牌', seconds: 12, active: true,
 | L5 0.95W 只是上限 | 低 | 成立 | 加 1334×750 width=1256/s=1 |
 | L6 公式自证 | 低 | 成立 | 源闸 + CDP 量高 |
 | L7 layout 头注释 | 低 | 成立 | 同步 0.95W/新位置 |
-| L8 体积数字 | 低 | 成立 | 改 390–490KiB（生成后实测） |
+| L8 体积数字 | 低 | 成立 | 改约 529KiB（实测） |
 | L9 定向命令不生效 | 低 | 成立 | 改显式文件路径 |
 | L10 缺计划审查记录/v1 状态/版本断言 | 低 | 成立 | 本节 + v1 状态已加注 + pack 后 grep |
 | L11 Center strip 30→28 | 低 | 成立 | 显式 28 + 源闸 |

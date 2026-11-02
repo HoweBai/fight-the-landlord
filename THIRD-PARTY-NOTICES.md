@@ -49,7 +49,7 @@ recorded license. Their terms are unknown; they are not covered by the root
   1–9 牌面与牌背）
   由 **FluffyStuff/riichi-mahjong-tiles**（CC0 1.0 公有领域，commit
   `26e127ba2117f45cdce5ea0225748cc0cfad3169`）的 `Export/Regular/Front.png` +
-  Man/Pin/Sou 1–9 字形 + `Back.png` 合成，经旋转/缩放/改色/64 色量化生成；脚本
+  Man/Pin/Sou 1–9 字形 + `Back.png` 合成，经旋转/缩放/冷白/宝蓝灰度着色/64 色量化生成；脚本
   `scripts/build-mahjong-tile-set.py`；源图 vendored 在
   `scripts/assets/mahjong/fluffystuff/`（含 `LICENSE.md`）。
 - `apps/client/src/pages/table/static/audio/Mj_*.mp3`（11 条麻将音效/BGM）。
