@@ -290,9 +290,17 @@ export class AgentAccountsService {
         Record<string, unknown>
       >;
       if (rows.length === 0) throw new DomainError(ErrCode.BAD_PARAM, '代理不存在');
-      const code = await this.invite.rotate(manager, id);
-      await this.audit(manager, actor, 'agent.invite.rotate', id, null, { code }, null);
-      return { code };
+      const rotated = await this.invite.rotate(manager, id);
+      await this.audit(
+        manager,
+        actor,
+        'agent.invite.rotate',
+        id,
+        null,
+        { revoked: rotated.revoked, codeTail: rotated.code.slice(-2) },
+        null,
+      );
+      return { code: rotated.code };
     });
   }
 

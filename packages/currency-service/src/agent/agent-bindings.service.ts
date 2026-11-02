@@ -5,6 +5,7 @@ import { DomainError } from '../http/errors';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentSettingsService } from './agent-settings.service';
 import { AgentInviteService } from './agent-invite.service';
+import { affectedRowsOf } from './agent-sql.util';
 import { hmacPhone, maskPhone, normalizePhone, toDate } from './agent.util';
 
 const BIND_INSERT_IGNORE_SQL =
@@ -50,14 +51,6 @@ export interface BindingRow {
 
 export const AGENT_BULK_REBIND_MAX = 5_000;
 
-function affectedRowsOf(result: unknown, context: string): number {
-  const n = (result as { affectedRows?: unknown } | null)?.affectedRows;
-  if (typeof n !== 'number' || !Number.isInteger(n)) {
-    throw new Error(`${context}：驱动未返回 affectedRows（收到 ${JSON.stringify(result)}）`);
-  }
-  return n;
-}
-
 /**
  * 玩家归属（spec §5.2/§5.3）。
  *
@@ -89,7 +82,7 @@ export class AgentBindingsService {
         return { status: 'ignored' as const };
       }
       const resolved = await this.invite.resolve(manager, input.code);
-      if (resolved === null || resolved.status !== 'active') {
+      if (resolved === null || resolved.agentStatus !== 'active') {
         throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
       }
       const phoneHash = hmacPhone(normalizePhone(input.phone));

@@ -147,7 +147,7 @@ function makeService(db: ReturnType<typeof makeDb>) {
   } as unknown as AgentSettingsService;
   const invite = {
     createFor: vi.fn(async () => 'CODE1234'),
-    rotate: vi.fn(async () => 'NEWCODE1'),
+    rotate: vi.fn(async () => ({ code: 'NEWCODE1', revoked: 0 })),
   } as unknown as AgentInviteService;
   const svc = new AgentAccountsService(
     db.dataSource as unknown as DataSource,

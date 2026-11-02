@@ -132,7 +132,7 @@ function makeService(
   const invite = {
     resolve: vi.fn(async () =>
       opts.resolved === undefined
-        ? { agentId: 'a', agentName: '代理甲', status: 'active' }
+        ? { agentId: 'a', agentName: '代理甲', agentStatus: 'active', codeStatus: 'active' }
         : opts.resolved,
     ),
   } as unknown as AgentInviteService;
@@ -169,7 +169,10 @@ describe('AgentBindingsService：注册绑定', () => {
   });
 
   it('码无效 / 代理冻结 ⇒ AGENT_INVITE_INVALID', async () => {
-    for (const resolved of [null, { agentId: 'a', agentName: 'A', status: 'frozen' }]) {
+    for (const resolved of [
+      null,
+      { agentId: 'a', agentName: 'A', agentStatus: 'frozen', codeStatus: 'active' },
+    ]) {
       const db = makeDb();
       const { svc } = makeService(db, { resolved });
       await expect(
