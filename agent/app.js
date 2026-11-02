@@ -575,6 +575,81 @@ async function cancelSettlement() {
 
 /* ── 我的 ─────────────────────────────────────────────────────── */
 
+const INVITE_STATUS_TEXT = { active: '未使用', used: '已使用', revoked: '已失效' };
+let inviteCodes = [];
+
+function renderInviteSection(a) {
+  const banner = $('invite-status');
+  if (banner) {
+    if (a.settingsEnabled === false) banner.textContent = '代理模块未开放，暂不可生成邀请码。';
+    else if (a.inviteEnabled === false) banner.textContent = '邀请码功能当前未开放。';
+    else if (a.required === true) banner.textContent = '必填中：新用户注册必须填写有效邀请码。';
+    else banner.textContent = '选填中：新用户可选择填写邀请码。';
+  }
+  const genBtn = $('invite-gen-btn');
+  if (genBtn) genBtn.disabled = a.inviteEnabled === false || a.settingsEnabled === false;
+  void loadInviteCodes();
+}
+
+async function loadInviteCodes() {
+  const filter = $('invite-status-filter')?.value ?? '';
+  const qs = filter === '' ? '' : `?status=${encodeURIComponent(filter)}`;
+  const res = await api(`/api/agent/invite-codes${qs}`);
+  if (maybeMustChange(res)) return;
+  if (res.status !== 200 || !res.body?.data) return handleError(res, '加载邀请码失败');
+  inviteCodes = res.body.data.rows ?? [];
+  const box = $('invite-list');
+  if (!box) return;
+  box.textContent = '';
+  if (inviteCodes.length === 0) {
+    box.append(el('p', 'hint', '暂无可用邀请码，请生成或联系管理员。'));
+    return;
+  }
+  for (const row of inviteCodes) {
+    const line = el('div', 'line');
+    line.append(
+      el('span', 'mono', String(row.code)),
+      document.createTextNode(`　${INVITE_STATUS_TEXT[row.status] ?? row.status}　${fmtTime(row.createdAt)}`),
+    );
+    if (row.usedAt) line.append(document.createTextNode(`　使用：${fmtTime(row.usedAt)}`));
+    if (row.status === 'active') {
+      const copy = btn('复制', 'btn small');
+      copy.addEventListener('click', () => copyText(String(row.code)));
+      line.append(copy);
+    }
+    box.append(line);
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard?.writeText(text);
+    showToast('已复制');
+  } catch {
+    showToast('复制失败，请手动选择');
+  }
+}
+
+async function generateInviteCodes() {
+  const count = Number($('invite-gen-count')?.value ?? 1);
+  const res = await api('/api/agent/invite-codes', {
+    method: 'POST',
+    body: JSON.stringify({ count }),
+  });
+  if (maybeMustChange(res)) return;
+  if (res.status !== 200) return handleError(res, '生成邀请码失败');
+  const generated = res.body?.data?.codes?.length ?? 0;
+  showToast(`已生成 ${generated} 枚邀请码`);
+  await loadInviteCodes();
+  await loadMe();
+}
+
+async function copyAllActiveCodes() {
+  const active = inviteCodes.filter((r) => r.status === 'active').map((r) => String(r.code));
+  if (active.length === 0) return showToast('暂无未使用邀请码');
+  await copyText(active.join('\n'));
+}
+
 async function loadMe() {
   const res = await api('/api/agent/me');
   if (maybeMustChange(res)) return;
@@ -597,12 +672,16 @@ async function loadMe() {
     ),
   );
   box.append(el('p', 'hint', '收款信息只能由平台管理员修改；门户仅展示脱敏结果。'));
+  renderInviteSection(a);
 }
 
 /* ── 接线 / 启动 ──────────────────────────────────────────────── */
 
 function wire() {
   $('login-form').addEventListener('submit', login);
+  $('invite-gen-btn')?.addEventListener('click', generateInviteCodes);
+  $('invite-copy-all')?.addEventListener('click', copyAllActiveCodes);
+  $('invite-status-filter')?.addEventListener('change', loadInviteCodes);
   $('change-password-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     submitPasswordChange('cp-old', 'cp-new', 'cp-confirm', 'cp-error');

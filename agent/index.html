@@ -116,6 +116,34 @@
 
       <main id="tab-me" class="tab-panel" hidden>
         <div id="me-body" class="card"></div>
+        <section id="me-invite-card" class="card">
+          <h2 class="card-title">邀请码（一次性）</h2>
+          <p id="invite-status" class="hint"></p>
+          <div class="filter-bar">
+            <label class="field" for="invite-gen-count">
+              <span class="field-label">生成数量</span>
+              <select id="invite-gen-count">
+                <option value="1">1</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <button id="invite-gen-btn" type="button" class="btn primary">生成</button>
+            <button id="invite-copy-all" type="button" class="btn">复制全部未使用</button>
+            <label class="field" for="invite-status-filter">
+              <span class="field-label">状态</span>
+              <select id="invite-status-filter">
+                <option value="">全部</option>
+                <option value="active">未使用</option>
+                <option value="used">已使用</option>
+                <option value="revoked">已失效</option>
+              </select>
+            </label>
+          </div>
+          <div id="invite-list"></div>
+        </section>
         <form id="me-password-form" class="card">
           <h2 class="card-title">修改密码</h2>
           <p class="hint">修改成功后所有登录状态立即失效，需要重新登录。</p>

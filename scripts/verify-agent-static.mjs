@@ -131,6 +131,13 @@ for (const id of [
   'settlements-next',
   'settlements-page-info',
   'me-body',
+  'me-invite-card',
+  'invite-status',
+  'invite-gen-count',
+  'invite-gen-btn',
+  'invite-copy-all',
+  'invite-status-filter',
+  'invite-list',
   'me-password-form',
   'me-old',
   'me-new',
@@ -151,6 +158,7 @@ for (const needle of [
   '/api/agent/players',
   '/api/agent/commissions',
   '/api/agent/settlements',
+  '/api/agent/invite-codes',
 ]) {
   ok(app.includes(needle), `app.js 含 API 路径 ${JSON.stringify(needle)}`);
 }
