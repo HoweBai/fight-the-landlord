@@ -414,6 +414,22 @@ export class ConfigCacheService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
+   * 代理邀请码入口开关（第 101 键 `agent.inviteEnabled`，种子 false；严格 boolean）。
+   * 缺失 / 类型漂移 / 快照整体不可用 ⇒ false。
+   */
+  agentInviteEnabled(): boolean {
+    return this.snapshot?.['agent.inviteEnabled']?.value === true;
+  }
+
+  /**
+   * 代理邀请码必填开关（第 102 键 `agent.inviteRequired`，种子 false；严格 boolean）。
+   * 缺失 / 类型漂移 / 快照整体不可用 ⇒ false（fail-open：配置面不确定时不阻断注册）。
+   */
+  agentInviteRequired(): boolean {
+    return this.snapshot?.['agent.inviteRequired']?.value === true;
+  }
+
+  /**
    * 设备记录保留天数（第 25 键，种子 365；int、`1 ≤ n ≤ 3650`）。
    * 消费方（`DevicesCleanupService`）在**每一轮开始时**重读本方法 ⇒「改了下一轮生效」。
    */

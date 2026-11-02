@@ -31,6 +31,8 @@ describe('AuthService（§5.1 / §7.2）', () => {
   let configCache: {
     signupGrant: ReturnType<typeof vi.fn>;
     deviceBindingEnabled: ReturnType<typeof vi.fn>;
+    agentInviteEnabled: ReturnType<typeof vi.fn>;
+    agentInviteRequired: ReturnType<typeof vi.fn>;
   };
   /** 货币客户端假件（货币片 T6：`currency.apply` 的发送点）。 */
   let currency: {
@@ -54,6 +56,8 @@ describe('AuthService（§5.1 / §7.2）', () => {
     configCache = {
       signupGrant: vi.fn(() => 0),
       deviceBindingEnabled: vi.fn(() => false),
+      agentInviteEnabled: vi.fn(() => false),
+      agentInviteRequired: vi.fn(() => false),
     };
     currency = {
       apply: vi.fn(async () => ({ opId: 1, actionId: 'x', entries: [], replayed: false })),
@@ -173,6 +177,60 @@ describe('AuthService（§5.1 / §7.2）', () => {
           inviteCode: 'ABCD2345',
         } as any);
         expect(res.accessToken).toBeTruthy();
+      }
+    });
+
+    it('必填开 + 缺码 ⇒ 11006 请填写邀请码，且不建用户/不发赠币/不调 agent.bind', async () => {
+      configCache.agentInviteEnabled.mockReturnValue(true);
+      configCache.agentInviteRequired.mockReturnValue(true);
+      configCache.signupGrant.mockReturnValue(100);
+      await expect(
+        service.register({ phone: '13800000060', password: 'passw0rd', nickname: '阿豆' } as any),
+      ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '请填写邀请码' });
+      expect(currency.agentBind).not.toHaveBeenCalled();
+      expect(currency.apply).not.toHaveBeenCalled();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('必填开 + 空白串 ⇒ 同上', async () => {
+      configCache.agentInviteEnabled.mockReturnValue(true);
+      configCache.agentInviteRequired.mockReturnValue(true);
+      await expect(
+        service.register({ phone: '13800000061', password: 'passw0rd', nickname: '阿豆', inviteCode: '   ' } as any),
+      ).rejects.toMatchObject({ code: ErrCode.AGENT_INVITE_INVALID, message: '请填写邀请码' });
+    });
+
+    it('必填关 / 入口关 ⇒ 缺码照常注册', async () => {
+      for (const flags of [
+        { enabled: true, required: false },
+        { enabled: false, required: true },
+        { enabled: false, required: false },
+      ]) {
+        configCache.agentInviteEnabled.mockReturnValue(flags.enabled);
+        configCache.agentInviteRequired.mockReturnValue(flags.required);
+        const res = await service.register({
+          phone: `138000000${62 + Number(flags.enabled)}${Number(flags.required)}` as any,
+          password: 'passw0rd',
+          nickname: '阿豆',
+        } as any);
+        expect(res.accessToken).toBeTruthy();
+      }
+    });
+
+    it('必填开 + agent.bind ignored(reason) ⇒ 注册成功且日志带 reason', async () => {
+      configCache.agentInviteEnabled.mockReturnValue(true);
+      configCache.agentInviteRequired.mockReturnValue(true);
+      currency.agentBind.mockResolvedValueOnce({ status: 'ignored', reason: 'settings_disabled' });
+      const { sink, records } = createCapturingSink();
+      Logger.overrideLogger(createRedactingLogger(sink, { service: 'user-service' }));
+      try {
+        const res = await service.register({
+          phone: '13800000070', password: 'passw0rd', nickname: '阿豆', inviteCode: 'ABCD2345',
+        } as any);
+        expect(res.accessToken).toBeTruthy();
+        expect(records.some((r) => r.msg.includes('settings_disabled'))).toBe(true);
+      } finally {
+        Logger.overrideLogger(false as never);
       }
     });
   });

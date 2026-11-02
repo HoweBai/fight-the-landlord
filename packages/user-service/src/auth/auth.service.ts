@@ -79,14 +79,25 @@ export class AuthService {
     // ⚠️ 绑定写在用户行之前：若后续 grant/落库失败，可能留下孤儿绑定（uuid 永不复用；
     //   日志/指标留痕，管理员可清理）—— 换取「注册成功必有归属」的确定性。
     const inviteCode = typeof dto.inviteCode === 'string' ? dto.inviteCode.trim().toUpperCase() : '';
+    // 代理分润（2026-11-03）：必填 = 入口开 && 必填开；空码在进入货币服务之前拒绝。
+    const inviteRequired =
+      this.configCache.agentInviteEnabled() && this.configCache.agentInviteRequired();
+    if (inviteRequired && inviteCode.length === 0) {
+      throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '请填写邀请码');
+    }
     if (inviteCode.length > 0) {
       try {
-        await this.currencyClient.agentBind({
+        const bind = await this.currencyClient.agentBind({
           ownerId: userId,
           code: inviteCode,
           phone: dto.phone,
           source: 'signup',
         });
+        if (bind.status === 'ignored' && inviteRequired) {
+          this.logger.warn(
+            `agent bind ignored while invite required (userId=${userId}, reason=${bind.reason ?? 'unknown'})`,
+          );
+        }
       } catch (err) {
         if (err instanceof CurrencyServiceError && err.code === ErrCode.AGENT_INVITE_INVALID) {
           throw new DomainError(ErrCode.AGENT_INVITE_INVALID, err.message);
