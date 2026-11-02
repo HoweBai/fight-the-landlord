@@ -9,6 +9,13 @@ export const userRegistrationsTotal: ReturnType<typeof createCounter> = createCo
   '注册成功计数（账号创建且绑定闸通过后的成功返回点；失败路径不计）。',
 );
 
+/** 注册失败计数（2026-11-03；reason 固定枚举，防标签基数漂移）。 */
+export const userRegistrationFailuresTotal: ReturnType<typeof createCounter> = createCounter(
+  'user_registration_failures_total',
+  '注册失败计数（reason = invite_missing/invite_invalid/phone_taken/rate_limited/upstream/db）。',
+  ['reason'],
+);
+
 export const playersTotal: ReturnType<typeof createGauge> = createGauge(
   'players_total',
   '玩家账号总数（统计任务每 5 分钟覆盖写）。',

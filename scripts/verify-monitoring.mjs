@@ -103,11 +103,13 @@ const EXPECTED_ALERTS = [
   'RecordsReconcileMismatch', 'RecordsReconcileOrphanOps', 'RecordsReconcileStalled',
   // C3（2026-10-28）：资金异常三条（数量 38→41；41 条 = 38 类）。
   'RiskFundScanQueryFailures', 'RiskFundScanStalled', 'RiskFundHitsHigh',
+  // 2026-11-03：代理邀请码三条（数量 41→44；44 条 = 41 类）。
+  'AgentBindIgnoredConfigUnavailable', 'AgentInviteMissingSpike', 'AgentInviteGeneratedSpike',
 ];
 const alertText = readFileSync(ALERT_FILE, 'utf8')
   .split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
 const alertRaw = readFileSync(ALERT_FILE, 'utf8');
-ok(alertRaw.includes('**41 条**') && alertRaw.includes('41 条 = 38 类'), '告警头注释为 41 条 / 38 类');
+ok(alertRaw.includes('**44 条**') && alertRaw.includes('44 条 = 41 类'), '告警头注释为 44 条 / 41 类');
 const alertNames = [...alertText.matchAll(/^\s*-\s+alert:\s*(\S+)/gm)].map((m) => m[1]);
 ok(alertNames.length === EXPECTED_ALERTS.length, `告警规则恰 ${EXPECTED_ALERTS.length} 条（实测 ${alertNames.length}）`);
 ok(
@@ -138,6 +140,10 @@ const ALERT_PREDICATES = {
   RiskFundScanQueryFailures: ['max_over_time(risk_fund_scan_round_failures', '> 0'],
   RiskFundScanStalled: ['max_over_time(risk_fund_scan_last_success_timestamp_seconds', '> 7200'],
   RiskFundHitsHigh: ['max_over_time(risk_fund_scan_hit_users', '> 10'],
+  // 2026-11-03：代理邀请码三条（全局指标，无 game_type）。
+  AgentBindIgnoredConfigUnavailable: ['agent_bind_ignored_total{reason="config_unavailable"}', '> 0'],
+  AgentInviteMissingSpike: ['user_registration_failures_total{reason="invite_missing"}', '> 20'],
+  AgentInviteGeneratedSpike: ['agent_invite_generated_total', '> 500'],
 };
 /** 无 `game_type` 标签的全局告警（进程级「最近成功」/全局 gauge/按 scope 的失败面）。 */
 const GLOBAL_ALERTS = new Set([
@@ -145,6 +151,9 @@ const GLOBAL_ALERTS = new Set([
   'RiskFundScanQueryFailures',
   'RiskFundScanStalled',
   'RiskFundHitsHigh',
+  'AgentBindIgnoredConfigUnavailable',
+  'AgentInviteMissingSpike',
+  'AgentInviteGeneratedSpike',
 ]);
 for (const [name, needles] of Object.entries(ALERT_PREDICATES)) {
   const block = new RegExp(`- alert: ${name}[\\s\\S]*?(?=\\n\\s*- alert:|$)`).exec(alertText)?.[0] ?? '';

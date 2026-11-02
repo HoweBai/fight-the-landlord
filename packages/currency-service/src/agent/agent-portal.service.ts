@@ -6,6 +6,7 @@ import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentInviteService } from './agent-invite.service';
 import { AgentSettingsService } from './agent-settings.service';
 import { AGENT_INVITE_BATCH_MAX, AGENT_INVITE_DAILY_MAX } from './agent.constants';
+import { agentInviteGeneratedTotal, agentInviteRejectedTotal } from './agent.metrics';
 import { AgentSettlementService, type SettlementLine, type SettlementRow } from './agent-settlement.service';
 import { AgentUserClient } from './agent-user.client';
 import { toDate, toSafeInt } from './agent.util';
@@ -185,9 +186,11 @@ export class AgentPortalService {
    */
   async generateInviteCodes(agentId: string, count: number): Promise<{ codes: string[] }> {
     if (!Number.isInteger(count) || count < 1 || count > AGENT_INVITE_BATCH_MAX) {
+      agentInviteRejectedTotal.inc({ reason: 'count_invalid' });
       throw new DomainError(ErrCode.BAD_PARAM, '生成数量须为 1–50');
     }
     if (!this.config.hasSnapshot() || !this.config.agentInviteEnabled()) {
+      agentInviteRejectedTotal.inc({ reason: 'feature_off' });
       throw new DomainError(ErrCode.FORBIDDEN, '邀请码功能未开放');
     }
     return this.dataSource.transaction(async (manager) => {
@@ -195,20 +198,29 @@ export class AgentPortalService {
         'SELECT `status` FROM `agent_accounts` WHERE `id` = ? FOR UPDATE',
         [agentId],
       )) as Array<Record<string, unknown>>;
-      if (rows.length === 0) throw new DomainError(ErrCode.BAD_PARAM, '代理不存在');
+      if (rows.length === 0) {
+        agentInviteRejectedTotal.inc({ reason: 'agent_missing' });
+        throw new DomainError(ErrCode.BAD_PARAM, '代理不存在');
+      }
       if (String(rows[0]!.status) !== 'active') {
+        agentInviteRejectedTotal.inc({ reason: 'frozen' });
         throw new DomainError(ErrCode.AGENT_FROZEN, '代理已被冻结');
       }
       const settings = await this.settings.getOrDefault(manager);
-      if (!settings.enabled) throw new DomainError(ErrCode.FORBIDDEN, '代理模块未开放');
+      if (!settings.enabled) {
+        agentInviteRejectedTotal.inc({ reason: 'module_off' });
+        throw new DomainError(ErrCode.FORBIDDEN, '代理模块未开放');
+      }
       const today = (await manager.query(
         'SELECT COUNT(*) AS `cnt` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `created_at` >= CURDATE()',
         [agentId],
       )) as Array<Record<string, unknown>>;
       if (Number(today[0]?.cnt ?? 0) + count > AGENT_INVITE_DAILY_MAX) {
+        agentInviteRejectedTotal.inc({ reason: 'daily_cap' });
         throw new DomainError(ErrCode.BAD_PARAM, '今日生成数量已达上限');
       }
       const codes = await this.invite.createMany(manager, agentId, count);
+      agentInviteGeneratedTotal.inc(codes.length);
       return { codes };
     });
   }

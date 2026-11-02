@@ -4,7 +4,7 @@ import { randomUUID, createHash } from 'crypto';
 import type { Redis } from 'ioredis';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { UsersRepository } from '../users/users.repository';
-import { userRegistrationsTotal } from '../metrics/player.metrics';
+import { userRegistrationsTotal, userRegistrationFailuresTotal } from '../metrics/player.metrics';
 import { RegisterDto, LoginDto } from '../users/users.dto';
 import { TokenService, type TokenPair, REDIS } from './token.service';
 import { DomainError } from '../http/errors';
@@ -89,6 +89,7 @@ export class AuthService {
     try {
       const ok = await this.redis.set(key, token, 'PX', 10_000, 'NX');
       if (ok !== 'OK') {
+        userRegistrationFailuresTotal.inc({ reason: 'rate_limited' });
         throw new DomainError(ErrCode.RATE_LIMITED, '操作太频繁，请稍后再试');
       }
     } catch (err) {
@@ -112,7 +113,10 @@ export class AuthService {
 
   private async registerLocked(dto: RegisterDto): Promise<AuthResult> {
     const existing = await this.usersRepo.findByPhone(dto.phone);
-    if (existing) throw new DomainError(ErrCode.PHONE_TAKEN, '手机号已注册');
+    if (existing) {
+      userRegistrationFailuresTotal.inc({ reason: 'phone_taken' });
+      throw new DomainError(ErrCode.PHONE_TAKEN, '手机号已注册');
+    }
 
     const userId = randomUUID();
     // 代理分润（2026-10-26）：邀请码绑定 **先于** signup grant / 落库（fail-closed）。
@@ -126,6 +130,7 @@ export class AuthService {
     const inviteRequired =
       this.configCache.agentInviteEnabled() && this.configCache.agentInviteRequired();
     if (inviteRequired && inviteCode.length === 0) {
+      userRegistrationFailuresTotal.inc({ reason: 'invite_missing' });
       throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '请填写邀请码');
     }
     if (inviteCode.length > 0) {
@@ -143,10 +148,12 @@ export class AuthService {
         }
       } catch (err) {
         if (err instanceof CurrencyServiceError && err.code === ErrCode.AGENT_INVITE_INVALID) {
+          userRegistrationFailuresTotal.inc({ reason: 'invite_invalid' });
           throw new DomainError(ErrCode.AGENT_INVITE_INVALID, err.message);
         }
         const reason = err instanceof CurrencyServiceError ? `code=${err.code}` : String(err);
         this.logger.warn(`agent bind failed (userId=${userId}): ${reason}`);
+        userRegistrationFailuresTotal.inc({ reason: 'upstream' });
         throw new DomainError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
       }
     }
@@ -162,17 +169,24 @@ export class AuthService {
       } catch (err) {
         const reason = err instanceof CurrencyServiceError ? `code=${err.code}` : String(err);
         this.logger.warn(`signup grant failed (userId=${userId}): ${reason}`);
+        userRegistrationFailuresTotal.inc({ reason: 'upstream' });
         throw new DomainError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
       }
     }
 
-    const user = await this.usersRepo.create({
-      id: userId,
-      phone: dto.phone,
-      passwordHash: await bcrypt.hash(dto.password, this.saltRounds),
-      nickname: dto.nickname.trim(),
-      status: 'active' as const,
-    });
+    let user: Awaited<ReturnType<UsersRepository['create']>>;
+    try {
+      user = await this.usersRepo.create({
+        id: userId,
+        phone: dto.phone,
+        passwordHash: await bcrypt.hash(dto.password, this.saltRounds),
+        nickname: dto.nickname.trim(),
+        status: 'active' as const,
+      });
+    } catch (err) {
+      userRegistrationFailuresTotal.inc({ reason: 'db' });
+      throw err;
+    }
     // 设备绑定片：新 userId 不可能已有绑定行 ⇒ 有 deviceId 即静默首绑（开关关则零操作）；
     // 放在签 token 之前——绑定闸不过不发令牌。
     await this.enforceDeviceBinding(user.id, dto.deviceId);

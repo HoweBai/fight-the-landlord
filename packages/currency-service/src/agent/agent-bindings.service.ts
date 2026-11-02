@@ -6,6 +6,7 @@ import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentSettingsService } from './agent-settings.service';
 import { AgentInviteService, normalizeInviteCode } from './agent-invite.service';
 import { affectedRowsOf } from './agent-sql.util';
+import { agentBindIgnoredTotal, agentInviteConsumedTotal } from './agent.metrics';
 import { hmacPhone, maskPhone, normalizePhone, toDate } from './agent.util';
 
 const BIND_INSERT_IGNORE_SQL =
@@ -90,18 +91,21 @@ export class AgentBindingsService {
     return this.dataSource.transaction(async (manager) => {
       const settings = await this.settings.getOrDefault(manager);
       if (!settings.enabled) {
+        agentBindIgnoredTotal.inc({ reason: 'settings_disabled' });
         return { status: 'ignored' as const, reason: 'settings_disabled' as const };
       }
       if (!this.config.hasSnapshot()) {
+        agentBindIgnoredTotal.inc({ reason: 'config_unavailable' });
         return { status: 'ignored' as const, reason: 'config_unavailable' as const };
       }
       if (!this.config.agentInviteEnabled()) {
+        agentBindIgnoredTotal.inc({ reason: 'invite_disabled' });
         return { status: 'ignored' as const, reason: 'invite_disabled' as const };
       }
 
       const resolved = await this.invite.resolve(manager, input.code);
       if (resolved === null) {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+        this.invalid('邀请码无效', 'invalid');
       }
 
       // 幂等预检：同一 ownerId 重试不消费新码（RR 快照读；下面的 INSERT IGNORE 兜底）。
@@ -110,9 +114,10 @@ export class AgentBindingsService {
       >;
       if (existing.length > 0) {
         if (String(existing[0]!.agent_id) === resolved.agentId) {
+          agentInviteConsumedTotal.inc({ result: 'already_bound' });
           return { status: 'already_bound' as const };
         }
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+        this.invalid('邀请码无效', 'invalid');
       }
 
       // 锁序 agent → code → binding（与 rotate/冻结/管理改绑一致，无反向环）。
@@ -120,7 +125,7 @@ export class AgentBindingsService {
         Record<string, unknown>
       >;
       if (agentRows.length === 0 || String(agentRows[0]!.status) !== 'active') {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+        this.invalid('邀请码无效', 'invalid');
       }
 
       const normalized = normalizeInviteCode(input.code);
@@ -129,14 +134,14 @@ export class AgentBindingsService {
         resolved.agentId,
       ])) as Array<Record<string, unknown>>;
       if (codeRows.length === 0) {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+        this.invalid('邀请码无效', 'invalid');
       }
       const codeStatus = String(codeRows[0]!.status);
       if (codeStatus === 'used') {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码已被使用');
+        this.invalid('邀请码已被使用', 'used');
       }
       if (codeStatus !== 'active') {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+        this.invalid('邀请码无效', 'invalid');
       }
 
       const claimed = await manager.query(CODE_CLAIM_SQL, [input.ownerId, normalized]);
@@ -170,8 +175,14 @@ export class AgentBindingsService {
         'signup',
         null,
       ]);
+      agentInviteConsumedTotal.inc({ result: 'bound' });
       return { status: 'bound' as const };
     });
+  }
+
+  private invalid(message: string, result: 'used' | 'invalid'): never {
+    agentInviteConsumedTotal.inc({ result });
+    throw new DomainError(ErrCode.AGENT_INVITE_INVALID, message);
   }
 
   async rebind(input: {
