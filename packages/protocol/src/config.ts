@@ -178,6 +178,8 @@ export const CONFIG_KEYS = [
   'currency.reliefThresholdCoins',
   /** 代理分润（2026-10-26）：客户端注册邀请码输入框开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteEnabled`）。 */
   'agent.inviteEnabled',
+  /** 代理分润（2026-11-03）：注册邀请码必填开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteRequired`）。 */
+  'agent.inviteRequired',
   // ── 四川麻将（2026-10-28）────────────────────────────────────────────
   'game.levels.mahjong',
   'game.mahjong.enabled',
@@ -254,6 +256,8 @@ export const CLIENT_CONFIG_KEYS = [
   'version',
   /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
   'agentInviteEnabled',
+  /** 代理分润：注册邀请码必填（缺键/旧服务端 ⇒ false）。 */
+  'agentInviteRequired',
 ] as const;
 
 export interface BaseScoreLevel {
@@ -326,6 +330,8 @@ export interface ClientConfig {
   reliefThresholdCoins?: number | null;
   /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
   agentInviteEnabled: boolean;
+  /** 代理分润：注册邀请码必填（缺键/旧服务端 ⇒ false）。 */
+  agentInviteRequired: boolean;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -487,6 +493,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'client.appEnabled') return parseStrictBoolean(key, value);
   if (key === 'client.h5Enabled') return parseStrictBoolean(key, value);
   if (key === 'agent.inviteEnabled') return parseStrictBoolean(key, value);
+  if (key === 'agent.inviteRequired') return parseStrictBoolean(key, value);
   if (key === 'room.freeBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.goldBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.matchNoBotMaxWaitMs') return parseNoBotMaxWaitMs(value);

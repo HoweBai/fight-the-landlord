@@ -428,8 +428,15 @@ export interface AgentBindRequest {
 /** `bound` = 本次首绑；`already_bound` = 该玩家已有绑定（首绑为准）；`ignored` = 功能关闭。 */
 export type AgentBindStatus = 'bound' | 'already_bound' | 'ignored';
 
+/** 代理绑定被忽略的原因（注册照常；用于指标与告警）。 */
+export type AgentBindIgnoreReason =
+  | 'settings_disabled'
+  | 'invite_disabled'
+  | 'config_unavailable';
+
 export interface AgentBindData {
   status: AgentBindStatus;
+  reason?: AgentBindIgnoreReason;
 }
 
 export type AgentBindResponse = RpcResult<AgentBindData>;

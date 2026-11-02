@@ -109,6 +109,8 @@ describe('完整键清单与客户端子集', () => {
       'currency.reliefThresholdCoins',
       // 代理分润（2026-10-26）：客户端邀请码开关（裸名 agentInviteEnabled）
       'agent.inviteEnabled',
+      // 代理分润（2026-11-03）：注册邀请码必填（裸名 agentInviteRequired）
+      'agent.inviteRequired',
       // 四川麻将（2026-10-28）
       'game.levels.mahjong',
       'game.mahjong.enabled',
@@ -141,6 +143,8 @@ describe('完整键清单与客户端子集', () => {
       'version',
       // 代理分润：邀请码输入框门控（缺键/旧服务端 ⇒ false）
       'agentInviteEnabled',
+      // 代理分润：注册邀请码必填（缺键/旧服务端 ⇒ false）
+      'agentInviteRequired',
     ]);
   });
 
@@ -198,6 +202,12 @@ describe('parseConfigValue', () => {
     expect(parseConfigValue('agent.inviteEnabled', false)).toBe(false);
     expect(() => parseConfigValue('agent.inviteEnabled', 'true')).toThrow(/boolean/);
     expect(() => parseConfigValue('agent.inviteEnabled', 1)).toThrow(/boolean/);
+  });
+  it('代理第 102 键 agent.inviteRequired：严格 boolean（拒字符串/数字）', () => {
+    expect(parseConfigValue('agent.inviteRequired', true)).toBe(true);
+    expect(parseConfigValue('agent.inviteRequired', false)).toBe(false);
+    expect(() => parseConfigValue('agent.inviteRequired', 'true')).toThrow(/boolean/);
+    expect(() => parseConfigValue('agent.inviteRequired', 1)).toThrow(/boolean/);
   });
   it('modelBySkill：三键齐全且值 ∈ 三档模型名', () => {
     expect(parseConfigValue('robot.modelBySkill', { beginner: 'sl', intermediate: 'douzero_WP', advanced: 'douzero_ADP' }))
