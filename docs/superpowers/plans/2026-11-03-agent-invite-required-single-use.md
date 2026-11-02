@@ -2618,3 +2618,20 @@ Expected: 只剩会话前已有的麻将改动（`apps/client/src/components/tab
 - 老客户端 boot 失败：新客户端兜底展示输入框；required 开启前需用外部应用分发数据确认旧版占比。
 - 码状态 oracle：接受（8 位码约 2^40 + 注册侧限流）。
 - 本地无真栈时 slice-32 只能 build，交付报告必须如实说明未运行。
+
+---
+
+## 执行记录（2026-11-03）
+
+- 分支：`dev`
+- 实现范围：`a9f7e62c..422d70b4`（20 个实现/测试/文档 commit；设计 spec 与 plan 共 4 个文档 commit）
+- 验证结果：
+  - protocol 326、config-service 495、user-service 468、currency-service 613、api-gateway 509、shared 447 全通过
+  - client 1713 passed / 2 skipped；client `vue-tsc --noEmit` 通过
+  - 8 个包 `lint` 全部 exit 0
+  - `verify:admin` 657、`verify:admin-players`、`verify:admin-agents`、`verify:admin-config-tabs`、`verify:admin-mahjong-rules`、`verify:agent` 112、`verify:monitoring` 303、`verify:k8s`、`verify:shutdown` 全通过
+  - `tools/conformance` build + lint 通过；`slice-32-agent` **未在本机运行**（本机无 Docker），需在测试栈/权威轮执行
+  - 全仓 `pnpm exec turbo run test lint --force` 退出码 0
+- 代码审查：独立 reviewer 审 `aabbfdb2..HEAD`；修复了 boot 陈旧快照、上海日界、代理端分页/双击/剪贴板、DTO 非字符串、admin 三态并发与刷新 epoch、conformance 收尾与快照日志时间锚；其余 Minor（重复 query/keyset 解析）与麻将工作区既有改动不在本片范围
+- 已知残余：bind RPC 超时/响应丢失烧码、老客户端 boot 失败、码状态 oracle、跨 RPC 注册幂等键（spec §6）
+- 状态：已提交到本地 `dev`；**未推送、未部署**（等待用户确认）
