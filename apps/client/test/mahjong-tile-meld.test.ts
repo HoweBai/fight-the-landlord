@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import type { MahjongMeldView, Tile } from '@fight-the-landlord/protocol';
@@ -22,6 +23,27 @@ describe('MahjongTile 显式尺寸', () => {
     const w = mount(MahjongTile, { props: { tile: wan1, size: 'lg' } });
     expect(w.classes()).toContain('mj-tile--lg');
     expect(w.attributes('style')).toBeUndefined();
+  });
+
+  it('四方向素材路径映射', () => {
+    for (const direction of ['my', 'top', 'left', 'right'] as const) {
+      const w = mount(MahjongTile, { props: { tile: wan1, direction } });
+      expect(w.attributes('src')).toBe(`/pages/table/static/mahjong/${direction}/wan-1.png`);
+    }
+    const back = mount(MahjongTile, { props: { back: true, direction: 'left' } });
+    expect(back.attributes('src')).toBe('/pages/table/static/mahjong/left/back.png');
+  });
+
+  it('牌面尺寸 3:4，左右家横置交换宽高', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongTile.vue', 'utf8');
+    expect(src).toMatch(/\.mj-tile--sm\s*\{[^}]*width:\s*34px;[^}]*height:\s*45px/);
+    expect(src).toMatch(/\.mj-tile--md\s*\{[^}]*width:\s*46px;[^}]*height:\s*61px/);
+    expect(src).toMatch(/\.mj-tile--lg\s*\{[^}]*width:\s*60px;[^}]*height:\s*80px/);
+    expect(src).toMatch(
+      /\.mj-tile--dir-left,[\s\S]*?\.mj-tile--sm\s*\{[^}]*width:\s*45px;[^}]*height:\s*34px/,
+    );
+    expect(src).toContain('border-radius: 12%');
+    expect(src).toContain('$ftl-color-mj-gold');
   });
 });
 
@@ -80,5 +102,14 @@ describe('MahjongMeld 可变尺寸与杠/暗杠', () => {
     });
     expect(w.classes()).toContain('anim-meld-pop');
     expect(w.classes()).toContain('anim-meld-pop--gang');
+  });
+
+  it('副露底托类', () => {
+    const w = mount(MahjongMeld, { props: { meld: meld('peng', [wan1, wan1, wan1]) } });
+    expect(w.classes()).toContain('mj-meld--tray');
+    const src = readFileSync('src/components/table/mahjong/MahjongMeld.vue', 'utf8');
+    expect(src).toContain('$ftl-color-mj-glass-soft');
+    // 负 margin 抵消 padding：底托不改变布局足迹（4 杠组仍 ≤ 牌河宽）
+    expect(src).toContain('margin: -$ftl-space-2');
   });
 });

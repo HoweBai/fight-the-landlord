@@ -125,6 +125,19 @@ describe('新校验器 × 旧 ddz 消息', () => {
         payload: { gameType: 'mahjong', winnerSeats: [0, 2], endReason: 'threeWinners', huazhuSeats: [] },
       }),
     ).not.toThrow();
+    // 荒庄但已有人胡（血战常见结尾）：shared actions 会写 wallEmptyWithHu
+    expect(() =>
+      validateOutbound({
+        type: 'game.finished',
+        version: 4,
+        payload: {
+          gameType: 'mahjong',
+          winnerSeats: [1],
+          endReason: 'wallEmptyWithHu',
+          huazhuSeats: [],
+        },
+      }),
+    ).not.toThrow();
   });
 
   it('麻将 game.finished 非法 endReason/座位 ⇒ 拒绝', () => {

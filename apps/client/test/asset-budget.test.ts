@@ -39,6 +39,7 @@ const BUDGET_KIB = {
   'table/av': 160, // 实测 136（2026-10-12 第二批头像素材）
   'table/audio': 2048, // 实测 ~1868（斗地主/跑得快 63 条 + 麻将 11 条；2026-10-28 麻将 T11，48kbps 单声道）
   'table/ui': 400, // 实测 ~329（bg_table）
+  'table/mahjong': 768, // 实测 ~529（FluffyStuff 112 张 64 色量化 + manifest）
   // —— 主包 ——
   'main/ui': 768, // 实测 ~574（登录/大厅/共用 UI；牌桌专用图已移分包）
   'main/audio': 320, // 实测 ~260（仅大厅 BGM MusicEx_Welcome）
@@ -57,20 +58,26 @@ for (let s = 0; s <= 3; s++) {
 FACE_KEYS.push('4-20', '4-30');
 
 /**
- * 目录体积（KiB）。⚠️ 这四个目录都是**平的**（无子目录）—— 若哪天有人塞了子目录，
- * `statSync` 会拿到目录项自身的 size（一个远小于内容的假值）⇒ 判据静默变松。
- * 因此这里**显式拒绝**子目录，宁可红也不要一条「看起来在量、其实没量」的判据。
+ * 目录体积（KiB）。递归统计子目录（`table/ui/mahjong-table/`、`table/mahjong/` 都是子目录）。
+ * 2026-11-02 修复：递归必须返回**字节**；此前递归返回 KiB 又被父层当字节累加，
+ * 导致 `table/mahjong` 的 4 个子目录被算成 0.8KiB（实际 836KiB）。
  */
-function dirSizeKiB(dir: string): number {
+function dirSizeBytes(dir: string): number {
   let bytes = 0;
   for (const e of readdirSync(dir)) {
     const full = join(dir, e);
     const st = statSync(full);
     // 2026-10-28：麻将桌上线后 `table/ui/` 出现 `mahjong-table/` 子目录；
     // 递归计入（预算不放松），而不是把子目录当成「平的」静默漏量。
-    bytes += st.isDirectory() ? dirSizeKiB(full) : st.size;
+    // 2026-11-02：递归必须返回**字节**；此前递归返回 KiB 又被父层当字节累加，
+    // 导致 `table/mahjong` 的 4 个子目录被算成 0.8KiB（836KiB 实际值）。
+    bytes += st.isDirectory() ? dirSizeBytes(full) : st.size;
   }
-  return bytes / 1024;
+  return bytes;
+}
+
+function dirSizeKiB(dir: string): number {
+  return dirSizeBytes(dir) / 1024;
 }
 
 const manifest = JSON.parse(
@@ -83,6 +90,7 @@ const BUDGET_DIRS: Record<keyof typeof BUDGET_KIB, string> = {
   'table/av': join(TABLE_STATIC, 'av'),
   'table/audio': join(TABLE_STATIC, 'audio'),
   'table/ui': join(TABLE_STATIC, 'ui'),
+  'table/mahjong': join(TABLE_STATIC, 'mahjong'),
   'main/ui': join(STATIC, 'ui'),
   'main/audio': join(STATIC, 'audio'),
 };
@@ -96,9 +104,11 @@ describe('① 各类素材体积 ≤ 预算', () => {
   }
 
   it('判别力自证：预算表非空且量级正确（不是「空集合恒绿」）', () => {
-    expect(Object.keys(BUDGET_KIB)).toHaveLength(6);
+    expect(Object.keys(BUDGET_KIB)).toHaveLength(7);
     // 牌面至少有 400 KiB —— 若分包目录没拷进来这条当场红
     expect(dirSizeKiB(join(TABLE_STATIC, 'cards'))).toBeGreaterThan(400);
+    // 麻将牌面至少有 300 KiB —— 若素材目录没拷进来这条当场红
+    expect(dirSizeKiB(join(TABLE_STATIC, 'mahjong'))).toBeGreaterThan(300);
     // 主包音频只剩大厅 BGM 一条：若有人把牌桌音频挪回主包，这条立刻红
     expect(readdirSync(join(STATIC, 'audio')).filter((f) => f.endsWith('.mp3'))).toEqual([
       'MusicEx_Welcome.mp3',

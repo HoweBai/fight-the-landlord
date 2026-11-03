@@ -172,18 +172,20 @@ function onDiscardClick(t: Tile): void {
   left: 0;
   padding: 0 3px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba($ftl-color-on-primary, 0.85);
+  border: $ftl-hairline solid $ftl-color-mj-gold;
+  background: rgba($ftl-color-mj-navy, 0.8);
+  color: $ftl-color-mj-gold;
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
   pointer-events: none;
 }
 .mj-river__tile--latest {
-  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.55);
+  box-shadow: 0 0 8px rgba($ftl-color-mj-gold, 0.65);
+  transform: translateY(-2px);
 }
 .mj-river__tile--filtered {
-  outline: 2px solid $ftl-color-primary;
+  outline: $ftl-hairline solid $ftl-color-mj-cyan;
   outline-offset: -2px;
 }
 .mj-river__tile--clickable {
@@ -195,8 +197,8 @@ function onDiscardClick(t: Tile): void {
   left: 0;
   padding: 0 3px;
   border-radius: 999px;
-  background: rgba($ftl-color-gold, 0.85);
-  color: $ftl-color-on-primary;
+  background: $ftl-color-mj-gold;
+  color: $ftl-color-mj-on-gold;
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;

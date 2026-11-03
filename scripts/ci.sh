@@ -134,6 +134,7 @@ npm run verify:admin-config-tabs
 npm run verify:admin-mahjong-rules
 npm run verify:agent
 npm run verify:monitoring
+npm run verify:apk
 finish_stage
 
 stage "8/8 k8s static verify"

@@ -80,7 +80,7 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
     expect(wrapper.find('.mj').exists()).toBe(true);
     expect(wrapper.find('.mj__bar').exists()).toBe(true);
     expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
-    expect(wrapper.text()).toContain('🀄 40');
+    expect(wrapper.text()).toContain('牌墙 40');
     expect(wrapper.text()).toContain('底分 1');
   });
 
@@ -165,7 +165,7 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
   });
 
   describe('自己胡牌后：手牌不重复渲染', () => {
-    it('myRevealed 不为空时，手牌槽只渲染 revealed 牌（不重复渲染普通手牌）', () => {
+    it('myRevealed 不为空时，.mj__hand 隐藏，.mj__my-revealed 展示手牌', () => {
       const revealedTiles: Tile[] = [
         tile(0, 1), tile(0, 2), tile(0, 3), tile(0, 4), tile(0, 5), tile(0, 6),
         tile(0, 7), tile(0, 8), tile(0, 9), tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4),
@@ -191,13 +191,10 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
           }),
         }),
       });
-      // .mj__hand 仍是手牌槽，但只渲染 revealed 牌（普通手牌不再重复渲染）
-      const hand = wrapper.find('.mj__hand');
-      expect(hand.exists()).toBe(true);
-      expect(hand.findAll('.mj-tile')).toHaveLength(revealedTiles.length);
-      // 判别力：revealed 牌带 dim；本场景（非本人回合）普通手牌会带 disabled —— 两者为 0/13 才能区分
-      expect(hand.findAll('.mj-tile--dim')).toHaveLength(revealedTiles.length);
-      expect(hand.findAll('.mj-tile--disabled')).toHaveLength(0);
+      // .mj__hand 仍存在，但只渲染 revealed tiles，不重复渲染原手牌
+      expect(wrapper.find('.mj__hand').exists()).toBe(true);
+      expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(revealedTiles.length);
+      expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
     });
 
     it('没胡时，.mj__hand 正常显示手牌', () => {
@@ -216,11 +213,10 @@ describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
           }),
         }),
       });
-      // 中央应该有 phaseText（中央井组件：.mj-center__phase）
+      // 中央应该有 phaseText
       expect(wrapper.find('.mj-center__phase').text()).toContain('等待其他玩家响应');
-      // 底部动作栏不应该再出现同样的 muted text
-      const actionMuted = wrapper.find('.mj__actions .mj__muted');
-      expect(actionMuted.exists()).toBe(false);
+      // 该窗口自己不在 active，动作栏不应渲染（不要对空 wrapper 调 .text()）
+      expect(wrapper.find('.mj__actions').exists()).toBe(false);
     });
   });
 });
@@ -238,7 +234,7 @@ describe('T12：四家分区重排', () => {
     for (const d of ['top', 'left', 'right', 'my']) {
       expect(wrapper.find(`.mj-river--${d}`).exists()).toBe(true);
     }
-    expect(wrapper.find('.mj-center').text()).toContain('🀄 40');
+    expect(wrapper.find('.mj-center').text()).toContain('牌墙 40');
   });
 
   it('对手牌背数量与 src 逐座对位（不是只数个数）', () => {
@@ -255,7 +251,7 @@ describe('T12：四家分区重排', () => {
   });
 
   it('提供画布尺寸时手牌尺寸与纯函数逐值一致', () => {
-    // 用 4:3：s≈1.127，手牌 80.9×121.9；1623×750 的 s 与兜底同为 1，验不出注入
+    // 用 4:3：s≈1.009，手牌约 87.8×117；1623×750 的 s 与兜底同为 1，验不出注入
     const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
     const wrapper = mount(MahjongBoard, {
       props: props(),
@@ -350,19 +346,22 @@ describe('T12：四家分区重排', () => {
         }),
       }),
     });
+    // 顶部预览取第一张 tile；番数做徽标
+    expect(wrapper.find('.mj-claim-tile__preview image').attributes('src')).toContain('/my/wan-1.png');
+    expect(wrapper.find('.mj-claim-tile__fan').text()).toBe('2番');
     // 自家弃牌不是本次 claim 来源：点击不过滤
     await wrapper.find('.mj-river--my .mj-tile').trigger('click');
-    const before = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    const before = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
     expect(before).toContain('碰');
-    expect(before).toContain('2 番胡');
+    expect(before).toContain('胡');
     // 来源座（对家）弃牌：过滤到只剩碰
     const topTile = wrapper.find('.mj-river--top .mj-tile');
     await topTile.trigger('click');
-    expect(wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text())).toEqual(['碰']);
+    expect(wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text())).toEqual(['碰']);
     await topTile.trigger('click');
-    const all = wrapper.findAll('.mj-claim-tile__opt').map((b) => b.text());
+    const all = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
     expect(all).toContain('碰');
-    expect(all).toContain('2 番胡');
+    expect(all).toContain('胡');
   });
 });
 import { nextTick } from 'vue';
@@ -460,5 +459,84 @@ describe('T13：摸牌分离与 display 下标', () => {
     await wrapper.find('.mj__confirm').trigger('click');
     const emitted = wrapper.emitted('mahjong')?.[0]?.[0] as { tiles: unknown[] };
     expect(emitted.tiles).toHaveLength(3);
+  });
+});
+
+describe('中心盘接线（四家 / ended / 托管）', () => {
+  it('ended：圆盘终 + 真实 endedText', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ state: 'ended', isOut: [true, true, true, false] }),
+      }),
+    });
+    expect(wrapper.find('.mj-center__value').text()).toContain('终');
+    expect(wrapper.find('.mj-center__ended').text()).toContain('已胡 3 家');
+  });
+
+  it('四家：杠分/临时分按 seat 对位', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          pendingScoreChanges: [
+            { seat: 1, delta: 1200 },
+            { seat: 2, delta: -800 },
+          ],
+        }),
+      }),
+    });
+    const cells = wrapper.findAll('.mj-center__cell');
+    // [对=seat2, 左=seat3, 右=seat1, 我=seat0]
+    expect(cells[0]!.text()).toContain('-800');
+    expect(cells[1]!.text()).toContain('0');
+    expect(cells[2]!.text()).toContain('+1200');
+    expect(cells[3]!.text()).toContain('0');
+  });
+
+  it('四家：庄/缺/听/胡/出局优先级', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          dealerSeat: 0,
+          lackSuits: [0, 1, 2, 1],
+          tingSeats: [3],
+          isOut: [false, false, true, false],
+          huInfos: [
+            {
+              seat: 1,
+              fromSeat: 0,
+              tile: tile(0, 1),
+              fan: 1,
+              multiplier: 1,
+              items: ['平胡'],
+              selfDraw: false,
+            },
+          ],
+        }),
+      }),
+    });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells[0]!.text()).toContain('出局'); // top=2 出局优先于缺条
+    expect(cells[1]!.text()).toContain('听'); // left=3 ting
+    expect(cells[2]!.text()).toContain('胡'); // right=1 hu
+    expect(cells[3]!.text()).toContain('庄'); // me dealer
+    expect(cells[3]!.text()).toContain('缺万');
+  });
+
+  it('无 pending：四家全 0', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells).toHaveLength(4);
+    for (const c of cells) expect(c.text()).toContain('0');
+  });
+
+  it('托管遮罩可取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ trustees: [true, false, false, false] }),
+      }),
+    });
+    expect(wrapper.find('.mj__trustee-mask').exists()).toBe(true);
+    await wrapper.find('.mj__trustee-cancel').trigger('click');
+    expect(wrapper.emitted('trustee')?.[0]).toEqual([false]);
   });
 });

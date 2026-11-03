@@ -93,7 +93,7 @@ export type ServerMessage =
       payload:
         | { winner: 'landlord' | 'farmer' }
         | { gameType: 'paodekuai'; winnerSeats: number[] }
-        | { gameType: 'mahjong'; winnerSeats: number[]; endReason: 'threeWinners' | 'wallEmpty'; huazhuSeats: number[] };
+        | { gameType: 'mahjong'; winnerSeats: number[]; endReason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu'; huazhuSeats: number[] };
     }
   | { type: 'game.settlement'; version: number; payload: SettlementResult }
   /**

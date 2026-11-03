@@ -10,6 +10,7 @@
  */
 import { computed } from 'vue';
 import type { MahjongClaimOption } from '@fight-the-landlord/protocol';
+import MahjongTile from './MahjongTile.vue';
 
 const props = withDefaults(defineProps<{
   options: MahjongClaimOption[];
@@ -17,7 +18,10 @@ const props = withDefaults(defineProps<{
   showPass?: boolean;
   /** Batch 4 A 组：弃牌点击后 Board.vue 传入的过滤结果。传入则优先使用。 */
   filteredOptions?: MahjongClaimOption[];
-}>(), { busy: false, showPass: true });
+  /** 顶部牌面预览尺寸（真源 layout.centerTiles.claim）。 */
+  previewW?: number;
+  previewH?: number;
+}>(), { busy: false, showPass: true, previewW: 34, previewH: 45 });
 
 const emit = defineEmits<{
   (e: 'claim', opt: MahjongClaimOption): void;
@@ -31,12 +35,18 @@ const sortedOptions = computed(() => {
   return [...source].sort((a, b) => (b.fan ?? 0) - (a.fan ?? 0));
 });
 
+/** 预览优先过滤结果（非空）；过滤为空时回退全量，避免丢“响应哪张”的锚点。 */
+const previewTile = computed(() => {
+  const source = props.filteredOptions?.length ? props.filteredOptions : props.options;
+  return source.find((o) => o.tile !== undefined)?.tile ?? null;
+});
+
 /** claim 候选 label：用 opt.claim 四值（hu/gang/peng/pass），不是 opt.kind（阻断 B1 修法）。 */
 function claimLabel(opt: MahjongClaimOption): string {
   switch (opt.claim) {
     case 'peng': return '碰';
     case 'gang': return '杠'; // 暗杠/补杠区分逻辑留在 Board.vue（现有 L192-196）
-    case 'hu':   return opt.fan ? `${opt.fan} 番胡` : '胡';
+    case 'hu':   return '胡';
     case 'pass': return '过';
   }
 }
@@ -49,8 +59,12 @@ function optClass(opt: MahjongClaimOption): string {
 </script>
 
 <template>
-  <view class="mj-claim-tile anim-claim-pulse">
-    <text class="mj-claim-tile__prompt">可响应</text>
+  <view class="mj-claim-tile mj-claim-tile--panel anim-claim-pulse">
+    <view v-if="previewTile" class="mj-claim-tile__preview">
+      <text class="mj-claim-tile__prompt">可响应</text>
+      <MahjongTile :tile="previewTile" :w="previewW" :h="previewH" direction="my" />
+    </view>
+    <text v-else class="mj-claim-tile__prompt">可响应</text>
     <view class="mj-claim-tile__opts">
       <button
         v-for="(opt, i) in sortedOptions"
@@ -60,7 +74,8 @@ function optClass(opt: MahjongClaimOption): string {
         :disabled="busy"
         @click="emit('claim', opt)"
       >
-        {{ claimLabel(opt) }}
+        <text class="mj-claim-tile__opt-label">{{ claimLabel(opt) }}</text>
+        <text v-if="opt.claim === 'hu' && opt.fan" class="mj-claim-tile__fan">{{ opt.fan }}番</text>
       </button>
       <button
         v-if="showPass"
@@ -80,85 +95,119 @@ function optClass(opt: MahjongClaimOption): string {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px;
   border-radius: $ftl-radius-md;
-  border: 2px solid rgba($ftl-color-gold, 0.7);
-  background: linear-gradient(180deg, rgba(30, 60, 40, 0.82), rgba(20, 45, 30, 0.88));
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.6);
+  background: linear-gradient(180deg, $ftl-color-mj-panel-light, $ftl-color-mj-panel);
   backdrop-filter: blur(12px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 $ftl-hairline 0 rgba(255, 200, 100, 0.15);
+  box-shadow: 0 6px 20px rgba($ftl-color-mj-panel, 0.45), inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.2);
 }
 .mj-claim-tile__prompt {
   font-size: $ftl-font-sm;
-  color: $ftl-color-gold;
+  color: $ftl-color-mj-gold;
   font-weight: 700;
   text-align: center;
   letter-spacing: 2px;
 }
-.mj-claim-tile__opts {
+.mj-claim-tile__preview {
   display: flex;
-  gap: 10px;
+  align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  gap: 6px;
+  height: 45px;
+}
+.mj-claim-tile__opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  justify-items: stretch;
+}
+.mj-claim-tile__opt {
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+.mj-claim-tile__opt-label {
+  font-size: $ftl-font-md;
+  line-height: 1;
+}
+.mj-claim-tile__fan {
+  margin-top: 2px;
+  font-size: $ftl-font-mj-mini;
+  line-height: 1;
+  color: $ftl-color-mj-on-gold;
 }
 
 // —— 按钮（参考斗地主 btn / btn--primary 风格）——
 .btn {
   @include ftl-btn;
   // 次按钮（碰/杠）：暖色金边 + 金色投影，比默认灰按钮更有存在感
-  min-width: 72px;
-  min-height: 52px;
+  min-width: 68px;
+  min-height: $ftl-control-h;
   padding: 0 $ftl-space-4;
   font-size: $ftl-font-md;
-  border-color: rgba($ftl-color-gold, 0.55);
+  border-color: rgba($ftl-color-mj-gold, 0.55);
   border-radius: $ftl-radius-md;
-  background: linear-gradient(180deg, rgba(60, 110, 75, 0.85), rgba(35, 75, 50, 0.9));
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy-light, 0.9),
+    rgba($ftl-color-mj-navy, 0.95)
+  );
   color: rgba($ftl-color-on-primary, 0.92);
   box-shadow:
-    0 4px 0 rgba(0, 0, 0, 0.35),
-    0 6px 14px rgba(0, 0, 0, 0.35),
-    inset 0 2px 0 rgba(255, 220, 120, 0.25);
+    0 4px 0 rgba($ftl-color-mj-navy, 0.55),
+    0 6px 14px rgba($ftl-color-mj-navy, 0.35),
+    inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.22);
   transition: transform 0.08s, box-shadow 0.08s;
   &:hover {
-    border-color: $ftl-color-gold;
+    border-color: $ftl-color-mj-gold;
     color: $ftl-color-on-primary;
   }
   &:active {
     transform: translateY(2px);
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 0 rgba($ftl-color-mj-navy, 0.5), inset 0 2px 4px rgba(0, 0, 0, 0.35);
   }
 }
 
-// 胡（主按钮）：完全继承斗地主 btn--primary 金色立体
+// 胡（主按钮）：金底 + 海军蓝文字（对比度 8.5:1）
 .mj-claim-tile__opt--hu {
-  border-color: $ftl-color-gold-deep !important;
-  background: $ftl-color-gold !important;
-  color: $ftl-color-on-primary !important;
+  border-color: $ftl-color-mj-gold-deep !important;
+  background: $ftl-color-mj-gold !important;
+  color: $ftl-color-mj-on-gold !important;
   box-shadow:
-    0 6px 0 $ftl-color-gold-deep,
-    0 10px 22px rgb(255 152 0 / 0.5),
-    inset 0 2px 0 rgb(255 255 255 / 0.65),
-    inset 0 -2px 0 rgb(0 0 0 / 0.1) !important;
+    0 6px 0 $ftl-color-mj-gold-deep,
+    0 10px 22px rgba($ftl-color-mj-gold, 0.5),
+    inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.1) !important;
 }
 .mj-claim-tile__opt--hu:active {
   transform: translateY(4px);
   box-shadow:
-    0 2px 0 $ftl-color-gold-deep,
-    0 4px 10px rgb(255 152 0 / 0.35),
-    inset 0 3px 8px rgb(0 0 0 / 0.2) !important;
+    0 2px 0 $ftl-color-mj-gold-deep,
+    0 4px 10px rgba($ftl-color-mj-gold-deep, 0.35),
+    inset 0 3px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
-// 杠（次按钮加强）：在基础上叠金色渐变
+// 杠（次按钮加强）：金色渐变 + 海军蓝字（金底用深色字，对比度 ≥4.5）
 .mj-claim-tile__opt--gang {
-  background: linear-gradient(180deg, rgba(120, 100, 50, 0.9), rgba(75, 60, 30, 0.95)) !important;
-  border-color: rgba($ftl-color-gold, 0.75) !important;
-  color: $ftl-color-gold-light !important;
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-gold, 0.35),
+    rgba($ftl-color-mj-gold-deep, 0.55)
+  ) !important;
+  border-color: rgba($ftl-color-mj-gold, 0.75) !important;
+  color: $ftl-color-mj-on-gold !important;
 }
 
-// 过：弱化处理，透明度降低 + 边框变淡 + 浅灰底
+// 过：弱化处理
 .mj-claim-tile__pass {
   opacity: 0.55;
-  border-color: rgba(140, 150, 170, 0.35) !important;
-  background: linear-gradient(180deg, rgba(70, 80, 95, 0.5), rgba(45, 55, 70, 0.6)) !important;
+  border-color: rgba($ftl-color-mj-muted, 0.35) !important;
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy, 0.55),
+    rgba($ftl-color-mj-navy, 0.7)
+  ) !important;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25), inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.05) !important;
   color: rgba($ftl-color-on-primary, 0.6) !important;
 }

@@ -2,9 +2,9 @@
  * 麻将牌桌比例布局（纯函数，零依赖）。
  *
  * 坐标模型：画布设计尺寸 W×H（恒 ≥1334×750，至少一条边正好在最小值）。
- * 统一比例单位 s = min(H/750, 0.88W/handRowW)，且 s ≥ 1：
+ * 统一比例单位 s = min(H/750, 0.95W/handRowW)，且 s ≥ 1：
  *  - 高度是竖向节奏基准；
- *  - 宽度兜底保证 14 张手牌永远 ≤88% 宽，左侧留出自家人像卡。
+ *  - 宽度兜底保证 14 张手牌永远 ≤95% 宽；自家人像在中央井左缘、手牌上方。
  *
  * 所有输出均为**设计 px**（画布坐标），由 LandscapeStage 的 transform: scale(k) 统一缩放。
  * 本文件不读窗口、不读 store、不造计时器。
@@ -102,43 +102,45 @@ export const MAHJONG_TABLE_TOKENS = {
   outer: 12,
   inner: 8,
   gap: 2,
-  handH: 108,
+  handH: 116,
   handCount: 14, // 手牌 13+1；backCount 必须同值
   drawnGap: 12,
-  riverH: 50,
+  riverH: 56,
   riverCols: 12,
   riverRows: 2,
-  topBackH: 48,
+  topBackH: 47,
   topBackGap: 2,
-  sideBackH: 49, // 槽高（pitch 叠压用）；与 sideRiver tile 高（40）对齐更顺
-  sidePitch: 27,
-  backCount: 12, // topBacks 宽度 ≈ riverW ≈ 420px 只能放 12 张 48×75/113 tile；左右家保持上限 14
+  sideBackH: 34, // 槽高（pitch 叠压用）；left/right 牌背素材是 240×180 横图
+  sidePitch: 26,
+  backCount: 14, // = handCount，牌背预算
   sideRiverW: 49,
-  sideRiverH: 40,
+  sideRiverH: 37,
   sideRiverCols: 3,
   sideRiverRows: 8,
   meldScale: 0.8,
   sideMeldScale: 0.65,
   meldOverlap: 4,
   sideMeldGap: 4,
-  chip: 60,
-  sideChipW: 200, // 头像 56 + 名字/分/徽标列 144（多出 20px 给底部徽标条带）
+  chip: 56,
+  sideChipW: 180, // 头像 56 + 名字/分/徽标列 124
   selfChipW: 56,
   selfChipH: 76,
-  barChipW: 56,
+  barChipW: 40,
   barChipH: 56,
   centerClaimW: 34,
-  centerClaimH: 51,
+  centerClaimH: 45,
   centerTingW: 20,
-  centerTingH: 30,
+  centerTingH: 27,
   actionsMaxW: 400,
 } as const;
 
 /** 本文件内的短名（测试仍用 `MAHJONG_TABLE_TOKENS`）。 */
 const T = MAHJONG_TABLE_TOKENS;
 
-/** 麻将牌面宽高比（my/top 素材 75×113）。 */
-const TILE_RATIO = 75 / 113;
+/** 麻将牌面宽高比（my/top 素材 180×240）。 */
+const TILE_RATIO = 3 / 4;
+/** 侧家横置牌（left/right 240×180）。 */
+const SIDE_TILE_RATIO = 4 / 3;
 
 const DEFAULT_W = 1334;
 const DEFAULT_H = 750;
@@ -234,7 +236,7 @@ export function mahjongTableLayout(
   const self = normalizeLoad(input.self);
 
   const handRowW = (T.handCount * T.handH * TILE_RATIO + (T.handCount - 1) * T.gap + T.drawnGap);
-  const s = Math.max(1, Math.min(h / DEFAULT_H, (0.88 * w) / handRowW));
+  const s = Math.max(1, Math.min(h / DEFAULT_H, (0.95 * w) / handRowW));
 
   // —— 竖向尺寸 ——
   const barH = T.barH * s;
@@ -260,7 +262,7 @@ export function mahjongTableLayout(
   // —— 横向尺寸 ——
   const riverW = T.riverCols * T.riverH * TILE_RATIO * s + (T.riverCols - 1) * T.gap * s;
   const handW = handRowW * s;
-  const sideBackW = T.sideBackH * TILE_RATIO * s;
+  const sideBackW = T.sideBackH * SIDE_TILE_RATIO * s;
   const sideRiverW = (T.sideRiverCols * T.sideRiverW + (T.sideRiverCols - 1) * T.gap) * s;
   const sideZoneW = outer + Math.max(T.sideChipW * s, sideBackW + inner + sideRiverW);
 
@@ -288,19 +290,16 @@ export function mahjongTableLayout(
   const centerBottom = Math.max(centerTop, h - bottomZoneH);
   const centerZone = rect(centerLeft, centerTop, centerRight - centerLeft, centerBottom - centerTop);
 
-  const centerCompact = centerZone.height < 176 * s;
-  // 紧凑模式单行内容有限，上限 360*s；非紧凑模式有 claim/ting 牌面展示，上限 480*s
+  const compactZone = centerZone.height < 151 * s;
   const centerCardW = Math.max(
     0,
-    Math.min(
-      (centerCompact ? 360 : 480) * s,
-      centerZone.width - (centerCompact ? 8 : 16) * s,
-    ),
+    Math.min((compactZone ? 260 : 340) * s, centerZone.width - 16 * s),
   );
   const centerCardH = Math.max(
     0,
-    Math.min(160 * s, centerZone.height - (centerCompact ? 8 : 16) * s),
+    Math.min((compactZone ? 120 : 170) * s, centerZone.height - 8 * s),
   );
+  const centerCompact = centerCardH < 143 * s;
   const centerCard = rect(
     centerZone.left + (centerZone.width - centerCardW) / 2,
     centerZone.top + (centerZone.height - centerCardH) / 2,
@@ -371,8 +370,8 @@ export function mahjongTableLayout(
   };
 
   const selfChip = rect(
-    outer,
-    handTop + ((T.handH - T.selfChipH) / 2) * s,
+    centerLeft,
+    handTop - T.selfChipH * s - 20 * s,
     T.selfChipW * s,
     T.selfChipH * s,
   );
@@ -386,7 +385,10 @@ export function mahjongTableLayout(
     bottomY,
     rightOffset: w - rightX,
     bottomOffset: h - bottomY,
-    maxWidth: Math.min(T.actionsMaxW * s, w - 2 * outer),
+    maxWidth: Math.max(
+      120 * s,
+      Math.min(T.actionsMaxW * s, rightX - (ownRiverLeft + riverW) - inner),
+    ),
     minHeight: 80 * s,
   };
 

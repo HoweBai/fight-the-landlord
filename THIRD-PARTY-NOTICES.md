@@ -47,14 +47,16 @@ recorded license. Their terms are unknown; they are not covered by the root
 
 - `apps/client/src/pages/table/static/mahjong/{my,top,left,right}/*.png`（四个方向的万/筒/条
   1–9 牌面与牌背）
-  从 **幼麟棋牌** `babykylin/babykylin_scmj` 的 Cocos 图集 `Z_my` / `Z_bottom` / `Z_left` /
-  `Z_right` / `mjEmpty` 中按 plist 坐标裁切得到（脚本
-  `scripts/extract-mahjong-tiles.mjs`）；同名衍生仓库 `zhaozhifei/scmj`、
-  `copperlib/majiang-cocos-creator` 的素材与本仓库所取文件逐字节一致。
-- `apps/client/src/pages/table/static/audio/mahjong/*.mp3`（碰/杠/胡/刮风/下雨/
-  发牌/洗牌/理牌/倒计时/两首 BGM）同出该仓库的音频目录。
+  由 **FluffyStuff/riichi-mahjong-tiles**（CC0 1.0 公有领域，commit
+  `26e127ba2117f45cdce5ea0225748cc0cfad3169`）的 `Export/Regular/Front.png` +
+  Man/Pin/Sou 1–9 字形 + `Back.png` 合成，经旋转/缩放/冷白/宝蓝灰度着色/64 色量化生成；脚本
+  `scripts/build-mahjong-tile-set.py`；源图 vendored 在
+  `scripts/assets/mahjong/fluffystuff/`（含 `LICENSE.md`）。
+- `apps/client/src/pages/table/static/audio/Mj_*.mp3`（11 条麻将音效/BGM）。
+  来源为早期第三方素材（**幼麟棋牌** `babykylin/babykylin_scmj` 音频目录），
+  未取得独立书面授权；不适用根 `LICENSE`，权属与再分发条款仍待核实。
 
-上述素材**未取得独立书面授权**，权属与再分发条款仍待核实，不适用根 `LICENSE`。
+上述**音频**素材**未取得独立书面授权**，权属与再分发条款仍待核实，不适用根 `LICENSE`。
 
 ## 4. npm / PyPI dependencies
 

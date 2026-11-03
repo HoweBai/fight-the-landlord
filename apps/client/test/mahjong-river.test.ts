@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { tileType, type MahjongMeldView, type Tile } from '@fight-the-landlord/protocol';
@@ -33,6 +34,13 @@ function props(over: Record<string, unknown> = {}) {
 }
 
 describe('MahjongRiver', () => {
+  it('最新牌/可响应牌用天月 token', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongRiver.vue', 'utf8');
+    expect(src).toContain('$ftl-color-mj-gold');
+    expect(src).toContain('$ftl-color-mj-cyan');
+    expect(src).toContain('$ftl-color-mj-navy');
+  });
+
   it('弃牌按顺序渲染，最后一张高亮', () => {
     const w = mount(MahjongRiver, { props: props() });
     const tiles = w.findAll('.mj-tile');

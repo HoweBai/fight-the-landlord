@@ -33,7 +33,7 @@ function onAnimEnd(e: AnimationEvent): void {
 </script>
 
 <template>
-  <view class="mj-hu-banner anim-hu-banner" :style="bannerStyle" @animationend="onAnimEnd">
+  <view class="mj-hu-banner mj-hu-banner--navy anim-hu-banner" :style="bannerStyle" @animationend="onAnimEnd">
     <text class="mj-hu-banner__text">{{ selfDraw ? '自摸' : '胡牌' }}</text>
     <text v-if="fan > 0" class="mj-hu-banner__fan">{{ fan }} 番</text>
   </view>
@@ -52,19 +52,23 @@ function onAnimEnd(e: AnimationEvent): void {
   align-items: center;
   padding: 4px 12px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(255, 180, 60, 0.95), rgba(220, 100, 30, 0.9));
-  box-shadow: 0 4px 16px rgba(255, 120, 0, 0.5);
-  border: $ftl-hairline solid rgba(255, 220, 100, 0.6);
+  background: linear-gradient(
+    180deg,
+    rgba($ftl-color-mj-navy-light, 0.95),
+    rgba($ftl-color-mj-navy, 0.96)
+  );
+  box-shadow: 0 4px 16px rgba($ftl-color-mj-navy, 0.5);
+  border: $ftl-hairline solid $ftl-color-mj-gold;
   white-space: nowrap;
 }
 .mj-hu-banner__text {
-  color: $ftl-color-on-primary;
+  color: $ftl-color-mj-gold;
   font-size: $ftl-font-md;
   font-weight: 700;
   text-shadow: 0 $ftl-hairline 2px rgba(0, 0, 0, 0.4);
 }
 .mj-hu-banner__fan {
-  color: $ftl-color-on-primary;
+  color: $ftl-color-mj-gold;
   font-size: $ftl-font-lg;
   font-weight: 800;
 }

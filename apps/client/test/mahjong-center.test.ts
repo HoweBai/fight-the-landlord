@@ -1,78 +1,221 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
+import type { Tile } from '@fight-the-landlord/protocol';
 import MahjongCenter from '../src/components/table/mahjong/MahjongCenter.vue';
+
+const seats = [
+  { label: '对', score: -800, dealer: false, badge: '缺万' },
+  { label: '左', score: 1200, dealer: false, badge: '听' },
+  { label: '右', score: 0, dealer: true, badge: '胡' },
+  { label: '我', score: 0, dealer: false, badge: '缺筒' },
+];
 
 const base = {
   wallCount: 42,
   phaseText: '请出牌',
   seconds: 12,
   active: true,
-  claimW: 34,
-  claimH: 51,
+  seats,
   tingW: 20,
-  tingH: 30,
+  tingH: 27,
 };
 
-describe('MahjongCenter', () => {
-  it('牌墙/阶段/倒计时', () => {
+const ting13: Tile[] = Array.from({ length: 13 }, (_, i) => ({
+  s: 0 as const,
+  r: ((i % 9) + 1) as Tile['r'],
+}));
+
+function styleOf(src: string): string {
+  return [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) =>
+      m[1]!
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 '),
+    )
+    .join('\n');
+}
+
+describe('MahjongCenter（天月对齐 v2）', () => {
+  it('四家：label/score/badge/dealer 全部渲染', () => {
     const w = mount(MahjongCenter, { props: base });
-    // P1: 牌墙现在是药丸格式 "🀄 42" 而非纯文本 "牌墙 42"
-    expect(w.text()).toContain('🀄 42');
-    expect(w.text()).toContain('请出牌');
-    expect(w.find('.mj-center__clock').text()).toContain('12');
+    const cells = w.findAll('.mj-center__cell');
+    expect(cells).toHaveLength(4);
+    expect(cells[0]!.text()).toContain('对');
+    expect(cells[0]!.text()).toContain('-800');
+    expect(cells[0]!.text()).toContain('缺万');
+    expect(cells[1]!.text()).toContain('+1200');
+    expect(cells[1]!.text()).toContain('听');
+    expect(cells[2]!.text()).toContain('庄');
+    expect(cells[2]!.text()).toContain('胡');
+    expect(cells[3]!.text()).toContain('我');
+    expect(cells[3]!.text()).toContain('缺筒');
   });
 
-  it('末 5 秒紧迫类', () => {
-    const w = mount(MahjongCenter, { props: { ...base, seconds: 4 } });
-    expect(w.find('.mj-center__clock').classes()).toContain('mj-center__clock--urgent');
-    const calm = mount(MahjongCenter, { props: { ...base, seconds: 6 } });
-    expect(calm.find('.mj-center__clock').classes()).not.toContain('mj-center__clock--urgent');
-  });
-
-  it('待响应牌 + 听牌', () => {
+  it('分数：0/+/- 原样，>=100万走万', () => {
     const w = mount(MahjongCenter, {
       props: {
         ...base,
-        claimTile: { s: 0, r: 5 },
-        tingTiles: [{ s: 0, r: 5 }, { s: 0, r: 8 }],
-        maxFan: 5,
+        seats: [
+          { label: '对', score: 0, dealer: false, badge: '' },
+          { label: '左', score: -800, dealer: false, badge: '' },
+          { label: '右', score: 1200, dealer: false, badge: '' },
+          { label: '我', score: 123000, dealer: false, badge: '' },
+        ],
       },
     });
-    expect(w.findAll('image')).toHaveLength(3);
-    expect(w.text()).toContain('可响应');
-    expect(w.text()).toContain('听');
-    expect(w.text()).toContain('5 番');
-    expect(w.findAll('.mj-tile')[0]!.attributes('style')).toContain('width: 34px');
-    expect(w.findAll('.mj-tile')[1]!.attributes('style')).toContain('width: 20px');
+    expect(w.text()).toContain('0');
+    expect(w.text()).toContain('-800');
+    expect(w.text()).toContain('+1200');
+    expect(w.text()).toContain('12.3万');
   });
 
-  it('紧凑模式：单行、不出牌面、只出文字', () => {
+  it('分数阈值：99999 原样，100000 走万', () => {
     const w = mount(MahjongCenter, {
-      props: { ...base, compact: true, claimTile: { s: 0, r: 5 } },
+      props: {
+        ...base,
+        seats: [
+          { label: '对', score: 99999, dealer: false, badge: '' },
+          { label: '左', score: 100000, dealer: false, badge: '' },
+          { label: '右', score: -100000, dealer: false, badge: '' },
+          { label: '我', score: 0, dealer: false, badge: '' },
+        ],
+      },
     });
-    expect(w.classes()).toContain('mj-center--compact');
-    // P1: compact 模式移除了旧 sep 元素（用药丸替代），所以 sep 数量是 0
-    expect(w.findAll('.mj-center__sep')).toHaveLength(0);
-    expect(w.findAll('image')).toHaveLength(0);
-    // compact-foot 应该显示可响应 + 万5
-    expect(w.text()).toContain('可响应');
-    expect(w.text()).toContain('万5');
+    const cells = w.findAll('.mj-center__cell');
+    expect(cells[0]!.text()).toContain('+99999');
+    expect(cells[1]!.text()).toContain('10.0万');
+    expect(cells[2]!.text()).toContain('-10.0万');
   });
 
-  it('紧凑模式字号降到 12px（源码闸）', () => {
-    const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
-    // P1: compact 模式 phase 字号降到 12px（药丸/phase 不再走 wall 类）
-    expect(src).toMatch(/\.mj-center--compact &\s*\{[\s\S]*?font-size:\s*12px/);
+  it('无 seats 不渲染四家列', () => {
+    const w = mount(MahjongCenter, { props: { ...base, seats: [] } });
+    expect(w.findAll('.mj-center__cell')).toHaveLength(0);
+    expect(w.find('.mj-center__value').text()).toContain('12');
   });
 
-  it('已胡家数文案', () => {
-    const w = mount(MahjongCenter, { props: { ...base, endedText: '已胡 2 家' } });
-    expect(w.text()).toContain('已胡 2 家');
+  it('active + seconds>0：圆盘显示秒数', () => {
+    const w = mount(MahjongCenter, { props: base });
+    expect(w.find('.mj-center__value').text()).toContain('12');
+    expect(w.text()).toContain('牌墙 42');
+    expect(w.text()).toContain('请出牌');
   });
 
-  it('active=false 不渲染倒计时', () => {
+  it('active=false：圆盘显示牌墙数，不显示 12', () => {
     const w = mount(MahjongCenter, { props: { ...base, active: false } });
-    expect(w.find('.mj-center__clock').exists()).toBe(false);
+    expect(w.find('.mj-center__value').text()).toContain('42');
+    expect(w.find('.mj-center__value').text()).not.toContain('12');
+  });
+
+  it('active + seconds=0：显示牌墙数，无 urgent', () => {
+    const w = mount(MahjongCenter, { props: { ...base, seconds: 0 } });
+    expect(w.find('.mj-center__value').text()).toContain('42');
+    expect(w.find('.mj-center__dial').classes()).not.toContain('mj-center__dial--urgent');
+  });
+
+  it('active + seconds=6：非 urgent', () => {
+    const w = mount(MahjongCenter, { props: { ...base, seconds: 6 } });
+    expect(w.find('.mj-center__dial').classes()).not.toContain('mj-center__dial--urgent');
+  });
+
+  it('active + seconds=5：urgent + anim-urgent-pulse', () => {
+    const w = mount(MahjongCenter, { props: { ...base, seconds: 5 } });
+    expect(w.find('.mj-center__dial').classes()).toContain('mj-center__dial--urgent');
+    expect(w.find('.mj-center__dial').classes()).toContain('anim-urgent-pulse');
+  });
+
+  it('ended：圆盘显示终，隐藏听牌，显示 endedText', () => {
+    const w = mount(MahjongCenter, {
+      props: { ...base, ended: true, endedText: '已胡 2 家', tingTiles: ting13 },
+    });
+    expect(w.find('.mj-center__value').text()).toContain('终');
+    expect(w.text()).toContain('已胡 2 家');
+    expect(w.findAll('.mj-tile')).toHaveLength(0);
+  });
+
+  it('13 张听牌：最多 8 张 + 听 13 张 + fan', () => {
+    const w = mount(MahjongCenter, {
+      props: { ...base, tingTiles: ting13, maxFan: 5 },
+    });
+    expect(w.findAll('.mj-tile')).toHaveLength(8);
+    expect(w.find('.mj-center__ting .mj-tile').attributes('style')).toContain('width: 20px');
+    expect(w.find('.mj-center__ting .mj-tile').attributes('style')).toContain('height: 27px');
+    expect(w.text()).toContain('听 13 张');
+    expect(w.text()).toContain('5番');
+    expect(w.find('.mj-center__fan').exists()).toBe(true);
+  });
+
+  it('badge 颜色类：胡/听/出局', () => {
+    const w = mount(MahjongCenter, {
+      props: {
+        ...base,
+        seats: [
+          { label: '对', score: 0, dealer: false, badge: '胡' },
+          { label: '左', score: 0, dealer: false, badge: '听' },
+          { label: '右', score: 0, dealer: false, badge: '出局' },
+          { label: '我', score: 0, dealer: false, badge: '缺万' },
+        ],
+      },
+    });
+    expect(w.find('.mj-center__badge--hu').text()).toBe('胡');
+    expect(w.find('.mj-center__badge--ting').text()).toBe('听');
+    expect(w.find('.mj-center__badge--muted').text()).toBe('出局');
+  });
+
+  it('ended 无胡：牌墙摸空', () => {
+    const w = mount(MahjongCenter, {
+      props: { ...base, ended: true, endedText: '牌墙摸空' },
+    });
+    expect(w.find('.mj-center__value').text()).toContain('终');
+    expect(w.find('.mj-center__ended').text()).toContain('牌墙摸空');
+  });
+
+  it('紧凑：单行、无牌面', () => {
+    const w = mount(MahjongCenter, { props: { ...base, compact: true } });
+    expect(w.classes()).toContain('mj-center--compact');
+    expect(w.findAll('image')).toHaveLength(0);
+    expect(w.text()).toContain('牌墙 42');
+    expect(w.text()).toContain('12s');
+  });
+
+  it('源码闸：panel token、无 claim、尺寸/行高/字体 token', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongCenter.vue', 'utf8');
+    const s = styleOf(src);
+    expect(s).toContain('$ftl-color-mj-panel');
+    expect(src).not.toContain('claimTile');
+    const root = /\.mj-center\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(root).not.toMatch(/\bborder\s*:/);
+    expect(root).not.toMatch(/\bgap\s*:/);
+    expect(root).toContain('padding: 4px 8px');
+    expect(root).toContain('box-shadow');
+    const dial = /\.mj-center__dial\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(dial).toContain('width: 80px');
+    expect(dial).toContain('height: 80px');
+    expect(dial).toContain('box-sizing: border-box');
+    const strip = /\.mj-center__strip\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(strip).toContain('height: 28px');
+    const body = /\.mj-center__body\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(body).toContain('height: 80px');
+    const col = /\.mj-center__col\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(col).toContain('width: 100px');
+    const cell = /\.mj-center__cell\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(cell).toContain('height: 40px');
+    expect(cell).toContain('line-height: 1');
+    expect(cell).toContain('padding: 0');
+    expect(cell).toContain('gap: 0');
+    const ting = /\.mj-center__ting\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(ting).toContain('height: 27px');
+    const phase = /\.mj-center__phase\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(phase).toContain('white-space: nowrap');
+    const fan = /\.mj-center__fan\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(fan).toContain('$ftl-font-mj-mini');
+    const prefix = /\.mj-center__prefix\s*\{([^}]*)\}/.exec(s)?.[1] ?? '';
+    expect(prefix).toContain('$ftl-font-mj-mini');
+    // 每个关键选择器只允许一个块（防末尾追加覆盖）
+    for (const sel of ['.mj-center__dial', '.mj-center__strip', '.mj-center__body', '.mj-center__col', '.mj-center__cell']) {
+      const count = s.split('\n').filter((line) => line.trim().startsWith(`${sel} {`)).length;
+      expect(count, sel).toBe(1);
+    }
+    expect(src).toContain("@import '../../../styles/animations.scss'");
   });
 });

@@ -1,8 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import MahjongHandBacks from '../src/components/table/mahjong/MahjongHandBacks.vue';
 
 describe('MahjongHandBacks', () => {
+  it('牌背亮边走天月 token', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongHandBacks.vue', 'utf8');
+    expect(src).toContain('$ftl-color-mj-highlight');
+  });
+
   it('top：13 张牌背横排，gap 生效', () => {
     const w = mount(MahjongHandBacks, {
       props: { count: 13, direction: 'top', tileW: 36, tileH: 54, gap: 2 },
