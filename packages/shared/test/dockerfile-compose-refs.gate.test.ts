@@ -13,6 +13,7 @@
  * ## 判据
  *
  *  - 根上下文（`.` / `./`）的引用必须落在 `deploy/docker/` 下；
+ *  - 根上下文的服务名必须与 Dockerfile 名一一对应（`Dockerfile.<service>`，防互换/复制粘贴）；
  *  - 每个引用必须是真实文件（`statSync(...).isFile()`）；
  *  - `deploy/docker/` 下每个 Dockerfile 必须被引用；
  *  - `deploy/docker/` 下不得出现无后缀 `Dockerfile`（`listDockerfiles` 的盲区）；
@@ -101,7 +102,7 @@ describe('compose → Dockerfile 路径对账闸', () => {
 
   it('根上下文的服务名与 Dockerfile 名一一对应（防互换/复制粘贴）', () => {
     for (const ref of refs) {
-      if (ref.context !== '.') continue;
+      if (ref.context !== '.' && ref.context !== './') continue;
       expect(ref.dockerfile).toBe(`${DOCKERFILE_DIR}/Dockerfile.${ref.service}`);
     }
   });
