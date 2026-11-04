@@ -8,7 +8,10 @@ import { join, sep } from 'node:path';
  *  - `logicalLines`：剥整行 `#` 注释 + 拼接 `\` 续行；
  *  - `copySources`：取 `COPY` 的**构建上下文**源参数（剥 `--flag`；`--from=` 返回 null，
  *    不把跨 stage/镜像复制误判为本地 COPY）；
- *  - `copiesPackageJson` / `copiesPatches`：路径归一后判断。
+ *  - `copiesPackageJson` / `copiesPatches`：路径归一后判断；
+ *  - `DOCKERFILE_DIR` / `listDockerfiles`：根目录 Dockerfile 的集中位置与文件清单（只认真实文件）；
+ *  - `ComposeBuildRef` / `composeBuildRefs`：从 compose 文本提取 `build:` 引用；
+ *  - `composePathViolations`：路径存在性 / 目录约定 / 孤儿 Dockerfile 对账（仅限仓库根 compose，见其 JSDoc）。
  *
  * ⚠️ 不是完整 Dockerfile 解析器：不支持引号内空格等复杂形态；已知边界由各闸自证覆盖。
  */
@@ -75,11 +78,12 @@ export function copiesPackageJson(line: string): boolean {
 /** 根目录 Dockerfile 的集中位置（相对仓库根）。 */
 export const DOCKERFILE_DIR = 'deploy/docker';
 
-/** 列出 DOCKERFILE_DIR 下的 Dockerfile 文件名（排序；只认 `Dockerfile.*`，README 等不参与）。 */
+/** 列出 DOCKERFILE_DIR 下的 Dockerfile 文件名（排序；只认 `Dockerfile.*` 真实文件，目录/README 等不参与）。 */
 export function listDockerfiles(repo: string): string[] {
   try {
-    return readdirSync(join(repo, DOCKERFILE_DIR))
-      .filter((name) => name.startsWith('Dockerfile.'))
+    return readdirSync(join(repo, DOCKERFILE_DIR), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.startsWith('Dockerfile.'))
+      .map((entry) => entry.name)
       .sort();
   } catch {
     return [];
@@ -187,6 +191,10 @@ export function composeBuildRefs(src: string): ComposeBuildRef[] {
  *
  * 判据：① 根上下文（`.` 或 `./`）的引用必须落在 `deploy/docker/` 下；② 每个引用必须是真实文件；
  * ③ `deploy/docker/` 下每个 Dockerfile 都必须被引用（防孤儿）。
+ *
+ * ⚠️ 适用范围：**仅**对位于仓库根的 compose 文件成立 —— 本函数把 refs 里的 `.` 一律当作
+ * 仓库根来解析相对路径。若喂入 `douzero/docker-compose.douzero.yml` 这类子目录 compose，
+ * 其 `.` 是子目录而非仓库根，会把路径误判（故该 compose 不纳入本闸）。
  */
 export function composePathViolations(
   refs: ComposeBuildRef[],

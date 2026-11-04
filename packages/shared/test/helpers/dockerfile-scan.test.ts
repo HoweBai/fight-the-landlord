@@ -32,6 +32,15 @@ describe('listDockerfiles', () => {
     expect(listDockerfiles(repo)).toEqual(['Dockerfile.a', 'Dockerfile.b']);
   });
 
+  it('名为 Dockerfile.* 的目录不算（只认真实文件）', () => {
+    const repo = mkRepo();
+    const dir = join(repo, 'deploy', 'docker');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'Dockerfile.a'), 'FROM scratch\n');
+    mkdirSync(join(dir, 'Dockerfile.dir'));
+    expect(listDockerfiles(repo)).toEqual(['Dockerfile.a']);
+  });
+
   it('目录不存在时返回空数组（由消费端哨兵判红）', () => {
     expect(listDockerfiles(mkRepo())).toEqual([]);
   });

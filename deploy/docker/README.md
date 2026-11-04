@@ -1,7 +1,9 @@
 # Dockerfile 目录
 
-- **构建上下文是仓库根**：所有 compose `build.context` 都是 `.`，`COPY packages/...`、
-  `COPY pnpm-lock.yaml` 等路径以仓库根为基准，**不要**写成相对本目录。
+- **构建上下文是仓库根**：本目录的 Dockerfile 在 `docker-compose.yml` 中都用 `build.context: .`（仓库根），
+  `COPY packages/...`、`COPY pnpm-lock.yaml` 等路径以仓库根为基准，**不要**写成相对本目录。
+  例外：`douzero` 用 `douzero/docker-compose.douzero.yml`，context 是 `./douzero`，其 Dockerfile 留在
+  `douzero/` 下、不在本目录。
 - 新增镜像：本目录建 `Dockerfile.<service>` → `docker-compose.yml` 加
   `dockerfile: deploy/docker/Dockerfile.<service>` → 同步
   `packages/shared/test/dockerfile-compose-refs.gate.test.ts` 的哨兵计数。

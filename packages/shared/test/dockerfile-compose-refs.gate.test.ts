@@ -29,6 +29,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  DOCKERFILE_DIR,
   composeBuildRefs,
   composePathViolations,
   listDockerfiles,
@@ -68,8 +69,10 @@ describe('compose → Dockerfile 路径对账闸', () => {
   const isFile = (rel: string): boolean => {
     try {
       return statSync(join(REPO, rel)).isFile();
-    } catch {
-      return false;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+      throw err;
     }
   };
 
@@ -94,5 +97,12 @@ describe('compose → Dockerfile 路径对账闸', () => {
 
   it('每个引用存在、位于 deploy/docker、且无孤儿 Dockerfile', () => {
     expect(composePathViolations(refs, dockerfiles, isFile)).toEqual([]);
+  });
+
+  it('根上下文的服务名与 Dockerfile 名一一对应（防互换/复制粘贴）', () => {
+    for (const ref of refs) {
+      if (ref.context !== '.') continue;
+      expect(ref.dockerfile).toBe(`${DOCKERFILE_DIR}/Dockerfile.${ref.service}`);
+    }
   });
 });
