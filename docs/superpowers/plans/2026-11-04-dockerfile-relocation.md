@@ -792,7 +792,7 @@ describe('compose → Dockerfile 路径对账闸', () => {
 - [x] **Step 2: 跑绿（当前状态应已合规）**
 
 Run: `pnpm -C packages/shared test -- dockerfile-compose-refs`
-Expected: PASS（3 个 it）。
+Expected: PASS（4 个 it）。
 
 - [x] **Step 3: 变异验证 A —— 根目录放回 Dockerfile 必红**
 
@@ -849,7 +849,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Modify: `docs/superpowers/specs/2026-11-04-dockerfile-relocation-design.md`（状态行）
 - Modify: `docs/superpowers/plans/2026-11-04-dockerfile-relocation.md`（勾选完成项）
 
-- [ ] **Step 1: 全量验证**
+- [x] **Step 1: 全量验证**
 
 ```bash
 pnpm -C packages/shared test
@@ -859,7 +859,7 @@ pnpm verify:agent
 
 Expected: 全绿。
 
-- [ ] **Step 2: 检查工作区与引用完整性**
+- [x] **Step 2: 检查工作区与引用完整性**
 
 ```bash
 git status --porcelain -- \
@@ -893,12 +893,12 @@ tools/conformance/src/slices/slice-07.3-edge.ts:14
 docker-compose.yml:946
 ```
 
-- [ ] **Step 3: 更新 spec 状态行**
+- [x] **Step 3: 更新 spec 状态行**
 
 把 `**状态**：已对抗审查（阻断 0 / 高 4 已修）；待用户确认后进入计划` 改为
 `**状态**：已实现并通过单测/静态验证；真实镜像构建待合 master 权威轮（images.yml）确认`。
 
-- [ ] **Step 4: 提交文档收尾**
+- [x] **Step 4: 提交文档收尾**
 
 ```bash
 git add docs/superpowers/specs/2026-11-04-dockerfile-relocation-design.md \
