@@ -58,7 +58,7 @@
   - `composeBuildRefs(src: string): ComposeBuildRef[]`
   - `composePathViolations(refs, dockerfileNames, isFile): string[]`
 
-- [ ] **Step 1: 写失败测试（新建 `packages/shared/test/helpers/dockerfile-scan.test.ts`）**
+- [x] **Step 1: 写失败测试（新建 `packages/shared/test/helpers/dockerfile-scan.test.ts`）**
 
 ```ts
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -250,12 +250,12 @@ describe('composePathViolations', () => {
 });
 ```
 
-- [ ] **Step 2: 跑红**
+- [x] **Step 2: 跑红**
 
 Run: `pnpm -C packages/shared test -- dockerfile-scan`
 Expected: FAIL —— `composeBuildRefs` / `composePathViolations` / `listDockerfiles` 未导出（TypeScript/ESM 导入错误或 `is not a function`）。
 
-- [ ] **Step 3: 在 helper 中实现（修改 `packages/shared/test/helpers/dockerfile-scan.ts`）**
+- [x] **Step 3: 在 helper 中实现（修改 `packages/shared/test/helpers/dockerfile-scan.ts`）**
 
 在文件头注释后新增 import：
 
@@ -423,17 +423,17 @@ export function composePathViolations(
 }
 ```
 
-- [ ] **Step 4: 跑绿**
+- [x] **Step 4: 跑绿**
 
 Run: `pnpm -C packages/shared test -- dockerfile-scan`
 Expected: PASS（3 个 describe + 15 个 it 全绿）。
 
-- [ ] **Step 5: 类型检查**
+- [x] **Step 5: 类型检查**
 
 Run: `pnpm -C packages/shared lint`
 Expected: exit 0。
 
-- [ ] **Step 6: 提交（先勾选本任务全部 Step，并带上计划文件）**
+- [x] **Step 6: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
 git add packages/shared/test/helpers/dockerfile-scan.ts \
