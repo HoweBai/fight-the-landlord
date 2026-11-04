@@ -181,6 +181,26 @@ describe('composeBuildRefs', () => {
       { service: 'a', context: '.', dockerfile: 'deploy/docker/Dockerfile.a' },
     ]);
   });
+
+  it('相邻两个 block 服务各自成 ref（sawBuild 必须复位）', () => {
+    const src = [
+      'services:',
+      '  a:',
+      '    build:',
+      '      context: .',
+      '      dockerfile: deploy/docker/Dockerfile.a',
+      '    image: a',
+      '  b:',
+      '    build:',
+      '      context: .',
+      '      dockerfile: deploy/docker/Dockerfile.b',
+      '    image: b',
+    ].join('\n');
+    expect(composeBuildRefs(src)).toEqual([
+      { service: 'a', context: '.', dockerfile: 'deploy/docker/Dockerfile.a' },
+      { service: 'b', context: '.', dockerfile: 'deploy/docker/Dockerfile.b' },
+    ]);
+  });
 });
 
 describe('composePathViolations', () => {
@@ -209,6 +229,12 @@ describe('composePathViolations', () => {
     const v = composePathViolations([okRef], ['Dockerfile.edge', 'Dockerfile.orphan'], () => true);
     expect(v.join('\n')).toContain('孤儿');
     expect(v.join('\n')).toContain('Dockerfile.orphan');
+  });
+
+  it('context=./ 与 . 同判（不得绕过目录约定）', () => {
+    const ref = { service: 'x', context: './', dockerfile: 'Dockerfile.x' };
+    const v = composePathViolations([ref], [], () => true);
+    expect(v.join('\n')).toContain('必须位于 deploy/docker/');
   });
 
   it('非根 context（douzero）允许 Dockerfile 在 context 内，且路径归一为 POSIX', () => {
@@ -286,12 +312,17 @@ export function composeBuildRefs(src: string): ComposeBuildRef[] {
   let inServices = false;
   let service: string | null = null;
   let inBuild = false;
+  let sawBuild = false;
   let context = '.';
   let dockerfile = 'Dockerfile';
 
   const flush = (): void => {
-    if (service !== null && inBuild) refs.push({ service, context, dockerfile });
+    // ⚠️ 判 push 用 sawBuild，不用 inBuild：build 块后的第一个 4 空格子键
+    // （image/restart/environment…）就会把 inBuild 清掉，若用它判 push，
+    // block 写法会在 flush 前全部丢失（实测真实 compose ⇒ 0 条）。
+    if (service !== null && sawBuild) refs.push({ service, context, dockerfile });
     inBuild = false;
+    sawBuild = false;
     context = '.';
     dockerfile = 'Dockerfile';
   };
@@ -323,6 +354,7 @@ export function composeBuildRefs(src: string): ComposeBuildRef[] {
     const build = COMPOSE_BUILD_RE.exec(raw);
     if (build !== null) {
       inBuild = true;
+      sawBuild = true;
       const inline = build[1]!.trim();
       if (inline.startsWith('{')) {
         const c = COMPOSE_INLINE_CONTEXT_RE.exec(inline);
@@ -350,7 +382,7 @@ export function composeBuildRefs(src: string): ComposeBuildRef[] {
 /**
  * 纯函数：拿 refs + Dockerfile 文件名清单 + 可注入 isFile，返回违规列表。
  *
- * 判据：① `context === '.'` 的引用必须落在 `deploy/docker/` 下；② 每个引用必须是真实文件；
+ * 判据：① 根上下文（`.` 或 `./`）的引用必须落在 `deploy/docker/` 下；② 每个引用必须是真实文件；
  * ③ `deploy/docker/` 下每个 Dockerfile 都必须被引用（防孤儿）。
  */
 export function composePathViolations(
@@ -367,10 +399,12 @@ export function composePathViolations(
 
   for (const ref of refs) {
     const rel = toPosixPath(join(ref.context, ref.dockerfile));
+    const ctx = toPosixPath(ref.context);
+    const isRootContext = ctx === '' || ctx === '.';
     referenced.add(rel);
-    if (ref.context === '.' && !rel.startsWith(`${DOCKERFILE_DIR}/`)) {
+    if (isRootContext && !rel.startsWith(`${DOCKERFILE_DIR}/`)) {
       violations.push(
-        `${ref.service}: context='.' 的 dockerfile 必须位于 ${DOCKERFILE_DIR}/ 下（实际 ${rel}）`,
+        `${ref.service}: 根上下文的 dockerfile 必须位于 ${DOCKERFILE_DIR}/ 下（实际 ${rel}）`,
       );
     }
     if (!isFile(rel)) {
@@ -392,17 +426,19 @@ export function composePathViolations(
 - [ ] **Step 4: 跑绿**
 
 Run: `pnpm -C packages/shared test -- dockerfile-scan`
-Expected: PASS（3 个 describe + 13 个 it 全绿）。
+Expected: PASS（3 个 describe + 15 个 it 全绿）。
 
 - [ ] **Step 5: 类型检查**
 
 Run: `pnpm -C packages/shared lint`
 Expected: exit 0。
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 6: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
-git add packages/shared/test/helpers/dockerfile-scan.ts packages/shared/test/helpers/dockerfile-scan.test.ts
+git add packages/shared/test/helpers/dockerfile-scan.ts \
+  packages/shared/test/helpers/dockerfile-scan.test.ts \
+  docs/superpowers/plans/2026-11-04-dockerfile-relocation.md
 git commit -m "test: Dockerfile 扫描 helper 增加目录枚举与 compose 路径对账纯函数
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -533,7 +569,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 2: 跑红（证明闸真的看新目录）**
 
 Run: `pnpm -C packages/shared test -- dockerfile-`
-Expected: 3 个 Dockerfile 闸失败（`expected [] to have a length of at least 7` 等）；helper 单测通过。
+Expected: 3 个 Dockerfile 闸失败——frozen / patches 的哨兵 `expect(dockerfiles.length).toBeGreaterThanOrEqual(7)` 红（`expected 0 to be greater than or equal to 7`），workspace 的同类哨兵红；helper 单测通过。
 
 - [ ] **Step 3: 执行迁移**
 
@@ -608,6 +644,9 @@ Expected: 每行形如 `# platform/deploy/docker/Dockerfile.user-service ...`。
 - 新增镜像：本目录建 `Dockerfile.<service>` → `docker-compose.yml` 加
   `dockerfile: deploy/docker/Dockerfile.<service>` → 同步
   `packages/shared/test/dockerfile-compose-refs.gate.test.ts` 的哨兵计数。
+  若是 `COPY package.json` + `pnpm install` 的 node 镜像，还要把
+  `packages/shared/test/dockerfile-frozen-lockfile.gate.test.ts` 的
+  `KNOWN_PARTICIPANTS` 显式加进去。
 - `.dockerignore` 必须留在仓库根（BuildKit 从上下文根读取），不能移进本目录。
 ```
 
@@ -623,13 +662,14 @@ pnpm -C packages/shared lint
 
 Expected: 全绿；`verify:agent` 输出全部 `✅`。
 
-- [ ] **Step 10: 提交**
+- [ ] **Step 10: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
 git add deploy/docker docker-compose.yml scripts/verify-agent-static.mjs scripts/deploy/build-images.sh \
   packages/shared/test/dockerfile-frozen-lockfile.gate.test.ts \
   packages/shared/test/dockerfile-patches-copy.gate.test.ts \
-  packages/shared/test/dockerfile-workspace-copy.gate.test.ts
+  packages/shared/test/dockerfile-workspace-copy.gate.test.ts \
+  docs/superpowers/plans/2026-11-04-dockerfile-relocation.md
 git commit -m "refactor: Dockerfile 迁入 deploy/docker（context 保持仓库根）
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -663,9 +703,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
  *
  * ## 判据
  *
- *  - `context: .` 的引用必须落在 `deploy/docker/` 下；
+ *  - 根上下文（`.` / `./`）的引用必须落在 `deploy/docker/` 下；
  *  - 每个引用必须是真实文件（`statSync(...).isFile()`）；
  *  - `deploy/docker/` 下每个 Dockerfile 必须被引用；
+ *  - `deploy/docker/` 下不得出现无后缀 `Dockerfile`（`listDockerfiles` 的盲区）；
  *  - 根目录 `Dockerfile*` 必须为空；
  *  - 哨兵：14 个引用、13 个 Dockerfile、含已知成员。
  *
@@ -735,6 +776,13 @@ describe('compose → Dockerfile 路径对账闸', () => {
     expect(readdirSync(REPO).filter((name) => name.startsWith('Dockerfile'))).toEqual([]);
   });
 
+  it('deploy/docker 下不得出现无后缀 Dockerfile（listDockerfiles 盲区）', () => {
+    const all = readdirSync(join(REPO, 'deploy', 'docker')).filter((name) =>
+      name.startsWith('Dockerfile'),
+    );
+    expect(all.sort()).toEqual(listDockerfiles(REPO));
+  });
+
   it('每个引用存在、位于 deploy/docker、且无孤儿 Dockerfile', () => {
     expect(composePathViolations(refs, dockerfiles, isFile)).toEqual([]);
   });
@@ -762,6 +810,7 @@ rm Dockerfile.__mutation
 - [ ] **Step 4: 变异验证 B —— compose 路径改坏必红**
 
 ```bash
+git diff --quiet -- docker-compose.yml || { echo 'docker-compose.yml 有未提交改动，停止'; exit 1; }
 perl -pi -e 's{deploy/docker/Dockerfile\.grafana}{deploy/docker/Dockerfile.__missing}' docker-compose.yml
 pnpm -C packages/shared test -- dockerfile-compose-refs
 ```
@@ -782,10 +831,11 @@ Expected: PASS。
 Run: `pnpm -C packages/shared lint`
 Expected: exit 0。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 7: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
-git add packages/shared/test/dockerfile-compose-refs.gate.test.ts
+git add packages/shared/test/dockerfile-compose-refs.gate.test.ts \
+  docs/superpowers/plans/2026-11-04-dockerfile-relocation.md
 git commit -m "test: 新增 compose→Dockerfile 路径对账闸
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -812,19 +862,41 @@ Expected: 全绿。
 - [ ] **Step 2: 检查工作区与引用完整性**
 
 ```bash
-git status --porcelain
-grep -rn 'Dockerfile\.' --include='*.yml' --include='*.yaml' --include='*.sh' --include='*.mjs' \
-  . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.turbo | grep -v 'deploy/docker/Dockerfile'
+git status --porcelain -- \
+  docs/superpowers/specs/2026-11-04-dockerfile-relocation-design.md \
+  docs/superpowers/plans/2026-11-04-dockerfile-relocation.md
 ```
 
-Expected:
-- `git status` 只有本任务要提交的文档改动；
-- 第二条只应命中 `douzero/Dockerfile` 相关与历史/注释性裸文件名（无活路径引用指向根目录）。
+Expected: 只有上面两个文档路径（已知的无关联未跟踪文件 `tmp-layout-out.txt`、
+`docs/superpowers/*/2026-11-02-mahjong-center-ia*` 不在本任务范围）。
+
+```bash
+grep -rnE 'Dockerfile\.[A-Za-z0-9._-]+' \
+  --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs' \
+  --include='*.yml' --include='*.yaml' --include='*.sh' --include='*.md' --include='*.json' \
+  --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=test \
+  --exclude-dir=.git --exclude-dir=.turbo \
+  scripts packages deploy tools .github k8s docker-compose.yml docker-compose.override.yml \
+  | grep -v 'deploy/docker/Dockerfile'
+```
+
+Expected（只剩注释/文案裸名，**无活路径引用**）：
+
+```text
+packages/alert-relay/src/am-renderer.ts:55
+packages/config-service/src/admin/admin-password.ts:5
+deploy/download/README.md:3
+deploy/monitoring/grafana/provisioning/dashboards/ftl.yml:4
+deploy/monitoring/prometheus/entrypoint.sh:14
+deploy/monitoring/prometheus/prometheus.yml:2
+tools/conformance/src/slices/slice-07.3-edge.ts:14
+docker-compose.yml:946
+```
 
 - [ ] **Step 3: 更新 spec 状态行**
 
 把 `**状态**：已对抗审查（阻断 0 / 高 4 已修）；待用户确认后进入计划` 改为
-`**状态**：已实现并验证（2026-11-04）`。
+`**状态**：已实现并通过单测/静态验证；真实镜像构建待合 master 权威轮（images.yml）确认`。
 
 - [ ] **Step 4: 提交文档收尾**
 
@@ -852,3 +924,24 @@ pnpm verify:agent
 - 本机**无 Docker CLI**：`docker compose build` / `buildx bake` 无法执行。
 - 真实构建通路由合 master 后的 `.github/workflows/images.yml`（`scripts/deploy/build-images.sh`）权威验证。
 - 若执行者机器有 Docker，补跑：仓库根 `docker compose -f docker-compose.yml build api-gateway`。
+
+---
+
+## 计划审查记录
+
+**审查方式**：独立 reviewer 子代理（只读），2026-11-04。**阻断：1（已修）；高：0；低：9（均已处置）。**
+
+| # | 等级 | 问题 | 处置 |
+|---|---|---|---|
+| B1 | 阻断 | `flush()` 用 `inBuild` 判 push；build 块后的 4 空格子键（`image:` 等）已把它清掉 ⇒ block 写法全部丢失，Task 1 两条样本与 Task 3 闸恒红 | 已改用 `sawBuild` 判 push 并在 `flush()` 复位；新增「相邻两个 block 服务」样本防串服务 |
+| L1 | 低 | Task 4 grep 审计覆盖窄、Expected 与命令矛盾 | 已改为按扩展名扫描 + 精确 allowlist 比对 |
+| L2 | 低 | `git status` 期望被既有未跟踪文件打破 | 已改为限定两个文档路径，并注明已知无关文件 |
+| L3 | 低 | Task 2 红态文案与真实断言不符 | 已改为哨兵断言失败的准确描述 |
+| L4 | 低 | 缺计划审查记录与勾选动作 | 已补本节；每个 Task 提交前勾选 Step |
+| L5 | 低 | README 新增镜像清单漏 frozen-lockfile `KNOWN_PARTICIPANTS` | 已补 |
+| L6 | 低 | spec 状态「已实现并验证」超前（本机无 Docker） | 已改为「真实镜像构建待合 master 权威轮」 |
+| L7 | 低 | `deploy/docker/Dockerfile`（无后缀）是孤儿盲区 | 已加机械断言：目录内 `Dockerfile*` 集合必须等于 `listDockerfiles` |
+| L8 | 低 | `context: './'` 可绕过根上下文规则 | 已归一后判空串或 `.` |
+| L9 | 低 | 变异验证的 `git checkout --` 无脏检查 | 已加 `git diff --quiet` 前置守卫 |
+
+**结论**：阻断项已修，计划可执行。
