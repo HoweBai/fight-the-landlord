@@ -5,3 +5,4 @@
  * 生产代码不得 import 本包 —— 那会把测试专用代码拖进生产产物。
  */
 export { stripComments } from './strip-comments';
+export { extractJsLiteral } from './extract-js-literal';

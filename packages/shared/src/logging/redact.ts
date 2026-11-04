@@ -23,7 +23,7 @@ const CARD_KEYS = 'hand|hands|cards|bottomCards|actionLog|playedCards|deck';
 
 const CARD_LIST = new RegExp(`(["']?(?:${CARD_KEYS})["']?\\s*[:=]\\s*)\\[([^\\]]*)\\]`, 'gi');
 const SECRET_KEY = new RegExp(
-  `(["']?(?:password|passwd|pwd|passwordHash|password_hash|refreshToken|accessToken)["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,}]+)`,
+  `(["']?(?:password|passwd|pwd|passwordHash|password_hash|refreshToken|accessToken|inviteCode|invite_code)["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,}]+)`,
   'gi',
 );
 const SECRET_HEADER = /((?:x-internal-token|x-token-jti)["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}]+)/gi;
@@ -107,7 +107,7 @@ const MAX_DEPTH = 6;
  * **无需**枚举加项 —— 上面段界规则 `(^|[._])pull[_]?token$` 已覆盖（单测正例钉住）。
  */
 const SECRET_KEY_NAME =
-  /^(password|passwd|pwd|passwordHash|password_hash|refreshToken|accessToken)$|(^|[._])(private[_]?key|pull[_]?token)$|(^|[._])notify\.(smtp\.pass|webhook\.(feishuUrl|wecomUrl|dingtalkUrl|dingtalkSecret))$|(^|[._])ad\.callbackSecret$/i;
+  /^(password|passwd|pwd|passwordHash|password_hash|refreshToken|accessToken|inviteCode|invite_code)$|(^|[._])(private[_]?key|pull[_]?token)$|(^|[._])notify\.(smtp\.pass|webhook\.(feishuUrl|wecomUrl|dingtalkUrl|dingtalkSecret))$|(^|[._])ad\.callbackSecret$/i;
 const CARD_KEY_NAME = new RegExp(`^(${CARD_KEYS})$`, 'i');
 const INTERNAL_HEADER_NAME = /^(x-internal-token|x-token-jti)$/i;
 

@@ -1,7 +1,7 @@
 import { Controller, Get, Headers, Query } from '@nestjs/common';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { httpException, toHttpException } from '../http/errors';
-import { RecordsService, type MyRecordsPage, type PdkRecordsPage } from './records.service';
+import { RecordsService, type MahjongRecordsPage, type MyRecordsPage, type PdkRecordsPage } from './records.service';
 
 /**
  * 记录片 T6（规格 §2.3 / 设计 D4）：`GET /api/records/mine` 的 **user-service HTTP 面**。
@@ -33,13 +33,18 @@ export class RecordsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('gameType') gameType?: string,
-  ): Promise<{ code: ErrCode; data: MyRecordsPage | PdkRecordsPage }> {
+  ): Promise<{ code: ErrCode; data: MyRecordsPage | PdkRecordsPage | MahjongRecordsPage }> {
     if (typeof userId !== 'string' || userId.length === 0) {
       throw httpException(ErrCode.UNAUTHENTICATED, 'X-User-Id header is required');
     }
-    // 多玩法（S7.2）：缺省 = 斗地主（旧客户端零破坏）；非法值 ⇒ 10001。
-    if (gameType !== undefined && gameType !== 'doudizhu' && gameType !== 'paodekuai') {
-      throw httpException(ErrCode.BAD_PARAM, 'gameType 必须是 doudizhu 或 paodekuai');
+    // 多玩法（S7.2/T12）：缺省 = 斗地主（旧客户端零破坏）；非法值 ⇒ 10001。
+    if (
+      gameType !== undefined &&
+      gameType !== 'doudizhu' &&
+      gameType !== 'paodekuai' &&
+      gameType !== 'mahjong'
+    ) {
+      throw httpException(ErrCode.BAD_PARAM, 'gameType 必须是 doudizhu、paodekuai 或 mahjong');
     }
     try {
       // from/to 是字符串 query ⇒ 转 number；非法值留给 service 做静默忽略
@@ -51,7 +56,9 @@ export class RecordsController {
         data:
           gameType === 'paodekuai'
             ? await this.recordsService.getMyPdkRecords(userId, query)
-            : await this.recordsService.getMyRecords(userId, query),
+            : gameType === 'mahjong'
+              ? await this.recordsService.getMyMahjongRecords(userId, query)
+              : await this.recordsService.getMyRecords(userId, query),
       };
     } catch (err) {
       throw toHttpException(err);

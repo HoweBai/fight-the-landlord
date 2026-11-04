@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type { Redis } from 'ioredis';
 import { ErrCode } from '@fight-the-landlord/protocol';
 import { UsersRepository } from '../users/users.repository';
-import { userRegistrationsTotal } from '../metrics/player.metrics';
+import { userRegistrationsTotal, userRegistrationFailuresTotal } from '../metrics/player.metrics';
 import { RegisterDto, LoginDto } from '../users/users.dto';
 import { TokenService, type TokenPair, REDIS } from './token.service';
 import { DomainError } from '../http/errors';
@@ -68,8 +68,55 @@ export class AuthService {
    * 失败原因按「不透传 ≠ 不留痕」只进日志（warn 行），响应固定为 `10007` 信封。
    */
   async register(dto: RegisterDto): Promise<AuthResult> {
+    const release = await this.acquirePhoneLock(dto.phone);
+    try {
+      return await this.registerLocked(dto);
+    } finally {
+      await release();
+    }
+  }
+
+  /**
+   * 同手机号注册短锁（2026-11-03）：防止并发注册各烧一枚一次性邀请码、重复发赠币。
+   * key 用手机号 SHA-256（不把明文手机号写进 Redis）；TTL 10s 覆盖最坏注册链路；
+   * 释放用 token 比对（Lua），避免 TTL 过期后误删后来者的锁。
+   * Redis 异常 ⇒ WARN 后 fail-open（不阻断注册；令牌签发本身仍依赖 Redis）。
+   */
+  private async acquirePhoneLock(phone: string): Promise<() => Promise<void>> {
+    const key = `register:phone:${createHash('sha256').update(phone.trim()).digest('hex')}`;
+    const token = randomUUID();
+    const noop = async () => undefined;
+    try {
+      const ok = await this.redis.set(key, token, 'PX', 10_000, 'NX');
+      if (ok !== 'OK') {
+        userRegistrationFailuresTotal.inc({ reason: 'rate_limited' });
+        throw new DomainError(ErrCode.RATE_LIMITED, '操作太频繁，请稍后再试');
+      }
+    } catch (err) {
+      if (err instanceof DomainError) throw err;
+      this.logger.warn(`registration phone lock unavailable: ${String(err)}`);
+      return noop;
+    }
+    return async () => {
+      try {
+        await this.redis.eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+          1,
+          key,
+          token,
+        );
+      } catch (err) {
+        this.logger.warn(`registration phone lock release failed: ${String(err)}`);
+      }
+    };
+  }
+
+  private async registerLocked(dto: RegisterDto): Promise<AuthResult> {
     const existing = await this.usersRepo.findByPhone(dto.phone);
-    if (existing) throw new DomainError(ErrCode.PHONE_TAKEN, '手机号已注册');
+    if (existing) {
+      userRegistrationFailuresTotal.inc({ reason: 'phone_taken' });
+      throw new DomainError(ErrCode.PHONE_TAKEN, '手机号已注册');
+    }
 
     const userId = randomUUID();
     // 代理分润（2026-10-26）：邀请码绑定 **先于** signup grant / 落库（fail-closed）。
@@ -78,21 +125,39 @@ export class AuthService {
     // - `ignored`（功能关闭）/`already_bound` 都算成功（注册照常）。
     // ⚠️ 绑定写在用户行之前：若后续 grant/落库失败，可能留下孤儿绑定（uuid 永不复用；
     //   日志/指标留痕，管理员可清理）—— 换取「注册成功必有归属」的确定性。
+    // 🔴 一次性码（2026-11-03）：currency 侧提交后，grant/落库失败或 RPC 响应丢失会让码
+    //   永久 used 且可能没有用户行；用户拿同码重试会得到 11006「已被使用」。这是 spec §6
+    //   登记的已知残余：靠 agent_invite_consumed_total 指标 + 管理员单码撤销/补发兜底；
+    //   跨 RPC 注册幂等键留待后续。
     const inviteCode = typeof dto.inviteCode === 'string' ? dto.inviteCode.trim().toUpperCase() : '';
+    // 代理分润（2026-11-03）：必填 = 入口开 && 必填开；空码在进入货币服务之前拒绝。
+    const inviteRequired =
+      this.configCache.agentInviteEnabled() && this.configCache.agentInviteRequired();
+    if (inviteRequired && inviteCode.length === 0) {
+      userRegistrationFailuresTotal.inc({ reason: 'invite_missing' });
+      throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '请填写邀请码');
+    }
     if (inviteCode.length > 0) {
       try {
-        await this.currencyClient.agentBind({
+        const bind = await this.currencyClient.agentBind({
           ownerId: userId,
           code: inviteCode,
           phone: dto.phone,
           source: 'signup',
         });
+        if (bind.status === 'ignored' && inviteRequired) {
+          this.logger.warn(
+            `agent bind ignored while invite required (userId=${userId}, reason=${bind.reason ?? 'unknown'})`,
+          );
+        }
       } catch (err) {
         if (err instanceof CurrencyServiceError && err.code === ErrCode.AGENT_INVITE_INVALID) {
+          userRegistrationFailuresTotal.inc({ reason: 'invite_invalid' });
           throw new DomainError(ErrCode.AGENT_INVITE_INVALID, err.message);
         }
         const reason = err instanceof CurrencyServiceError ? `code=${err.code}` : String(err);
         this.logger.warn(`agent bind failed (userId=${userId}): ${reason}`);
+        userRegistrationFailuresTotal.inc({ reason: 'upstream' });
         throw new DomainError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
       }
     }
@@ -108,17 +173,24 @@ export class AuthService {
       } catch (err) {
         const reason = err instanceof CurrencyServiceError ? `code=${err.code}` : String(err);
         this.logger.warn(`signup grant failed (userId=${userId}): ${reason}`);
+        userRegistrationFailuresTotal.inc({ reason: 'upstream' });
         throw new DomainError(ErrCode.UPSTREAM_UNAVAILABLE, TRANSPORT_FAILURE_MESSAGE);
       }
     }
 
-    const user = await this.usersRepo.create({
-      id: userId,
-      phone: dto.phone,
-      passwordHash: await bcrypt.hash(dto.password, this.saltRounds),
-      nickname: dto.nickname.trim(),
-      status: 'active' as const,
-    });
+    let user: Awaited<ReturnType<UsersRepository['create']>>;
+    try {
+      user = await this.usersRepo.create({
+        id: userId,
+        phone: dto.phone,
+        passwordHash: await bcrypt.hash(dto.password, this.saltRounds),
+        nickname: dto.nickname.trim(),
+        status: 'active' as const,
+      });
+    } catch (err) {
+      userRegistrationFailuresTotal.inc({ reason: 'db' });
+      throw err;
+    }
     // 设备绑定片：新 userId 不可能已有绑定行 ⇒ 有 deviceId 即静默首绑（开关关则零操作）；
     // 放在签 token 之前——绑定闸不过不发令牌。
     await this.enforceDeviceBinding(user.id, dto.deviceId);

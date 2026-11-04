@@ -76,13 +76,13 @@ export interface CreateSessionOptions {
     roomCode: string;
     seat: number;
     /** 多玩法（S5.3）：新服务端携带；旧服务端缺失 ⇒ 回落 activeMode/3。 */
-    gameType?: 'doudizhu' | 'paodekuai';
+    gameType?: 'doudizhu' | 'paodekuai' | 'mahjong';
     playerCount?: number;
   }) => void;
   onRoomState: (payload: {
     status: string;
     players: RoomPlayerLike[];
-    gameType?: 'doudizhu' | 'paodekuai';
+    gameType?: 'doudizhu' | 'paodekuai' | 'mahjong';
     playerCount?: number;
   }) => void;
   /**

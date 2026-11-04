@@ -6,7 +6,8 @@
 #   默认 release-tag = `apk-latest`（可用环境变量 APK_RELEASE_TAG 覆盖；
 #   与 images.yml 的 `vars.APK_RELEASE_TAG` 保持同名语义）。
 #
-# ⚠️ 资产名保持**原文件名**（uni-ad 表单填的是 `/download/优比棋牌.apk`，逐字一致）。
+# ⚠️ 资产名 = 线上文件名，取自真源 `scripts/deploy/apk-name.txt`（ASCII；uni-ad 表单里的
+#    `/download/<文件名>` 必须与它逐字一致）。
 # ⚠️ Release tag `apk-latest` 不是版本 tag（不匹配 `v*` / `dev-*`）⇒ 不会触发任何 workflow。
 # ⚠️ 只上传/替换资产，不重建 APK —— APK 仍由 HBuilderX 云打包产出（见 deploy/download/README.md）。
 set -euo pipefail
@@ -35,15 +36,16 @@ gh auth status >/dev/null 2>&1 || {
   exit 1
 }
 
-ASSET_NAME="youbi-pokergame.apk"
+ASSET_NAME="$(cat scripts/deploy/apk-name.txt)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 cp "$APK" "$STAGE/$ASSET_NAME"
 echo "ℹ️ [publish-apk] Release=$TAG · 资产=$ASSET_NAME（$(wc -c <"$APK" | tr -d ' ') bytes；本地名 $(basename "$APK")）"
 if gh release view "$TAG" >/dev/null 2>&1; then
-  # 清掉历史资产名（含曾被 gh 改写的 default.apk / 中文名），保证资产集合可预期。
+  # 清掉历史资产名（含曾被 gh 改写的 default.apk / 旧中文名 / 旧 ASCII 名），保证资产集合可预期。
   gh release delete-asset "$TAG" "default.apk" --yes >/dev/null 2>&1 || true
   gh release delete-asset "$TAG" "优比棋牌.apk" --yes >/dev/null 2>&1 || true
+  gh release delete-asset "$TAG" "youbi-pokergame.apk" --yes >/dev/null 2>&1 || true
   gh release upload "$TAG" "$STAGE/$ASSET_NAME" --clobber
   echo "✅ [publish-apk] 已替换 Release $TAG 的资产"
 else

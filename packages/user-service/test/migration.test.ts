@@ -17,6 +17,7 @@ import { PdkRecords1796300000000 } from '../src/migrations/1796300000000-PdkReco
 import { PdkRecordGameTypeDdl1797000000003 } from '../src/migrations/1797000000003-PdkRecordGameTypeDdl';
 import { PdkRecordPlayerBackfill1797000000004 } from '../src/migrations/1797000000004-PdkRecordPlayerBackfill';
 import { RiskReviewGameType1797000000005 } from '../src/migrations/1797000000005-RiskReviewGameType';
+import { MahjongCollationFix1798500000000 } from '../src/migrations/1798500000000-MahjongCollationFix';
 
 /**
  * E7（§10.3：「`synchronize: true` **仅限开发环境**；MVP 上线前须改为显式迁移脚本」）。
@@ -944,6 +945,39 @@ describe('B：risk_reviews.game_type 迁移（2026-10-26）', () => {
     await new RiskReviewGameType1797000000005().down(downRunner);
     expect(down).toEqual([
       'ALTER TABLE `risk_reviews` DROP KEY `idx_game_status_id`, DROP COLUMN `game_type`',
+    ]);
+  });
+});
+
+describe('麻将双表 collation 修复迁移（2026-10-28）', () => {
+  it('name/时间戳：晚于 MahjongTimestampsBigint', () => {
+    expect(new MahjongCollationFix1798500000000().name).toBe('MahjongCollationFix1798500000000');
+    expect(1798500000000).toBeGreaterThan(1798400000000);
+  });
+
+  it('up/down 精确 SQL：两张表 CONVERT 到 0900_ai_ci / 逆操作回 unicode_ci', async () => {
+    const up: string[] = [];
+    const upRunner = {
+      query: async (sql: string) => {
+        up.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new MahjongCollationFix1798500000000().up(upRunner);
+    expect(up).toEqual([
+      'ALTER TABLE `game_records_mahjong` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci',
+      'ALTER TABLE `game_record_players_mahjong` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci',
+    ]);
+
+    const down: string[] = [];
+    const downRunner = {
+      query: async (sql: string) => {
+        down.push(sql);
+      },
+    } as unknown as QueryRunner;
+    await new MahjongCollationFix1798500000000().down(downRunner);
+    expect(down).toEqual([
+      'ALTER TABLE `game_records_mahjong` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+      'ALTER TABLE `game_record_players_mahjong` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
     ]);
   });
 });

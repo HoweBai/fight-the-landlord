@@ -10,8 +10,8 @@
  *     ⚠️ 本清单**另含非 G12 的片内针脚**（不在 slice-19 真源里；如销毁上账片的
  *     `fin-burn-line` / `销毁：残差 `）——「真源 = slice-19」仅覆盖 G12 那批。
  *  2. v2.1 结构断言：两栏壳/树/设置页新 id 就位；1a 三栏旧 id 与 #view-nav 已消失；
- *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 85 个 active 键
- *     （80 简单 + 5 结构化）。
+ *     nav-config-btn 以 hidden 锚点保留；CONFIG_IA 与 CONFIG_CONTROLS 覆盖 96 个 active 键
+ *     （89 简单 + 7 结构化）。
  *  3. 控件定稿表：80 简单键的 type/后缀/step 与方案 v2.1 逐键定论表一致（防单位臆造回潮）。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
@@ -128,6 +128,7 @@ for (const id of [
   'settings-rows',
   'nav-cfg-ddz-btn',
   'nav-cfg-pdk-btn',
+  'nav-cfg-mahjong-btn',
   'nav-cfg-economy-btn',
   'nav-cfg-paycfg-btn',
   'nav-cfg-riskcfg-btn',
@@ -214,9 +215,9 @@ ok(
     [...legacyAdminSet].every((k) => legacyProtoSet.has(k)),
   'admin LEGACY_CONFIG_KEYS 与 protocol 逐键相等',
 );
-ok(protoSet.size === 101, `protocol CONFIG_KEYS 恰 101 键（实测 ${protoSet.size}）`);
-ok(activeProtoSet.size === 85, `active = CONFIG_KEYS − LEGACY 恰 85 键（实测 ${activeProtoSet.size}）`);
-ok(iaKeySet.size === 85, `CONFIG_IA 覆盖 85 键（实测 ${iaKeySet.size}）`);
+ok(protoSet.size === 113, `protocol CONFIG_KEYS 恰 113 键（实测 ${protoSet.size}）`);
+ok(activeProtoSet.size === 97, `active = CONFIG_KEYS − LEGACY 恰 97 键（实测 ${activeProtoSet.size}）`);
+ok(iaKeySet.size === 97, `CONFIG_IA 覆盖 97 键（实测 ${iaKeySet.size}）`);
 ok([...activeProtoSet].every((k) => iaKeySet.has(k)), 'CONFIG_IA 未漏 active 键');
 ok([...iaKeySet].every((k) => activeProtoSet.has(k)), 'CONFIG_IA 无表外/旧键');
 
@@ -297,7 +298,7 @@ ok(
   'CONFIG_NOTES 以条目形态含跑得快 2/4 两闸（防注释假绿）',
 );
 const noteKeys = [...notesBlock.matchAll(/^  '([^']+)': \[/gm)].map((m) => m[1]);
-ok(noteKeys.length === 85, `CONFIG_NOTES 恰 85 条（实测 ${noteKeys.length}；代理分润 +1、B 组 +7）`);
+ok(noteKeys.length === 97, `CONFIG_NOTES 恰 97 条（实测 ${noteKeys.length}；麻将 +11）`);
 /* 2026-10-25：跑得快规则/计分/开关 + 2/4 人闸备注齐全（此前落进「通用说明」兜底文案）。 */
 const PDK_NOTE_KEYS = [
   'game.levels.paodekuai',
@@ -365,6 +366,8 @@ ok(lastWarn({}, 'game.doudizhu.enabled', swDefaults, swKeys) === true, 'lastEnab
 const STRUCT_KEYS = [
   'game.levels.doudizhu',
   'game.levels.paodekuai',
+  'game.levels.mahjong',
+  'game.mahjong.rules',
   'pay.rechargePackages',
   'game.doudizhu.robot.skillDistribution',
   'game.doudizhu.robot.modelBySkill',
@@ -386,6 +389,7 @@ const BOOL_KEYS = [
   'client.appEnabled',
   'client.h5Enabled',
   'agent.inviteEnabled',
+  'agent.inviteRequired',
   'risk.withdrawReAuthEnabled',
   'game.doudizhu.cardCounterEnabled',
   // 跑得快 5 个场次/好友房/补位开关
@@ -408,6 +412,14 @@ const BOOL_KEYS = [
   'game.paodekuai.springMultiplierEnabled',
   'game.paodekuai.baobenEnabled',
   'game.doudizhu.enabled',
+  // 四川麻将 7 个布尔键
+  'game.mahjong.enabled',
+  'game.mahjong.freeRoomEnabled',
+  'game.mahjong.goldRoomEnabled',
+  'game.mahjong.friendRoomEnabled',
+  'game.mahjong.freeBotFillEnabled',
+  'game.mahjong.goldBotFillEnabled',
+  'game.mahjong.sbrGoldEnabled',
 ];
 const TEXT_KEYS = ['ad.reliefAdpid', 'game.paodekuai.airplaneWings'];
 /** 27 数字键逐键后缀定论（'' = 无后缀；值 = 控件右侧后缀原文）。 */
@@ -432,6 +444,8 @@ const NUMBER_SUFFIX = {
   'game.doudizhu.entryMultiplier': '倍',
   'game.paodekuai.rakePercent': '%',
   'game.paodekuai.entryMultiplier': '倍',
+  'game.mahjong.rakePercent': '%',
+  'game.mahjong.entryMultiplier': '倍',
   'currency.reliefThresholdCoins': '金币',
   'currency.signupGrant': '金币',
   'currency.reliefAmount': '金币',
@@ -466,15 +480,15 @@ let em;
 while ((em = ENTRY_RE.exec(controlsBlock))) entries.set(em[1], em[2]);
 
 const structSet = new Set(STRUCT_KEYS);
-ok(entries.size === 80, `CONFIG_CONTROLS 恰 80 个简单键条目（实测 ${entries.size}）`);
+ok(entries.size === 90, `CONFIG_CONTROLS 恰 90 个简单键条目（实测 ${entries.size}）`);
 ok([...entries.keys()].every((k) => protoSet.has(k)), 'CONFIG_CONTROLS 条目均为 protocol 键');
-ok(STRUCT_KEYS.every((k) => !entries.has(k)), '5 个结构化键不在简单控件表');
-ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '85 键 = 80 简单 ∪ 5 结构化（无遗漏）');
-ok(BOOL_KEYS.every((k) => entries.has(k)), '36 布尔键清单全部入表');
-ok(BOOL_KEYS.length === 36 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '36 布尔键 type=bool');
+ok(STRUCT_KEYS.every((k) => !entries.has(k)), '7 个结构化键不在简单控件表');
+ok([...activeProtoSet].every((k) => entries.has(k) || structSet.has(k)), '97 键 = 90 简单 ∪ 7 结构化（无遗漏）');
+ok(BOOL_KEYS.every((k) => entries.has(k)), '44 布尔键清单全部入表');
+ok(BOOL_KEYS.length === 44 && BOOL_KEYS.every((k) => /type:\s*'bool'/.test(entries.get(k) ?? '')), '44 布尔键 type=bool');
 ok(TEXT_KEYS.every((k) => /type:\s*'text'/.test(entries.get(k) ?? '')), '两个文本键 type=text');
 const numberKeys = Object.keys(NUMBER_SUFFIX);
-ok(numberKeys.length === 42, `数字键定论表 42 个（实测 ${numberKeys.length}）`);
+ok(numberKeys.length === 44, `数字键定论表 44 个（实测 ${numberKeys.length}）`);
 for (const k of numberKeys) {
   const body = entries.get(k);
   ok(body != null && /type:\s*'number'/.test(body), `${k} type=number`);
@@ -937,6 +951,19 @@ for (const id of htmlCfgLeaves) {
   ok(cfgNavLeaves.includes(id), `index.html 的 #${id} 已登记进 CFG_NAV（无孤儿叶）`);
 }
 
+/* 2026-10-28 麻将片回归：麻将域进了 CONFIG_IA（含备注/控件/JSON 编辑器），却漏了左树叶。
+ * 键在 IA_KEY_SET 里 ⇒ 也不落「未分组」兜底桶 ⇒ 刷新后配置页除搜索框外无任何入口。
+ * 防回潮：每个玩法域（headerKeys 非空）都必须有同名域的 CFG_NAV 叶。 */
+const cfgNavDomainIds = [...cfgNavBlock.matchAll(/domain:\s*'([^']+)'/g)].map((m) => m[1]);
+const iaGameDomainIds = iaDomainsForTabs
+  .flatMap((g) => g.domains ?? [])
+  .filter((d) => (d.headerKeys ?? []).length > 0)
+  .map((d) => d.id);
+ok(iaGameDomainIds.length > 0, 'CONFIG_IA 含玩法域（headerKeys 非空）');
+for (const id of iaGameDomainIds) {
+  ok(cfgNavDomainIds.includes(id), `玩法域 '${id}' 已登记左树叶（CFG_NAV.domain）`);
+}
+
 const AGENT_TAB_IDS = ['list', 'settlements', 'adjustments', 'recon', 'audit', 'settings'];
 for (const id of AGENT_TAB_IDS) {
   ok(html.includes(`id="agent-tab-${id}"`), `index.html 含页签按钮 #agent-tab-${id}`);
@@ -1009,6 +1036,19 @@ const buildSimpleRowBlock = functionBody(app, 'function buildSimpleRow');
 ok(buildSimpleRowBlock.includes('canWriteConfigKey'), 'buildSimpleRow 按角色收权');
 ok(buildSimpleRowBlock.includes('actions.hidden = true'), 'buildSimpleRow 只读隐藏行内动作');
 ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow 只读禁用输入');
+
+/* ── 12. 四川麻将规则表单（2026-10-29）────────────────────────── */
+const mjFormBlock = balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}');
+ok(mjFormBlock.length > 500, `麻将规则描述表块可提取且非空（实测 ${mjFormBlock.length} 字符）`);
+for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
+  ok(mjFormBlock.includes(`title: '${title}'`), `麻将表单分组：${title}`);
+}
+ok(app.includes('function buildMahjongRulesEditor'), '麻将规则表单渲染器存在');
+ok(!app.includes('function buildRulesJsonEditor'), 'raw JSON 编辑器已移除');
+ok(app.includes("'game.mahjong.rules': { label: '四川麻将规则' }"), '麻将规则标题已表单化');
+ok(app.includes('按预设重置全部规则'), '预设重置按钮文案');
+ok(app.includes('移除这些未知字段并保存'), '未知字段自救按钮文案');
+ok(app.includes('按服务端默认补齐'), '缺字段补齐按钮文案');
 
 /* ── 汇总 ────────────────────────────────────────────────────── */
 if (failures.length) {

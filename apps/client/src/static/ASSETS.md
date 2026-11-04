@@ -106,6 +106,7 @@
 | `pages/table/static/cards/` | **table 分包** | 54 张牌面 + `CardBack.png` + `manifest.json`                                                                                                                                                                                               | 55 + 1 | **437 KiB**                                   | ≤ 500 KiB |
 | `pages/table/static/av/`    | **table 分包** | `Landlord.png` / `Farmer.png`                                                                                                                                                                                                              | 2      | **136 KiB**（2026-10-12 第二批 128×128 头像） | ≤ 160 KiB |
 | `pages/table/static/ui/`    | **table 分包** | 牌桌底纹 `bg_table.png`（329 KiB）                                                                                                                                                                                                         | 1      | **329 KiB**                                   | ≤ 400 KiB |
+| `pages/table/static/mahjong/` | **table 分包** | 四方向万/筒/条 1–9 + 牌背（FluffyStuff CC0 合成）+ `manifest.json`；64 色量化；冷白/宝蓝灰度着色                                                                                                                                                             | 113    | **~529 KiB**（2026-11-02）                    | ≤ 768 KiB |
 | `pages/table/static/audio/` | **table 分包** | 63 条牌桌音效 + 牌桌/胜负 BGM（含 50 条牌型播报；见 §5）                                                                                                                                                                                   | 63     | **~829 KiB**                                  | ≤ 1024 KiB |
 | `static/ui/`                | **主包**       | 大厅/通用 UI 共 16 张：`bg.png`、`logo.png`、`btn{1,2}.png`、`panel-{blue,orange}.png`、`dou.png`、`close_btn.png`、`default.png`、`jujsidai.png`、`countdown.png`、`count-tile{,-warn}.png`、`{avatar-ring,bid-badge,landlord-badge}.png` | 16     | **~574 KiB**                                  | ≤ 768 KiB |
 | `static/audio/`             | **主包**       | **仅** `MusicEx_Welcome.mp3`（大厅 BGM）                                                                                                                                                                                                   | 1      | **~260 KiB**                                  | ≤ 320 KiB |
@@ -117,6 +118,9 @@
 > 以 `asset-budget.test.ts` 的 1024 KiB 音频预算为准。
 
 > `audio/` 的预算与 spec §6.2.4 的 800 KiB 不同 —— **用户裁决 U4**（2026-09-21），理由见 §5。
+>
+> 麻将牌面的**源图** vendored 在 `scripts/assets/mahjong/fluffystuff/`（约 1.6 MB，不进
+> `src/`、不计入运行时预算）；生成脚本 `scripts/build-mahjong-tile-set.py`。
 
 ---
 

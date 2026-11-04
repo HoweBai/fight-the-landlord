@@ -453,8 +453,9 @@ export class RecordsReconcileService implements OnModuleInit, OnApplicationShutd
     const buckets: Record<GameType, Bucket> = {
       doudizhu: emptyBucket(),
       paodekuai: emptyBucket(),
+      mahjong: emptyBucket(),
     };
-    const configUnavailable: Record<GameType, 0 | 1> = { doudizhu: 0, paodekuai: 0 };
+    const configUnavailable: Record<GameType, 0 | 1> = { doudizhu: 0, paodekuai: 0, mahjong: 0 };
     const inWindow = (ms: number | null): boolean => ms !== null && ms >= from && ms < to;
     const gameTypeOfOp = (op: OpRow): GameType => op.gameType ?? 'doudizhu';
 

@@ -41,6 +41,19 @@ beforeEach(() => {
   setActivePinia(pinia);
   localStorage.clear();
   startGameSession(() => new FakeSocket());
+  // 注册态 boot 的默认成功响应（各用例可再 stub 覆盖）；避免真实相对 URL fetch。
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          code: 0,
+          data: { version: 1, agentInviteEnabled: false, agentInviteRequired: false },
+        }),
+    })),
+  );
 });
 afterEach(() => {
   for (const w of mounted.splice(0)) w.unmount();
@@ -96,11 +109,24 @@ describe('➊ 登录/注册屏', () => {
     await wrapper.find('.login__field--nickname input').setValue('阿豆');
     // …再用当前形态唯一的主按钮提交
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(signUp).toHaveBeenCalledWith('13800000000', 'secret123', '阿豆');
   });
 
   it('邀请码开关开：注册态多一个邀请码字段；提交带 trim+大写码（2026-10-26）', async () => {
     const { wrapper, auth } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            code: 0,
+            data: { version: 1, agentInviteEnabled: true, agentInviteRequired: false },
+          }),
+      })),
+    );
     useGameStore().$patch({ agentInviteEnabled: true, clientConfigVersion: 1 });
     const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
 
@@ -113,6 +139,7 @@ describe('➊ 登录/注册屏', () => {
     expect(wrapper.findAll('.login__field input')).toHaveLength(5);
     await wrapper.find('.login__field--invite input').setValue(' abcd2345 ');
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(signUp).toHaveBeenCalledWith('13800000010', 'secret123', '阿豆', 'ABCD2345');
   });
 
@@ -157,7 +184,118 @@ describe('➊ 登录/注册屏', () => {
     await wrapper.find('.login__field--nickname input').setValue('阿豆');
     expect(wrapper.find('.login__field--invite').exists()).toBe(false);
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(signUp).toHaveBeenCalledWith('13800000011', 'secret123', '阿豆');
+  });
+
+  it('必填开：标签「邀请码（必填）」；空码拦截不发请求', async () => {
+    const { wrapper, auth } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            code: 0,
+            data: { version: 1, agentInviteEnabled: true, agentInviteRequired: true },
+          }),
+      })),
+    );
+    useGameStore().$patch({
+      agentInviteEnabled: true,
+      agentInviteRequired: true,
+      clientConfigVersion: 1,
+    });
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+    await wrapper.find('.login__field--phone input').setValue('13800000020');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    expect(wrapper.find('.login__field--invite text').text()).toContain('必填');
+    await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-notice-id="field"] .notice__text').text()).toBe('请填写邀请码');
+    expect(signUp).not.toHaveBeenCalled();
+  });
+
+  it('boot 返回 required：刷新后标签变必填', async () => {
+    const { wrapper } = mountLogin();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            code: 0,
+            data: { version: 1, agentInviteEnabled: true, agentInviteRequired: true },
+          }),
+      })),
+    );
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.login__field--invite text').text()).toContain('必填');
+  });
+
+  it('boot 失败：注册态仍展示邀请码输入框（兜底）', async () => {
+    const { wrapper } = mountLogin();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.login__field--invite').exists()).toBe(true);
+  });
+
+  it('boot 未返回时点提交会等待，不抢跑', async () => {
+    const { wrapper, auth } = mountLogin();
+    let resolveFetch!: (v: unknown) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { resolveFetch = r; })));
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+    await wrapper.find('.login__field--phone input').setValue('13800000021');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    await wrapper.find('.login__actions .btn--primary').trigger('click');
+    expect(signUp).not.toHaveBeenCalled();
+    resolveFetch({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          code: 0,
+          data: { version: 1, agentInviteEnabled: false, agentInviteRequired: false },
+        }),
+    });
+    await flushPromises();
+    expect(signUp).toHaveBeenCalled();
+  });
+
+  it('boot 挂起时双击只注册一次', async () => {
+    const { wrapper, auth } = mountLogin();
+    let resolveFetch!: (v: unknown) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { resolveFetch = r; })));
+    const signUp = vi.spyOn(auth, 'signUp').mockResolvedValue(true);
+    await wrapper.find('.login__field--phone input').setValue('13800000022');
+    await wrapper.find('.login__field--password input').setValue('secret123');
+    await wrapper.findAll('.login__seg-item')[1]!.trigger('click');
+    await wrapper.find('.login__field--confirm input').setValue('secret123');
+    await wrapper.find('.login__field--nickname input').setValue('阿豆');
+    const btn = wrapper.find('.login__actions .btn--primary');
+    await btn.trigger('click');
+    await btn.trigger('click');
+    resolveFetch({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          code: 0,
+          data: { version: 1, agentInviteEnabled: false, agentInviteRequired: false },
+        }),
+    });
+    await flushPromises();
+    expect(signUp).toHaveBeenCalledTimes(1);
   });
 
   it('注册态昵称为空 ⇒ 就地报错且不发请求', async () => {
@@ -168,6 +306,7 @@ describe('➊ 登录/注册屏', () => {
     await wrapper.find('.login__field--password input').setValue('secret123');
     await wrapper.find('.login__field--confirm input').setValue('secret123');
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-notice-id="field"] .notice__text').text()).toBe('请输入昵称');
     expect(signUp).not.toHaveBeenCalled();
   });
@@ -181,6 +320,7 @@ describe('➊ 登录/注册屏', () => {
     await wrapper.find('.login__field--confirm input').setValue('secret123');
     await wrapper.find('.login__field--nickname input').setValue('a'.repeat(21));
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-notice-id="field"] .notice__text').text()).toBe('昵称最多 20 个字符');
     expect(signUp).not.toHaveBeenCalled();
   });
@@ -217,6 +357,7 @@ describe('➊ 登录/注册屏', () => {
     await wrapper.find('.login__field--password input').setValue('secret123');
     await wrapper.find('.login__field--confirm input').setValue('secret124');
     await wrapper.find('.login__actions .btn--primary').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-notice-id="field"] .notice__text').text()).toBe('两次输入的密码不一致');
     expect(signUp).not.toHaveBeenCalled();
   });

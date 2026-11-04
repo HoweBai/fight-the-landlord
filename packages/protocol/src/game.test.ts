@@ -19,12 +19,12 @@ describe('GameType / GameMeta', () => {
     expect(source).toContain("from './game-types'");
   });
 
-  it('规范 id 恰为 doudizhu/paodekuai，缺省斗地主', () => {
-    expect(GAME_TYPES).toEqual(['doudizhu', 'paodekuai']);
+  it('规范 id 恰为 doudizhu/paodekuai/mahjong，缺省斗地主', () => {
+    expect(GAME_TYPES).toEqual(['doudizhu', 'paodekuai', 'mahjong']);
     expect(DEFAULT_GAME_TYPE).toBe('doudizhu');
   });
 
-  it('两玩法元数据：人数/默认人数/能力位', () => {
+  it('三玩法元数据：人数/默认人数/能力位', () => {
     expect(GAME_META.doudizhu.supportedPlayerCounts).toEqual([3]);
     expect(GAME_META.doudizhu.defaultPlayerCount).toBe(3);
     expect(GAME_META.doudizhu.capabilities.cardCounter).toBe(true);
@@ -33,6 +33,11 @@ describe('GameType / GameMeta', () => {
     expect(GAME_META.paodekuai.defaultPlayerCount).toBe(3);
     expect(GAME_META.paodekuai.capabilities.cardCounter).toBe(false);
     expect(GAME_META.paodekuai.capabilities.voiceAnnouncements).toBe(true);
+
+    expect(GAME_META.mahjong.supportedPlayerCounts).toEqual([4]);
+    expect(GAME_META.mahjong.defaultPlayerCount).toBe(4);
+    expect(GAME_META.mahjong.capabilities.cardCounter).toBe(false);
+    expect(GAME_META.mahjong.capabilities.bots).toBe(true);
   });
 
   it('isGameType 只认规范 id', () => {
@@ -48,9 +53,10 @@ describe('GameType / GameMeta', () => {
     expect(parseGameType(null)).toBe('doudizhu');
     expect(parseGameType('doudizhu')).toBe('doudizhu');
     expect(parseGameType('paodekuai')).toBe('paodekuai');
+    expect(parseGameType('mahjong')).toBe('mahjong');
     expect(() => parseGameType('')).toThrow(ProtocolError);
     expect(() => parseGameType('ddz')).toThrow(ProtocolError);
-    expect(() => parseGameType('mahjong')).toThrow(ProtocolError);
+    expect(() => parseGameType('texas')).toThrow(ProtocolError);
   });
 
   it('supportsPlayerCount：跑得快 2/3/4，斗地主仅 3', () => {

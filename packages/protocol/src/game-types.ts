@@ -8,7 +8,7 @@
  * 新增玩法只改这里 + `GAME_META`（`Record<GameType, GameMeta>` 会强制补元数据）；
  * `validate.ts` 自动跟随，不会再出现“validate 拒绝新玩法”的双真源漂移。
  */
-export const GAME_TYPES = ['doudizhu', 'paodekuai'] as const;
+export const GAME_TYPES = ['doudizhu', 'paodekuai', 'mahjong'] as const;
 
 export type GameType = (typeof GAME_TYPES)[number];
 

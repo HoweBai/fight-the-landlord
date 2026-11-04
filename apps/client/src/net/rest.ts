@@ -13,6 +13,7 @@ import {
   type Card as ProtocolCard,
   type ClientConfig,
   type GameType,
+  type MahjongRecordView,
   type PdkRecord,
   type RoomInfo,
 } from '@fight-the-landlord/protocol';
@@ -296,7 +297,7 @@ export function rooms(gameType?: GameType): Promise<RestResponse<RoomInfo[]>> {
  * `fetchClientConfig()` 与消费它的 store 都必须用**同一个**类型
  * （各写一份就是第二真源；`BaseScoreLevel` 的本仓定义已收敛进 protocol）。
  */
-export type { BaseScoreLevel, PdkRecord, PdkRecordPlayer } from '@fight-the-landlord/protocol';
+export type { BaseScoreLevel, MahjongRecordView, PdkRecord, PdkRecordPlayer } from '@fight-the-landlord/protocol';
 
 /**
  * 片⑦：**客户端配置** —— `GET /api/config` → `{ code, data: { baseScoreLevels, friendRoomEnabled, version } }`。
@@ -319,10 +320,11 @@ export function fetchClientConfig(): Promise<RestResponse<ClientConfig>> {
   return authedGet<ClientConfig>('/config');
 }
 
-/** 代理分润（r3 Critical #1）：登录前的公开启动配置（只有两键）。 */
+/** 代理分润（r3 Critical #1）：登录前的公开启动配置（三键）。 */
 export interface BootClientConfig {
   version: number;
   agentInviteEnabled: boolean;
+  agentInviteRequired: boolean;
 }
 
 /** 公开 GET（**不带** `Authorization`；仅用于公开白名单里的启动面）。 */
@@ -336,7 +338,7 @@ async function publicGet<T>(path: string): Promise<RestResponse<T>> {
 
 /**
  * `GET /api/config/boot` —— 登录页在**无令牌**时判断是否渲染邀请码输入框。
- * 只回 `{version, agentInviteEnabled}`；不得用它冒充全量配置（不写 `clientConfigVersion`）。
+ * 只回 `{version, agentInviteEnabled, agentInviteRequired}`；不得用它冒充全量配置（不写 `clientConfigVersion`）。
  */
 export function fetchBootClientConfig(): Promise<RestResponse<BootClientConfig>> {
   return publicGet<BootClientConfig>('/config/boot');
@@ -513,6 +515,12 @@ export interface PdkRecordsPage {
   nextCursor: string | null;
 }
 
+/** 麻将战绩分页（同端点、`gameType=mahjong`；只给自己的初始手牌）。 */
+export interface MahjongRecordsPage {
+  items: MahjongRecordView[];
+  nextCursor: string | null;
+}
+
 /** 战绩筛选选项（全部可选；缺省 = 不过滤任何维度）。 */
 export interface FetchRecordsOptions {
   /** keyset 游标：客户端原样回传服务端签发的值，不解析不构造。 */
@@ -549,6 +557,17 @@ export function fetchPdkRecords(
 ): Promise<RestResponse<PdkRecordsPage>> {
   return fetchMyRecords({ ...options, gameType: 'paodekuai' }) as unknown as Promise<
     RestResponse<PdkRecordsPage>
+  >;
+}
+
+/**
+ * 麻将战绩（T12）：同一端点 + `gameType=mahjong`，按 `MahjongRecordView` 解码。
+ */
+export function fetchMahjongRecords(
+  options: Omit<FetchRecordsOptions, 'gameType'> = {},
+): Promise<RestResponse<MahjongRecordsPage>> {
+  return fetchMyRecords({ ...options, gameType: 'mahjong' }) as unknown as Promise<
+    RestResponse<MahjongRecordsPage>
   >;
 }
 

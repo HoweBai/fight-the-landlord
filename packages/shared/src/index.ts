@@ -52,3 +52,17 @@ export * from './pdk/settle';
 // 跑得快 S3.5：autoplay（超时/托管/bot 共用）与机器人公开特征。
 export * from './pdk/autoplay';
 export * from './pdk/features';
+// 麻将（2026-10-28）：会话形状；规则/状态机在后续任务补齐。
+export * from './mahjong/session';
+export * from './mahjong/deck';
+export * from './mahjong/exchange';
+export * from './mahjong/lack';
+export * from './mahjong/meld';
+export * from './mahjong/rules';
+export * from './mahjong/hu';
+export * from './mahjong/features';
+export * from './mahjong/scoring';
+export * from './mahjong/ting';
+export * from './mahjong/claims';
+export * from './mahjong/actions';
+export * from './mahjong/settle';

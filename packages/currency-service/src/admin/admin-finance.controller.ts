@@ -89,7 +89,7 @@ const LIMIT_MESSAGE = `limit 非法：须为 1–${MAX_PAGE_LIMIT} 的整数`;
 const CURSOR_MESSAGE = 'cursor 非法：须为正整数';
 const EPOCH_MESSAGE = (name: 'from' | 'to') => `${name} 非法：须为非负整数（epoch 毫秒）`;
 const SOURCE_MESSAGE = 'source 非法：须为货币来源 allowlist 之一';
-const GAME_TYPE_MESSAGE = 'gameType 非法：须为 doudizhu 或 paodekuai';
+const GAME_TYPE_MESSAGE = 'gameType 非法：须为 doudizhu、paodekuai 或 mahjong';
 const ACTOR_MESSAGE = 'actor 非法：须为 3–32 位小写字母/数字/._-';
 const OWNER_ID_MESSAGE = 'ownerId 非法：长度须为 1–36';
 const OP_ID_MESSAGE = 'opId 非法：须为正整数';
@@ -296,6 +296,7 @@ function sendCsv(
 function gameLabelText(gameType: string | null | undefined): string {
   if (gameType === 'doudizhu') return '斗地主';
   if (gameType === 'paodekuai') return '跑得快';
+  if (gameType === 'mahjong') return '四川麻将';
   return '—';
 }
 

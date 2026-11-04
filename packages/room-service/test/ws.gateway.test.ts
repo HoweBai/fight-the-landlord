@@ -2914,7 +2914,7 @@ describe('Redis 订阅生命周期（ioredis 握手竞态的永久丢订阅）',
     vi.spyOn(sub, 'on').mockImplementation(((event: string, listener: (...a: never[]) => void) => {
       if (event === 'message') order.push('on:message');
       // 既有 TS2345（62d5bbd3 订阅修复后遗症）：mock 的 rest 参数为 any[]，never[] 逆变不兼容
-      // ⇒ 显式收窄为 never（运行期不变；C3 全量门修复，非本片面）。
+      // ⇒ 显式收窄为 never（运行期不变；与 master 0e69dea8 同款修复）。
       return realOn(event, listener as never);
     }) as never);
     sub.subscribe.mockImplementation((async () => {

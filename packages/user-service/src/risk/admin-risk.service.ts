@@ -43,6 +43,10 @@ export const RISK_STATS_SQL =
 export const RISK_STATS_PDK_SQL =
   "SELECT r.player_count AS player_count, COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY r.player_count";
 
+/** 详情页 stats 的四川麻将半边（T12；口径同扫描 SQL-mahjong，4 人一局）。 */
+export const RISK_STATS_MAHJONG_SQL =
+  "SELECT COUNT(*) AS games, COALESCE(SUM(p.won), 0) AS wins FROM game_record_players_mahjong p JOIN game_records_mahjong r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_mahjong x WHERE x.record_id = p.record_id AND x.is_robot = 1)";
+
 /** 详情页 stats 的设备数（**窗口** = `now − risk.deviceWindowDays` 天；口径同扫描 SQL2 的单用户形）。 */
 export const RISK_DEVICE_COUNT_WINDOW_SQL =
   'SELECT COUNT(DISTINCT device_id) AS devices FROM user_devices WHERE user_id = ? AND last_seen_at >= ?';
@@ -73,7 +77,7 @@ export const MAX_PAGE_LIMIT = 100;
 
 export interface RiskReviewListFilter {
   status?: string;
-  gameType?: 'doudizhu' | 'paodekuai' | 'mixed' | 'platform';
+  gameType?: 'doudizhu' | 'paodekuai' | 'mahjong' | 'mixed' | 'platform';
 }
 
 /** 审计列表过滤（controller 已做长度/型别校验，服务侧只拼 SQL）。 */
@@ -139,6 +143,7 @@ export interface RiskUserDetail {
         winRate: number;
         byPlayerCount: Record<'2' | '3' | '4', { games: number; wins: number; winRate: number }>;
       };
+      mahjong: { games: number; wins: number; winRate: number };
     };
   };
   devices: Array<{
@@ -293,7 +298,11 @@ export class AdminRiskService {
       conds.push('status = ?');
       params.push(filter.status);
     }
-    if (filter.gameType === 'doudizhu' || filter.gameType === 'paodekuai') {
+    if (
+      filter.gameType === 'doudizhu' ||
+      filter.gameType === 'paodekuai' ||
+      filter.gameType === 'mahjong'
+    ) {
       // “包含该玩法”：mixed 行在两个玩法筛选里都出现。
       conds.push("game_type IN (?, 'mixed')");
       params.push(filter.gameType);
@@ -382,6 +391,12 @@ export class AdminRiskService {
       games?: unknown;
       wins?: unknown;
     }>;
+    const mjStatsRows = (await this.dataSource.query(RISK_STATS_MAHJONG_SQL, [userId])) as Array<{
+      games?: unknown;
+      wins?: unknown;
+    }>;
+    const mjGames = toCount(mjStatsRows[0]?.games);
+    const mjWins = toCount(mjStatsRows[0]?.wins);
     const ddzGames = toCount(statsRows[0]?.games);
     const ddzWins = toCount(statsRows[0]?.wins);
     const byPlayerCount: Record<
@@ -412,8 +427,8 @@ export class AdminRiskService {
       byPlayerCount['2'].games + byPlayerCount['3'].games + byPlayerCount['4'].games;
     const pdkWins =
       byPlayerCount['2'].wins + byPlayerCount['3'].wins + byPlayerCount['4'].wins;
-    const games = ddzGames + pdkGames;
-    const wins = ddzWins + pdkWins;
+    const games = ddzGames + pdkGames + mjGames;
+    const wins = ddzWins + pdkWins + mjWins;
     const winRate = games > 0 ? wins / games : 0;
     const byGame = {
       doudizhu: {
@@ -426,6 +441,11 @@ export class AdminRiskService {
         wins: pdkWins,
         winRate: pdkGames > 0 ? pdkWins / pdkGames : 0,
         byPlayerCount,
+      },
+      mahjong: {
+        games: mjGames,
+        wins: mjWins,
+        winRate: mjGames > 0 ? mjWins / mjGames : 0,
       },
     };
     const cutoff = new Date(now - this.configCache.riskDeviceWindowDays() * DAY_MS);

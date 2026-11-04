@@ -1416,7 +1416,7 @@ describe('A2 财务玩法维度（列表筛选/汇总展开/burn+漏收按玩法
     const before = db.queries.length;
     const bad = await probe.get('/api/admin/wallet/ops?gameType=ddz', AUTH);
     expect(bad.status).toBe(400);
-    expect(bad.json.message).toBe('gameType 非法：须为 doudizhu 或 paodekuai');
+    expect(bad.json.message).toBe('gameType 非法：须为 doudizhu、paodekuai 或 mahjong');
     expect(db.queries).toHaveLength(before);
   });
 

@@ -16,6 +16,7 @@ import { GameModule } from '../src/game/game.module';
 import { GameRegistry } from '../src/games/registry';
 import { DdzRuntime } from '../src/games/ddz/runtime';
 import { PdkRuntime } from '../src/games/pdk/runtime';
+import { MahjongRuntime } from '../src/games/mahjong/runtime';
 import { buildPdkPlayerView } from '../src/games/pdk/view';
 import { classifyRuleError } from '../src/games/pdk/rule-error.mapping';
 import { card, fullGameDeck } from './fixtures/pdk-fixtures';
@@ -485,9 +486,10 @@ describe('Task 4.1：GameModule 注册 PdkRuntime', () => {
     const factory = registryProvider!['useFactory'] as (
       ddz: DdzRuntime,
       pdk: PdkRuntime,
+      mahjong: MahjongRuntime,
     ) => GameRegistry;
-    const registry = factory(new DdzRuntime(), new PdkRuntime());
-    expect(registry.list().sort()).toEqual(['doudizhu', 'paodekuai']);
+    const registry = factory(new DdzRuntime(), new PdkRuntime(), new MahjongRuntime());
+    expect(registry.list().sort()).toEqual(['doudizhu', 'mahjong', 'paodekuai']);
   });
 });
 

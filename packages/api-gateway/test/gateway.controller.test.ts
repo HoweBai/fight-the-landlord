@@ -2800,3 +2800,60 @@ describe('P0-3：再认证链的头转发（路径限定）', () => {
     expect(headers).toMatchObject({ userId: 'u1' });
   });
 });
+
+describe('GatewayController（2026-11-03：代理邀请码路由）', () => {
+  const res = {} as never;
+
+  const make = () => {
+    const proxy = { forwardToCurrencySvc: vi.fn(async () => undefined) };
+    return { controller: new GatewayController(proxy as unknown as ProxyGateway), proxy };
+  };
+
+  const req = (originalUrl: string, query: Record<string, unknown> = {}) => ({
+    originalUrl,
+    headers: {},
+    query,
+  });
+
+  it('POST /api/agent/invite-codes 透传 body', async () => {
+    const { controller, proxy } = make();
+    await controller.agentGenerateInviteCodes({ count: 5 }, res, req('/api/agent/invite-codes'));
+    expect(proxy.forwardToCurrencySvc).toHaveBeenCalledWith(
+      'POST', '/api/agent/invite-codes', { count: 5 }, res, {},
+    );
+  });
+
+  it('GET /api/agent/invite-codes 只透传 status/cursor/limit；未知键 400', async () => {
+    const { controller, proxy } = make();
+    await controller.agentListInviteCodes(
+      res,
+      req('/api/agent/invite-codes?status=active&cursor=ABCD&limit=20', {
+        status: 'active', cursor: 'ABCD', limit: '20',
+      }),
+    );
+    expect(proxy.forwardToCurrencySvc).toHaveBeenLastCalledWith(
+      'GET', '/api/agent/invite-codes?status=active&cursor=ABCD&limit=20', null, res, {},
+    );
+
+    await expect(
+      controller.agentListInviteCodes(res, req('/api/agent/invite-codes?x=1', { x: '1' })),
+    ).rejects.toThrow(/未知查询参数/);
+  });
+
+  it('admin 码列表/撤销路由编码 id 与 code', async () => {
+    const { controller, proxy } = make();
+    await controller.adminAgentInviteCodes(
+      'ag/1',
+      res,
+      req('/api/admin/agents/ag%2F1/invite-codes?status=used', { status: 'used' }),
+    );
+    expect(proxy.forwardToCurrencySvc).toHaveBeenLastCalledWith(
+      'GET', '/api/admin/agents/ag%2F1/invite-codes?status=used', null, res, {},
+    );
+
+    await controller.adminAgentRevokeInviteCode('ag/1', 'CODE/1', res, req('/api/x'));
+    expect(proxy.forwardToCurrencySvc).toHaveBeenLastCalledWith(
+      'POST', '/api/admin/agents/ag%2F1/invite-codes/CODE%2F1/revoke', null, res, {},
+    );
+  });
+});

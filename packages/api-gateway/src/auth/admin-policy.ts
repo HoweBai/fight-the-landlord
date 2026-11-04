@@ -251,6 +251,12 @@ export function authorizeAdmin(opts: { method: string; normPath: string; role: s
     return allows('super_admin', 'operator');
   }
 
+  // P-ag0b（2026-11-03）：admin 邀请码列表含 active bearer credential ⇒ 仅 super_admin。
+  // 必须先于 P-ag1（P-ag1 的 `/api/admin/agents/` 前缀会对 finance 放行）。
+  if (method === 'GET' && /^\/api\/admin\/agents\/[^/]+\/invite-codes$/.test(p)) {
+    return allows('super_admin');
+  }
+
   // ─── 代理管理（2026-10-26）：读面带必须在 P8 之前；写面在 P9 之前 ──────────
   // P-ag1：代理读面 ⇒ super_admin | finance（viewer/operator 403，不得落 P8）
   if (

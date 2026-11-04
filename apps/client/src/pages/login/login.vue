@@ -72,29 +72,46 @@ const password = ref('');
 const confirm = ref('');
 /** 昵称（昵称片）：**仅注册态**渲染，必填、trim 后 1–20 字符。 */
 const nickname = ref('');
-/** 代理分润（2026-10-26）：可选邀请码；仅 `agentInviteEnabled=true` 时渲染。 */
+/** 代理分润（2026-10-26）：可选/必填邀请码；仅入口开启或 boot 失败兜底时渲染。 */
 const inviteCode = ref('');
+const inviteConfigLoading = ref(false);
+const inviteBootFailed = ref(false);
+let inviteLoadPromise: Promise<void> | null = null;
+const INVITE_BOOT_TIMEOUT_MS = 3000;
 const showPassword = ref(false);
 const busy = ref(false);
 
 const isRegister = computed(() => mode.value === 'register');
 /**
- * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**首次切到注册**时懒拉一次
- * `GET /api/config/boot`（公开白名单；只回 version + agentInviteEnabled）——
- * 不阻塞；失败 ⇒ 不渲染，注册照常。
+ * 邀请码字段门控：注册态 ∧ 服务端开关。登录页在**每次进入注册态**懒拉一次
+ * `GET /api/config/boot`（公开白名单；只回 version + agentInviteEnabled/Required）。
+ * 即使全量配置已加载也刷新：退出登录会保留旧配置快照，运营刚开启必填时旧 false
+ * 会把字段永久藏住（只能杀进程恢复）。boot 失败 ⇒ 兜底展示输入框。
  */
-const showInviteCode = computed(() => isRegister.value && game.agentInviteEnabled === true);
-let inviteLoading = false;
-async function ensureInviteConfig(): Promise<void> {
-  // 全量配置已加载且**开关为开** ⇒ 无需再拉；否则拉公开启动面（后台可能刚开启，
-  // 旧快照的 false 不应把字段永久藏住）。
-  if ((game.clientConfigVersion > 0 && game.agentInviteEnabled === true) || inviteLoading) return;
-  inviteLoading = true;
-  try {
-    await refreshInviteBootConfig();
-  } finally {
-    inviteLoading = false;
-  }
+const showInviteCode = computed(
+  () => isRegister.value && (game.agentInviteEnabled === true || inviteBootFailed.value),
+);
+const inviteRequired = computed(
+  () => showInviteCode.value && game.agentInviteRequired === true,
+);
+function ensureInviteConfig(): Promise<void> {
+  if (inviteLoadPromise !== null) return inviteLoadPromise;
+  inviteLoadPromise = (async () => {
+    inviteConfigLoading.value = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), INVITE_BOOT_TIMEOUT_MS);
+      });
+      const ok = await Promise.race([refreshInviteBootConfig(), timeout]);
+      inviteBootFailed.value = !ok;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      inviteConfigLoading.value = false;
+      inviteLoadPromise = null;
+    }
+  })();
+  return inviteLoadPromise;
 }
 /** 主按钮文案：正在提交时进入加载态（禁用态/加载态文案只在 `busy` 期间出现）。 */
 const primaryLabel = computed(() => {
@@ -134,6 +151,7 @@ function validate(): string {
   // 昵称（昵称片）：校验顺序放在密码之后，保持既有「两次密码不一致」优先的体验。
   if (isRegister.value && !nickname.value.trim()) return '请输入昵称';
   if (isRegister.value && nickname.value.trim().length > 20) return '昵称最多 20 个字符';
+  if (inviteRequired.value && !inviteCode.value.trim()) return '请填写邀请码';
   return '';
 }
 
@@ -150,14 +168,16 @@ function validate(): string {
  */
 async function submit() {
   if (busy.value) return;
-  const invalid = validate();
-  if (invalid) {
-    setFieldError(invalid);
-    return;
-  }
-  notices.dismiss('field');
+  // 双击守卫必须在 await 之前置 busy；注册态先等 boot（避免旧快照把必填显示成选填）。
   busy.value = true;
   try {
+    if (isRegister.value) await ensureInviteConfig();
+    const invalid = validate();
+    if (invalid) {
+      setFieldError(invalid);
+      return;
+    }
+    notices.dismiss('field');
     let signed: boolean;
     if (isRegister.value) {
       const code = showInviteCode.value ? inviteCode.value.trim().toUpperCase() : '';
@@ -247,7 +267,7 @@ async function submit() {
             <input v-model="nickname" type="text" maxlength="20" placeholder="1–20 个字符" />
           </view>
           <view v-if="showInviteCode" class="login__field login__field--invite">
-            <text>邀请码（选填）</text>
+            <text>{{ inviteRequired ? '邀请码（必填）' : (inviteBootFailed && !game.agentInviteEnabled ? '邀请码' : '邀请码（选填）') }}</text>
             <input v-model="inviteCode" type="text" maxlength="16" placeholder="填写代理邀请码" />
           </view>
 

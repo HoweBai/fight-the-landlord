@@ -19,6 +19,7 @@ import {
   type ClientGameConfig,
   type GameType,
   type GameView,
+  type MahjongPlayerView,
   type PlayerView,
   type RoomPlayer,
   type ServerMessage,
@@ -93,6 +94,7 @@ export interface ClientConfigState
     | 'cardCounterPricePerGameCoins'
     | 'cardCounterPricePerHourCoins'
     | 'agentInviteEnabled'
+    | 'agentInviteRequired'
   > {
   entryMultiplier: number | null;
   coinPerYuan: number | null;
@@ -109,6 +111,8 @@ export interface ClientConfigState
   cardCounterPricePerHourCoins?: number | null;
   /** 代理分润：邀请码入口（缺省/旧服务端 ⇒ false）。 */
   agentInviteEnabled?: boolean;
+  /** 代理分润：邀请码必填（缺省/旧服务端 ⇒ false）。 */
+  agentInviteRequired?: boolean;
 }
 
 /** 记牌器收费片：本局开通状态（`game.card_counter` 载荷；按 roomCode 存）。 */
@@ -119,6 +123,13 @@ export interface CardCounterGrantStatus {
 }
 
 export interface ActiveTurn {  seat: number;
+  /**
+   * 麻将多行动者窗口：本窗口待决策的**全体**座位（含 `seat` 首项）。
+   * 非麻将恒缺省 ⇒ 调用方按单人回合处理（`seat`）。
+   */
+  seats?: number[];
+  /** 麻将窗口 id（客户端动作原样回传）；非麻将缺省。 */
+  windowId?: string;
   /** 服务端给出的剩余毫秒（仅参考；倒计时以 turnDeadlineAt / serverDeadlineAt 为准，F06） */
   timeoutMs: number;
   /** 收到该消息时的本地时刻，用于在本地两次推送之间平滑倒计时 */
@@ -273,6 +284,7 @@ export const useGameStore = defineStore('game', {
      * 初值/fail-safe = `false`（未知/旧服务端 ⇒ 不渲染；登录页会懒拉一次配置）。
      */
     agentInviteEnabled: false,
+    agentInviteRequired: false,
     /**
      * 入场门槛倍率（`currency.entryMultiplier`，客户端可见的唯一货币键）。
      *
@@ -393,6 +405,12 @@ export const useGameStore = defineStore('game', {
     finished: null as
       | { winner: 'landlord' | 'farmer' }
       | { gameType: 'paodekuai'; winnerSeats: number[] }
+      | {
+          gameType: 'mahjong';
+          winnerSeats: number[];
+          endReason: 'threeWinners' | 'wallEmpty' | 'wallEmptyWithHu';
+          huazhuSeats: number[];
+        }
       | null,
     settlement: null as SettlementResult | null,
     /** 已处理过的事件键 `${type}@${version}`——事件类幂等（§6.2）。 */
@@ -405,7 +423,12 @@ export const useGameStore = defineStore('game', {
   }),
 
   getters: {
-    hand: (s): Card[] => s.view?.hand ?? [],
+    /** 手牌（ddz/pdk 都是 `Card[]`；麻将 `Tile[]` 走 `mahjongView`，这里给空数组）。 */
+    hand: (s): Card[] => {
+      const v = s.view;
+      if (!v || v.gameType === 'mahjong') return [];
+      return v.hand as Card[];
+    },
     cardCounts: (s): number[] => s.view?.cardCounts ?? [0, 0, 0],
     /**
      * 当前视图的玩法（S5.3）：**只有字段缺失**才缺省斗地主；pdk 专属字段存在但
@@ -484,9 +507,14 @@ export const useGameStore = defineStore('game', {
     /** 跑得快视图（窄化；非 pdk ⇒ null）。 */
     pdkView: (s): Extract<GameView, { gameType: 'paodekuai' }> | null =>
       s.view && s.view.gameType === 'paodekuai' ? s.view : null,
-    /** 斗地主视图（窄化；pdk ⇒ null）。旧服务端视图没有 gameType ⇒ 视为 ddz。 */
+    /** 麻将视图（窄化；非麻将 ⇒ null）。 */
+    mahjongView: (s): MahjongPlayerView | null =>
+      s.view && s.view.gameType === 'mahjong' ? s.view : null,
+    /** 斗地主视图（窄化；pdk/麻将 ⇒ null）。旧服务端视图没有 gameType ⇒ 视为 ddz。 */
     ddzView: (s): PlayerView | null =>
-      s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView) : null,
+      s.view && s.view.gameType !== 'paodekuai' && s.view.gameType !== 'mahjong'
+        ? (s.view as PlayerView)
+        : null,
     /** 跑得快：服务端算好的过牌许可（非 pdk ⇒ false）。 */
     canPass: (s): boolean => (s.view?.gameType === 'paodekuai' ? s.view.canPass : false),
     /** 跑得快：当前裸四张炸弹数（显示/预览）。 */
@@ -499,16 +527,24 @@ export const useGameStore = defineStore('game', {
       s.view?.gameType === 'paodekuai' ? (s.view.winnerSeats ?? null) : null,
     /** 斗地主叫抢段（非 ddz ⇒ null；页面/音效读它做窄化）。 */
     ddzBidPhase: (s): PlayerView['bidPhase'] | null =>
-      s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).bidPhase : null,
+      s.view && s.view.gameType !== 'paodekuai' && s.view.gameType !== 'mahjong'
+        ? (s.view as PlayerView).bidPhase
+        : null,
     /** 斗地主出牌段（非 ddz ⇒ null）。 */
     ddzPlayPhase: (s): PlayerView['playPhase'] | null =>
-      s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).playPhase : null,
+      s.view && s.view.gameType !== 'paodekuai' && s.view.gameType !== 'mahjong'
+        ? (s.view as PlayerView).playPhase
+        : null,
     /** 「谁是地主」的唯一来源（§6.4；非 ddz ⇒ null）。 */
     landlordSeat: (s): number | null =>
-      s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).landlordSeat : null,
+      s.view && s.view.gameType !== 'paodekuai' && s.view.gameType !== 'mahjong'
+        ? (s.view as PlayerView).landlordSeat
+        : null,
     /** 底牌：叫抢阶段恒为 null，state === 'playing' 后才可见（§6.4；非 ddz ⇒ null）。 */
     bottomCards: (s): Card[] | null =>
-      s.view && s.view.gameType !== 'paodekuai' ? (s.view as PlayerView).bottomCards : null,
+      s.view && s.view.gameType !== 'paodekuai' && s.view.gameType !== 'mahjong'
+        ? (s.view as PlayerView).bottomCards
+        : null,
     /**
      * 桌面历史牌（协议 ④）：斗地主窗口 2；跑得快按人数（2/3→2、4→3）；旧 → 新、「不出」是显式的 `cards: null`。
      * ⚠️ 缺字段（真浏览器探针的 `seedFinishedGame` 注入的残缺视图）⇒ `[]`，**不抛错**（R661）。
@@ -521,18 +557,23 @@ export const useGameStore = defineStore('game', {
     /**
      * 当前行动者。
      * **叫抢阶段是 `bidPhase.currentBidder`，不是 `currentPlayer`**（玩法 §9.1）。
+     * 麻将多行动者窗口返回**窗口首座**（仅供展示；`isMyTurn` 走 `activeSeats`）。
      */
     actorSeat: (s): number | null => {
       const v = s.view;
       if (!v) return null;
-      // 叫抢段只有斗地主；pdk 恒 `playing`（行动者 = currentPlayer）。
+      if (v.gameType === 'mahjong') return v.activeSeats[0] ?? null;
       if (v.state === 'bidding') {
         return (v as PlayerView).bidPhase.currentBidder;
       }
       if (v.state === 'playing') return v.currentPlayer;
       return null;
     },
+    /** 麻将窗口里我是否待决策（多行动者：只要我在窗口内即「我的回合」）。 */
     isMyTurn(): boolean {
+      if (this.view?.gameType === 'mahjong') {
+        return this.mySeat !== null && this.view.activeSeats.includes(this.mySeat);
+      }
       return this.actorSeat !== null && this.actorSeat === this.mySeat;
     },
     /** 最近一次 game.current_turn 指向的座位（未经 phase 归一化，仅供调试/展示）。 */
@@ -727,6 +768,11 @@ export const useGameStore = defineStore('game', {
       this.agentInviteEnabled = value === true;
     },
 
+    /** 代理分润（2026-11-03）：公开启动配置/全量配置落必填标志。 */
+    setAgentInviteRequired(value: boolean) {
+      this.agentInviteRequired = value === true;
+    },
+
     setClientConfig(cfg: ClientConfigState) {      // P1-10：服务端配置到达 ⇒ 上一轮的「失败标记」退场（false 现在是权威的「关」）。
       this.clientConfigFailsafe = false;
       this.baseScoreLevels = cfg.baseScoreLevels;
@@ -743,6 +789,7 @@ export const useGameStore = defineStore('game', {
       this.cardCounterPricePerHourCoins = cfg.cardCounterPricePerHourCoins ?? null;
       this.reliefAdpid = cfg.reliefAdpid;
       this.agentInviteEnabled = cfg.agentInviteEnabled === true;
+      this.agentInviteRequired = cfg.agentInviteRequired === true;
       this.entryMultiplier = cfg.entryMultiplier;
       this.rechargeEnabled = cfg.rechargeEnabled;
       this.withdrawEnabled = cfg.withdrawEnabled;
@@ -955,19 +1002,31 @@ export const useGameStore = defineStore('game', {
         case 'game.current_turn':
           this.activeTurn = {
             seat: event.payload.seat,
+            ...(event.payload.seats === undefined ? {} : { seats: [...event.payload.seats] }),
+            ...(event.payload.windowId === undefined
+              ? {}
+              : { windowId: event.payload.windowId }),
             timeoutMs: event.payload.timeoutMs,
             receivedAt: Date.now(),
             version,
           };
           break;
         case 'game.finished':
-          // 斗地主旧形状 `{winner}`；pdk `{gameType:'paodekuai', winnerSeats}`。
+          // 斗地主旧形状 `{winner}`；pdk `{gameType:'paodekuai', winnerSeats}`；
+          // 麻将 `{gameType:'mahjong', winnerSeats, endReason, huazhuSeats}`。
           if ('winner' in event.payload) {
             this.finished = { winner: event.payload.winner };
           } else if (event.payload.gameType === 'paodekuai') {
             this.finished = {
               gameType: 'paodekuai',
               winnerSeats: event.payload.winnerSeats,
+            };
+          } else if (event.payload.gameType === 'mahjong') {
+            this.finished = {
+              gameType: 'mahjong',
+              winnerSeats: event.payload.winnerSeats,
+              endReason: event.payload.endReason,
+              huazhuSeats: event.payload.huazhuSeats,
             };
           }
           break;

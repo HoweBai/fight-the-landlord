@@ -84,6 +84,11 @@ export class BotPlayer {
         throw err;
       }
     }
+    // 多玩法（T11）：麻将有 game-service 内的统一自动决策（`driveOneMahjongAuto`），
+    // 不经 robot-service；显式拒绝，避免把麻将视图套进斗地主决策器。
+    if (view.gameType === 'mahjong') {
+      throw new Error(`mahjong decide must be handled by game-service (bot ${req.botId})`);
+    }
     // 片① R3：机器人在叫抢阶段**既不叫也不抢**（规格 §1-3）。
     // 叫抢没有 AI 模型可用（上游 kwai/DouZero 树里没有叫抢模型），
     // 而「按手牌强度抢」的策略已由用户裁决废除 ⇒ 恒 pass。

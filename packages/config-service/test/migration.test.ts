@@ -67,6 +67,7 @@ import { DdzEnabledSeed1796500000000 } from '../src/migrations/1796500000000-Ddz
 import { PdkRiskConfigSeed1796700000000 } from '../src/migrations/1796700000000-PdkRiskConfigSeed';
 import { PdkTwoPlayerSeed1796800000000 } from '../src/migrations/1796800000000-PdkTwoPlayerSeed';
 import { PdkRiskPlayerCountSeed1797000000006 } from '../src/migrations/1797000000006-PdkRiskPlayerCountSeed';
+import { AgentInviteRequired1798700000000 } from '../src/migrations/1798700000000-AgentInviteRequiredSeed';
 import { RemoveEntryFeePercents1796000000000 } from '../src/migrations/1796000000000-RemoveEntryFeePercents';
 import { CONFIG_CHANGES_INSERT_SQL } from '../src/admin/admin-changes.service';
 import {
@@ -2138,5 +2139,60 @@ describe('PdkRiskPlayerCountSeed1797000000006：跑得快按人数风控/自动�
       }
     }
     expect(hits).toEqual(['config-service/PdkRiskPlayerCountSeed1797000000006']);
+  });
+});
+
+describe('代理邀请码必填种子迁移（2026-11-03）', () => {
+  it('up：version=全表 MAX、INSERT IGNORE 一键；down：DELETE 该键', async () => {
+    const statements: Array<{ sql: string; params?: unknown[] }> = [];
+    const runner = {
+      query: async (sql: string, params?: unknown[]) => {
+        statements.push({ sql, params });
+        return [{ maxVersion: 5 }];
+      },
+    } as unknown as QueryRunner;
+    const migration = new AgentInviteRequired1798700000000();
+    await migration.up(runner);
+
+    expect(statements).toHaveLength(2);
+    expect(statements[0]!.sql).toContain('SELECT MAX(`version`)');
+    expect(statements[1]!.sql).toContain('INSERT IGNORE INTO `platform_config`');
+    expect(statements[1]!.params).toEqual([
+      'agent.inviteRequired',
+      JSON.stringify(false),
+      5,
+      'seed',
+    ]);
+
+    const downStatements: Array<{ sql: string; params?: unknown[] }> = [];
+    await migration.down({
+      query: async (sql: string, params?: unknown[]) => {
+        downStatements.push({ sql, params });
+        return undefined;
+      },
+    } as unknown as QueryRunner);
+    expect(downStatements).toEqual([
+      { sql: 'DELETE FROM `platform_config` WHERE `key` = ?', params: ['agent.inviteRequired'] },
+    ]);
+  });
+
+  it('形状（name/up/down）；迁移号 1798700000000 全仓唯一且晚于 config 既有最大', () => {
+    const migration = new AgentInviteRequired1798700000000();
+    expect(migration.name).toBe('AgentInviteRequired1798700000000');
+    expect(typeof migration.up).toBe('function');
+    expect(typeof migration.down).toBe('function');
+
+    const hits: string[] = [];
+    const packagesDir = join(REPO_ROOT, 'packages');
+    for (const pkg of readdirSync(packagesDir)) {
+      const dir = join(packagesDir, pkg, 'src', 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        for (const m of readFileSync(join(dir, file), 'utf-8').matchAll(/export class (\w+)/g)) {
+          if (m[1]!.includes('1798700000000')) hits.push(`${pkg}/${m[1]}`);
+        }
+      }
+    }
+    expect(hits).toEqual(['config-service/AgentInviteRequired1798700000000']);
   });
 });

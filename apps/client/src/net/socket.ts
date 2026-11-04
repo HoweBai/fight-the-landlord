@@ -289,6 +289,8 @@ export interface ClientRequestEnvelope {
   reqId: string;
   baseVersion: number;
   timestamp: number;
+  /** 麻将多行动者窗口 id（平铺在线格式顶层；非麻将请求省略）。 */
+  windowId?: string;
   payload: unknown;
 }
 
@@ -296,11 +298,13 @@ export function buildRequestPayload(
   type: ClientMessageType,
   payload: unknown,
   baseVersion: number,
+  windowId?: string,
 ): ClientRequestEnvelope {
   return {
     reqId: createReqId(),
     baseVersion: isCasMessage(type) ? baseVersion : 0,
     timestamp: Date.now(),
+    ...(windowId === undefined ? {} : { windowId }),
     payload,
   };
 }
@@ -643,7 +647,7 @@ export class GameClient {
    * **不抛异常**：被串行队列拦下时返回 `{ status: 'blocked' }`，由调用方决定怎么提示。
    * 这样「点了按钮但队列在忙」永远不会变成未捕获的 Promise rejection。
    */
-  send(type: ClientMessageType, payload: unknown = {}): Promise<RequestOutcome> {
+  send(type: ClientMessageType, payload: unknown = {}, windowId?: string): Promise<RequestOutcome> {
     this.touchActivity();
     if (this.destroyed) {
       /**
@@ -691,7 +695,7 @@ export class GameClient {
       });
     }
 
-    const env = buildRequestPayload(type, payload, this.currentVersion);
+    const env = buildRequestPayload(type, payload, this.currentVersion, windowId);
     const reqId = env.reqId;
     this.actionLog.push({ reqId, type, baseVersion: env.baseVersion, timestamp: env.timestamp });
     // env 的顶层字段就是 §6.2 的线格式；`type` 只出现在 socket.io 的事件名上。

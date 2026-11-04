@@ -1,12 +1,13 @@
 /**
  * 片⑦ + 记录片 T1 + 货币核心 + ② 金币场 + 风控片 T1 + 支付片 T5 + 节奏/清理片 T1：平台配置的**契约面**
- * （一百零一键清单、校验函数、客户端子集）。
+ * （113 键清单、校验函数、客户端子集）。
  *
  * ⚠️ 2026-10-21：写入口不再要求「缺省档 ∈ 档位表」——缺省改由档位表最低档推导，
  * 本包不再提供任何底分缺省常量。
  */
 import { ProtocolError } from './validate'; // 真实位置 `validate.ts:24-29`（errors.ts 无此导出——r1 计划审查订正）
 import type { GameType } from './game';
+import { parseMahjongRules } from './mahjong/rules';
 
 export const CONFIG_KEYS = [
   'robot.skillDistribution',
@@ -177,6 +178,20 @@ export const CONFIG_KEYS = [
   'currency.reliefThresholdCoins',
   /** 代理分润（2026-10-26）：客户端注册邀请码输入框开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteEnabled`）。 */
   'agent.inviteEnabled',
+  /** 代理分润（2026-11-03）：注册邀请码必填开关（严格 boolean、种子 false；客户端可见——裸名 `agentInviteRequired`）。 */
+  'agent.inviteRequired',
+  // ── 四川麻将（2026-10-28）────────────────────────────────────────────
+  'game.levels.mahjong',
+  'game.mahjong.enabled',
+  'game.mahjong.freeRoomEnabled',
+  'game.mahjong.goldRoomEnabled',
+  'game.mahjong.friendRoomEnabled',
+  'game.mahjong.freeBotFillEnabled',
+  'game.mahjong.goldBotFillEnabled',
+  'game.mahjong.entryMultiplier',
+  'game.mahjong.rakePercent',
+  'game.mahjong.sbrGoldEnabled',
+  'game.mahjong.rules',
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
@@ -241,6 +256,8 @@ export const CLIENT_CONFIG_KEYS = [
   'version',
   /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
   'agentInviteEnabled',
+  /** 代理分润：注册邀请码必填（缺键/旧服务端 ⇒ false）。 */
+  'agentInviteRequired',
 ] as const;
 
 export interface BaseScoreLevel {
@@ -313,6 +330,8 @@ export interface ClientConfig {
   reliefThresholdCoins?: number | null;
   /** 代理分润：注册邀请码输入框门控（缺键/旧服务端 ⇒ false）。 */
   agentInviteEnabled: boolean;
+  /** 代理分润：注册邀请码必填（缺键/旧服务端 ⇒ false）。 */
+  agentInviteRequired: boolean;
   version: number;
 }
 export type ConfigSnapshot = Record<ConfigKey, { value: unknown; version: number }>;
@@ -392,15 +411,24 @@ const GAME_BOOLEAN_KEYS: readonly ConfigKey[] = [
   'game.paodekuai.friendRoomEnabled',
   'game.paodekuai.freeBotFillEnabled',
   'game.paodekuai.goldBotFillEnabled',
+  'game.mahjong.enabled',
+  'game.mahjong.freeRoomEnabled',
+  'game.mahjong.goldRoomEnabled',
+  'game.mahjong.friendRoomEnabled',
+  'game.mahjong.freeBotFillEnabled',
+  'game.mahjong.goldBotFillEnabled',
+  'game.mahjong.sbrGoldEnabled',
 ];
 
 const GAME_RAKE_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.rakePercent',
   'game.paodekuai.rakePercent',
+  'game.mahjong.rakePercent',
 ];
 const GAME_ENTRY_MULTIPLIER_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.entryMultiplier',
   'game.paodekuai.entryMultiplier',
+  'game.mahjong.entryMultiplier',
 ];
 const GAME_CARD_COUNTER_PRICE_KEYS: readonly ConfigKey[] = [
   'game.doudizhu.cardCounterPricePerGameCoins',
@@ -465,6 +493,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'client.appEnabled') return parseStrictBoolean(key, value);
   if (key === 'client.h5Enabled') return parseStrictBoolean(key, value);
   if (key === 'agent.inviteEnabled') return parseStrictBoolean(key, value);
+  if (key === 'agent.inviteRequired') return parseStrictBoolean(key, value);
   if (key === 'room.freeBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.goldBotFillEnabled') return parseStrictBoolean(key, value);
   if (key === 'room.matchNoBotMaxWaitMs') return parseNoBotMaxWaitMs(value);
@@ -479,6 +508,8 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
   if (key === 'game.paodekuai.multiplierCap') return parseMultiplierCap(value);
   // ── 平行化（2026-10-24）────────────────────────────────────────────────
   if (key === 'game.levels.doudizhu') return parseBaseScoreLevels(value);
+  if (key === 'game.levels.mahjong') return parseBaseScoreLevels(value);
+  if (key === 'game.mahjong.rules') return parseMahjongRules(value);
   if (GAME_BOOLEAN_KEYS.includes(key)) return parseStrictBoolean(key, value);
   if (GAME_RAKE_KEYS.includes(key)) return parseRakePercent(value, key);
   if (GAME_ENTRY_MULTIPLIER_KEYS.includes(key)) return parseEntryMultiplier(value, key);
@@ -495,8 +526,7 @@ export function parseConfigValue(key: ConfigKey, value: unknown): unknown {
 }
 
 /** 记牌器收费片（第 51/52 键）：整数金币 `0 ≤ n ≤ 1,000,000`；0 = 该商品隐藏/免费态。 */
-function parseCardCounterPrice(key: ConfigKey, value: unknown): number {
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
+function parseCardCounterPrice(key: ConfigKey, value: unknown): number {  if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new ProtocolError(`${key} 必须是整数金币（收到 ${JSON.stringify(value)}）`);
   }
   if (value < 0 || value > 1_000_000) {

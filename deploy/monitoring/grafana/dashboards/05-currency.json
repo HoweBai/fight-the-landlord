@@ -438,6 +438,60 @@
       ],
       "title": "台费收/漏（按 reason / 5m：insufficient_funds|unknown_outcome|internal_error）",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ftl-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(agent_invite_generated_total[5m]))",
+          "legendFormat": "生成/秒",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (result) (rate(agent_invite_consumed_total[5m]))",
+          "legendFormat": "消费 {{result}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (reason) (rate(agent_bind_ignored_total[5m]))",
+          "legendFormat": "忽略 {{reason}}",
+          "refId": "C"
+        },
+        {
+          "expr": "sum by (reason) (rate(agent_invite_rejected_total[5m]))",
+          "legendFormat": "拒绝 {{reason}}",
+          "refId": "D"
+        }
+      ],
+      "title": "代理邀请码：生成 / 消费 / 忽略 / 拒绝",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",

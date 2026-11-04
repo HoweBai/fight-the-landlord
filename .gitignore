@@ -48,3 +48,4 @@ test-results/
 
 # /download/ 的安装包（发布产物不入库；机制见 deploy/download/README.md）
 deploy/download/*.apk
+__pycache__/

@@ -1,0 +1,542 @@
+import { describe, expect, it } from 'vitest';
+import { mount } from '@vue/test-utils';
+import {
+  DEFAULT_CHENGDU_RULES,
+  type MahjongClaimOption,
+  type MahjongPlayerView,
+  type Tile,
+} from '@fight-the-landlord/protocol';
+import MahjongBoard from '../src/components/table/mahjong/MahjongBoard.vue';
+
+/**
+ * T11：MahjongBoard 的边界与动作上抛。
+ *
+ * 判据：
+ *  - 只靠 props 渲染（不读 store），手牌/牌墙/座位信息都在；
+ *  - 换三张（3 张同花色）/ 定缺 / 出牌 / 碰杠胡过 全部 emit（带窗口 id）；
+ *  - 自摸窗口的「胡」映射成 `selfDrawHu`，杠按手牌/副露映射成暗杠或补杠。
+ */
+function tile(s: 0 | 1 | 2, r: number): Tile {
+  return { s, r };
+}
+
+function view(over: Partial<MahjongPlayerView> = {}): MahjongPlayerView {
+  return {
+    roomCode: 'MJ1',
+    gameType: 'mahjong',
+    playerCount: 4,
+    version: 1,
+    state: 'play',
+    baseScore: 1,
+    seat: 0,
+    hand: [
+      tile(0, 1), tile(0, 1), tile(0, 1), tile(0, 1), tile(0, 2), tile(0, 3),
+      tile(0, 4), tile(1, 5), tile(1, 5), tile(1, 6), tile(1, 7), tile(2, 8),
+      tile(2, 9),
+    ],
+    cardCounts: [13, 13, 13, 13],
+    trustees: [false, false, false, false],
+    currentPlayer: 0,
+    recentActions: [],
+    turnDeadlineAt: 1_700_000_030_000,
+    activeSeats: [0],
+    tingSeats: [],
+    dealerSeat: 0,
+    wallCount: 40,
+    lackSuits: [0, 1, 2, null],
+    melds: [[], [], [], []],
+    discards: [[], [], [], []],
+    isOut: [false, false, false, false],
+    huInfos: [],
+    claimsForMe: [],
+    mahjongRules: DEFAULT_CHENGDU_RULES,
+    revealedHands: [],
+    windowId: 'turn:1',
+    ...over,
+  };
+}
+
+function props(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    view: view(),
+    mySeat: 0,
+    seconds: 15,
+    busy: false,
+    interactive: true,
+    settlementArrived: false,
+    settlementRevealed: false,
+    waitingForDeal: false,
+    roomCode: 'MJ1',
+    seatNames: { 1: '甲', 2: '乙', 3: '丙' },
+    balances: [null, null, null, null],
+    levelName: '休闲场',
+    ...over,
+  };
+}
+
+describe('T11：MahjongBoard（独立挂载 + 动作上抛）', () => {
+  it('只靠 props 渲染：顶栏/牌墙/手牌/座位都在', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    expect(wrapper.find('.mj').exists()).toBe(true);
+    expect(wrapper.find('.mj__bar').exists()).toBe(true);
+    expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
+    expect(wrapper.text()).toContain('牌墙 40');
+    expect(wrapper.text()).toContain('底分 1');
+  });
+
+  it('换三张：选 3 张同花色后 emit exchange（带 windowId）', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'exchange', activeSeats: [0], windowId: 'exchange' }) }),
+    });
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    await tiles[0]!.trigger('click');
+    await tiles[1]!.trigger('click');
+    await tiles[2]!.trigger('click');
+    const confirm = wrapper.find('.mj__confirm');
+    expect(confirm.attributes('disabled')).toBeUndefined();
+    await confirm.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'exchange',
+      tiles: [tile(0, 1), tile(0, 1), tile(0, 1)],
+    });
+    expect(wrapper.emitted('mahjong')?.[0]?.[1]).toBe('exchange');
+  });
+
+  it('定缺：点「缺万」emit lack(0)', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'lack', activeSeats: [0], windowId: 'lack' }) }),
+    });
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('缺万'))!;
+    await btn.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({ type: 'lack', suit: 0 });
+  });
+
+  it('出牌：选中一张手牌后 emit discard', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const first = wrapper.findAll('.mj__hand .mj-tile')[0]!;
+    await first.trigger('click');
+    const discard = wrapper.find('.mj__discard');
+    expect(discard.attributes('disabled')).toBeUndefined();
+    await discard.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({ type: 'discard', tile: tile(0, 1) });
+    expect(wrapper.emitted('mahjong')?.[0]?.[1]).toBe('turn:1');
+  });
+
+  it('响应窗口：碰/过按钮来自 claimsForMe，emit claim（窗口 id 原样回传）', async () => {
+    const claims: MahjongClaimOption[] = [{ claim: 'peng', tile: tile(0, 1) }, { claim: 'pass' }];
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'claim',
+          activeSeats: [0],
+          windowId: 'claim:3',
+          claimsForMe: claims,
+        }),
+      }),
+    });
+    const peng = wrapper.findAll('button').find((b) => b.text() === '碰')!;
+    await peng.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]).toEqual([{ type: 'claim', claim: 'peng' }, 'claim:3']);
+    const pass = wrapper.findAll('button').find((b) => b.text() === '过')!;
+    await pass.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[1]).toEqual([{ type: 'claim', claim: 'pass' }, 'claim:3']);
+  });
+
+  it('自摸窗口：胡 ⇒ selfDrawHu；手上 4 张的杠 ⇒ concealedGang', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'play',
+          activeSeats: [0],
+          windowId: 'turn:5',
+          claimsForMe: [{ claim: 'hu', tile: tile(0, 4) }, { claim: 'gang', tile: tile(0, 1) }],
+        }),
+      }),
+    });
+    const hu = wrapper.findAll('button').find((b) => b.text() === '自摸胡')!;
+    await hu.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({ type: 'selfDrawHu' });
+    const gang = wrapper.findAll('button').find((b) => b.text() === '暗杠')!;
+    await gang.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[1]?.[0]).toEqual({
+      type: 'concealedGang',
+      tile: tile(0, 1),
+    });
+  });
+
+  describe('自己胡牌后：手牌不重复渲染', () => {
+    it('myRevealed 不为空时，.mj__hand 隐藏，.mj__my-revealed 展示手牌', () => {
+      const revealedTiles: Tile[] = [
+        tile(0, 1), tile(0, 2), tile(0, 3), tile(0, 4), tile(0, 5), tile(0, 6),
+        tile(0, 7), tile(0, 8), tile(0, 9), tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4),
+      ];
+      const wrapper = mount(MahjongBoard, {
+        props: props({
+          view: view({
+            state: 'play',
+            isOut: [true, false, false, false],
+            huInfos: [{
+              seat: 0,
+              fromSeat: null,
+              tile: tile(0, 5),
+              fan: 1,
+              multiplier: 1,
+              items: ['平胡'],
+              selfDraw: true,
+            }],
+            revealedHands: [
+              { seat: 0, tiles: revealedTiles, huTile: tile(0, 5) },
+            ],
+            activeSeats: [1], // 只有对手在 action 中
+          }),
+        }),
+      });
+      // .mj__hand 仍存在，但只渲染 revealed tiles，不重复渲染原手牌
+      expect(wrapper.find('.mj__hand').exists()).toBe(true);
+      expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(revealedTiles.length);
+      expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
+    });
+
+    it('没胡时，.mj__hand 正常显示手牌', () => {
+      const wrapper = mount(MahjongBoard, { props: props() });
+      expect(wrapper.find('.mj__hand').exists()).toBe(true);
+      expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
+    });
+
+    it('claim 阶段自己不 active 时，底部不重复显示 phaseText', () => {
+      const wrapper = mount(MahjongBoard, {
+        props: props({
+          view: view({
+            state: 'claim',
+            activeSeats: [1, 2], // 自己不在 active 中
+            windowId: 'claim:2',
+          }),
+        }),
+      });
+      // 中央应该有 phaseText
+      expect(wrapper.find('.mj-center__phase').text()).toContain('等待其他玩家响应');
+      // 该窗口自己不在 active，动作栏不应渲染（不要对空 wrapper 调 .text()）
+      expect(wrapper.find('.mj__actions').exists()).toBe(false);
+    });
+  });
+});
+import { computed } from 'vue';
+import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
+import { mahjongTableLayout } from '../src/game/mahjong-layout';
+
+describe('T12：四家分区重排', () => {
+  it('四个座位卡、四个牌河、中央井', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ cardCounts: [14, 10, 7, 0] }) }),
+    });
+    expect(wrapper.findAll('.mj-chip')).toHaveLength(4);
+    expect(wrapper.findAll('.mj-river')).toHaveLength(4);
+    for (const d of ['top', 'left', 'right', 'my']) {
+      expect(wrapper.find(`.mj-river--${d}`).exists()).toBe(true);
+    }
+    expect(wrapper.find('.mj-center').text()).toContain('牌墙 40');
+  });
+
+  it('对手牌背数量与 src 逐座对位（不是只数个数）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ cardCounts: [14, 10, 7, 0] }) }),
+    });
+    // me=0：right=1 → 10，top=2 → 7，left=3 → 0
+    expect(wrapper.findAll('.mj-backs-slot--right .mj-tile')).toHaveLength(10);
+    expect(wrapper.findAll('.mj-backs-slot--top .mj-tile')).toHaveLength(7);
+    expect(wrapper.findAll('.mj-backs-slot--left .mj-tile')).toHaveLength(0);
+    for (const img of wrapper.findAll('.mj-backs-slot image')) {
+      expect(img.attributes('src') ?? '').toMatch(/back\.png$/);
+    }
+  });
+
+  it('提供画布尺寸时手牌尺寸与纯函数逐值一致', () => {
+    // 用 4:3：s≈1.009，手牌约 87.8×117；1623×750 的 s 与兜底同为 1，验不出注入
+    const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
+    const wrapper = mount(MahjongBoard, {
+      props: props(),
+      global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
+    });
+    const layout = mahjongTableLayout(1334, 1000);
+    const first = wrapper.find('.mj__hand .mj-tile');
+    expect(first.attributes('style')).toContain(`width: ${layout.hand.tile.w}px`);
+    expect(first.attributes('style')).toContain(`height: ${layout.hand.tile.h}px`);
+  });
+
+  it('左右家已胡：牌河区亮牌；对家已胡：牌背位亮牌', () => {
+    const leftHu = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [false, false, false, true],
+          revealedHands: [
+            { seat: 3, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    expect(leftHu.find('.mj-river--left .mj-river__revealed').exists()).toBe(true);
+    expect(leftHu.findAll('.mj-backs-slot--left .mj-tile')).toHaveLength(0);
+
+    const topHu = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [false, false, true, false],
+          revealedHands: [
+            { seat: 2, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    const topTiles = topHu.findAll('.mj-backs-slot--top .mj-tile');
+    expect(topTiles).toHaveLength(2);
+    expect(topTiles[0]!.attributes('src') ?? '').not.toMatch(/back\.png$/);
+  });
+
+  it('跨座位同型副露不互相触发 pop', async () => {
+    const meld = { kind: 'peng' as const, tiles: [tile(0, 1), tile(0, 1), tile(0, 1)] };
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [meld], []] }) }),
+    });
+    expect(wrapper.findAll('.anim-meld-pop')).toHaveLength(0);
+    await wrapper.setProps({ view: view({ melds: [[], [], [meld], [meld]] }) });
+    await nextTick();
+    expect(wrapper.find('.mj-river--left .anim-meld-pop').exists()).toBe(true);
+    expect(wrapper.find('.mj-river--top .anim-meld-pop').exists()).toBe(false);
+  });
+
+  it('自己已胡：手牌行显示亮牌且不可选', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          isOut: [true, false, false, false],
+          revealedHands: [
+            { seat: 0, tiles: [{ s: 0, r: 1 }, { s: 1, r: 2 }], huTile: { s: 1, r: 2 } },
+          ],
+        }),
+      }),
+    });
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0]!.attributes('src') ?? '').not.toMatch(/back.png$/);
+    await tiles[0]!.trigger('click');
+    expect(wrapper.find('.mj__discard').attributes('disabled')).toBeDefined();
+  });
+
+  it('结束态只出现一次「本局结束」', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'ended', activeSeats: [] }) }),
+    });
+    const matches = wrapper.find('.mj-center').text().match(/本局结束/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it('claim 窗口只响应来源座弃牌，再点同一张取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'claim',
+          currentPlayer: 2,
+          activeSeats: [0],
+          windowId: 'claim:9',
+          claimsForMe: [
+            { claim: 'peng', tile: { s: 0, r: 1 } },
+            { claim: 'hu', tile: { s: 1, r: 1 }, fan: 2 },
+          ],
+          discards: [[{ s: 0, r: 1 }], [], [{ s: 0, r: 1 }], []],
+        }),
+      }),
+    });
+    // 顶部预览取第一张 tile；番数做徽标
+    expect(wrapper.find('.mj-claim-tile__preview image').attributes('src')).toContain('/my/wan-1.png');
+    expect(wrapper.find('.mj-claim-tile__fan').text()).toBe('2番');
+    // 自家弃牌不是本次 claim 来源：点击不过滤
+    await wrapper.find('.mj-river--my .mj-tile').trigger('click');
+    const before = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
+    expect(before).toContain('碰');
+    expect(before).toContain('胡');
+    // 来源座（对家）弃牌：过滤到只剩碰
+    const topTile = wrapper.find('.mj-river--top .mj-tile');
+    await topTile.trigger('click');
+    expect(wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text())).toEqual(['碰']);
+    await topTile.trigger('click');
+    const all = wrapper.findAll('.mj-claim-tile__opt-label').map((b) => b.text());
+    expect(all).toContain('碰');
+    expect(all).toContain('胡');
+  });
+});
+import { nextTick } from 'vue';
+
+describe('T13：摸牌分离与 display 下标', () => {
+  const baseHand = view().hand;
+
+  it('13→14：新增牌移到行尾并标 drawn', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({
+      view: view({ hand: [...baseHand, tile(1, 9)] }),
+    });
+    await nextTick();
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    expect(tiles).toHaveLength(14);
+    const last = tiles[tiles.length - 1]!;
+    expect(last.classes()).toContain('mj__hand-tile--drawn');
+    expect(last.attributes('aria-label')).toBe('筒9');
+    const layout = mahjongTableLayout(1334, 750);
+    expect(last.attributes('style')).toContain(
+      `margin-left: ${layout.hand.drawnGap - layout.hand.gap}px`,
+    );
+  });
+
+  it('13→14 标出后丢一张非摸牌 → 标记消失；13→13 不标', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, tile(1, 9)] }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(1);
+    // 去掉一张非摸牌（排序后第一张 wan1），手牌回到 13
+    const afterDiscard = [...baseHand.slice(1), tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: afterDiscard }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(0);
+    // 13→13 同内容不标
+    await wrapper.setProps({ view: view({ hand: afterDiscard }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(0);
+  });
+
+  it('同内容新版本不清摸牌标记，选中行尾摸牌仍出同一张', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const hand14 = [...baseHand, tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: hand14 }) });
+    await nextTick();
+    await wrapper.findAll('.mj__hand .mj-tile')[13]!.trigger('click');
+    // 同内容、不同对象的新 version 包（模拟别人托管/resync）
+    await wrapper.setProps({ view: view({ hand: [...hand14] }) });
+    await nextTick();
+    expect(wrapper.findAll('.mj__hand-tile--drawn')).toHaveLength(1);
+    expect(wrapper.find('.mj__discard').attributes('disabled')).toBeUndefined();
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: { s: 1, r: 9 },
+    });
+  });
+
+  it('同内容新版本不清选择，选中非摸牌仍出同一张', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const hand14 = [...baseHand, tile(1, 9)];
+    await wrapper.setProps({ view: view({ hand: hand14 }) });
+    await nextTick();
+    await wrapper.findAll('.mj__hand .mj-tile')[0]!.trigger('click');
+    await wrapper.setProps({ view: view({ hand: [...hand14] }) });
+    await nextTick();
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: baseHand[0],
+    });
+  });
+
+  it('点行尾摸牌再出牌，emit 的是那张摸牌（不是下标错位）', async () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, tile(1, 9)] }) });
+    await nextTick();
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    await tiles[tiles.length - 1]!.trigger('click');
+    await wrapper.find('.mj__discard').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: { s: 1, r: 9 },
+    });
+  });
+
+  it('换三张仍按 display 下标选牌', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'exchange', activeSeats: [0], windowId: 'exchange' }) }),
+    });
+    const tiles = wrapper.findAll('.mj__hand .mj-tile');
+    await tiles[0]!.trigger('click');
+    await tiles[1]!.trigger('click');
+    await tiles[2]!.trigger('click');
+    await wrapper.find('.mj__confirm').trigger('click');
+    const emitted = wrapper.emitted('mahjong')?.[0]?.[0] as { tiles: unknown[] };
+    expect(emitted.tiles).toHaveLength(3);
+  });
+});
+
+describe('中心盘接线（四家 / ended / 托管）', () => {
+  it('ended：圆盘终 + 真实 endedText', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ state: 'ended', isOut: [true, true, true, false] }),
+      }),
+    });
+    expect(wrapper.find('.mj-center__value').text()).toContain('终');
+    expect(wrapper.find('.mj-center__ended').text()).toContain('已胡 3 家');
+  });
+
+  it('四家：杠分/临时分按 seat 对位', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          pendingScoreChanges: [
+            { seat: 1, delta: 1200 },
+            { seat: 2, delta: -800 },
+          ],
+        }),
+      }),
+    });
+    const cells = wrapper.findAll('.mj-center__cell');
+    // [对=seat2, 左=seat3, 右=seat1, 我=seat0]
+    expect(cells[0]!.text()).toContain('-800');
+    expect(cells[1]!.text()).toContain('0');
+    expect(cells[2]!.text()).toContain('+1200');
+    expect(cells[3]!.text()).toContain('0');
+  });
+
+  it('四家：庄/缺/听/胡/出局优先级', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          dealerSeat: 0,
+          lackSuits: [0, 1, 2, 1],
+          tingSeats: [3],
+          isOut: [false, false, true, false],
+          huInfos: [
+            {
+              seat: 1,
+              fromSeat: 0,
+              tile: tile(0, 1),
+              fan: 1,
+              multiplier: 1,
+              items: ['平胡'],
+              selfDraw: false,
+            },
+          ],
+        }),
+      }),
+    });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells[0]!.text()).toContain('出局'); // top=2 出局优先于缺条
+    expect(cells[1]!.text()).toContain('听'); // left=3 ting
+    expect(cells[2]!.text()).toContain('胡'); // right=1 hu
+    expect(cells[3]!.text()).toContain('庄'); // me dealer
+    expect(cells[3]!.text()).toContain('缺万');
+  });
+
+  it('无 pending：四家全 0', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const cells = wrapper.findAll('.mj-center__cell');
+    expect(cells).toHaveLength(4);
+    for (const c of cells) expect(c.text()).toContain('0');
+  });
+
+  it('托管遮罩可取消', async () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ trustees: [true, false, false, false] }),
+      }),
+    });
+    expect(wrapper.find('.mj__trustee-mask').exists()).toBe(true);
+    await wrapper.find('.mj__trustee-cancel').trigger('click');
+    expect(wrapper.emitted('trustee')?.[0]).toEqual([false]);
+  });
+});

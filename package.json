@@ -15,11 +15,14 @@
     "verify:monitoring": "node scripts/verify-monitoring.mjs",
     "verify:k8s": "node scripts/verify-k8s-manifests.mjs",
     "verify:shutdown": "node scripts/verify-shutdown-hooks.mjs",
+    "verify:apk": "node scripts/verify-apk-name.mjs",
     "clean": "turbo run clean",
     "verify:admin-agents": "node scripts/admin-agents-probe.mjs",
-    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs"
+    "verify:admin-config-tabs": "node scripts/admin-config-tabs-probe.mjs",
+    "verify:admin-mahjong-rules": "node scripts/admin-mahjong-rules-form-probe.mjs"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.13",
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^26.4.1",
     "@types/passport": "^1.0.17",

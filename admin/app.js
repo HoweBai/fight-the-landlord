@@ -117,7 +117,7 @@
  *    **只用 `textContent`**（不拼接 HTML 串）；时间展示 = 北京时间
  *    （`toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })`，⚙️1）。
  *
- * ⚠️ 页面不静态携带**运行期**配置值（R4）：一百零一键与它们的值全部在登录后从 API 拉取；
+ * ⚠️ 页面不静态携带**运行期**配置值（R4）：113 键与它们的值全部在登录后从 API 拉取；
  *    静态备注只含**出厂默认**（见下方 CONFIG_NOTES 注）。
  */
 'use strict';
@@ -132,7 +132,7 @@ const PAGE_LIMIT = 20;
 
 /**
  * 既有键逐项备注（静态文案；键 → 4 行「作用 / 取值（含默认） / 生效 / 注意」）；
- * **85 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
+ * **97 个 active 键全覆盖**（2026-10-25 跑得快规则/计分/开关 13 键 + 2/4 人闸补齐；2026-10-26 跑得快按人数/自动限流 7 键补齐；无备注条目时展示通用说明）。
  *
  * 真源（逐条可溯源，勿杜撰）：
  *  - 取值域与约束 = `packages/protocol/src/config.ts`（写入校验的唯一真源）；
@@ -152,7 +152,7 @@ const PAGE_LIMIT = 20;
  *    客户端接入片 T3 加第 43/44 键、机器人补位开关片加第 45–47 键、提现再认证第 48 键、
  *    设备绑定第 49 键、记牌器第 50 键与两价格第 51/52 键；2026-10-24 配置平行化后
  *    **61 条备注 / 74 个 active 键**；2026-10-25 跑得快风控两键与 2/4 人闸后
- *    **85 条备注 / 85 个 active 键（全覆盖）**
+ *    **97 条备注 / 97 个 active 键（全覆盖）**
  *    （另有 16 个旧键只读、无备注）。
  */
 const CONFIG_NOTES = {
@@ -161,6 +161,12 @@ const CONFIG_NOTES = {
     ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
     ['生效', '保存后客户端下次拉取配置即生效（通常 ≤60s；H5 可硬刷新立即生效）。'],
     ['注意', '真正的计佣开关在代理设置（`agent_settings.enabled`，仅超级管理员）；本键只管客户端是否显示输入框。两个开关都开才会绑定。'],
+  ],
+  'agent.inviteRequired': [
+    ['作用', '玩家注册时是否必须填写有效代理邀请码。'],
+    ['取值', '严格 true / false；默认 false（关闭）。'],
+    ['生效', '保存后后端 ≤60s 内生效；客户端注册页下次拉取 boot 后显示「邀请码（必填）」。'],
+    ['注意', '仅在「注册邀请码入口」（agent.inviteEnabled）开启时生效；代理模块未启用时必填无实际绑定效果。'],
   ],
   'game.doudizhu.robot.skillDistribution': [
     ['作用', '补位机器人的弱 / 中 / 高抽取比例 —— 玩家匹配时遇到的机器人强度按此分布。'],
@@ -368,7 +374,7 @@ const CONFIG_NOTES = {
   // 提现再认证片加第 48 键（risk.withdrawReAuthEnabled，归「支付与提现 → 提现」）后 48 条对 48 键；
   // 设备绑定片加第 49 键（risk.deviceBindingEnabled，归「风控安全」）后 49 条对 49 键
   // 记牌器片第 50 键 + 两价格第 51/52 键；2026-10-24 配置平行化后 61 条备注 / 74 个 active 键；
-  // 2026-10-26 跑得快按人数/自动限流 7 键后 85 条备注 / 85 个 active 键。
+  // 2026-10-26 跑得快按人数/自动限流 7 键后 97 条备注 / 97 个 active 键。
 
   //（内容源 = protocol/src/config.ts 键注释 + design.md §7.5 行，改写为运营口吻）。
   'pay.rechargeEnabled': [
@@ -679,6 +685,72 @@ const CONFIG_NOTES = {
     ['生效', '保存后 currency-service 秒级生效；最晚 ≤60s。'],
     ['注意', '不随任何玩法档位/倍率变化；缺失/坏值 ⇒ 救助端点 fail-closed（503），客户端回退旧算法。'],
   ],
+  'game.levels.mahjong': [
+    ['作用', '四川麻将四档底分表（休闲/标准/竞技/豪侠）与台费比例。'],
+    ['取值', 'JSON 数组；每项 {name, baseScore, entryFeePercent}，底分为正整数。默认与其它玩法同四档、台费 0。'],
+    ['生效', '保存后新开的房间/匹配按新档位；已在局中的不受影响。'],
+    ['注意', '客户端大厅按此表渲染场次卡；空表 ⇒ 不显示任何场次。'],
+  ],
+  'game.mahjong.rules': [
+    ['作用', '四川麻将规则快照（番表/封顶/换三张/呼叫转移/退税/花猪/查叫/时长等全部开关）。'],
+    ['取值', '后台以分组表单编辑（计分/番表/换牌与流程/杠与转账/花猪与查叫/决策时长）；保存由服务端按严格 schema 校验。'],
+    ['生效', '保存后新开的房间使用新规则；已在局中的沿用开局快照。'],
+    ['注意', '保存不会改变预设；要整口径切换用「按预设重置全部规则」。番表项清空 = 关闭该番（写 0）。'],
+  ],
+  'game.mahjong.enabled': [
+    ['作用', '四川麻将总开关：关 ⇒ 大厅不显示、匹配/建房被拒绝（12012）。'],
+    ['取值', '严格 true / false（字符串 "true" 不算）。默认 false（暗上线）。'],
+    ['生效', '保存后各服务秒级生效（推送正常时）；最晚 ≤60s。进行中的对局不受影响。'],
+    ['注意', '这是最后一个开放玩法时关闭会二次确认；场次开关还需各自的 free/gold/friend 键同时打开。'],
+  ],
+  'game.mahjong.freeRoomEnabled': [
+    ['作用', '麻将免费场（随机匹配）开关。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后新匹配立即按新值；已入队的票不追溯。'],
+    ['注意', '与金币场/好友房各自独立；总开关关闭时本键不生效。'],
+  ],
+  'game.mahjong.goldRoomEnabled': [
+    ['作用', '麻将金币场开关（结算走金币账本、台费/抽水按档位与 rakePercent）。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后新匹配立即按新值；已入队的票不追溯。'],
+    ['注意', 'sbr 预设的 48×底花猪 burn 在金币场还需 game.mahjong.sbrGoldEnabled 显式打开。'],
+  ],
+  'game.mahjong.friendRoomEnabled': [
+    ['作用', '麻将好友房（房号加入）开关。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后建房/加入立即按新值。'],
+    ['注意', '好友房不参与匹配；总开关关闭时本键不生效。'],
+  ],
+  'game.mahjong.freeBotFillEnabled': [
+    ['作用', '麻将免费场缺人时是否补机器人。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后下一轮补位按新值。'],
+    ['注意', '机器人决策由 game-service 的自动决策承担，不经 DouZero。'],
+  ],
+  'game.mahjong.goldBotFillEnabled': [
+    ['作用', '麻将金币场缺人时是否补机器人。'],
+    ['取值', '严格 true / false。默认 false（暗上线）。'],
+    ['生效', '保存后下一轮补位按新值。'],
+    ['注意', '机器人同样按麻将自动决策出牌；金币场结算对机器人座不落钱包。'],
+  ],
+  'game.mahjong.entryMultiplier': [
+    ['作用', '麻将金币场入场门槛倍率：所需金币 = 档位底分 × 本值。'],
+    ['取值', '整数，≥0。默认 10（与其它玩法一致）。'],
+    ['生效', '保存后新匹配/建房立即按新门槛（14003 权威）。'],
+    ['注意', '客户端只做提示/置灰，真正门槛以服务端校验为准。'],
+  ],
+  'game.mahjong.rakePercent': [
+    ['作用', '麻将金币场结算抽水比例（对事件后正收益计，进 burn.rake）。'],
+    ['取值', '整数百分比，0 ≤ n ≤ 100。默认 0（零和起点）。'],
+    ['生效', '保存后下一局结算按新值。'],
+    ['注意', '抽水从赢家所得中扣除销毁，不重新分配；花猪 burn 另计。'],
+  ],
+  'game.mahjong.sbrGoldEnabled': [
+    ['作用', '是否允许 sbr 预设（花猪 48×底 burn）在金币场开局。'],
+    ['取值', '严格 true / false。默认 false。'],
+    ['生效', '保存后新开的金币房按新值；已在局中的不受影响。'],
+    ['注意', '关闭时金币场 + sbr 规则会被开局链拒绝（房间保持 waiting）；免费场/好友房不受此闸限制。'],
+  ],
 };
 
 
@@ -833,6 +905,38 @@ const CONFIG_IA = [
           },
         ],
       },
+      {
+        id: 'mahjong',
+        name: '四川麻将',
+        headerKeys: ['game.mahjong.enabled'],
+        tabs: [
+          {
+            id: 'rules',
+            name: '玩法规则',
+            keys: ['game.levels.mahjong', 'game.mahjong.rules'],
+          },
+          {
+            id: 'rooms',
+            name: '场次开关',
+            keys: [
+              'game.mahjong.freeRoomEnabled',
+              'game.mahjong.goldRoomEnabled',
+              'game.mahjong.friendRoomEnabled',
+              'game.mahjong.freeBotFillEnabled',
+              'game.mahjong.goldBotFillEnabled',
+            ],
+          },
+          {
+            id: 'goldEconomy',
+            name: '金币场经济',
+            keys: [
+              'game.mahjong.entryMultiplier',
+              'game.mahjong.rakePercent',
+              'game.mahjong.sbrGoldEnabled',
+            ],
+          },
+        ],
+      },
     ],
   },
   {
@@ -924,7 +1028,7 @@ const CONFIG_IA = [
           {
             id: 'switches',
             name: '开关',
-            keys: ['agent.inviteEnabled'],
+            keys: ['agent.inviteEnabled', 'agent.inviteRequired'],
           },
         ],
       },
@@ -985,6 +1089,7 @@ const IA_DOMAINS = CONFIG_IA.flatMap((g) => g.domains.map((d) => ({ ...d, group:
 const GAME_SWITCH_DEFAULTS = {
   'game.doudizhu.enabled': true,
   'game.paodekuai.enabled': false,
+  'game.mahjong.enabled': false,
 };
 
 /** IA 中所有玩法域的 headerKeys（顶部开关键的全局清单）。 */
@@ -1011,11 +1116,13 @@ const DEFAULT_CFG_UI = () => ({ domainId: 'ddz', query: '', tabId: null, tabDoma
 /**
  * 左树配置叶 id ⇄ IA 域 id（HTML 静态树用固定叶 id；IA 表保留源生域 id）。
  * 顺序 = 左树渲染序；末项 = 动态「未分组」叶（计数 0 时隐藏）。
- * 2026-10-21：客户端接入已并入 risk 域页签，独立叶删除（5+1 叶）。
+ * 2026-10-21：客户端接入已并入 risk 域页签，独立叶删除。
+ * 2026-10-28：新增「四川麻将」域叶（玩法域 = 3：斗地主/跑得快/四川麻将；7+1 叶）。
  */
 const CFG_NAV = [
   { leaf: 'nav-cfg-ddz-btn', count: 'nav-count-ddz', domain: 'ddz' },
   { leaf: 'nav-cfg-pdk-btn', count: 'nav-count-pdk', domain: 'pdk' },
+  { leaf: 'nav-cfg-mahjong-btn', count: 'nav-count-mahjong', domain: 'mahjong' },
   { leaf: 'nav-cfg-economy-btn', count: 'nav-count-economy', domain: 'currency' },
   { leaf: 'nav-cfg-paycfg-btn', count: 'nav-count-paycfg', domain: 'pay' },
   { leaf: 'nav-cfg-riskcfg-btn', count: 'nav-count-riskcfg', domain: 'risk' },
@@ -1087,6 +1194,7 @@ const CONFIG_CONTROLS = {
   'currency.reliefAmount': { label: '每日救助金额', type: 'number', suffix: '金币' },
   'currency.reliefThresholdCoins': { label: '救助门槛', type: 'number', suffix: '金币' },
   'agent.inviteEnabled': { label: '注册邀请码入口', type: 'bool' },
+  'agent.inviteRequired': { label: '注册邀请码必填', type: 'bool' },
   'pay.rechargeEnabled': { label: '充值开关', type: 'bool' },
   'pay.coinPerYuan': { label: '金币/元比率', type: 'number', suffix: '金币/元' },
   'pay.withdrawEnabled': { label: '提现开关', type: 'bool' },
@@ -1113,12 +1221,24 @@ const CONFIG_CONTROLS = {
   'client.appEnabled': { label: 'App 端', type: 'bool' },
   'client.h5Enabled': { label: 'H5 端', type: 'bool' },
   'game.doudizhu.enabled': { label: '斗地主总开关', type: 'bool' },
+  // 四川麻将（9 简单键；档位表与规则 JSON 是结构化键）
+  'game.mahjong.enabled': { label: '麻将总开关', type: 'bool' },
+  'game.mahjong.freeRoomEnabled': { label: '免费场', type: 'bool' },
+  'game.mahjong.goldRoomEnabled': { label: '金币场', type: 'bool' },
+  'game.mahjong.friendRoomEnabled': { label: '好友房', type: 'bool' },
+  'game.mahjong.freeBotFillEnabled': { label: '免费场缺人补机器人', type: 'bool' },
+  'game.mahjong.goldBotFillEnabled': { label: '金币场缺人补机器人', type: 'bool' },
+  'game.mahjong.entryMultiplier': { label: '入场门槛倍率', type: 'number', suffix: '倍' },
+  'game.mahjong.rakePercent': { label: '抽水比例', type: 'number', suffix: '%' },
+  'game.mahjong.sbrGoldEnabled': { label: '金币场允许 sbr 花猪 burn', type: 'bool' },
 };
 
-/** 5 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
+/** 7 个结构化键（专属编辑器；不进 CONFIG_CONTROLS）。 */
 const STRUCT_KEYS = new Set([
   'game.levels.doudizhu',
   'game.levels.paodekuai',
+  'game.levels.mahjong',
+  'game.mahjong.rules',
   'pay.rechargePackages',
   'game.doudizhu.robot.skillDistribution',
   'game.doudizhu.robot.modelBySkill',
@@ -1127,9 +1247,269 @@ const STRUCT_KEYS = new Set([
 const STRUCT_META = {
   'game.levels.doudizhu': { label: '斗地主档位表' },
   'game.levels.paodekuai': { label: '跑得快档位表' },
+  'game.levels.mahjong': { label: '四川麻将档位表' },
+  'game.mahjong.rules': { label: '四川麻将规则' },
   'pay.rechargePackages': { label: '充值档位表' },
   'game.doudizhu.robot.skillDistribution': { label: '机器人技能分布' },
   'game.doudizhu.robot.modelBySkill': { label: '各档模型' },
+};
+
+/* ── 四川麻将规则表单（2026-10-29）────────────────────────────────
+ * 描述表是**纯字面量**（无外部标识符、无函数，可含注释）：protocol 门禁
+ * packages/protocol/src/mahjong/admin-rules-form.gate.test.ts 会从本文件提取它，
+ * 用真 parseMahjongRules 验证枚举/范围/番键等价——改这里必须同步协议。 */
+
+/** 预设展示名（只读徽标 + 重置确认文案）。 */
+const MAHJONG_PRESET_LABELS = { chengdu: '成都血战到底', sbr: 'SBR 竞技近似' };
+
+const MAHJONG_RULES_FORM = {
+  fanLabels: {
+    // 命名番表（17）
+    pingHu: '平胡',
+    duiDuiHu: '对对胡',
+    qingYiSe: '清一色',
+    daiYaoJiu: '带幺九',
+    qiDui: '七对',
+    qingDui: '清对',
+    jiangDui: '将对',
+    longQiDui: '龙七对',
+    qingQiDui: '清七对',
+    qingYaoJiu: '清幺九',
+    qingLongQiDui: '清龙七对',
+    gangShangHua: '杠上花',
+    gangShangPao: '杠上炮',
+    qiangGangHu: '抢杠胡',
+    jinGouDiao: '金钩钓',
+    gen: '根',
+    ziMo: '自摸',
+    // 加法番表（9）
+    root: '根（每组）',
+    allPungs: '碰碰胡',
+    goldenWait: '金钩钓',
+    fullFlush: '清一色',
+    sevenPairs: '七对',
+    winAfterKong: '杠上花',
+    shootAfterKong: '杠上炮',
+    robbingKong: '抢杠胡',
+    underTheSea: '海底',
+    // 可选番（8）
+    duanYaoJiu: '断幺九',
+    haiDi: '海底',
+    perGang: '每杠',
+    shuangLong: '双龙七对',
+    sanLong: '三龙七对',
+    shiBaLuoHan: '十八罗汉',
+    tianHu: '天胡',
+    diHu: '地胡',
+  },
+  tables: {
+    fanTable: {
+      keys: [
+        'pingHu', 'duiDuiHu', 'qingYiSe', 'daiYaoJiu', 'qiDui', 'qingDui', 'jiangDui',
+        'longQiDui', 'qingQiDui', 'qingYaoJiu', 'qingLongQiDui', 'gangShangHua',
+        'gangShangPao', 'qiangGangHu', 'jinGouDiao', 'gen', 'ziMo',
+      ],
+      min: 0,
+      max: 20,
+    },
+    additiveFanTable: {
+      keys: [
+        'root', 'allPungs', 'goldenWait', 'fullFlush', 'sevenPairs', 'winAfterKong',
+        'shootAfterKong', 'robbingKong', 'underTheSea',
+      ],
+      min: 0,
+      max: 20,
+    },
+    optionalFans: {
+      keys: [
+        'duanYaoJiu', 'haiDi', 'perGang', 'shuangLong', 'sanLong', 'shiBaLuoHan',
+        'tianHu', 'diHu',
+      ],
+      min: 0,
+      max: 20,
+    },
+  },
+  groups: [
+    {
+      id: 'scoring',
+      title: '计分',
+      fields: [
+        {
+          path: 'scoringPolicy',
+          label: '计分方式',
+          type: 'enum',
+          options: [
+            ['named', '命名番表（成都口径）'],
+            ['additive', '加法番表（SBR 口径）'],
+          ],
+          note: '命名 = 取单一最高主番再加番；加法 = 逐项特征相加。',
+        },
+        {
+          path: 'fanBase',
+          label: '底番',
+          type: 'enum',
+          valueType: 'number',
+          options: [
+            [1, '1（番从 1 起算：平胡 1 番 = 1× 底）'],
+            [0, '0（番从 0 起算：0 番 = 1× 底）'],
+          ],
+        },
+        { path: 'fanCap', label: '封顶番数', type: 'int', min: 1, max: 8, note: '封顶番数：结算倍数 = 2^(封顶后番 − 底番)；封顶本身不是起胡门槛，但起胡番高于封顶番数时仍然无法胡牌。' },
+        { path: 'minFanToHu', label: '起胡番', type: 'int', min: 0, max: 6, note: '0 = 不设门槛。' },
+        {
+          path: 'selfDrawMode',
+          label: '自摸加成',
+          type: 'enum',
+          options: [
+            ['addBase', '每家多付 1× 底'],
+            ['addPoint', '每家多付 1× 底（SBR 写法，当前同 addBase）'],
+            ['addFan', '番 +1'],
+            ['none', '无加成'],
+          ],
+          note: 'addBase 与 addPoint 当前实现同义；addFan 读命名番表的「自摸」项，SBR 空表时实际 +0。',
+        },
+        {
+          path: 'rootIncludesKong',
+          label: '根包含杠',
+          type: 'bool',
+          note: '开 = 已杠的四张也算根；龙七对的定义四张始终不算根。',
+        },
+      ],
+    },
+    {
+      id: 'namedFan',
+      title: '命名番表',
+      table: 'fanTable',
+      note: '仅「命名番表」口径生效；0 或留空 = 该番不成立；平胡建议 ≥1。',
+    },
+    {
+      id: 'additiveFan',
+      title: '加法番表',
+      table: 'additiveFanTable',
+      note: '仅「加法番表」口径生效；全为 0 时任何牌都是 0 番（只按底分结算）。',
+    },
+    {
+      id: 'optionalFan',
+      title: '可选番',
+      table: 'optionalFans',
+      note: '0 = 关闭；非 0 = 满足条件时加该番（每杠 × 杠数）。',
+    },
+    {
+      id: 'flow',
+      title: '换牌与流程',
+      fields: [
+        { path: 'exchangeThreeEnabled', label: '换三张', type: 'bool' },
+        {
+          path: 'exchangeDirection',
+          label: '交换方向',
+          type: 'enum',
+          options: [
+            ['random', '随机（掷骰）'],
+            ['clockwise', '下家（顺时针）'],
+            ['counterclockwise', '上家（逆时针）'],
+            ['opposite', '对家'],
+          ],
+          note: 'random = 每局掷骰在顺时针/逆时针/对家中选；固定方向则每局都按该方向换牌。',
+        },
+        { path: 'lastFourForcedHu', label: '最后四张必胡', type: 'bool' },
+        {
+          path: 'passHuMode',
+          label: '过水',
+          type: 'enum',
+          options: [
+            ['off', '不过水（可立即再胡）'],
+            ['sameTile', '同张不可再胡'],
+            ['sameTileOrHigherFan', '同张需番更高'],
+          ],
+          note: '过水：off = 过胡后可立即再胡；sameTile = 同一张牌过胡后本局不能再胡同一张；sameTileOrHigherFan = 同上，但番更高可胡。（代码未实现「自己摸牌后解禁」，与文档 §3 有差异，另立片对账。）',
+        },
+      ],
+    },
+    {
+      id: 'gang',
+      title: '杠与转账',
+      fields: [
+        {
+          path: 'directGangMode',
+          label: '直杠付款',
+          type: 'enum',
+          options: [
+            ['contract', '仅点杠者付 2× 底'],
+            ['everyone', '点杠者 2× 底 + 其余在场每家 1× 底'],
+          ],
+          note: '直杠（明杠别人打出的牌）的付款方：contract 仅点杠者付 2× 底；everyone 点杠者 2× 底、其余在场每家 1× 底。',
+        },
+        {
+          path: 'gangTransfer',
+          label: '呼叫转移',
+          type: 'enum',
+          options: [
+            ['none', '不转移（杠分退回）'],
+            ['toEachWinner', '转给每个赢家'],
+            ['split', '拆分'],
+          ],
+          note: '杠上炮时已收杠分的去向：none = 退回；toEachWinner = 转给每个赢家；split = 拆分。',
+        },
+        {
+          path: 'refundOnDraw',
+          label: '荒庄退税',
+          type: 'enum',
+          options: [
+            ['nonReadyAll', '所有未听者退'],
+            ['kongDeclarerOnly', '仅杠者退'],
+          ],
+          note: '两档当前实现同义：退税对象都是杠事件收款人且荒庄未听/花猪。',
+        },
+      ],
+    },
+    {
+      id: 'settle',
+      title: '花猪与查叫',
+      fields: [
+        {
+          path: 'huazhuMode',
+          label: '花猪处置',
+          type: 'enum',
+          options: [
+            ['payEach', '赔每家封顶分'],
+            ['burn48', '销毁 48× 底（SBR）'],
+            ['off', '不罚'],
+          ],
+          note: '荒庄时花猪（缺门未打完：手牌/副露仍有缺门，或三门俱全）的处置：payEach = 赔每家封顶分；burn48 = 销毁 48× 底；off = 不罚。',
+        },
+        {
+          path: 'huazhuPayees',
+          label: '花猪赔付对象',
+          type: 'enum',
+          options: [
+            ['active', '仍在场的非花猪玩家'],
+            ['nonFlowerPig', '除花猪外所有玩家（含已胡者）'],
+          ],
+          note: 'payEach 时花猪赔给谁：active = 仍在场的非花猪玩家；nonFlowerPig = 除花猪外所有玩家（含已胡者）。',
+        },
+        { path: 'chajiaoEnabled', label: '查大叫', type: 'bool', note: '查大叫：荒庄时未听牌者赔每个听牌者「该听牌者最大可胡番」；花猪不参与。' },
+        {
+          path: 'chajiaoAllSameState',
+          label: '全员同状态',
+          type: 'enum',
+          options: [
+            ['none', '不结算（当前实现与「照常赔付」同义）'],
+            ['pay', '照常赔付'],
+          ],
+          note: '当前代码两档无可观测差异（settle.ts 的守卫分支不产生查叫事件）；文档描述的差异尚未实现，另立片对账。',
+        },
+      ],
+    },
+    {
+      id: 'timing',
+      title: '决策时长',
+      fields: [
+        { path: 'claimWindowMs', label: '出牌响应窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+        { path: 'exchangeWindowMs', label: '换三张窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+        { path: 'lackWindowMs', label: '定缺窗口', type: 'int', min: 1000, max: 60000, unit: '毫秒' },
+      ],
+    },
+  ],
 };
 
 /** 当前全量快照（登录后 loadAll 填充）：key -> {value, version}。 */
@@ -1157,7 +1537,7 @@ let adjustActionId = null;
  */
 const VIEWS = {
   // v2.1：config 与凭据两页共用 #settings-host（内部分流见 renderSettings）；
-  // nav-config-btn 无叶可挂，作为 hidden 锚点保留（openCfgDomain 驱动 5 个域叶）。
+  // nav-config-btn 无叶可挂，作为 hidden 锚点保留（openCfgDomain 驱动各配置域叶）。
   config: { el: 'settings-host', nav: 'nav-config-btn', roles: ['super_admin', 'operator'] },
   /** 支付配置管理化片 T10（⚙️11 / 规格 §2.8）：读面**有意扩 finance**（写控件仅 super_admin 渲染）。 */
   payChannel: {
@@ -1328,6 +1708,7 @@ const riskState = {
 const RISK_GAME_TYPE_LABELS = {
   doudizhu: '斗地主',
   paodekuai: '跑得快',
+  mahjong: '四川麻将',
   mixed: '混合',
   platform: '平台',
 };
@@ -1503,7 +1884,7 @@ async function login(username, password) {
   showMainView();
 }
 
-/** 拉全量一百零一键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
+/** 拉全量 113 键 ⇒ 更新左树计数并重渲染当前域设置行（401 ⇒ 回登录视图）。 */
 async function loadAll() {
   const epoch = agentsState.epoch;
   const { status, body } = await api('/api/admin/config');
@@ -1554,7 +1935,7 @@ function domainById(id) {
   return IA_DOMAINS.find((d) => d.id === id) ?? null;
 }
 
-/** 左树 5+1 配置叶：计数徽标 + 角色/空数显隐（其余 10 叶由 applyRoleNav 按 VIEW_ORDER 处理）。 */
+/** 左树配置叶（含未分组虚拟叶）：计数徽标 + 角色/空数显隐（其余 10 叶由 applyRoleNav 按 VIEW_ORDER 处理）。 */
 function updateCfgNav() {
   const canCfg = canView('config');
   const extra = ungroupedKeys();
@@ -2011,7 +2392,359 @@ function buildSimpleRow(key) {
 }
 
 /**
- * 4 结构化键整卡编辑器：头部（标题/键名/版本/作用/更多）+ 专属编辑件 + 同款行内保存协议。
+ * 四川麻将规则表单（2026-10-29）：描述表驱动；整对象原子保存。
+ * 与其它结构化卡共用行内协议：ctx.bind(read, reset)；read 抛错 ⇒ saveRow 行内拦截。
+ * 番表语义（D9）：快照中存在的番键清空 ⇒ 写 0；不存在的番键清空 ⇒ 省略。
+ * 保存永不改写 preset（D3）：preset/rulesVersion 直接取快照值。
+ */
+function buildMahjongRulesEditor(body, ctx) {
+  const snap = ctx.snap && typeof ctx.snap === 'object' ? ctx.snap : {};
+  const tableNames = new Set(Object.keys(MAHJONG_RULES_FORM.tables));
+  const knownPaths = new Set();
+  for (const g of MAHJONG_RULES_FORM.groups) {
+    for (const f of g.fields ?? []) knownPaths.add(f.path);
+  }
+  const unknownTop = Object.keys(snap).filter(
+    (k) => k !== 'preset' && k !== 'rulesVersion' && !knownPaths.has(k) && !tableNames.has(k),
+  );
+  const unknownFan = {};
+  for (const [table, meta] of Object.entries(MAHJONG_RULES_FORM.tables)) {
+    const src = snap[table] && typeof snap[table] === 'object' ? snap[table] : {};
+    const extra = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (!meta.keys.includes(k)) extra[k] = v;
+    }
+    unknownFan[table] = extra;
+  }
+  const unknownFanNames = Object.entries(unknownFan).flatMap(([t, m]) =>
+    Object.keys(m).map((k) => `${t}.${k}`),
+  );
+  const missingTop = [...knownPaths].filter((p) => !Object.hasOwn(snap, p));
+  let removeUnknown = false;
+  const fieldRefs = new Map();
+  const tableRefs = new Map();
+  const warnings = el('div', 'mj-warnings');
+
+  function onChange() {
+    ctx.dirty();
+    ctx.state('', '');
+    refreshWarnings();
+  }
+
+  function fieldErr(errEl, msg) {
+    errEl.textContent = msg;
+    throw new Error(msg);
+  }
+
+  function buildFieldRow(field) {
+    const row = el('div', 'mj-field');
+    row.dataset.field = field.path;
+    const label = el('label', 'mj-label', field.label);
+    label.htmlFor = `mj-${field.path}`;
+    row.append(label, el('code', 'mj-key', field.path));
+    const errEl = el('p', 'mj-field-err');
+    const clearErr = () => {
+      errEl.textContent = '';
+    };
+
+    if (field.type === 'bool') {
+      const wrap = el('label', 'switch');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.id = `mj-${field.path}`;
+      input.checked = snap[field.path] === true;
+      wrap.append(input, el('span', 'switch-track'));
+      row.append(wrap);
+      fieldRefs.set(field.path, () => input.checked);
+      input.addEventListener('change', () => {
+        clearErr();
+        onChange();
+      });
+    } else if (field.type === 'enum') {
+      const input = document.createElement('select');
+      input.className = 'mj-select';
+      input.id = `mj-${field.path}`;
+      for (const [value, text] of field.options) {
+        const opt = document.createElement('option');
+        opt.value = String(value);
+        opt.textContent = text;
+        input.append(opt);
+      }
+      input.value = String(snap[field.path]);
+      row.append(input);
+      fieldRefs.set(field.path, () =>
+        field.valueType === 'number' ? Number(input.value) : input.value,
+      );
+      input.addEventListener('change', () => {
+        clearErr();
+        onChange();
+      });
+    } else {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'mj-num';
+      input.id = `mj-${field.path}`;
+      input.min = String(field.min);
+      input.max = String(field.max);
+      input.step = '1';
+      input.value = String(snap[field.path]);
+      row.append(input);
+      if (field.unit) row.append(el('span', 'mj-unit', field.unit));
+      fieldRefs.set(field.path, () => {
+        const raw = input.value.trim();
+        if (raw === '') fieldErr(errEl, `「${field.label}」不能为空`);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < field.min || n > field.max) {
+          fieldErr(errEl, `「${field.label}」须为 ${field.min}–${field.max} 的整数`);
+        }
+        return n;
+      });
+      input.addEventListener('input', () => {
+        clearErr();
+        onChange();
+      });
+    }
+    if (field.note) row.append(el('p', 'mj-note', field.note));
+    row.append(errEl);
+    return row;
+  }
+
+  function buildFieldGroup(group) {
+    const sec = el('section', 'mj-group');
+    sec.dataset.group = group.id;
+    sec.append(el('h4', 'mj-group-title', group.title));
+    if (group.note) sec.append(el('p', 'mj-group-note', group.note));
+    for (const field of group.fields ?? []) {
+      if (!Object.hasOwn(snap, field.path)) continue;
+      sec.append(buildFieldRow(field));
+    }
+    return sec;
+  }
+
+  function buildFanGroup(group) {
+    const meta = MAHJONG_RULES_FORM.tables[group.table];
+    const src =
+      snap[group.table] && typeof snap[group.table] === 'object' ? snap[group.table] : {};
+    const details = document.createElement('details');
+    details.className = 'mj-group mj-fan-group';
+    details.dataset.group = group.id;
+    const summary = document.createElement('summary');
+    summary.textContent = `${group.title}（${meta.keys.length} 项）`;
+    details.append(summary);
+    if (group.note) details.append(el('p', 'mj-group-note', group.note));
+    const rows = new Map();
+    for (const fanKey of meta.keys) {
+      const row = el('div', 'mj-fan-row');
+      row.dataset.field = `${group.table}.${fanKey}`;
+      row.append(el('span', 'mj-fan-name', MAHJONG_RULES_FORM.fanLabels[fanKey] ?? fanKey));
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'mj-num';
+      input.min = String(meta.min);
+      input.max = String(meta.max);
+      input.step = '1';
+      input.value = Object.hasOwn(src, fanKey) ? String(src[fanKey]) : '';
+      if (!Object.hasOwn(src, fanKey)) input.placeholder = '未设置';
+      const errEl = el('p', 'mj-field-err');
+      input.addEventListener('input', () => {
+        errEl.textContent = '';
+        onChange();
+      });
+      row.append(input, errEl);
+      rows.set(fanKey, { input, errEl });
+      details.append(row);
+    }
+    tableRefs.set(group.table, rows);
+    return details;
+  }
+
+  function buildGroups() {
+    const box = el('div', 'mj-groups');
+    for (const group of MAHJONG_RULES_FORM.groups) {
+      box.append(group.table ? buildFanGroup(group) : buildFieldGroup(group));
+    }
+    return box;
+  }
+
+  function buildPresetBar() {
+    const bar = el('div', 'mj-preset-bar');
+    bar.append(
+      el(
+        'span',
+        'mj-preset-now',
+        `当前预设：${MAHJONG_PRESET_LABELS[snap.preset] ?? String(snap.preset ?? 'chengdu')}`,
+      ),
+      el('span', 'mj-ver', `rulesVersion ${snap.rulesVersion ?? '?'}`),
+    );
+    const label = el('label', 'mj-reset-label', '重置为');
+    const select = document.createElement('select');
+    select.className = 'mj-select';
+    select.id = 'mj-reset-preset';
+    for (const [value, text] of Object.entries(MAHJONG_PRESET_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.append(opt);
+    }
+    select.value = snap.preset === 'sbr' ? 'sbr' : 'chengdu';
+    label.append(select);
+    const resetBtn = btn('按预设重置全部规则', 'btn');
+    resetBtn.addEventListener('click', async () => {
+      const target = select.value;
+      const targetLabel = MAHJONG_PRESET_LABELS[target] ?? target;
+      if (
+        !confirm(
+          `按「${targetLabel}」预设重置全部规则？\n将立即保存并覆盖当前所有规则字段；未保存的修改会丢失。\n（SBR 的花猪 48× 底在金币场还需 game.mahjong.sbrGoldEnabled=开）`,
+        )
+      ) {
+        return;
+      }
+      resetBtn.disabled = true;
+      const res = await putConfigKey('game.mahjong.rules', {
+        preset: target,
+        rulesVersion: snap.rulesVersion ?? 1,
+      });
+      resetBtn.disabled = false;
+      if (res.ok) await loadAll();
+    });
+    bar.append(
+      label,
+      resetBtn,
+      el('p', 'mj-group-note', '保存只写入表单里显示的字段，不会改变预设；要整口径切换请用重置按钮。'),
+    );
+    return bar;
+  }
+
+  function buildBanners() {
+    const box = el('div', 'mj-banners');
+    if (missingTop.length > 0) {
+      const b = el('div', 'mj-banner');
+      b.append(
+        el('span', '', `快照较旧：缺少 ${missingTop.length} 个规则字段（保存时按服务端默认合并补齐）。`),
+      );
+      const fill = btn('按服务端默认补齐', 'btn');
+      fill.addEventListener('click', async () => {
+        fill.disabled = true;
+        const res = await putConfigKey('game.mahjong.rules', snap);
+        fill.disabled = false;
+        if (res.ok) await loadAll();
+      });
+      b.append(fill);
+      box.append(b);
+    }
+    if (unknownTop.length > 0 || unknownFanNames.length > 0) {
+      const names = [...unknownTop, ...unknownFanNames];
+      const b = el('div', 'mj-banner mj-banner-warn');
+      b.append(el('span', '', `快照含本页未认识的新字段：${names.join('、')}（保存时原样保留）。`));
+      const drop = btn('移除这些未知字段并保存', 'btn');
+      drop.addEventListener('click', async () => {
+        if (!confirm(`移除以下字段并保存？\n${names.join('\n')}\n（移除后不可恢复）`)) return;
+        removeUnknown = true;
+        let value;
+        try {
+          value = readValue();
+        } catch (err) {
+          removeUnknown = false;
+          ctx.state(err.message, 'err');
+          return;
+        }
+        drop.disabled = true;
+        const res = await putConfigKey('game.mahjong.rules', value);
+        drop.disabled = false;
+        if (res.ok) await loadAll();
+        else removeUnknown = false;
+      });
+      b.append(drop);
+      box.append(b);
+    }
+    return box;
+  }
+
+  function currentPolicy() {
+    const read = fieldRefs.get('scoringPolicy');
+    return read ? read() : snap.scoringPolicy;
+  }
+
+  function fanTableAllZero(table) {
+    const rows = tableRefs.get(table);
+    if (!rows) return true;
+    for (const ref of rows.values()) {
+      const raw = ref.input.value.trim();
+      if (raw !== '' && Number(raw) > 0) return false;
+    }
+    return true;
+  }
+
+  function refreshWarnings() {
+    warnings.textContent = '';
+    const list = [];
+    if (currentPolicy() === 'additive' && fanTableAllZero('additiveFanTable')) {
+      list.push('当前所有牌型都是 0 番，只按底分结算。可点「按预设重置全部规则」并选择 SBR 预设恢复默认番表。');
+    }
+    if (currentPolicy() === 'named' && fanTableAllZero('fanTable')) {
+      list.push('命名番表为空：绝大多数牌只按平胡兜底 1 番，请先补齐番值。');
+    }
+    const minHu = fieldRefs.get('minFanToHu');
+    const cap = fieldRefs.get('fanCap');
+    if (minHu && cap) {
+      try {
+        if (minHu() > cap()) list.push('起胡番高于封顶番数：永远无法胡牌。');
+      } catch {
+        /* 输入未填完时不提示（错误由保存拦截） */
+      }
+    }
+    for (const text of list) warnings.append(el('p', 'mj-warn', text));
+  }
+
+  function readValue() {
+    const out = {};
+    if (!removeUnknown) {
+      for (const k of unknownTop) out[k] = snap[k];
+    }
+    for (const [path, read] of fieldRefs) {
+      out[path] = read();
+    }
+    out.preset = snap.preset ?? 'chengdu';
+    out.rulesVersion = snap.rulesVersion ?? 1;
+    for (const [table, meta] of Object.entries(MAHJONG_RULES_FORM.tables)) {
+      const src =
+        snap[table] && typeof snap[table] === 'object' ? snap[table] : {};
+      const tableOut = removeUnknown ? {} : { ...unknownFan[table] };
+      const rows = tableRefs.get(table);
+      for (const [fanKey, ref] of rows ?? []) {
+        const raw = ref.input.value.trim();
+        if (raw === '') {
+          if (Object.hasOwn(src, fanKey)) tableOut[fanKey] = 0;
+          continue;
+        }
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < meta.min || n > meta.max) {
+          fieldErr(
+            ref.errEl,
+            `「${MAHJONG_RULES_FORM.fanLabels[fanKey] ?? fanKey}」须为 ${meta.min}–${meta.max} 的整数`,
+          );
+        }
+        tableOut[fanKey] = n;
+      }
+      out[table] = tableOut;
+    }
+    return out;
+  }
+
+  function paint() {
+    body.textContent = '';
+    fieldRefs.clear();
+    tableRefs.clear();
+    body.append(buildPresetBar(), buildBanners(), buildGroups(), warnings);
+    refreshWarnings();
+  }
+
+  ctx.bind(readValue, paint);
+  paint();
+}
+
+/**
+ * 结构化键整卡编辑器：头部（标题/键名/版本/作用/更多）+ 专属编辑件 + 同款行内保存协议。
  * ctx.bind(getter, resetter)：getter 读 UI 值（不合法抛 Error ⇒ 行内拦截）；resetter 一键还原。
  */
 function buildStructCard(key) {
@@ -2050,10 +2783,11 @@ function buildStructCard(key) {
     reset = resetter;
   };
 
-  if (key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai') buildLevelsEditor(body, ctx);
+  if (key === 'game.levels.doudizhu' || key === 'game.levels.paodekuai' || key === 'game.levels.mahjong') buildLevelsEditor(body, ctx);
   else if (key === 'pay.rechargePackages') buildPackagesEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.skillDistribution') buildDistributionEditor(body, ctx);
   else if (key === 'game.doudizhu.robot.modelBySkill') buildModelEditor(body, ctx);
+  else if (key === 'game.mahjong.rules') buildMahjongRulesEditor(body, ctx);
 
   revertBtn.addEventListener('click', () => {
     reset();
@@ -2540,7 +3274,7 @@ function switchView(view) {
     // settings-host 被三视图共用：其 hidden 只能按「当前视图是否属于三视图」算一次，
     // 不能在循环里逐名翻转（否则同 el 的末位视图恒赢，config 激活时 host 也被隐藏）。
     if (!SETTINGS_VIEWS.has(name)) $(VIEWS[name].el).hidden = name !== view;
-    // config 的 nav 是 hidden 锚点：永不挂 active，配置域高亮落到 5+1 个 nav-cfg-* 叶。
+    // config 的 nav 是 hidden 锚点：永不挂 active，配置域高亮落到各 nav-cfg-* 叶。
     if (name !== 'config') $(VIEWS[name].nav).classList.toggle('active', name === view);
   }
   $('settings-host').hidden = !SETTINGS_VIEWS.has(view);
@@ -2944,6 +3678,7 @@ function textCell(value, { num = false } = {}) {
 function gameLabelText(gameType) {
   if (gameType === 'doudizhu') return '斗地主';
   if (gameType === 'paodekuai') return '跑得快';
+  if (gameType === 'mahjong') return '四川麻将';
   return '—';
 }
 
@@ -4496,9 +5231,16 @@ function renderRiskDetail(td, row, d) {
     typeof d.stats?.byGame?.paodekuai?.winRate === 'number' && pdkGames > 0
       ? d.stats.byGame.paodekuai.winRate.toFixed(3)
       : '—';
+  const mjGames = d.stats?.byGame?.mahjong?.games ?? 0;
+  const mjWins = d.stats?.byGame?.mahjong?.wins ?? 0;
+  const mjRate =
+    typeof d.stats?.byGame?.mahjong?.winRate === 'number' && mjGames > 0
+      ? d.stats.byGame.mahjong.winRate.toFixed(3)
+      : '—';
   byGame.textContent =
     `分玩法：斗地主 ${ddzGames} 局 / ${ddzWins} 胜 · 胜率 ${ddzRate}；` +
-    `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}`;
+    `跑得快 ${pdkGames} 局 / ${pdkWins} 胜 · 胜率 ${pdkRate}；` +
+    `四川麻将 ${mjGames} 局 / ${mjWins} 胜 · 胜率 ${mjRate}`;
   td.append(byGame);
 
   // 跑得快分人数（2026-10-26）：旧 user-service 无 byPlayerCount 时按 0/— 渲染。
@@ -5420,7 +6162,7 @@ function wire() {
     cfgUI.query = '';
     renderConfigRows();
   });
-  // 左树 5+1 配置域叶（10 个凭据/运营/审计叶在下方按既有 id 逐个绑定）。
+  // 左树 配置域叶（10 个凭据/运营/审计叶在下方按既有 id 逐个绑定）。
   for (const m of CFG_NAV) {
     $(m.leaf).addEventListener('click', () => openCfgDomain(m.domain));
   }
@@ -6100,6 +6842,8 @@ function applyAgentRole() {
   $('ag-create-panel').hidden = true;
   for (const id of ['ag-adjust-agent', 'ag-adjust-delta', 'ag-adjust-reason']) $(id).disabled = !write;
   $('ag-adjust-create-btn').hidden = !write;
+  const inviteSelect = $('ag-invite-row')?.querySelector('select');
+  if (inviteSelect) inviteSelect.disabled = !canWriteConfigKey('agent.inviteRequired');
   agentsState.roleApplied = true;
 }
 
@@ -6159,6 +6903,17 @@ async function ensureConfigSnapshot() {
   } finally {
     if (configSnapshotReq?.promise === promise) configSnapshotReq = null;
   }
+}
+
+/** 只刷新配置快照（不触发 loadAll 的全量重渲染）；三态控件保存后回显用。 */
+async function refreshConfigSnapshot(epoch = agentsState.epoch) {
+  const res = await api('/api/admin/config');
+  if (!agentsResponseFresh(epoch)) return false;
+  if (res.status === 200 && res.body?.data?.config) {
+    currentConfig = res.body.data.config;
+    return true;
+  }
+  return false;
 }
 
 /** 对账首次激活：种默认区间并跑一次（armed 只置一次）。 */
@@ -6313,7 +7068,8 @@ async function loadAgentSettings() {
   return true;
 }
 
-/** 邀请码开关行（配置中心同款 row）：每次激活重建；无快照时给占位。 */
+/** 邀请码三态行（关闭/选填/必填）：每次激活重建；无快照时给占位。 */
+let inviteSaving = false;
 function renderAgentInviteRow() {
   const host = $('ag-invite-row');
   if (!host) return;
@@ -6323,7 +7079,46 @@ function renderAgentInviteRow() {
     host.append(el('p', 'hint', loading ? '（配置加载中…）' : '（配置快照未加载，重进本页签重试）'));
     return;
   }
-  host.append(buildSimpleRow('agent.inviteEnabled'));
+  const enabled = currentConfig['agent.inviteEnabled']?.value === true;
+  const required = currentConfig['agent.inviteRequired']?.value === true;
+  const mode = !enabled ? 'off' : required ? 'required' : 'optional';
+  const select = el('select', 'input');
+  for (const [value, label] of [['off', '关闭'], ['optional', '选填'], ['required', '必填']]) {
+    const opt = el('option', '', label);
+    opt.value = value;
+    opt.selected = value === mode;
+    select.append(opt);
+  }
+  select.id = 'ag-invite-mode';
+  select.disabled = !canWriteConfigKey('agent.inviteRequired');
+  select.addEventListener('change', async () => {
+    if (inviteSaving) return;
+    inviteSaving = true;
+    select.disabled = true;
+    const epoch = agentsState.epoch;
+    try {
+      const next = select.value;
+      let ok = true;
+      if (next === 'required') {
+        ok = (await putConfigKey('agent.inviteRequired', true)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+      } else if (next === 'optional') {
+        ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteEnabled', true)).ok === true;
+      } else {
+        ok = (await putConfigKey('agent.inviteEnabled', false)).ok === true;
+        if (ok) ok = (await putConfigKey('agent.inviteRequired', false)).ok === true;
+      }
+      if (!ok) showMsg('保存失败，已重新读取当前配置', 'err');
+      const refreshed = await refreshConfigSnapshot(epoch);
+      if (!refreshed) showMsg('配置刷新失败，请重试', 'err');
+      if (agentsResponseFresh(epoch)) renderAgentInviteRow();
+    } finally {
+      inviteSaving = false;
+    }
+  });
+  host.append(el('label', 'field-label', '注册邀请码'), select);
+  host.append(el('p', 'hint', '必填仅在代理模块启用时生效。'));
 }
 
 function renderAgentSettings() {

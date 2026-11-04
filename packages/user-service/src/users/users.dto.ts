@@ -40,7 +40,11 @@ export class RegisterDto {
    * 格式不在 DTO 强校验（长度 1–16 即可）—— 无效码统一由下游返回 `11006`
    * 「邀请码无效」，客户端文案才能精确（DTO 的 10001 会是泛化的「请检查填写的内容」）。
    */
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value; // 非字符串交给 @IsString 拒绝，不能静默当缺省
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed.toUpperCase();
+  })
   @IsOptional()
   @IsString()
   @Length(1, 16, { message: '邀请码长度须为 1–16' })

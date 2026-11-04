@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
+import { affectedRowsOf } from './agent-sql.util';
 
 /**
- * 邀请码（spec §5.1）：
+ * 邀请码（spec §5.1 / 2026-11-03 一次性化）：
  * - 8 字符 `[A-HJ-NP-Z2-9]`（去掉 I/O/0/1），大写；
- * - 一代理同时只有一枚 active；轮换 = 旧码 revoked + 新码 active（调用方锁 agent 行）；
- * - `resolve` 返回代理状态，冻结/无效由调用方统一翻 `AGENT_INVITE_INVALID`。
+ * - 一次性：`active → used`（消费）/ `active → revoked`（轮换/撤销）；used/revoked 终态；
+ * - 一代理可同时持有多枚 active（自助批量生成）；轮换 = 作废全部 active + 新码 1 枚；
+ * - `resolve` 同时返回码状态与代理状态，**不预先过滤码状态**，由调用方三档分类。
  */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 8;
@@ -15,18 +17,21 @@ const CREATE_ATTEMPTS = 8;
 const CODE_INSERT_SQL =
   'INSERT INTO `agent_invite_codes` (`code`, `agent_id`, `status`) VALUES (?, ?, \'active\')';
 const CODE_RESOLVE_SQL =
-  'SELECT c.`agent_id`, a.`name`, a.`status` FROM `agent_invite_codes` c ' +
+  'SELECT c.`agent_id`, a.`name`, a.`status` AS `agent_status`, c.`status` AS `code_status` ' +
+  'FROM `agent_invite_codes` c ' +
   'JOIN `agent_accounts` a ON a.`id` = c.`agent_id` ' +
-  "WHERE c.`code` = ? AND c.`status` = 'active'";
+  'WHERE c.`code` = ?';
 const CODE_REVOKE_SQL =
   "UPDATE `agent_invite_codes` SET `status` = 'revoked' WHERE `agent_id` = ? AND `status` = 'active'";
 const CODE_ACTIVE_SQL =
-  "SELECT `code` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `status` = 'active' ORDER BY `created_at` DESC LIMIT 1";
+  "SELECT `code` FROM `agent_invite_codes` WHERE `agent_id` = ? AND `status` = 'active' " +
+  'ORDER BY `created_at` DESC, `code` DESC LIMIT 1';
 
 export interface ResolvedInvite {
   agentId: string;
   agentName: string;
-  status: string;
+  agentStatus: string;
+  codeStatus: string;
 }
 
 export function normalizeInviteCode(code: string): string {
@@ -74,14 +79,26 @@ export class AgentInviteService {
     return {
       agentId: String(rows[0]!.agent_id),
       agentName: String(rows[0]!.name),
-      status: String(rows[0]!.status),
+      agentStatus: String(rows[0]!.agent_status),
+      codeStatus: String(rows[0]!.code_status),
     };
   }
 
-  /** 轮换（调用方必须已锁 agent 行 —— 防并发出现两枚 active）。 */
-  async rotate(manager: EntityManager, agentId: string): Promise<string> {
-    await manager.query(CODE_REVOKE_SQL, [agentId]);
-    return this.createFor(manager, agentId);
+  /** 批量生成（同一事务内逐枚插入；撞码重试沿用 createFor）。 */
+  async createMany(manager: EntityManager, agentId: string, count: number): Promise<string[]> {
+    const codes: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      codes.push(await this.createFor(manager, agentId));
+    }
+    return codes;
+  }
+
+  /** 轮换（调用方必须已锁 agent 行）：作废全部 active + 新码 1 枚。 */
+  async rotate(manager: EntityManager, agentId: string): Promise<{ code: string; revoked: number }> {
+    const result = await manager.query(CODE_REVOKE_SQL, [agentId]);
+    const revoked = affectedRowsOf(result, 'agent_invite_codes revoke all');
+    const code = await this.createFor(manager, agentId);
+    return { code, revoked };
   }
 
   async activeCode(agentId: string): Promise<string | null> {

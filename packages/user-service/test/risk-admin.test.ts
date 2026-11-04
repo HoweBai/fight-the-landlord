@@ -51,6 +51,7 @@ import {
   RISK_ENTRIES_SQL,
   RISK_STATS_SQL,
   RISK_STATS_PDK_SQL,
+  RISK_STATS_MAHJONG_SQL,
 } from '../src/risk/admin-risk.service';
 import { AdminRiskController } from '../src/risk/admin-risk.controller';
 import {
@@ -84,6 +85,9 @@ const CONCURRENCY_MESSAGE = '并发冲突，请重试';
 /** 2026-10-26 跑得快详情 stats SQL 逐字（spec §5.6；测试侧独立誊写）。 */
 const SPEC_RISK_STATS_PDK_SQL =
   "SELECT r.player_count AS player_count, COUNT(*) AS games, COALESCE(SUM(CASE WHEN p.seat = r.winner_seat THEN 1 ELSE 0 END), 0) AS wins FROM game_record_players_pdk p JOIN game_records_pdk r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_pdk x WHERE x.record_id = p.record_id AND x.is_robot = 1) GROUP BY r.player_count";
+/** T12 麻将详情 stats SQL 逐字（同上口径，4 人一局）。 */
+const SPEC_RISK_STATS_MAHJONG_SQL =
+  "SELECT COUNT(*) AS games, COALESCE(SUM(p.won), 0) AS wins FROM game_record_players_mahjong p JOIN game_records_mahjong r ON r.id = p.record_id WHERE p.user_id = ? AND r.mode IN ('random', 'gold') AND p.is_robot = 0 AND NOT EXISTS (SELECT 1 FROM game_record_players_mahjong x WHERE x.record_id = p.record_id AND x.is_robot = 1)";
 
 const AUTH_READ = { [ADMIN_HEADER]: '1' };
 const AUTH_WRITE = { [ADMIN_HEADER]: '1', [ADMIN_ACTOR_HEADER]: 'tester' };
@@ -195,6 +199,7 @@ class FakeRiskAdminDb {
   winStats = new Map<string, { games: number; wins: number }>();
   /** 跑得快详情统计的定值回执（2026-10-25；缺省 {0,0}）。 */
   pdkWinStats = new Map<string, Array<{ player_count: number; games: number; wins: number }>>();
+  mahjongWinStats = new Map<string, { games: number; wins: number }>();
   queries: Statement[] = [];
   /** `dataSource.transaction` 调用次数（1213 重试断言面）。 */
   transactions = 0;
@@ -295,6 +300,7 @@ class FakeRiskAdminDb {
     this.users = new Map();
     this.winStats = new Map();
     this.pdkWinStats = new Map();
+    this.mahjongWinStats = new Map();
     this.queries = [];
     this.transactions = 0;
     this.failActionInsertOnce = null;
@@ -432,6 +438,11 @@ class FakeRiskAdminDb {
     if (sql === SPEC_RISK_STATS_PDK_SQL) {
       const [userId] = params as [string];
       return this.pdkWinStats.get(userId) ?? [];
+    }
+    if (sql === SPEC_RISK_STATS_MAHJONG_SQL) {
+      const [userId] = params as [string];
+      const s = this.mahjongWinStats.get(userId) ?? { games: 0, wins: 0 };
+      return [{ games: s.games, wins: s.wins }];
     }
     if (sql === RISK_DEVICE_COUNT_WINDOW_SQL) {
       const [userId, cutoff] = params as [string, Date];
@@ -644,6 +655,7 @@ describe('风控片 T6：管理端点（C19）', () => {
 
     it('SQL 常量全文 == 规格逐字：跑得快详情 stats（mode/is_robot/整局剔除；刻意不含 users.status）', () => {
       expect(RISK_STATS_PDK_SQL).toBe(SPEC_RISK_STATS_PDK_SQL);
+    expect(RISK_STATS_MAHJONG_SQL).toBe(SPEC_RISK_STATS_MAHJONG_SQL);
       expect(RISK_STATS_PDK_SQL).not.toContain('users.status');
       expect(RISK_STATS_SQL).not.toContain('users.status');
     });
@@ -1483,26 +1495,29 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
   });
 
   it('GET users/:userId：详情形状逐字（stats/devices+others≤20/entries≤10/hits/accountStatus/limitSource）', async () => {
+    // 设备窗口按服务端真实 `Date.now()` 计算；这里用相对当前时间的日期，
+    // 避免固定 T0 随墙钟推移把窗口内设备挤到窗口外（2026-11-03 起已实际发生）。
+    const deviceNow = Date.now();
     db.users.set('u-A', 'active');
     db.winStats.set('u-A', { games: 12, wins: 9 });
     // 设备：三台 —— 一台在窗口外（仅进原文、不进 deviceCount）
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-old',
-      first_seen_at: new Date(T0 - 100 * DAY_MS),
-      last_seen_at: new Date(T0 - 40 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 100 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 40 * DAY_MS),
     });
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-1',
-      first_seen_at: new Date(T0 - 10 * DAY_MS),
-      last_seen_at: new Date(T0 - 1 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 10 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 1 * DAY_MS),
     });
     db.devices.push({
       user_id: 'u-A',
       device_id: 'dev-2',
-      first_seen_at: new Date(T0 - 5 * DAY_MS),
-      last_seen_at: new Date(T0 - 2 * DAY_MS),
+      first_seen_at: new Date(deviceNow - 5 * DAY_MS),
+      last_seen_at: new Date(deviceNow - 2 * DAY_MS),
     });
     // dev-1 的关联账号：25 个 ⇒ others 截断 20；其一已封禁
     db.users.set('other-0', 'banned');
@@ -1512,8 +1527,8 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
       db.devices.push({
         user_id: id,
         device_id: 'dev-1',
-        first_seen_at: new Date(T0 - 86_400_000),
-        last_seen_at: new Date(T0 - 3_600_000),
+        first_seen_at: new Date(deviceNow - 86_400_000),
+        last_seen_at: new Date(deviceNow - 3_600_000),
       });
     }
     // 条目 12 条 ⇒ entries 截断 10
@@ -1548,12 +1563,13 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
             '4': { games: 0, wins: 0, winRate: 0 },
           },
         },
+        mahjong: { games: 0, wins: 0, winRate: 0 },
       },
     });
     expect(data.devices).toHaveLength(3); // 原文 3 台（含窗口外）
     const d1 = data.devices.find((d: { deviceId: string }) => d.deviceId === 'dev-1');
-    expect(d1.firstSeenAt).toBe(T0 - 10 * DAY_MS);
-    expect(d1.lastSeenAt).toBe(T0 - 1 * DAY_MS);
+    expect(d1.firstSeenAt).toBe(deviceNow - 10 * DAY_MS);
+    expect(d1.lastSeenAt).toBe(deviceNow - 1 * DAY_MS);
     expect(d1.others).toHaveLength(20); // ≤20
     expect(d1.others[0]).toEqual({ userId: 'other-0', accountStatus: 'banned' });
     expect(data.devices.find((d: { deviceId: string }) => d.deviceId === 'dev-old').others).toEqual([]);
@@ -1595,11 +1611,14 @@ describe('风控片 T6：HTTP 面（真 Nest 管线 + 假库；§2.8 / §2.13 / 
             '4': { games: 0, wins: 0, winRate: 0 },
           },
         },
+        mahjong: { games: 0, wins: 0, winRate: 0 },
       },
     });
     const sqls = db.queries.map((q) => q.sql);
     const iDdz = sqls.indexOf(RISK_STATS_SQL);
     const iPdk = sqls.indexOf(SPEC_RISK_STATS_PDK_SQL);
+    const iMj = sqls.indexOf(SPEC_RISK_STATS_MAHJONG_SQL);
+    expect(iMj).toBe(iPdk + 1);
     const iDev = sqls.indexOf(RISK_DEVICE_COUNT_WINDOW_SQL);
     expect(iDdz).toBeGreaterThanOrEqual(0);
     expect(iPdk).toBeGreaterThan(iDdz);

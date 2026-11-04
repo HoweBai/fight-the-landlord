@@ -13,6 +13,16 @@ describe('agent.bind RPC 接收侧', () => {
     await expect(ctl.bind(dto)).resolves.toEqual({ ok: true, data: { status: 'bound' } });
   });
 
+  it('ignored + reason 原样透传', async () => {
+    const ctl = new AgentBindRpcController({
+      bindFromSignup: vi.fn(async () => ({ status: 'ignored', reason: 'settings_disabled' })),
+    } as unknown as AgentBindingsService);
+    await expect(ctl.bind(dto)).resolves.toEqual({
+      ok: true,
+      data: { status: 'ignored', reason: 'settings_disabled' },
+    });
+  });
+
   it('DomainError ⇒ 原码原话；未知异常 ⇒ 10007 + 固定文案', async () => {
     const invalid = new AgentBindRpcController({
       bindFromSignup: vi.fn(async () => {

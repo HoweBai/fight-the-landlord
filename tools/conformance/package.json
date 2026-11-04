@@ -25,7 +25,8 @@
     "conformance:slice-07.2-rpc": "node dist/run.js slice-07.2-rpc",
     "conformance:slice-07.3-edge": "node dist/run.js slice-07.3-edge",
     "conformance:slice-12": "node dist/run.js slice-12",
-    "conformance:slice-07.4-pipeline": "node dist/run.js slice-07.4-pipeline"
+    "conformance:slice-07.4-pipeline": "node dist/run.js slice-07.4-pipeline",
+    "conformance:slice-36-mahjong": "node dist/run.js slice-36-mahjong"
   },
   "dependencies": {
     "@fight-the-landlord/protocol": "workspace:*",

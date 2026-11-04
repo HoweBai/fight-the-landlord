@@ -145,8 +145,8 @@ if [ "$DO_AGENT" = 1 ]; then
   verify_file agent/app.js /srv/agent/app.js 'agent/app.js'
 fi
 if [ "$DO_DOWNLOAD" = 1 ]; then
-  APK_LOCAL="$(ls deploy/download/*.apk 2>/dev/null | head -1 || true)"
-  [ -n "$APK_LOCAL" ] || { echo "❌ [preview] deploy/download 下没有 .apk" >&2; exit 1; }
+  APK_LOCAL="deploy/download/$(cat scripts/deploy/apk-name.txt)"
+  [ -f "$APK_LOCAL" ] || { echo "❌ [preview] 缺真源指向的安装包：$APK_LOCAL" >&2; exit 1; }
   sync_dir deploy/download /srv/download "download/"
   verify_file "$APK_LOCAL" "/srv/download/$(basename "$APK_LOCAL")" "$(basename "$APK_LOCAL")"
 fi

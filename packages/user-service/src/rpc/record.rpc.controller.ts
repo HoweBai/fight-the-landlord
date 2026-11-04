@@ -5,8 +5,10 @@ import {
   ErrCode,
   RPC_PATTERNS,
   isPdkSettlementResult,
+  isMahjongSettlementResult,
   validateRecordMoneyDelta,
   type DdzSettlementResult,
+  type MahjongSettlementResult,
   type PdkSettlementResult,
   type RecordMoneyDeltaRequest,
   type RecordMoneyDeltaResponse,
@@ -82,6 +84,10 @@ const MONEY_DELTA_SEATS_SQL_PDK =
   'SELECT p.seat FROM game_record_players_pdk p JOIN game_records_pdk r ON p.record_id = r.id WHERE r.room_code = ? AND r.game_version = ?';
 const MONEY_DELTA_UPDATE_SQL_PDK =
   'UPDATE game_record_players_pdk p JOIN game_records_pdk r ON p.record_id = r.id SET p.money_delta = ? WHERE r.room_code = ? AND r.game_version = ? AND p.seat = ?';
+const MONEY_DELTA_SEATS_SQL_MAHJONG =
+  'SELECT p.seat FROM game_record_players_mahjong p JOIN game_records_mahjong r ON p.record_id = r.id WHERE r.room_code = ? AND r.game_version = ?';
+const MONEY_DELTA_UPDATE_SQL_MAHJONG =
+  'UPDATE game_record_players_mahjong p JOIN game_records_mahjong r ON p.record_id = r.id SET p.money_delta = ? WHERE r.room_code = ? AND r.game_version = ? AND p.seat = ?';
 
 /** 校验失败的中文原因（`{ok:false}` 的 message；与 `parseConfigValue` 同口径）。 */
 
@@ -232,6 +238,41 @@ function invalidPdkReason(r: Partial<RecordWriteRequest>): string | null {
   return null;
 }
 
+/** 麻将记录校验：4 座、27 位手牌、结算零和、花猪 burn 合法。 */
+function invalidMahjongReason(r: Partial<RecordWriteRequest>): string | null {
+  if (r.result === undefined || !isMahjongSettlementResult(r.result)) {
+    return 'result 必须是麻将结算（gameType=mahjong 时）';
+  }
+  const result: MahjongSettlementResult = r.result;
+  if (result.playerCount !== 4) return 'result.playerCount 必须是 4';
+  if (r.playerCount !== undefined && r.playerCount !== 4) return 'playerCount 必须是 4';
+  if (!Array.isArray(r.seats) || r.seats.length !== 4) return 'seats 必须恰 4 条';
+  if (
+    r.dealerSeat !== undefined &&
+    (!Number.isInteger(r.dealerSeat) || r.dealerSeat < 0 || r.dealerSeat > 3)
+  ) {
+    return 'dealerSeat 必须是 0..3';
+  }
+  if (!Array.isArray(result.scoreChanges) || result.scoreChanges.length !== 4) {
+    return 'result.scoreChanges 必须恰 4 条';
+  }
+  let sum = 0;
+  for (const c of result.scoreChanges) {
+    if (!Number.isInteger(c.seat) || c.seat < 0 || c.seat > 3) return 'scoreChanges.seat 必须是 0..3';
+    if (!Number.isInteger(c.delta)) return 'scoreChanges.delta 必须是整数';
+    sum += c.delta;
+  }
+  if (sum !== 0) return 'scoreChanges 必须零和';
+  if (!Array.isArray(result.burn)) return 'result.burn 必须是数组';
+  for (const seat of r.seats) {
+    if (typeof seat.hand !== 'string' || seat.hand.length !== 27) return 'seats[].hand 必须是 27 位计数串';
+    if (seat.finalHand !== undefined && (typeof seat.finalHand !== 'string' || seat.finalHand.length !== 27)) {
+      return 'seats[].finalHand 必须是 27 位计数串';
+    }
+  }
+  return null;
+}
+
 function invalidReason(req: unknown): string | null {
   if (typeof req !== 'object' || req === null) return '载荷必须是对象';
   const r = req as Partial<RecordWriteRequest>;
@@ -243,13 +284,19 @@ function invalidReason(req: unknown): string | null {
     return 'mode 必须是 random、practice 或 gold';
   }
   if (typeof r.baseScore !== 'number' || !Number.isFinite(r.baseScore)) return 'baseScore 必须是有限数';
-  if (r.gameType !== undefined && r.gameType !== 'doudizhu' && r.gameType !== 'paodekuai') {
-    return 'gameType 必须是 doudizhu 或 paodekuai';
+  if (
+    r.gameType !== undefined &&
+    r.gameType !== 'doudizhu' &&
+    r.gameType !== 'paodekuai' &&
+    r.gameType !== 'mahjong'
+  ) {
+    return 'gameType 必须是 doudizhu、paodekuai 或 mahjong';
   }
   const result = r.result as Partial<RecordWriteRequest['result']> | undefined;
   if (typeof result !== 'object' || result === null) return 'result 必须是对象';
   // 多玩法（Task 4.0）：按 gameType 分支；**缺失 ⇒ 斗地主/3**（旧请求零破坏）。
   if (r.gameType === 'paodekuai') return invalidPdkReason(r);
+  if (r.gameType === 'mahjong') return invalidMahjongReason(r);
 
   const ddz = result as Partial<DdzSettlementResult>;
   if ('gameType' in result && (result as { gameType?: unknown }).gameType === 'paodekuai') {
@@ -364,6 +411,7 @@ export class RecordRpcController {
   private async applyMoneyDelta(req: RecordMoneyDeltaRequest): Promise<number[]> {
     // 多玩法（Task 4.0）：pdk 战绩在**单独的表**里（D11）；旧请求缺 gameType ⇒ 斗地主。
     if (req.gameType === 'paodekuai') return this.applyMoneyDeltaPdk(req);
+    if (req.gameType === 'mahjong') return this.applyMoneyDeltaMahjong(req);
 
     const rows = (await this.dataSource.query(MONEY_DELTA_SEATS_SQL, [
       req.roomCode,
@@ -414,6 +462,9 @@ export class RecordRpcController {
     if (isPdkSettlementResult(req.result)) {
       return this.persistPdk(manager, req, req.result);
     }
+    if (isMahjongSettlementResult(req.result)) {
+      return this.persistMahjong(manager, req, req.result);
+    }
 
     // ── 幂等检查：命中既有行 ⇒ 比对 ended_at，绝不 INSERT ─────────────────
     // `FOR UPDATE`：给「同 key 并发首写」串行化（后到者在此读到先到者已提交的行）；
@@ -431,6 +482,7 @@ export class RecordRpcController {
     // ── 昵称快照：user_id IN 查 users（机器人不进查询 ⇒ 快照取发送侧展示名）──────
     const nicknameById = await this.loadNicknameSnapshots(manager, req.seats);
 
+    if ('gameType' in req.result) return false;
     const ddzResult: DdzSettlementResult = req.result;
 
     // ── 1 行 game_records（列序与 DDL 逐字一致）──────────────────────────
@@ -510,6 +562,107 @@ export class RecordRpcController {
    * - `unused_cards` 仅 2 人局（`null` 表示无扣牌）；
    * - `money_delta` 刻意缺省（唯一回写入口 = `record.moneyDelta` 的 pdk 分支）。
    */
+  /** 麻将双表写入（幂等键 uk_mahjong_room_version）。 */
+  private async persistMahjong(
+    manager: EntityManager,
+    req: RecordWriteRequest,
+    result: MahjongSettlementResult,
+  ): Promise<boolean> {
+    const existing = (await manager.query(
+      'SELECT `id`, `ended_at` FROM `game_records_mahjong` WHERE `room_code` = ? AND `game_version` = ? FOR UPDATE',
+      [req.roomCode, req.gameVersion],
+    )) as Array<{ id: number | string; ended_at: Date | string }>;
+    if (existing.length > 0) {
+      this.flagEndedAtMismatch(req, existing[0]!.ended_at);
+      return false;
+    }
+    const nicknameById = await this.loadNicknameSnapshots(manager, req.seats);
+    const insertResult = (await manager.query(
+      'INSERT INTO `game_records_mahjong` (' +
+        '`room_code`, `game_version`, `mode`, `game_type`, `player_count`, `base_score`, `dealer_seat`, ' +
+        '`end_reason`, `liuju`, `winner_seats`, `huazhu_seats`, `fan_details`, `events`, `burn`, `rake_total`, `started_at`, `ended_at`' +
+        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        req.roomCode,
+        req.gameVersion,
+        req.mode,
+        'mahjong',
+        4,
+        req.baseScore,
+        req.dealerSeat ?? req.seats[0]?.seat ?? 0,
+        result.endReason,
+        result.liuju ? 1 : 0,
+        JSON.stringify(result.winnerSeats),
+        JSON.stringify(result.huazhuSeats),
+        JSON.stringify(result.fanDetails),
+        JSON.stringify(result.events),
+        JSON.stringify(result.burn),
+        result.rakeTotal,
+        req.startedAt,
+        req.endedAt,
+      ],
+    )) as { insertId?: number };
+    const recordId = insertResult?.insertId;
+    if (typeof recordId !== 'number' || !Number.isFinite(recordId)) {
+      throw new Error('game_records_mahjong INSERT 未返回 insertId');
+    }
+    for (const seat of [...req.seats].sort((a, b) => a.seat - b.seat)) {
+      const nicknameSnapshot = seat.isRobot
+        ? (seat.nickname?.trim() || null)
+        : seat.userId === null
+          ? null
+          : (nicknameById.get(seat.userId) ?? null);
+      const scoreChange = result.scoreChanges.find((c) => c.seat === seat.seat)?.delta ?? 0;
+      await manager.query(
+        'INSERT INTO `game_record_players_mahjong` (' +
+          '`record_id`, `seat`, `user_id`, `is_robot`, `robot_id`, `nickname`, `hand`, `final_hand`, `melds`, `discards`, ' +
+          '`lack_suit`, `is_out`, `fan`, `multiplier`, `score_change`, `won`, `ended_at`' +
+          ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          recordId,
+          seat.seat,
+          seat.userId,
+          seat.isRobot ? 1 : 0,
+          seat.robotId,
+          nicknameSnapshot,
+          seat.hand,
+          seat.finalHand ?? null,
+          JSON.stringify(seat.melds ?? []),
+          JSON.stringify(seat.discards ?? []),
+          seat.lackSuit ?? null,
+          seat.isOut ? 1 : 0,
+          seat.fan ?? null,
+          seat.multiplier ?? null,
+          scoreChange,
+          seat.isOut ? 1 : 0,
+          req.endedAt,
+        ],
+      );
+    }
+    return true;
+  }
+
+  /** 麻将 money_delta 回写（只更新既有座位的 money_delta 列）。 */
+  private async applyMoneyDeltaMahjong(req: RecordMoneyDeltaRequest): Promise<number[]> {
+    const rows = (await this.dataSource.query(MONEY_DELTA_SEATS_SQL_MAHJONG, [
+      req.roomCode,
+      req.gameVersion,
+    ])) as Array<{ seat: number | string }>;
+    const existing = new Set(rows.map((row) => Number(row.seat)));
+    const matched: number[] = [];
+    for (const { seat, delta } of req.deltas) {
+      if (!existing.has(seat)) continue;
+      await this.dataSource.query(MONEY_DELTA_UPDATE_SQL_MAHJONG, [
+        delta,
+        req.roomCode,
+        req.gameVersion,
+        seat,
+      ]);
+      matched.push(seat);
+    }
+    return matched;
+  }
+
   private async persistPdk(
     manager: EntityManager,
     req: RecordWriteRequest,

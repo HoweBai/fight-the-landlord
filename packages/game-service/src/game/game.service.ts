@@ -32,6 +32,7 @@ import type {
   Card,
   GameTrusteeRequest,
   GameView,
+  MahjongAction,
   RobotDecideResponse,
   SkillLevel,
 } from '@fight-the-landlord/protocol';
@@ -53,6 +54,7 @@ import type {
   GameSession,
   GameSessionBase,
   GovernanceDurations,
+  MahjongSession,
   PdkSession,
   SeatGovernance,
 } from '@fight-the-landlord/shared';
@@ -64,7 +66,7 @@ import type {
  * 玩法专有字段（ddz 的 bidPhase、pdk 的 lastPlayedHand）**只**经 runtime 访问 ——
  * 本文件不得按 `gameType` 写规则分支（S1 替换清单）。
  */
-export type AnyGameSession = GameSession | PdkSession;
+export type AnyGameSession = GameSession | PdkSession | MahjongSession;
 
 /**
  * 反序列化边界：部署窗口内的旧会话**可能没有** `gameType`/`playerCount`
@@ -369,8 +371,8 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
   }
 
   /** A1：按玩法统计活跃会话（per-instance cache）。 */
-  activeSessionCountByGameType(): Record<'doudizhu' | 'paodekuai', number> {
-    const out = { doudizhu: 0, paodekuai: 0 };
+  activeSessionCountByGameType(): Record<GameType, number> {
+    const out: Record<GameType, number> = { doudizhu: 0, paodekuai: 0, mahjong: 0 };
     for (const session of this.cache.values()) {
       out[normalizeGameType(session.gameType)] += 1;
     }
@@ -433,9 +435,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
      * 生产客户端即使误带也不能因此开局失败，但也绝不能让确定性牌堆流入生产）。
      */
     const hooksEnabled = process.env.INTERNAL_TEST_HOOKS === '1';
-    if ((dto.seed !== undefined || dto.testDeck !== undefined) && !hooksEnabled) {
+    if ((dto.seed !== undefined || dto.testDeck !== undefined || dto.testTiles !== undefined) && !hooksEnabled) {
       this.logger.warn(
-        `Ignoring test hooks (seed/testDeck) for room ${dto.roomCode}: INTERNAL_TEST_HOOKS is not '1'`,
+        `Ignoring test hooks (seed/testDeck/testTiles) for room ${dto.roomCode}: INTERNAL_TEST_HOOKS is not '1'`,
       );
     }
     let created: AnyGameSession;
@@ -450,6 +452,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
         random: this.random,
         seed: hooksEnabled ? dto.seed : undefined,
         testDeck: hooksEnabled ? dto.testDeck : undefined,
+        testTiles: hooksEnabled ? dto.testTiles : undefined,
       });
     } catch (err) {
       // 非法 testDeck / 非法规则快照（ProtocolError）⇒ 契约的 `10001`，不是 500。
@@ -536,7 +539,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     if (!isLegalTrusteeCombo(dto.via, dto.on)) {
       throw new GameError(ErrCode.BAD_PARAM, '非法 trustee 组合');
     }
-    const session = await this.getSession(dto.roomCode);
+    const session = await this.getSession<AnyGameSession>(dto.roomCode);
     if (!session) throw new GameError(ErrCode.ROOM_NOT_FOUND, '房间不存在');
     if (session.state === GameState.Init) {
       throw new GameError(ErrCode.GAME_NOT_STARTED, '对局未开始');
@@ -579,8 +582,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     } as AnyGameSession;
 
     // R8：只有「本人是当前行动者」才有 timer/deadline 语义（C13 反之不动）。
+    // 麻将：deadline 是**窗口共享**的，任何人 toggle 都不得改它；托管由自动驱动消费。
     const actorSeat = this.runtimeFor(session).currentActor(session);
-    if (actorSeat === idx) {
+    if (session.gameType !== 'mahjong' && actorSeat === idx) {
       if (dto.on) {
         // R8①：不延长（min），并 clamp 到非负。
         const remaining = Math.max(0, session.turnDeadlineAt - Date.now());
@@ -602,6 +606,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
 
     await this.saveSession(dto.roomCode, updated);
     await this.publishSeatViews('game.state_updated', updated);
+    if (session.gameType === 'mahjong') void this.driveRobotTurn(dto.roomCode);
     return { version: updated.version };
   }
 
@@ -618,10 +623,11 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     roomCode: string,
     userId: string,
     action: 'bid' | 'play' | 'pass',
-    payload: { grab?: boolean; cards?: Card[] },
+    payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction },
     baseVersion?: number,
+    windowId?: string,
   ): Promise<GameView> {
-    await this.applyById(roomCode, userId, action, payload, baseVersion);
+    await this.applyById(roomCode, userId, action, payload, baseVersion, windowId);
     const session = await this.getSession(roomCode);
     if (!session) throw new GameError(ErrCode.ROOM_NOT_FOUND, `Game not found: ${roomCode}`, 404);
     const seat = findSeatByUserId(session, userId);
@@ -633,14 +639,18 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     roomCode: string,
     userId: string,
     action: 'bid' | 'play' | 'pass',
-    payload: { grab?: boolean; cards?: Card[] },
+    payload: { grab?: boolean; cards?: Card[]; mahjong?: MahjongAction },
     baseVersion?: number,
+    windowId?: string,
   ): Promise<S> {
     switch (action) {
       case 'bid':
         return this.bid<S>(roomCode, userId, payload.grab ?? false, baseVersion);
       case 'play':
-        return this.playCards<S>(roomCode, userId, payload.cards ?? [], baseVersion);
+        if (payload.mahjong !== undefined) {
+          return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'mahjong', action: payload.mahjong }, windowId);
+        }
+        return this.playCards<S>(roomCode, userId, payload.cards ?? [], baseVersion, windowId);
       case 'pass':
         return this.pass<S>(roomCode, userId, baseVersion);
     }
@@ -660,8 +670,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     userId: string,
     cards: Card[],
     baseVersion?: number,
+    windowId?: string,
   ): Promise<S> {
-    return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'play', cards });
+    return this.applyAction<S>(roomCode, userId, baseVersion, { kind: 'play', cards }, windowId);
   }
 
   async pass<S extends AnyGameSession = GameSession>(
@@ -714,10 +725,11 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     userId: string,
     baseVersion: number | undefined,
     action: GameAction,
+    windowId?: string,
   ): Promise<S> {
     // R10：人类动作是四写者之一 —— 入口入队，临界区覆盖整段转移（T5）。
     return this.runSerialized(roomCode, () =>
-      this.applyActionLocked<S>(roomCode, userId, baseVersion, action),
+      this.applyActionLocked<S>(roomCode, userId, baseVersion, action, windowId),
     );
   }
 
@@ -726,8 +738,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     userId: string,
     baseVersion: number | undefined,
     action: GameAction,
+    windowId?: string,
   ): Promise<S> {
-    const session = await this.getSession(roomCode);
+    const session = await this.getSession<AnyGameSession>(roomCode);
     if (!session) throw new GameError(ErrCode.ROOM_NOT_FOUND, `Game not found: ${roomCode}`, 404);
     if (session.state === GameState.Init) {
       throw new GameError(ErrCode.GAME_NOT_STARTED, 'Game has not started', 409);
@@ -735,21 +748,39 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     if (session.state === GameState.Ended) {
       throw new GameError(ErrCode.GAME_OVER, 'Game is over', 409);
     }
+
+    const runtime = this.runtimeFor(session);
+    const actorSeat = findSeatByUserId(session, userId);
+    const pending = this.pendingActorsOf(session);
+    /**
+     * CAS：单人回合影沿用 baseVersion；麻将多行动者窗口内，只要 `windowId` 匹配且
+     * seat ∈ pending，就接受过期 baseVersion（per-room 串行队列保证顺序）。
+     */
     if (baseVersion !== undefined && baseVersion !== session.version) {
-      throw new GameError(
-        ErrCode.VERSION_CONFLICT,
-        `Version conflict: expected ${baseVersion}, current ${session.version}`,
-        409,
-      );
+      const windowAction =
+        action.kind === 'mahjong' &&
+        windowId !== undefined &&
+        runtime.windowId?.(session) === windowId &&
+        actorSeat >= 0 &&
+        pending.includes(actorSeat);
+      if (!windowAction) {
+        throw new GameError(
+          ErrCode.VERSION_CONFLICT,
+          `Version conflict: expected ${baseVersion}, current ${session.version}`,
+          409,
+        );
+      }
     }
 
     this.clearTimer(roomCode);
     let updated: AnyGameSession;
     try {
-      const actorSeat = findSeatByUserId(session, userId);
       // 保留既有错误文案：`classifyRuleError` 靠它映射 12004。
       if (actorSeat < 0) throw new Error(`Player ${userId} not found`);
-      updated = this.runtimeFor(session).applyAction(session, action, this.runtimeCtx(actorSeat)).session;
+      if (runtime.acceptsAction && !runtime.acceptsAction(session, actorSeat)) {
+        throw new Error(`Player ${userId} is not an active actor in this window`);
+      }
+      updated = runtime.applyAction(session, action, this.runtimeCtx(actorSeat)).session;
     } catch (err) {
       const code = classifyRuleError(err);
       /**
@@ -767,7 +798,15 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       this.logger.warn(
         `Action rejected for room ${roomCode} (user ${userId}, code ${code}): ${(err as Error).message}`,
       );
-      this.startTurnTimer(roomCode, session, { forceNormal: true });
+      if (session.gameType === 'mahjong') {
+        // 窗口期：只按剩余时间重挂，绝不续命。
+        const remaining = Math.max(0, session.turnDeadlineAt - Date.now());
+        this.startTurnTimer(roomCode, session, {
+          overrideMs: Math.min(remaining, this.durations().normal),
+        });
+      } else {
+        this.startTurnTimer(roomCode, session, { forceNormal: true });
+      }
       throw new GameError(code, (err as Error).message, code === ErrCode.NOT_YOUR_TURN ? 403 : 400);
     }
 
@@ -788,7 +827,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       };
     }
 
-    updated.turnDeadlineAt = this.deadlineFor(updated);
+    this.setDeadlineAfterTransition(session, updated);
     await this.finishTransition(roomCode, updated);
     return updated as unknown as S;
   }
@@ -975,14 +1014,50 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
   /** 所有 deadline 写入点统一走它（按**下一行动者**档；机器人/缺位 ⇒ normal）。 */
   private deadlineFor(session: AnyGameSession): number {
     const runtime = this.runtimeFor(session);
-    const idx = runtime.currentActor(session);
     const d = this.durations();
+    // 麻将：窗口共享时长（exchange/lack/claim/rob/play 由 runtime 决定）。
+    if (runtime.windowDuration) return Date.now() + runtime.windowDuration(session, d);
+    const idx = runtime.currentActor(session);
     const p = idx >= 0 ? session.players[idx] : undefined;
     const ms =
       p === undefined || this.isBotSeat(session, idx)
         ? d.normal
         : runtime.turnDuration(session, idx, d);
     return Date.now() + ms;
+  }
+
+  private windowIdOf(session: AnyGameSession): string | undefined {
+    return this.runtimeFor(session).windowId?.(session);
+  }
+
+  /** 窗口待决策座位；ddz/pdk 退化为当前行动者。 */
+  private pendingActorsOf(session: AnyGameSession): number[] {
+    const runtime = this.runtimeFor(session);
+    const pending = runtime.pendingActors?.(session);
+    if (pending && pending.length > 0) return pending;
+    const actor = runtime.currentActor(session);
+    return actor >= 0 ? [actor] : [];
+  }
+
+  /**
+   * 动作后的 deadline 唯一写入点：
+   * 同一窗口仍有 pending ⇒ **保留**旧 deadline（窗口内不顺延）；
+   * 窗口已结算/切换 ⇒ 重算。
+   */
+  private setDeadlineAfterTransition(previous: AnyGameSession, updated: AnyGameSession): void {
+    const prevWindow = this.windowIdOf(previous);
+    const nextWindow = this.windowIdOf(updated);
+    const pending = this.pendingActorsOf(updated);
+    if (
+      prevWindow !== undefined &&
+      nextWindow !== undefined &&
+      prevWindow === nextWindow &&
+      pending.length > 0
+    ) {
+      updated.turnDeadlineAt = previous.turnDeadlineAt;
+      return;
+    }
+    updated.turnDeadlineAt = this.deadlineFor(updated);
   }
 
   /** 安全缺省（旧会话/残缺形状）：缺位不抛。 */
@@ -999,14 +1074,29 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     if (session.state === GameState.Ended || session.state === GameState.Init) return;
 
     // 时长优先级（逐字，⚠️ r2 次要 5）：overrideMs（R8① min）> forceNormal（R106）> 默认档。
+    // ⚠️ 本函数**只读** turnDeadlineAt，绝不写；唯一的 deadline 写入点是 rescheduleTurn
+    //   与动作/超时转移后的 setDeadlineAfterTransition。
     const d = this.durations();
-    const timeoutMs =
-      opts?.overrideMs ??
-      (opts?.forceNormal ? d.normal : this.deadlineFor(session) - Date.now());
+    const now = Date.now();
+    let timeoutMs: number;
+    if (opts?.overrideMs !== undefined) {
+      timeoutMs = Math.max(0, opts.overrideMs);
+    } else if (opts?.forceNormal) {
+      timeoutMs = d.normal;
+    } else if (
+      Number.isFinite(session.turnDeadlineAt) &&
+      session.turnDeadlineAt > now
+    ) {
+      // 窗口共享 deadline：重挂必须取剩余，不得每次重算满额。
+      timeoutMs = session.turnDeadlineAt - now;
+    } else {
+      // 旧会话/测试夹具可能没有有效 deadline：回退到按当前行动者计算，但不写回。
+      timeoutMs = Math.max(0, this.deadlineFor(session) - now);
+    }
     const runtime = this.runtimeFor(session);
     const timerFn = runtime.timerPhase(session) === 'bid' ? createBidTimer : createPlayTimer;
     /**
-     * R10 / T5（r2 次要 6）：回调只捕获**回合身份** `{actorSeat, deadlineAt}`，
+     * R10 / T5（r2 次要 6）：回调只捕获**回合身份** `{actorSeat, windowId, deadlineAt}`，
      * 复核发生在 `onTurnTimeout` 的**锁内**（同一写者的入口）。
      * ⚠️ **⛔ 回调不另包 `runSerialized`** —— `onTurnTimeout` 自己已在入口入队，
      * 再包一层 = 外层任务等自己入队的内层任务 = 自锁停摆（r1 重要 9）。
@@ -1016,6 +1106,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
      */
     const expected = {
       actorSeat: runtime.currentActor(session),
+      windowId: runtime.windowId?.(session),
       deadlineAt: session.turnDeadlineAt,
     };
     const handle = timerFn(() => {
@@ -1094,8 +1185,13 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     this.robotDriving.add(roomCode);
     try {
       for (;;) {
-        const session = await this.getSession(roomCode);
+        const session = await this.getSession<AnyGameSession>(roomCode);
         if (!session) return;
+        if (session.gameType === 'mahjong') {
+          const advanced = await this.driveOneMahjongAuto(roomCode, session);
+          if (!advanced) return;
+          continue;
+        }
         if (session.state !== GameState.Bidding && session.state !== GameState.Playing) return;
 
         const seat = this.runtimeFor(session).currentActor(session);
@@ -1109,6 +1205,95 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
     } finally {
       this.robotDriving.delete(roomCode);
     }
+  }
+
+  /**
+   * 麻将自动驱动：机器人/托管座位逐个走 `runtime.autoAction`，**不调 robot-service**
+   * （`RobotDecideResponse` 只有 play/pass，无法表达换三张/定缺/碰杠胡）。
+   * 返回是否产生了一次状态转移；没有可自动的 pending 座位 ⇒ false。
+   */
+  private async driveOneMahjongAuto(
+    roomCode: string,
+    session: AnyGameSession,
+  ): Promise<boolean> {
+    const runtime = this.runtimeFor(session);
+    const pending = this.pendingActorsOf(session);
+    const seat = pending.find(
+      (s) => this.isBotSeat(session, s) || session.players[s]?.trustee === true,
+    );
+    if (seat === undefined) return false;
+
+    const d = this.durations();
+    if (this.isBotSeat(session, seat)) {
+      const raw = session.botThinkingSpeeds?.[seat];
+      const base =
+        typeof raw === 'number' && Number.isFinite(raw) ? raw : DEFAULT_THINKING_SPEED;
+      const jitter = (this.robotJitterRandom() * 2 - 1) * THINKING_JITTER_MS;
+      await this.robotDelay(
+        Math.min(THINKING_MAX_MS, Math.max(THINKING_MIN_MS, Math.round(base + jitter))),
+      );
+    } else {
+      // 托管：2s 后自动动作；不改共享 deadline。
+      await this.robotDelay(d.trustee);
+    }
+
+    let action: GameAction;
+    try {
+      action = runtime.autoAction(session, seat);
+    } catch (err) {
+      this.logger.error(
+        `Mahjong autoAction failed for ${roomCode} (seat ${seat}): ${String(err)}`,
+      );
+      return false;
+    }
+    if (action.kind !== 'mahjong') {
+      this.logger.error(
+        `Mahjong autoAction returned non-mahjong kind "${action.kind}" for ${roomCode} (seat ${seat})`,
+      );
+      return false;
+    }
+    return this.commitMahjongAutoAction(roomCode, session, seat, action);
+  }
+
+  private async commitMahjongAutoAction(
+    roomCode: string,
+    session: AnyGameSession,
+    seat: number,
+    action: GameAction,
+  ): Promise<boolean> {
+    return this.runSerialized(roomCode, () =>
+      this.commitMahjongAutoActionLocked(roomCode, session, seat, action),
+    );
+  }
+
+  private async commitMahjongAutoActionLocked(
+    roomCode: string,
+    snapshot: AnyGameSession,
+    seat: number,
+    action: GameAction,
+  ): Promise<boolean> {
+    const current = await this.getSession<AnyGameSession>(roomCode);
+    if (!current || current.gameType !== 'mahjong') return true;
+    // 窗口/座位在入锁后已变 ⇒ 让循环重读再驱动。
+    if (!this.pendingActorsOf(current).includes(seat)) return true;
+    if (this.windowIdOf(current) !== this.windowIdOf(snapshot)) return true;
+
+    let updated: AnyGameSession;
+    try {
+      updated = this.runtimeFor(current).applyAction(
+        current,
+        action,
+        this.runtimeCtx(seat),
+      ).session;
+    } catch (err) {
+      this.logger.warn(
+        `Mahjong auto action rejected for ${roomCode} (seat ${seat}): ${String(err)}`,
+      );
+      return false;
+    }
+    this.setDeadlineAfterTransition(current, updated);
+    await this.finishTransition(roomCode, updated);
+    return true;
   }
 
   /** 驱动**一次**机器人动作；返回是否产生了状态转移。 */
@@ -1277,6 +1462,9 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
    */
   private ruleDecision(session: AnyGameSession, seat: number): RobotDecideResponse {
     const action = this.runtimeFor(session).autoAction(session, seat);
+    if (action.kind === 'mahjong') {
+      throw new Error('ruleDecision does not support mahjong (use driveMahjongWindow)');
+    }
     if (action.kind === 'bid') return { kind: 'pass', source: 'rule' };
     if (action.kind === 'pass') return { kind: 'pass', source: 'rule' };
     // `RobotDecideResponse.cards` 是 rank-only（AI 契约）；花色由 backfillSuits 统一补。
@@ -1326,29 +1514,38 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
    */
   private async onTurnTimeout(
     roomCode: string,
-    expected?: { actorSeat: number; deadlineAt: number },
+    expected?: { actorSeat: number; windowId?: string; deadlineAt: number },
   ): Promise<void> {
     return this.runSerialized(roomCode, () => this.onTurnTimeoutLocked(roomCode, expected));
   }
 
   private async onTurnTimeoutLocked(
     roomCode: string,
-    expected?: { actorSeat: number; deadlineAt: number },
+    expected?: { actorSeat: number; windowId?: string; deadlineAt: number },
   ): Promise<void> {
-    const session = await this.getSession(roomCode);
+    const session = await this.getSession<AnyGameSession>(roomCode);
     if (!session) return;
     if (expected) {
       if (session.state === GameState.Init || session.state === GameState.Ended) return;
       const currentActorSeat = this.runtimeFor(session).currentActor(session);
       if (
         currentActorSeat !== expected.actorSeat ||
-        session.turnDeadlineAt !== expected.deadlineAt
+        session.turnDeadlineAt !== expected.deadlineAt ||
+        this.windowIdOf(session) !== expected.windowId
       ) {
+        // 回合已被换掉：正常路径下新回合已重挂；只有确实没有计时器时才补挂，
+        // 避免把新回合的计时器覆盖成旧 deadline。
+        if (!this.timers.has(roomCode)) {
+          this.startTurnTimer(roomCode, session, {
+            overrideMs: Math.max(0, session.turnDeadlineAt - Date.now()),
+          });
+        }
         return;
       }
     }
 
-    const actorSeat = this.runtimeFor(session).currentActor(session);
+    const pending = this.pendingActorsOf(session);
+    const actorSeat = pending[0] ?? this.runtimeFor(session).currentActor(session);
     const playerId = session.players[actorSeat]?.id;
     this.logger.log(`Turn timeout for room ${roomCode}: seat ${actorSeat} (${playerId ?? 'unknown'})`);
     if (!playerId) {
@@ -1357,7 +1554,7 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       this.logger.error(
         `Timeout action impossible for room ${roomCode}: seat ${actorSeat} has no player`,
       );
-      this.startTurnTimer(roomCode, session);
+      this.startTurnTimer(roomCode, session, { forceNormal: true });
       return;
     }
 
@@ -1371,14 +1568,19 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
        * 机器人座位**豁免** —— 用 `botIds` 座位判定（⛔ 不是 `isBot`）：
        * 不累加 count、不置 trustee（视图侧同款豁免在 `view.builder`）。
        * 作用于 **`updated`**（同 C3：写 `session` 会丢）。
+       *
+       * 麻将：一个窗口可能有多个 pending 座位；对**每个** pending 座位记治理。
        */
-      if (!this.isBotSeat(updated, actorSeat)) {
-        updated.players[actorSeat] = {
-          ...updated.players[actorSeat],
-          ...onTimeoutOccurred(this.governanceOf(updated.players[actorSeat]), this.durations()),
+      for (const seat of pending) {
+        if (this.isBotSeat(updated, seat)) continue;
+        const player = updated.players[seat];
+        if (!player) continue;
+        updated.players[seat] = {
+          ...player,
+          ...onTimeoutOccurred(this.governanceOf(player), this.durations()),
         };
       }
-      updated.turnDeadlineAt = this.deadlineFor(updated);
+      this.setDeadlineAfterTransition(session, updated);
       await this.finishTransition(roomCode, updated);
     } catch (err) {
       this.logger.error(
@@ -1387,7 +1589,14 @@ export class GameService implements OnApplicationShutdown, OnModuleInit {
       // R106③：不落盘、不改 version；R106②：重挂，使下一次超时仍会发生。
       // R106 + C2b：**按 normal 档重挂**（forceNormal）—— 即使行动者在托管中也不得
       // 用 trustee 短延时（防错误日志风暴）。
-      this.startTurnTimer(roomCode, session, { forceNormal: true });
+      if (session.gameType === 'mahjong') {
+        const remaining = Math.max(0, session.turnDeadlineAt - Date.now());
+        this.startTurnTimer(roomCode, session, {
+          overrideMs: Math.min(remaining, this.durations().normal),
+        });
+      } else {
+        this.startTurnTimer(roomCode, session, { forceNormal: true });
+      }
     }
   }
 }

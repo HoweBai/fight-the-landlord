@@ -25,6 +25,12 @@ function makeController() {
     setStatus: vi.fn(async () => ({ id: 'ag_1', status: 'frozen' })),
     resetPassword: vi.fn(async () => ({ password: 'newpass1234' })),
     rotateInviteCode: vi.fn(async () => ({ code: 'NEWCODE1' })),
+    listInviteCodes: vi.fn(async () => ({
+      rows: [],
+      nextCursor: null,
+      counts: { active: 0, used: 0, revoked: 0 },
+    })),
+    revokeInviteCode: vi.fn(async () => undefined),
     updatePayout: vi.fn(async () => ({ id: 'ag_1' })),
   };
   const bindings = {
@@ -166,5 +172,24 @@ describe('AgentAdminController', () => {
     expect(bindings.bulkRebind).toHaveBeenCalledWith(
       expect.objectContaining({ fromAgentId: 'from', toAgentId: 'to', dryRun: true, actor: 'admin1' }),
     );
+  });
+
+  it('rotate：返回 {code}（契约不变）', async () => {
+    const { ctl } = makeController();
+    const res = await ctl.rotateInviteCode(req, 'ag_1');
+    expect(res.data).toEqual({ code: 'NEWCODE1' });
+  });
+
+  it('admin 码列表：status/cursor/limit 解析；非法 status ⇒ 400', async () => {
+    const { ctl, accounts } = makeController();
+    await ctl.listInviteCodes('ag_1', { status: 'active', cursor: 'ABCD2345', limit: '20' });
+    expect(accounts.listInviteCodes).toHaveBeenCalledWith('ag_1', 'active', 'ABCD2345', 20);
+    expect(await statusOf(() => ctl.listInviteCodes('ag_1', { status: 'bad' }))).toBe(400);
+  });
+
+  it('单码撤销：透传 actor', async () => {
+    const { ctl, accounts } = makeController();
+    await ctl.revokeInviteCode(req, 'ag_1', 'ABCD2345');
+    expect(accounts.revokeInviteCode).toHaveBeenCalledWith('ag_1', 'ABCD2345', 'admin1');
   });
 });

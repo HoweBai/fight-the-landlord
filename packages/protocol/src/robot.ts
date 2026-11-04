@@ -15,6 +15,7 @@ import type { RpcMeta } from './rpc';
 import type { GameView } from './views';
 import type { GameType } from './game';
 import type { PdkRobotFeatures } from './pdk/types';
+import type { MahjongRobotFeatures } from './mahjong/types';
 
 /** §9.3 的三档难度。 */
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
@@ -134,7 +135,7 @@ export interface DdzRobotFeatures {
 }
 
 /** 按玩法判别的机器人特征联合（Task 2.6；pdk 类型唯一归属 `pdk/types.ts`）。 */
-export type RobotFeatures = DdzRobotFeatures | PdkRobotFeatures;
+export type RobotFeatures = DdzRobotFeatures | PdkRobotFeatures | MahjongRobotFeatures;
 
 /** `robot.decide`（game → robot，§4.2/§9.4）：**只传裁剪视图 + 公开特征**，绝不传 `GameSession`。 */
 export interface RobotDecideRequest {

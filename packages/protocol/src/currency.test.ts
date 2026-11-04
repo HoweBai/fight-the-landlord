@@ -441,7 +441,7 @@ describe('validateCurrencyApply（§2.3 字段表 + §5.4：唯一校验点，�
         { actionId: 'a-1', source: 'signup_grant', entries: [{ ownerId: 'u-1', delta: 3 }], burn: { residue: 3, rake: 0 } },
         /burn 仅 game_settle 来源可携带/,
       ],
-      ['不变量不符', { ...ok, burn: { residue: 2, rake: 0 } }, /Σentries\(-1\) \+ residue\(2\) \+ rake\(0\) 必须为 0/],
+      ['不变量不符', { ...ok, burn: { residue: 2, rake: 0 } }, /Σentries\(-1\) \+ residue\(2\) \+ rake\(0\) \+ penalty\(0\) 必须为 0/],
     ];
     for (const [name, req, message] of cases) {
       expect(() => validateCurrencyApply(req), name).toThrow(ProtocolError);

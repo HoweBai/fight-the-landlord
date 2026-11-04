@@ -39,6 +39,7 @@ export const FAILSAFE_CLIENT_CONFIG: ClientConfigState = {
   withdrawDailyMaxCoins: null,
   withdrawReAuthEnabled: false,
   agentInviteEnabled: false,
+  agentInviteRequired: false,
   version: 0,
 };
 
@@ -93,6 +94,7 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
         : null,
     withdrawReAuthEnabled: raw?.withdrawReAuthEnabled === true,
     agentInviteEnabled: raw?.agentInviteEnabled === true,
+    agentInviteRequired: raw?.agentInviteRequired === true,
     // 多玩法（S5.4）：新服务端下发 `games`；缺省 = 旧服务端（只有斗地主可见）。
     games: raw?.games,
     version: raw?.version ?? 0,
@@ -140,14 +142,15 @@ export function repairActiveMode(): void {
 
 /**
  * 代理分润（r3 Critical #1）：登录页在**无令牌**时拉公开启动配置。
- * 只落 `agentInviteEnabled`；**不**写 `clientConfigVersion`（避免冒充「全量配置已加载」）。
- * 失败 ⇒ false（调用方保持字段隐藏，注册照常）。
+ * 只落 `agentInviteEnabled` / `agentInviteRequired`；**不**写 `clientConfigVersion`
+ * （避免冒充「全量配置已加载」）。失败 ⇒ false（调用方按失败兜底）。
  */
 export async function refreshInviteBootConfig(): Promise<boolean> {
   try {
     const res = await fetchBootClientConfig();
     if (res.code !== 0 || res.data === null || res.data === undefined) return false;
     useGameStore().setAgentInviteEnabled(res.data.agentInviteEnabled === true);
+    useGameStore().setAgentInviteRequired(res.data.agentInviteRequired === true);
     return true;
   } catch {
     return false;

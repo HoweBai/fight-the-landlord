@@ -52,6 +52,7 @@ export interface FakeOpRow {
   traceId: string | null;
   burnedResidue: number | null;
   burnedRake: number | null;
+  burnedPenalty?: number | null;
   /** C2：epoch ms（`currency_ops.created_at`；对账窗口过滤用）。 */
   createdAt: number;
 }
@@ -166,7 +167,7 @@ interface Scratch {
 
 /** 本实现的语句形状（逐字；与 `apply.service.ts` 的常量一一对应）。 */
 const SQL = {
-  opsInsert: /^INSERT INTO `currency_ops` \(`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`\) VALUES \(/,
+  opsInsert: /^INSERT INTO `currency_ops` \(`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`, `burned_penalty`\) VALUES \(/,
   opsSelect: /^SELECT `id`, `request_hash` FROM `currency_ops` WHERE `action_id` = \?$/,
   typeSelect: /^SELECT `owner_type` FROM `currency_accounts` WHERE `owner_id` = \?$/,
   /** ⚙️14②：⚙️12 重查的锁定读形态（与步 a 的普通读**分认**，可判别实现漂移）。 */
@@ -326,6 +327,7 @@ export class FakeCurrencyDb {
       refId?: string | null;
       burnedResidue?: number | null;
       burnedRake?: number | null;
+      burnedPenalty?: number | null;
       createdAt?: number;
     },
     flows: Array<{ ownerId: string; ownerType?: string; delta: number; balanceAfter?: number }>,
@@ -343,6 +345,7 @@ export class FakeCurrencyDb {
       traceId: null,
       burnedResidue: op.burnedResidue ?? null,
       burnedRake: op.burnedRake ?? null,
+      burnedPenalty: op.burnedPenalty ?? null,
       createdAt: op.createdAt ?? Date.now(),
     });
     for (const flow of flows) {
@@ -648,6 +651,7 @@ export class FakeCurrencyDb {
         traceId: (params[7] ?? null) as string | null,
         burnedResidue: (params[8] ?? null) as number | null,
         burnedRake: (params[9] ?? null) as number | null,
+        burnedPenalty: (params[10] ?? null) as number | null,
         createdAt: Date.now(),
       });
       return Promise.resolve({ insertId: id, affectedRows: 1 });
@@ -865,6 +869,7 @@ export class FakeCurrencyDb {
             created_at: new Date(op.createdAt),
             burned_residue: op.burnedResidue,
             burned_rake: op.burnedRake,
+            burned_penalty: op.burnedPenalty ?? null,
           })),
       );
     }

@@ -69,6 +69,18 @@ export const GAME_META: Readonly<Record<GameType, GameMeta>> = {
       voiceAnnouncements: true,
     },
   },
+  mahjong: {
+    id: 'mahjong',
+    name: '四川麻将',
+    supportedPlayerCounts: [4],
+    defaultPlayerCount: 4,
+    capabilities: {
+      cardCounter: false,
+      bots: true,
+      goldRoom: true,
+      voiceAnnouncements: false,
+    },
+  },
 };
 
 /**

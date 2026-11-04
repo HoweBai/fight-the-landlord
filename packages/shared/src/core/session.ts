@@ -28,7 +28,7 @@ export interface ActionLogEntryBase<P = Card> {
   kind: 'play' | 'pass';
 }
 
-export interface GameSessionBase<P = Card> {
+export interface GameSessionBase<P = Card, L = ActionLogEntryBase<P>> {
   roomCode: string;
   gameType: GameType;
   playerCount: number;
@@ -39,7 +39,7 @@ export interface GameSessionBase<P = Card> {
   currentPlayer: number;
   turnDeadlineAt: number;
   version: number;
-  actionLog: ActionLogEntryBase<P>[];
+  actionLog: L[];
   createdAt: number;
   finishedAt: number | null;
 

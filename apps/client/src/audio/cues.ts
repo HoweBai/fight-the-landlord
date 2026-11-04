@@ -88,6 +88,26 @@ export const CUES = {
   /** 胜负。 */
   Win: `${TABLE_AUDIO}/MusicEx_Win.mp3`,
   Lose: `${TABLE_AUDIO}/MusicEx_Lose.mp3`,
+  // ── 四川麻将（T11，幼麟棋牌素材）────────────────────────────────────────
+  /** 碰。 */
+  MjPeng: `${TABLE_AUDIO}/Mj_peng.mp3`,
+  /** 杠（通用；直杠/补杠也用这条，明杠另有刮风）。 */
+  MjGang: `${TABLE_AUDIO}/Mj_gang.mp3`,
+  /** 胡牌。 */
+  MjHu: `${TABLE_AUDIO}/Mj_hu.mp3`,
+  /** 刮风（明杠）。 */
+  MjGuafeng: `${TABLE_AUDIO}/Mj_guafeng.mp3`,
+  /** 下雨（暗杠）。 */
+  MjRain: `${TABLE_AUDIO}/Mj_rain.mp3`,
+  /** 发牌 / 洗牌 / 理牌（阶段切换提示）。 */
+  MjDeal: `${TABLE_AUDIO}/Mj_deal.mp3`,
+  MjShuffle: `${TABLE_AUDIO}/Mj_shuffle.mp3`,
+  MjSort: `${TABLE_AUDIO}/Mj_sort.mp3`,
+  /** 倒计时到点警示。 */
+  MjTimeup: `${TABLE_AUDIO}/Mj_timeup_alarm.mp3`,
+  /** 麻将 BGM（大厅与对局各一首）。 */
+  BgmMahjong: `${TABLE_AUDIO}/Mj_bgMain.mp3`,
+  BgmMahjongFight: `${TABLE_AUDIO}/Mj_bgFight.mp3`,
   /** BGM（循环）。 */
   BgmTable: `${TABLE_AUDIO}/MusicEx_Normal.mp3`,
   /** 大厅 BGM 在**主包**（进厅即播，不能等分包）。 */

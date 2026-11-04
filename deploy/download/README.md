@@ -11,7 +11,7 @@
 | 步骤 | 命令 / 行为 |
 |---|---|
 | ① 打包 | `bash scripts/deploy/pack-apk.sh <host[:port]>`（自动写端点 → HBuilderX 云打包 → 校验产物；本机 HBuilderX 路径可用 `HX_CLI` 覆盖） |
-| ② 上传资产 | `bash scripts/deploy/publish-apk.sh <apk路径>` → 创建/替换 Release **`apk-latest`** 的资产（文件名保持不变） |
+| ② 上传资产 | `bash scripts/deploy/publish-apk.sh <apk路径>` → 创建/替换 Release **`apk-latest`** 的资产（资产名取 `scripts/deploy/apk-name.txt`，统一 ASCII） |
 | ③ 构建带上 | `images` workflow 在 `build-images.sh` 前自动 `gh release download apk-latest --pattern '*.apk' -D deploy/download`；**拉不到就失败（fail-closed）** ⇒ 线上 `*.apk` 不会静默 404 |
 | ④ 只预览 | `bash scripts/deploy/preview.sh download`（秒传进运行中的 `ftl-edge`，不重建镜像） |
 | ⑤ 正式上线 | `bash scripts/deploy/deploy-dev.sh`（GitHub 构建 → 部署） |
@@ -53,7 +53,19 @@ VITE_API_BASE=https://<host>/api
 
 ## 文件名约定
 
-**当前约定**：uni-ad/Sigmob 开通表单已填 `https://<DEV_HOST>/download/优比棋牌.apk`
-⇒ 打包产物须命名 **`优比棋牌.apk`**（Release 资产同名；换名须同步改 uni-ad 表单里的 URL）。
-⚠️ 中文文件名要穿过 Windows 构建上下文 → Docker → registry → 服务器四道 UTF-8 关（已在本机
-真镜像端到端实测通过，见 `.superpowers/sdd/2026-10-13-ads-t0-backfill/progress.md`）。
+**单一真源**：`scripts/deploy/apk-name.txt`（当前 **`ubigame.apk`**）。打包脚本、发布脚本、
+`images` workflow、`preview.sh` 都读它；`npm run verify:apk` 守这条链，换名先改它。
+
+**为什么必须 ASCII**（2026-11-02 用户反馈）：旧名 `/download/优比棋牌.apk` 在聊天软件/部分
+浏览器里会被截断成 `/download`（中文路径识别失败）⇒ 点链接进不了安装包。ASCII 名不受影响。
+
+**换名清单**（漏一处就断链）：
+
+1. 改 `scripts/deploy/apk-name.txt`；
+2. 打包并 `publish-apk.sh` 上传新资产；
+3. `preview.sh download`（或正式部署）让线上 `/download/<新名>` 生效；
+4. **同步改 uni-ad / Sigmob 开通表单里的下载 URL**（外部后台，仓库管不到）；
+5. `npm run verify:apk` 确认打包/发布/CI/预览四处仍一致。
+
+⚠️ 旧文件名**不会**自动保留：下一次正式部署重建 edge 镜像后，旧 URL 即 404。务必先确认
+uni-ad 表单已改到新地址。

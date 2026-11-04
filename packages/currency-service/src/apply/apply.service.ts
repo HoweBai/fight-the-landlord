@@ -64,8 +64,8 @@ import { agentHookFailuresTotal } from '../agent/agent.metrics';
 
 /** 一次 apply = 一行 ops（§2.10 DDL 列序逐字；`created_at` 走列默认值）。 */
 const OPS_INSERT_SQL =
-  'INSERT INTO `currency_ops` (`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`) ' +
-  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+  'INSERT INTO `currency_ops` (`action_id`, `request_hash`, `source`, `game_type`, `actor`, `reason`, `ref_id`, `trace_id`, `burned_residue`, `burned_rake`, `burned_penalty`) ' +
+  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
 
 /**
  * A2（spec D4）：游戏相关来源的落库玩法；非游戏来源一律 NULL（未标注）。
@@ -278,7 +278,7 @@ export class ApplyService {
       actor?: string;
       reason?: string;
       refId?: string;
-      burn?: { residue: number; rake: number };
+      burn?: { residue: number; rake: number; penalty?: number };
       gameType?: GameType;
       meta?: { traceId: string };
     };
@@ -318,6 +318,7 @@ export class ApplyService {
           request.meta?.traceId ?? null,
           request.burn?.residue ?? null,
           request.burn?.rake ?? null,
+          request.burn?.penalty ?? null,
         ]);
         const opId = insertIdOf(insertedOp);
 

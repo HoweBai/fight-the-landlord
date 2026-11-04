@@ -378,6 +378,40 @@ export class AgentAdminController {
     }
   }
 
+  @Get('admin/agents/:id/invite-codes')
+  async listInviteCodes(@Param('id') id: string, @Query() query: Record<string, unknown>) {
+    try {
+      const status = query.status === undefined ? undefined : String(query.status);
+      if (status !== undefined && !['active', 'used', 'revoked'].includes(status)) {
+        throw new DomainError(ErrCode.BAD_PARAM, 'status 非法');
+      }
+      const cursor = query.cursor === undefined ? undefined : String(query.cursor);
+      const rawLimit = Number(query.limit ?? 50);
+      const limit = Number.isInteger(rawLimit) && rawLimit > 0 && rawLimit <= 100 ? rawLimit : 50;
+      return {
+        code: ErrCode.OK,
+        data: await this.accounts.listInviteCodes(id, status, cursor, limit),
+      };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('admin/agents/:id/invite-codes/:code/revoke')
+  @HttpCode(200)
+  async revokeInviteCode(
+    @Req() req: AdminRequest,
+    @Param('id') id: string,
+    @Param('code') code: string,
+  ) {
+    try {
+      await this.accounts.revokeInviteCode(id, code, adminActorOf(req));
+      return { code: ErrCode.OK, data: { revoked: true } };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
   @Patch('admin/agents/:id/payout')
   async updatePayout(
     @Req() req: AdminRequest,

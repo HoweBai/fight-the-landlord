@@ -38,7 +38,7 @@ for tag in "$@"; do
   export IMAGE_TAG="$tag"
   args=("${BAKE_ARGS[@]}")
   if [ "$CACHE" = "1" ]; then
-    # ⚠️ `mode=max` 才能让被多阶段复用的层（`Dockerfile.edge` 的 web 阶段）也进缓存。
+    # ⚠️ `mode=max` 才能让被多阶段复用的层（`deploy/docker/Dockerfile.edge` 的 web 阶段）也进缓存。
     args+=(--set "*.cache-from=type=gha")
     args+=(--set "*.cache-to=type=gha,mode=max")
   fi

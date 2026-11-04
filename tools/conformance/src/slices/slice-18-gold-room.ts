@@ -5,7 +5,7 @@
  *  ⓪ 起手自证 + 清源：五个容器 healthy（room/user/currency/gateway/config）+ **金币队列清源**
  *     （`match:queue:gold:*` 与 gold 票的 `match:meta:*`——E 组的补位谓词是「队里恰好这两个
  *     真人」，任何上一轮崩溃留下的陈旧票都会把第三个座位吃掉）；
- *  A 配置：`/api/config` 恰 22 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
+ *  A 配置：`/api/config` 恰 23 键 + 内部键零泄漏 + 管理面全键种子 + 改金开关后生效；
  *  B 开关：gold 关 ⇒ 12010、开 ⇒ 不再 12010；free 关 ⇒ random 12010、恢复；
  *  C 门槛：0 余额 ⇒ 14003（含所需金额）→ 管理面补足 ⇒ 入队成功；
  *  D 取消排队（C21）：入队 → 探针（ZSCORE/meta 指纹，`slice-12:438-473` 先例）→ unmatch →
@@ -22,7 +22,7 @@
  *     rejected×2=中途切开关·中途充值后回调）+「已领优先于余额闸」追加覆盖——H 组三桶
  *     数据源仍由本组承接；
  *  H 观测：room-service /metrics 六新指标名 + 终态/残差/补偿队列读数；currency-service
- *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 38 条
+ *     /metrics 池与机器人 gauge 在场 + 救助三桶；Prometheus /api/v1/rules 恰 41 条
  *     （含 C1 三条记录 outbox + C2 三条记录对账；分类计数以断言处为准）；
  *  I 对账：管理面 PUT 3s 间隔（`currency.reconcileIntervalMs`）+ 重起 currency-service ⇒ 跑够两轮 ⇒
  *     `currency_reconcile_drift_accounts==0`
@@ -133,7 +133,7 @@ const adSecret = (): string => (cachedAdSecret ??= loadAdCallbackSecret());
  *  阶段 2 已删除派生字段 `entryFeePercents`；
  *  `reliefAdpid` 插于 `rechargePackages`/`reliefEnabled` 间，UTF-16 `'A'<'E'`）。 */
 const CLIENT_CONFIG_KEYS_SORTED =
-  'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
+  'agentInviteEnabled,agentInviteRequired,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled';
 
 /** §12.1 A 组：内部键零泄漏的**显式名单**（+ 全量 `currency.` 前缀扫描兜底）。 */
 const INTERNAL_KEY_NAMES = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'] as const;
@@ -155,6 +155,12 @@ const C2_ALERT_RULES = [
   'RecordsReconcileMismatch',
   'RecordsReconcileOrphanOps',
   'RecordsReconcileStalled',
+] as const;
+/** C3（2026-10-28）：资金异常三条规则（总数 38→41；全名单由 slice-16 承接）。 */
+const C3_ALERT_RULES = [
+  'RiskFundScanQueryFailures',
+  'RiskFundScanStalled',
+  'RiskFundHitsHigh',
 ] as const;
 
 /** E/F 的两真人预充（规格 §12.1：5,000,000 = 5 笔 ×1e6；admin 单笔上限 1e6）。 */
@@ -1015,12 +1021,12 @@ export async function runSlice18(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // A 配置
     // ══════════════════════════════════════════════════════════════════════
-    step('A：/api/config 恰 22 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
+    step('A：/api/config 恰 23 键 + 内部键零泄漏 + 管理面六新键种子 + 确保 gold 开（种子态）后客户端面生效');
     const uCfg = await registerUser(2);
     const cfgA = await getJson<Record<string, unknown>>('/api/config', uCfg.accessToken);
     checks.eq(cfgA.body?.code, ErrCode.OK, 'A /api/config code 0');
     const cfgKeys = Object.keys(cfgA.body?.data ?? {});
-    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 22 键');
+    checks.eq(cfgKeys.sort().join(','), CLIENT_CONFIG_KEYS_SORTED, 'A /api/config 键集（排序后）恰 23 键');
     checks.that(
       Array.isArray((cfgA.body?.data as any)?.baseScoreLevels) &&
         ((cfgA.body!.data as any).baseScoreLevels as unknown[]).length > 0,
@@ -1613,11 +1619,13 @@ export async function runSlice18(): Promise<Checks> {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
     };
     const ruleNames = (rulesParsed.data?.groups ?? []).flatMap((g) => g.rules ?? []).map((r) => r.name ?? '');
-    checks.eq(ruleNames.length, 38, 'H Prometheus /api/v1/rules 恰 38 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 / C2 同步）');
+    checks.eq(ruleNames.length, 41, 'H Prometheus /api/v1/rules 恰 41 条（27 既有 + 4 多玩法 A1 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账 + 3 C3 资金异常；风控 T11 / 支付 T15 / 通知 T11 / 广告 T16 / 多玩法 A1 / B 组 / C1 / C2 / C3 同步）');
     const missingRules = NEW_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingRules.length === 0, `H 三条新规则名逐个在场（缺 ${JSON.stringify(missingRules)}）`);
     const missingC2Rules = C2_ALERT_RULES.filter((n) => !ruleNames.includes(n));
     checks.that(missingC2Rules.length === 0, `H 三条 C2 记录对账规则名逐个在场（缺 ${JSON.stringify(missingC2Rules)}）`);
+    const missingC3Rules = C3_ALERT_RULES.filter((n) => !ruleNames.includes(n));
+    checks.that(missingC3Rules.length === 0, `H 三条 C3 资金异常规则名逐个在场（缺 ${JSON.stringify(missingC3Rules)}）`);
 
     // ══════════════════════════════════════════════════════════════════════
     // I 对账

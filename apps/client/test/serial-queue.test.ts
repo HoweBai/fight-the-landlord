@@ -228,6 +228,26 @@ describe('① 信封（§6.2：没有 seq，也没有 type/meta）', () => {
     expect(Object.keys(env).sort()).toEqual(['baseVersion', 'payload', 'reqId', 'timestamp']);
   });
 
+  it('麻将窗口 id：只按第四参传入时出现（平铺顶层，不嵌套 meta）', () => {
+    const plain = buildRequestPayload('game.play', { mahjong: { type: 'selfDrawHu' } }, 7);
+    expect(plain).not.toHaveProperty('windowId');
+    const env = buildRequestPayload(
+      'game.play',
+      { mahjong: { type: 'selfDrawHu' } },
+      7,
+      'turn:5',
+    );
+    expect(env.windowId).toBe('turn:5');
+    expect(env.baseVersion).toBe(7);
+    expect(Object.keys(env).sort()).toEqual([
+      'baseVersion',
+      'payload',
+      'reqId',
+      'timestamp',
+      'windowId',
+    ]);
+  });
+
   it('非 CAS 请求的 baseVersion 必须是 0（§6.5 适用范围表）', () => {
     for (const type of ['room.match', 'room.join', 'room.leave', 'game.reconnect', 'game.resync'] as ClientMessageType[]) {
       const payload = type === 'room.match' ? { mode: 'random' } : type === 'room.join' || type === 'room.leave' ? { roomCode: 'R1' } : type === 'game.reconnect' ? { lastVersion: 3 } : {};

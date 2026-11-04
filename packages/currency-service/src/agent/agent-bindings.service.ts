@@ -1,10 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
-import { ErrCode } from '@fight-the-landlord/protocol';
+import { ErrCode, type AgentBindIgnoreReason } from '@fight-the-landlord/protocol';
 import { DomainError } from '../http/errors';
 import { ConfigCacheService } from '../config/config-cache.service';
 import { AgentSettingsService } from './agent-settings.service';
-import { AgentInviteService } from './agent-invite.service';
+import { AgentInviteService, normalizeInviteCode } from './agent-invite.service';
+import { affectedRowsOf } from './agent-sql.util';
+import { agentBindIgnoredTotal, agentInviteConsumedTotal } from './agent.metrics';
 import { hmacPhone, maskPhone, normalizePhone, toDate } from './agent.util';
 
 const BIND_INSERT_IGNORE_SQL =
@@ -36,8 +38,19 @@ const AUDIT_INSERT_SQL =
   'INSERT INTO `agent_admin_audit` (`actor`, `action`, `target_type`, `target_id`, `before_json`, `after_json`, `reason`) ' +
   'VALUES (?, ?, ?, ?, ?, ?, ?)';
 
+const AGENT_STATUS_LOCK_SQL =
+  'SELECT `status` FROM `agent_accounts` WHERE `id` = ? FOR UPDATE';
+const CODE_STATUS_LOCK_SQL =
+  'SELECT `status` FROM `agent_invite_codes` WHERE `code` = ? AND `agent_id` = ? FOR UPDATE';
+const CODE_CLAIM_SQL =
+  "UPDATE `agent_invite_codes` SET `status` = 'used', `used_by` = ?, `used_at` = NOW(3) " +
+  "WHERE `code` = ? AND `status` = 'active'";
+const BIND_SELECT_BY_OWNER_SQL =
+  'SELECT `agent_id` FROM `agent_bindings` WHERE `owner_id` = ?';
+
 export interface BindResult {
   status: 'bound' | 'already_bound' | 'ignored';
+  reason?: AgentBindIgnoreReason;
 }
 
 export interface BindingRow {
@@ -49,14 +62,6 @@ export interface BindingRow {
 }
 
 export const AGENT_BULK_REBIND_MAX = 5_000;
-
-function affectedRowsOf(result: unknown, context: string): number {
-  const n = (result as { affectedRows?: unknown } | null)?.affectedRows;
-  if (typeof n !== 'number' || !Number.isInteger(n)) {
-    throw new Error(`${context}：驱动未返回 affectedRows（收到 ${JSON.stringify(result)}）`);
-  }
-  return n;
-}
 
 /**
  * 玩家归属（spec §5.2/§5.3）。
@@ -85,13 +90,65 @@ export class AgentBindingsService {
     }
     return this.dataSource.transaction(async (manager) => {
       const settings = await this.settings.getOrDefault(manager);
-      if (!settings.enabled || !this.config.agentInviteEnabled()) {
-        return { status: 'ignored' as const };
+      if (!settings.enabled) {
+        agentBindIgnoredTotal.inc({ reason: 'settings_disabled' });
+        return { status: 'ignored' as const, reason: 'settings_disabled' as const };
       }
+      if (!this.config.hasSnapshot()) {
+        agentBindIgnoredTotal.inc({ reason: 'config_unavailable' });
+        return { status: 'ignored' as const, reason: 'config_unavailable' as const };
+      }
+      if (!this.config.agentInviteEnabled()) {
+        agentBindIgnoredTotal.inc({ reason: 'invite_disabled' });
+        return { status: 'ignored' as const, reason: 'invite_disabled' as const };
+      }
+
       const resolved = await this.invite.resolve(manager, input.code);
-      if (resolved === null || resolved.status !== 'active') {
-        throw new DomainError(ErrCode.AGENT_INVITE_INVALID, '邀请码无效');
+      if (resolved === null) {
+        this.invalid('邀请码无效', 'invalid');
       }
+
+      // 幂等预检：同一 ownerId 重试不消费新码（RR 快照读；下面的 INSERT IGNORE 兜底）。
+      const existing = (await manager.query(BIND_SELECT_BY_OWNER_SQL, [input.ownerId])) as Array<
+        Record<string, unknown>
+      >;
+      if (existing.length > 0) {
+        if (String(existing[0]!.agent_id) === resolved.agentId) {
+          agentInviteConsumedTotal.inc({ result: 'already_bound' });
+          return { status: 'already_bound' as const };
+        }
+        this.invalid('邀请码无效', 'invalid');
+      }
+
+      // 锁序 agent → code → binding（与 rotate/冻结/管理改绑一致，无反向环）。
+      const agentRows = (await manager.query(AGENT_STATUS_LOCK_SQL, [resolved.agentId])) as Array<
+        Record<string, unknown>
+      >;
+      if (agentRows.length === 0 || String(agentRows[0]!.status) !== 'active') {
+        this.invalid('邀请码无效', 'invalid');
+      }
+
+      const normalized = normalizeInviteCode(input.code);
+      const codeRows = (await manager.query(CODE_STATUS_LOCK_SQL, [
+        normalized,
+        resolved.agentId,
+      ])) as Array<Record<string, unknown>>;
+      if (codeRows.length === 0) {
+        this.invalid('邀请码无效', 'invalid');
+      }
+      const codeStatus = String(codeRows[0]!.status);
+      if (codeStatus === 'used') {
+        this.invalid('邀请码已被使用', 'used');
+      }
+      if (codeStatus !== 'active') {
+        this.invalid('邀请码无效', 'invalid');
+      }
+
+      const claimed = await manager.query(CODE_CLAIM_SQL, [input.ownerId, normalized]);
+      if (affectedRowsOf(claimed, 'agent_invite_codes claim') !== 1) {
+        throw new Error('不变量破坏：已锁码行但条件更新 0 行');
+      }
+
       const phoneHash = hmacPhone(normalizePhone(input.phone));
       const phoneMasked = maskPhone(input.phone);
       const inserted = await manager.query(BIND_INSERT_IGNORE_SQL, [
@@ -100,24 +157,32 @@ export class AgentBindingsService {
         phoneHash,
         phoneMasked,
       ]);
-      if (affectedRowsOf(inserted, 'agent_bindings INSERT IGNORE') === 1) {
-        await manager.query(HISTORY_INSERT_SQL, [
-          input.ownerId,
-          resolved.agentId,
-          'bind',
-          'signup',
-          null,
-        ]);
-        return { status: 'bound' as const };
+      if (affectedRowsOf(inserted, 'agent_bindings INSERT IGNORE') !== 1) {
+        // 当前读复查（不能用 RR 快照读）：并发同 ownerId 的重试 ⇒ already_bound。
+        const again = (await manager.query(
+          'SELECT `agent_id` FROM `agent_bindings` WHERE `owner_id` = ? FOR UPDATE',
+          [input.ownerId],
+        )) as Array<Record<string, unknown>>;
+        if (again.length > 0 && String(again[0]!.agent_id) === resolved.agentId) {
+          return { status: 'already_bound' as const };
+        }
+        throw new Error(`agent_bindings INSERT IGNORE 0 行且无同代理绑定（ownerId=${input.ownerId}）`);
       }
-      const existing = (await manager.query(BIND_SELECT_SQL, [input.ownerId])) as Array<
-        Record<string, unknown>
-      >;
-      if (existing.length === 0) {
-        throw new Error(`agent_bindings INSERT IGNORE 0 行后读不到 ownerId=${input.ownerId}`);
-      }
-      return { status: 'already_bound' as const };
+      await manager.query(HISTORY_INSERT_SQL, [
+        input.ownerId,
+        resolved.agentId,
+        'bind',
+        'signup',
+        null,
+      ]);
+      agentInviteConsumedTotal.inc({ result: 'bound' });
+      return { status: 'bound' as const };
     });
+  }
+
+  private invalid(message: string, result: 'used' | 'invalid'): never {
+    agentInviteConsumedTotal.inc({ result });
+    throw new DomainError(ErrCode.AGENT_INVITE_INVALID, message);
   }
 
   async rebind(input: {

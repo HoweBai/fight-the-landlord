@@ -8,7 +8,7 @@
  *  3. 只走 `/api/agent/*`；身份只从 token（代码里不得出现 agentId —— IDOR 纪律）。
  *  4. 401 清 token 回登录；403「首次登录」进改密；六个错误码文案与 apps/client copy 一致。
  *  5. 零 HTML 串赋值 / 无 eval / 无 document.write。
- *  6. edge 接线：Dockerfile.edge COPY agent、Caddyfile 两条 handle 在 catch-all 之前、
+ *  6. edge 接线：deploy/docker/Dockerfile.edge COPY agent、Caddyfile 两条 handle 在 catch-all 之前、
  *     根 package.json 有 verify:agent。
  *
  * 退出码：0 全过；1 有失败（逐条打印）。
@@ -131,6 +131,13 @@ for (const id of [
   'settlements-next',
   'settlements-page-info',
   'me-body',
+  'me-invite-card',
+  'invite-status',
+  'invite-gen-count',
+  'invite-gen-btn',
+  'invite-copy-all',
+  'invite-status-filter',
+  'invite-list',
   'me-password-form',
   'me-old',
   'me-new',
@@ -151,6 +158,7 @@ for (const needle of [
   '/api/agent/players',
   '/api/agent/commissions',
   '/api/agent/settlements',
+  '/api/agent/invite-codes',
 ]) {
   ok(app.includes(needle), `app.js 含 API 路径 ${JSON.stringify(needle)}`);
 }
@@ -189,8 +197,11 @@ ok(!app.includes('document.write'), 'app.js 无 document.write');
 ok(!/\beval\s*\(/.test(app), 'app.js 无 eval');
 
 /* ── 6. edge 接线 + 根脚本 ─────────────────────────────────── */
-const edge = read('Dockerfile.edge');
-ok(edge.includes('COPY agent /srv/agent'), 'Dockerfile.edge COPY agent /srv/agent');
+const edge = read('deploy/docker/Dockerfile.edge');
+ok(
+  edge.includes('COPY agent /srv/agent'),
+  'deploy/docker/Dockerfile.edge COPY agent /srv/agent',
+);
 const caddy = read('deploy/Caddyfile');
 ok(caddy.includes('handle /agent {'), 'Caddyfile 含 handle /agent');
 ok(caddy.includes('redir * /agent/ 301'), 'Caddyfile 裸 /agent 301（显式 matcher）');

@@ -80,7 +80,7 @@ function modeIds(raw: string): string[] {
   return [...block.matchAll(/id:\s*'([a-z0-9-]+)'/g)].map((m) => m[1]!);
 }
 const FORBIDDEN_FIELDS = /在线人数|onlineCount|playerOnline/;
-const SECOND_MODE = /mahjong|majiang|麻将/;
+const SECOND_MODE = /texas|德州|掼蛋|guandan/;
 
 /** ② 金币场：稳定的 7 键配置夹具（免费场开 = 与种子一致；金币场**显式**关 ——
     默认态已经 2026-10-04 用户裁决翻为开，这里构造「单开免费」的左格）。 */
@@ -390,6 +390,7 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
     expect(modes, 'gameModes.ts 必须在源码扫描集合里').toBeDefined();
     expect(modes!.content).toMatch(/GAME_META\.doudizhu\.id/);
     expect(modes!.content).toMatch(/GAME_META\.paodekuai\.id/);
+    expect(modes!.content).toMatch(/GAME_META\.mahjong\.id/);
     expect(modeIds(modes!.content), '不得再抄一份玩法 id 列表').toEqual([]);
     // ② 违规类形态：读**剥注释视图**（R572/R622）——注释里点名禁词是解释，不是违规
     for (const path of ['src/pages/lobby/lobby.vue', 'src/gameModes.ts', 'src/pages/game/game.vue']) {
@@ -397,7 +398,7 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
       expect(file, `${path} 必须在源码扫描集合里`).toBeDefined();
       const code = stripComments(file.content);
       expect(code).not.toMatch(FORBIDDEN_FIELDS); // 不得造后端没有的字段
-      expect(code, '不得引入麻将等未立项玩法').not.toMatch(SECOND_MODE);
+      expect(code, '不得引入斗地主/跑得快/麻将之外的未立项玩法').not.toMatch(SECOND_MODE);
     }
     // ③ R752（spec §7.1「玩法 id 跨页可达」）：玩法名必须**来自 store** ——
     //    `game.vue` **不得**写死「斗地主」字面量。
@@ -420,7 +421,7 @@ describe('➋ 大厅的玩法入口区（玩法卡）', () => {
     ].join('\n');
     expect(stripComments(offending)).toMatch(FORBIDDEN_FIELDS);
     // 绿：只有解释、没有违规 ⇒ 不报错（R572：闸不惩罚解释本身）
-    const explained = '// 反例：onlineCount / 在线人数 / 麻将 这类标识不得出现在 src 里';
+    const explained = '// 反例：onlineCount / 在线人数 / 德州 这类标识不得出现在 src 里';
     expect(stripComments(explained)).not.toMatch(FORBIDDEN_FIELDS);
     expect(stripComments(explained)).not.toMatch(SECOND_MODE);
   });

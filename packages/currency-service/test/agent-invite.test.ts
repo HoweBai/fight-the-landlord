@@ -5,6 +5,7 @@ import { AgentInviteService, normalizeInviteCode } from '../src/agent/agent-invi
 function fakeManager(opts: {
   resolveRow?: Record<string, unknown> | null;
   dupFirst?: boolean;
+  revokeAffected?: number;
 } = {}) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   let inserts = 0;
@@ -21,7 +22,9 @@ function fakeManager(opts: {
         }
         return { affectedRows: 1 };
       }
-      if (sql.startsWith('UPDATE `agent_invite_codes`')) return { affectedRows: 1 };
+      if (sql.startsWith('UPDATE `agent_invite_codes`')) {
+        return { affectedRows: opts.revokeAffected ?? 1 };
+      }
       return undefined;
     },
   } as unknown as EntityManager;
@@ -37,26 +40,54 @@ describe('AgentInviteService', () => {
     expect(normalizeInviteCode('  abcd2345 ')).toBe('ABCD2345');
   });
 
-  it('resolve：命中 active/冻结都返回（调用方判状态）；未知 null；code 归一', async () => {
+  it('resolve：返回 codeStatus + agentStatus（不预先过滤 code status）；未知 null；code 归一', async () => {
     const { manager, calls } = fakeManager({
-      resolveRow: { agent_id: 'ag_1', name: '代理甲', status: 'active' },
+      resolveRow: { agent_id: 'ag_1', name: '代理甲', agent_status: 'active', code_status: 'used' },
     });
     const svc = new AgentInviteService({} as never);
     const r = await svc.resolve(manager, ' abcd2345 ');
-    expect(r).toEqual({ agentId: 'ag_1', agentName: '代理甲', status: 'active' });
+    expect(r).toEqual({
+      agentId: 'ag_1',
+      agentName: '代理甲',
+      agentStatus: 'active',
+      codeStatus: 'used',
+    });
+    expect(calls[0]!.sql).not.toContain("c.status = 'active'");
     expect(calls[0]!.params[0]).toBe('ABCD2345');
 
     const miss = fakeManager({ resolveRow: null });
     expect(await svc.resolve(miss.manager, 'ZZZZZZZZ')).toBeNull();
   });
 
-  it('rotate：先 revoke 旧 active，再插入新码（调用方负责锁 agent 行）', async () => {
+  it('rotate：先 revoke 全部 active，再插入新码；返回 {code, revoked}', async () => {
     const { manager, calls } = fakeManager();
     const svc = new AgentInviteService({} as never);
-    const code = await svc.rotate(manager, 'ag_1');
-    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
-    expect(calls.some((c) => c.sql.startsWith('UPDATE `agent_invite_codes`'))).toBe(true);
+    const r = await svc.rotate(manager, 'ag_1');
+    expect(r.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+    expect(r.revoked).toBe(1);
+    const update = calls.find((c) => c.sql.startsWith('UPDATE `agent_invite_codes`'))!;
+    expect(update.sql).toContain("SET `status` = 'revoked'");
+    expect(update.sql).toContain("`status` = 'active'");
     expect(calls.some((c) => c.sql.startsWith('INSERT INTO `agent_invite_codes`'))).toBe(true);
+  });
+
+  it('rotate：无 active 时 revoked=0，仍插入新码', async () => {
+    const { manager } = fakeManager({ revokeAffected: 0 });
+    const svc = new AgentInviteService({} as never);
+    const r = await svc.rotate(manager, 'ag_1');
+    expect(r.revoked).toBe(0);
+    expect(r.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+  });
+
+  it('createMany：一次生成 N 枚，逐枚 createFor', async () => {
+    const { manager } = fakeManager();
+    const svc = new AgentInviteService({} as never);
+    const spy = vi
+      .spyOn(svc, 'createFor')
+      .mockResolvedValueOnce('AAAAAAAA')
+      .mockResolvedValueOnce('BBBBBBBB');
+    await expect(svc.createMany(manager, 'ag_1', 2)).resolves.toEqual(['AAAAAAAA', 'BBBBBBBB']);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it('createFor 撞码重试：第一次 dup、第二次成功', async () => {
@@ -71,8 +102,15 @@ describe('AgentInviteService', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('activeCode：无行 ⇒ null', async () => {
-    const svc = new AgentInviteService({ query: async () => [] } as never);
+  it('activeCode：无行 ⇒ null；SQL 带 (created_at, code) 倒序兜底', async () => {
+    let sql = '';
+    const svc = new AgentInviteService({
+      query: async (s: string) => {
+        sql = s;
+        return [];
+      },
+    } as never);
     expect(await svc.activeCode('ag_1')).toBeNull();
+    expect(sql).toContain('ORDER BY `created_at` DESC, `code` DESC');
   });
 });

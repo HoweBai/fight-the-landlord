@@ -13,6 +13,7 @@ export const HTTP_STATUS: Partial<Record<ErrCode, number>> = {
   [ErrCode.USER_BANNED]: 403,
   [ErrCode.USER_NOT_FOUND]: 404,
   [ErrCode.DEVICE_MISMATCH]: 403,
+  [ErrCode.RATE_LIMITED]: 429,
   [ErrCode.UPSTREAM_UNAVAILABLE]: 503,
   // 代理分润（2026-10-26）：邀请码无效 400；冻结 403。
   [ErrCode.AGENT_INVITE_INVALID]: 400,

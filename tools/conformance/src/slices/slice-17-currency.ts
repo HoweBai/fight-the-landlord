@@ -49,7 +49,7 @@
  *    判定对象永远是**真后端的回答**（库行 / 服务响应 / 容器日志 / prometheus API）。
  *    ⚠️ ② 金币场 T12 起 C14 的键集断言改为**逐字名单**（7 键），不再 import `CLIENT_CONFIG_KEYS`；
  *    支付片 T5 同步：逐字名单 7 → 14（⚙️11 七裸名）；广告片 T23 同步：14 → 15 键（+裸名
- *    `reliefAdpid`，第 15 键）；台费阶段 2 删除派生字段 `entryFeePercents` 后 21 键。
+ *    `reliefAdpid`，第 15 键）；台费阶段 2 删除派生字段 `entryFeePercents` 后 23 键。
  *  - **零 `skip()`、零分支**（基线静态回填的前提）：全部断言在任何环境下都执行。
  *
  * ─── 本片对真栈的副作用与复原 ────────────────────────────────────────────
@@ -622,7 +622,7 @@ export async function runSlice17(): Promise<Checks> {
     // ══════════════════════════════════════════════════════════════════════
     // ③ C2：三表逐列（列名+类型完整串）/逐索引 + migrations_currency 行
     // ══════════════════════════════════════════════════════════════════════
-    step('③ C2：`compose exec mysql` 三表逐列（列名+类型完整串）/逐索引/`migrations_currency` 恰 2 行');
+    step('③ C2：`compose exec mysql` 三表逐列（列名+类型完整串）/逐索引/`migrations_currency` 恰 9 行');
     checks.eq(
       mysqlCount(
         `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('currency_accounts','currency_ops','currency_flows')`,
@@ -641,8 +641,8 @@ export async function runSlice17(): Promise<Checks> {
       mysqlText(
         `SELECT GROUP_CONCAT(CONCAT(column_name,':',column_type) ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='currency_ops'`,
       ),
-      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16)',
-      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 两列 + A2 game_type 尾追）',
+      'id:bigint,action_id:varchar(128),request_hash:char(64),source:varchar(32),actor:varchar(64),reason:varchar(255),ref_id:varchar(128),trace_id:varchar(64),created_at:datetime(3),burned_residue:int,burned_rake:int,game_type:varchar(16),burned_penalty:int',
+      '③ C2：currency_ops 逐列名+类型（§2.10 逐字；burn 三列（含麻将花猪 burned_penalty）+ A2 game_type 尾追）',
     );
     checks.eq(
       mysqlText(
@@ -686,11 +686,11 @@ export async function runSlice17(): Promise<Checks> {
       'game_type,created_at',
       '③ C2：idx_ops_game_created = (game_type,created_at)（A2）',
     );
-    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 8, '③ C2：migrations_currency 恰 8 行（AgentDomain 迁移 +1；真库读过）');
+    checks.eq(mysqlCount(`SELECT COUNT(*) FROM migrations_currency`), 9, '③ C2：migrations_currency 恰 9 行（AgentDomain + 麻将 BurnPenalty 各 +1；真库读过）');
     checks.eq(
       mysqlText(`SELECT GROUP_CONCAT(name ORDER BY id) FROM migrations_currency`),
-      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002,AgentDomain1798000000000',
-      '③ C2：八行 = 既有四行 + A2 三条 + 代理 AgentDomain（顺序=执行序）',
+      'Currency1789600000000,BurnOnOp1792022400000,EntryFeeSkips1792108800000,CardCounterEntitlements1795900000000,GameTypeOnOpsDdl1797000000000,GameTypeOnOpsBackfill1797000000001,EntryFeeSkipsGameType1797000000002,AgentDomain1798000000000,BurnPenalty1798300000000',
+      '③ C2：九行 = 既有四行 + A2 三条 + 代理 AgentDomain + 麻将 BurnPenalty（顺序=执行序）',
     );
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1408,16 +1408,16 @@ export async function runSlice17(): Promise<Checks> {
     checks.that(c12Page.body.includes('/api/admin/wallet/adjust'), '⑪ C12 app.js 含 adjust 端点串');
     checks.that(c12Page.body.includes('销毁：残差 '), '⑪ C12 app.js 含销毁行文案针脚（本片）');
 
-    step('⑪ C14 负对照：/api/config 键集 = 客户端 22 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
+    step('⑪ C14 负对照：/api/config 键集 = 客户端 23 键，绝不含内部键（signupGrant/rakePercent/reliefAmount）');
     const c14Config = await getJson<Record<string, unknown>>('/api/config', userP.accessToken);
     checks.eq(c14Config.body?.code, ErrCode.OK, '⑪ C14 /api/config code 0');
     const c14Keys = Object.keys(c14Config.body?.data ?? {});
-    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15 键；台费阶段 2：派生字段删除后 21 键
+    // ② 金币场 T12 同步：3 → 7 键；支付片 T5 同步：7 → 14；广告片 T23 同步：14 → 15 键；台费阶段 2：派生字段删除后 23 键
     // （§2.5/⚙️11；逐字名单，不随协议常量漂）。
     checks.eq(
       c14Keys.sort().join(','),
-      'agentInviteEnabled,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
-      '⑪ C14 键集（排序后）恰好客户端 22 键',
+      'agentInviteEnabled,agentInviteRequired,baseScoreLevels,cardCounterEnabled,cardCounterPricePerGameCoins,cardCounterPricePerHourCoins,coinPerYuan,entryMultiplier,freeRoomEnabled,friendRoomEnabled,games,goldRoomEnabled,rechargeEnabled,rechargePackages,reliefAdpid,reliefEnabled,reliefThresholdCoins,version,withdrawDailyMaxCoins,withdrawEnabled,withdrawMaxCoinsPerOrder,withdrawMinCoins,withdrawReAuthEnabled',
+      '⑪ C14 键集（排序后）恰好客户端 23 键',
     );
     // 内部键**显式名单**（T12 起含 rakePercent/reliefAmount；前缀兜底断言在 slice-18 A 组）。
     const c14InternalLeaks = ['currency.signupGrant', 'game.doudizhu.rakePercent', 'currency.reliefAmount'].filter((key) =>

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DataSource } from 'typeorm';
+import { ErrCode } from '@fight-the-landlord/protocol';
 import { AgentPortalService } from '../src/agent/agent-portal.service';
 import type { AgentInviteService } from '../src/agent/agent-invite.service';
+import type { AgentSettingsService } from '../src/agent/agent-settings.service';
 import type { AgentSettlementService } from '../src/agent/agent-settlement.service';
 import type { AgentUserClient } from '../src/agent/agent-user.client';
 
@@ -22,6 +24,10 @@ const AGENT_ROW = {
 
 function makeDb(opts: {
   agentRow?: Record<string, unknown>;
+  agentStatus?: string;
+  activeCount?: number;
+  dailyCount?: number;
+  inviteCodes?: Array<Record<string, unknown>>;
   unsettledMicro?: number;
   players?: Array<Record<string, unknown>>;
   revenue?: Array<Record<string, unknown>>;
@@ -30,11 +36,25 @@ function makeDb(opts: {
   bindings?: Array<Record<string, unknown>>;
   commissions?: Array<Record<string, unknown>>;
 } = {}) {
+  const inviteCodes = opts.inviteCodes ?? [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     void params;
     // 递归 CTE 也包含 `FROM agent_accounts WHERE id = ?`，必须先于单行查询匹配。
     if (sql.includes('WITH RECURSIVE _sub')) return [];
-    if (sql.includes('FROM `agent_accounts` WHERE `id` = ?')) return [opts.agentRow ?? AGENT_ROW];
+    if (sql.includes('FROM `agent_accounts` WHERE `id` = ?')) {
+      return [{ ...(opts.agentRow ?? AGENT_ROW), status: opts.agentStatus ?? 'active' }];
+    }
+    if (sql.includes('COUNT(*) AS `cnt` FROM `agent_invite_codes`')) {
+      if (sql.includes('`created_at` >= ?')) return [{ cnt: opts.dailyCount ?? 0 }];
+      return [{ cnt: opts.activeCount ?? 0 }];
+    }
+    if (sql.includes('FROM `agent_invite_codes` WHERE `agent_id` = ? AND `code` = ?')) {
+      const code = String(params?.[1] ?? '');
+      return inviteCodes.filter((r) => String(r.code) === code);
+    }
+    if (sql.includes('FROM `agent_invite_codes`')) {
+      return inviteCodes;
+    }
     if (sql.includes('FROM `agent_bindings` WHERE `owner_id` IN')) return opts.bindings ?? [];
     if (sql.includes('COUNT(*) AS `cnt` FROM `agent_bindings`')) return [{ cnt: 2 }];
     if (sql.includes('COUNT(DISTINCT `owner_id`)')) return [{ cnt: 1 }];
@@ -61,11 +81,37 @@ function makeDb(opts: {
     if (sql.includes('WITH RECURSIVE _sub')) return [];
     throw new Error(`fake portal DB 未识别 SQL：${sql.slice(0, 80)}`);
   });
-  return { query };
+  const dataSource = {
+    query,
+    transaction: async <T>(cb: (m: { query: typeof query }) => Promise<T>) => cb({ query }),
+  };
+  return dataSource;
 }
 
-function makeService(db: ReturnType<typeof makeDb>, nicknamesOk = true) {
-  const invite = { activeCode: vi.fn(async () => 'CODE1234') } as unknown as AgentInviteService;
+function makeService(
+  db: ReturnType<typeof makeDb>,
+  nicknamesOk = true,
+  opts: {
+    inviteEnabled?: boolean;
+    settingsEnabled?: boolean;
+    required?: boolean;
+    hasSnapshot?: boolean;
+  } = {},
+) {
+  const invite = {
+    activeCode: vi.fn(async () => 'CODE1234'),
+    createMany: vi.fn(async (_m: unknown, _agentId: string, count: number) =>
+      Array.from({ length: count }, (_, i) => `CODE${String(i).padStart(4, '0')}`),
+    ),
+  } as unknown as AgentInviteService;
+  const settings = {
+    getOrDefault: vi.fn(async () => ({ enabled: opts.settingsEnabled ?? true })),
+  } as unknown as AgentSettingsService;
+  const config = {
+    hasSnapshot: () => opts.hasSnapshot ?? true,
+    agentInviteEnabled: () => opts.inviteEnabled ?? true,
+    agentInviteRequired: () => opts.required ?? false,
+  } as never;
   const settlements = {} as unknown as AgentSettlementService;
   const users = {
     nicknames: vi.fn(async (ids: string[]) => {
@@ -76,14 +122,16 @@ function makeService(db: ReturnType<typeof makeDb>, nicknamesOk = true) {
   return new AgentPortalService(
     db as unknown as DataSource,
     invite,
+    settings,
+    config,
     settlements,
     users,
   );
 }
 
 describe('AgentPortalService：可见性/脱敏/级差隐藏', () => {
-  it('profile：手机号与收款账号脱敏 + 邀请码', async () => {
-    const svc = makeService(makeDb());
+  it('profile：手机号与收款账号脱敏 + 邀请码状态 flags', async () => {
+    const svc = makeService(makeDb({ activeCount: 3 }));
     const p = await svc.profile('ag_1');
     expect(p).toMatchObject({
       id: 'ag_1',
@@ -91,8 +139,66 @@ describe('AgentPortalService：可见性/脱敏/级差隐藏', () => {
       phoneMasked: '138****0000',
       rateBp: 8000,
       inviteCode: 'CODE1234',
+      inviteCodesActive: 3,
+      inviteEnabled: true,
+      settingsEnabled: true,
+      required: false,
       payout: { name: '张三', accountMasked: '****2222', bank: '招商银行' },
     });
+  });
+
+  it('profile：required 需要 enabled && required && 快照可用；任一关闭 ⇒ false', async () => {
+    expect((await makeService(makeDb(), true, { required: true }).profile('ag_1')).required).toBe(true);
+    expect((await makeService(makeDb(), true, { required: true, inviteEnabled: false }).profile('ag_1')).required).toBe(false);
+    expect((await makeService(makeDb(), true, { required: true, hasSnapshot: false }).profile('ag_1')).required).toBe(false);
+    expect((await makeService(makeDb(), true, { required: true, settingsEnabled: false }).profile('ag_1')).settingsEnabled).toBe(false);
+  });
+
+  it('generate：冻结/功能关闭/count 非法/超日限拒绝；成功返回 N 枚', async () => {
+    const frozen = makeDb({ agentStatus: 'frozen' });
+    await expect(makeService(frozen).generateInviteCodes('ag_1', 5)).rejects.toMatchObject({
+      code: ErrCode.AGENT_FROZEN,
+    });
+
+    await expect(
+      makeService(makeDb(), true, { inviteEnabled: false }).generateInviteCodes('ag_1', 5),
+    ).rejects.toMatchObject({ code: ErrCode.FORBIDDEN });
+
+    const svc = makeService(makeDb());
+    await expect(svc.generateInviteCodes('ag_1', 0)).rejects.toMatchObject({ code: ErrCode.BAD_PARAM });
+    await expect(svc.generateInviteCodes('ag_1', 51)).rejects.toMatchObject({ code: ErrCode.BAD_PARAM });
+
+    await expect(
+      makeService(makeDb({ dailyCount: 196 })).generateInviteCodes('ag_1', 5),
+    ).rejects.toMatchObject({ code: ErrCode.BAD_PARAM, message: '今日生成数量已达上限' });
+
+    const ok = await makeService(makeDb({ dailyCount: 0 })).generateInviteCodes('ag_1', 3);
+    expect(ok.codes).toEqual(['CODE0000', 'CODE0001', 'CODE0002']);
+  });
+
+  it('generate：代理模块关闭 ⇒ FORBIDDEN', async () => {
+    await expect(
+      makeService(makeDb(), true, { settingsEnabled: false }).generateInviteCodes('ag_1', 1),
+    ).rejects.toMatchObject({ code: ErrCode.FORBIDDEN });
+  });
+
+  it('list：status/cursor/limit；nextCursor 按 (created_at, code)', async () => {
+    const db = makeDb({
+      inviteCodes: [
+        { code: 'CODE0003', status: 'active', created_at: new Date('2026-11-03T00:00:03Z'), used_at: null },
+        { code: 'CODE0002', status: 'used', created_at: new Date('2026-11-03T00:00:02Z'), used_at: new Date('2026-11-03T01:00:00Z') },
+        { code: 'CODE0001', status: 'revoked', created_at: new Date('2026-11-03T00:00:01Z'), used_at: null },
+      ],
+    });
+    const svc = makeService(db);
+    const page = await svc.listInviteCodes('ag_1', undefined, undefined, 2);
+    expect(page.rows).toHaveLength(2);
+    expect(page.rows[1]).toMatchObject({
+      code: 'CODE0002',
+      status: 'used',
+      usedAt: new Date('2026-11-03T01:00:00Z'),
+    });
+    expect(page.nextCursor).toBe('CODE0002');
   });
 
   it('players：昵称/脱敏手机/局数/台费/剩余额度/佣金；昵称失败降级 null', async () => {

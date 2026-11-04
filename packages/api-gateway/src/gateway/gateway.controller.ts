@@ -161,7 +161,7 @@ export class GatewayController {
     return this.proxyGateway.forwardToConfigSvc('POST', '/api/admin/login', body, res, headersOf(req));
   }
 
-  /** `GET /api/admin/config`：全量一百零一键 + 每键 version + 全局 MAX（持管理令牌读）。 */
+  /** `GET /api/admin/config`：全量113 键 + 每键 version + 全局 MAX（持管理令牌读）。 */
   @Get('admin/config')
   async getAdminConfig(@Res() res: any, @Req() req: any) {
     return this.proxyGateway.forwardToConfigSvc('GET', '/api/admin/config', null, res, headersOf(req));
@@ -519,6 +519,29 @@ export class GatewayController {
     return this.proxyGateway.forwardToCurrencySvc(
       'GET',
       '/api/agent/subtree',
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('agent/invite-codes')
+  @HttpCode(200)
+  async agentGenerateInviteCodes(@Body() body: unknown, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      '/api/agent/invite-codes',
+      body,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('agent/invite-codes')
+  async agentListInviteCodes(@Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/agent/invite-codes${strictQueryOf(req, ['status', 'cursor', 'limit'])}`,
       null,
       res,
       headersOf(req),
@@ -1080,6 +1103,34 @@ export class GatewayController {
     return this.proxyGateway.forwardToCurrencySvc(
       'POST',
       `/api/admin/agents/${encodeURIComponent(id)}/invite-code/rotate`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Get('admin/agents/:id/invite-codes')
+  async adminAgentInviteCodes(@Param('id') id: string, @Res() res: any, @Req() req: any) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'GET',
+      `/api/admin/agents/${encodeURIComponent(id)}/invite-codes${strictQueryOf(req, ['status', 'cursor', 'limit'])}`,
+      null,
+      res,
+      headersOf(req),
+    );
+  }
+
+  @Post('admin/agents/:id/invite-codes/:code/revoke')
+  @HttpCode(200)
+  async adminAgentRevokeInviteCode(
+    @Param('id') id: string,
+    @Param('code') code: string,
+    @Res() res: any,
+    @Req() req: any,
+  ) {
+    return this.proxyGateway.forwardToCurrencySvc(
+      'POST',
+      `/api/admin/agents/${encodeURIComponent(id)}/invite-codes/${encodeURIComponent(code)}/revoke`,
       null,
       res,
       headersOf(req),

@@ -10,10 +10,13 @@ import type {
   GameMeta,
   GameType,
   GameView,
+  MahjongRecordEnvelope,
+  MahjongRobotFeatures,
   PdkRobotFeatures,
   RobotFeatures,
   SettlementResult,
   StartGameRequest,
+  Tile,
 } from '@fight-the-landlord/protocol';
 import type {
   GameAction,
@@ -37,6 +40,8 @@ export interface CreateGameInput {
   /** 内部测试钩子（仅 INTERNAL_TEST_HOOKS=1）。 */
   seed?: number;
   testDeck?: Card[];
+  /** 麻将确定性牌墙（仅内部测试钩子）。 */
+  testTiles?: Tile[];
 }
 
 export interface RuntimeCtx {
@@ -47,7 +52,7 @@ export interface RuntimeCtx {
   actorSeat: number;
 }
 
-export interface Transition<S extends GameSessionBase> {
+export interface Transition<S extends GameSessionBase<any, any>> {
   session: S;
   ended: boolean;
 }
@@ -67,17 +72,17 @@ export interface PdkRecordEnvelope {
   gameType: 'paodekuai';
   playerCount: 2 | 3 | 4;
 }
-export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope;
+export type RecordEnvelope = DdzRecordEnvelope | PdkRecordEnvelope | MahjongRecordEnvelope;
 
 /** 机器人公开特征联合（pdk 类型见 protocol/pdk/types）。 */
-export type GameRobotFeatures = RobotFeatures | PdkRobotFeatures;
+export type GameRobotFeatures = RobotFeatures | PdkRobotFeatures | MahjongRobotFeatures;
 
 export interface GameRobotInput {
   view: GameView;
   features: GameRobotFeatures;
 }
 
-export interface GameRuntime<S extends GameSessionBase = GameSessionBase> {
+export interface GameRuntime<S extends GameSessionBase<any, any> = GameSessionBase> {
   readonly gameType: GameType;
   readonly meta: GameMeta;
 
@@ -102,6 +107,16 @@ export interface GameRuntime<S extends GameSessionBase = GameSessionBase> {
   turnDuration(session: S, seat: number, policy: GovernanceDurations): number;
   /** 超时、托管、机器人降级共用的自动动作。 */
   autoAction(session: S, seat: number): GameAction;
+
+  // ── 多行动者窗口（可选；ddz/pdk 不实现 ⇒ 行为零变化） ──────────────
+  /** 当前窗口待决策座位；缺省 = [currentActor(session)]。 */
+  pendingActors?(session: S): number[];
+  /** 该座位当前是否可提交动作；缺省 = seat === currentActor(session)。 */
+  acceptsAction?(session: S, seat: number): boolean;
+  /** 当前窗口身份；同一窗口内动作不顺延 deadline。缺省 = undefined（旧行为）。 */
+  windowId?(session: S): string;
+  /** 窗口共享时长；缺省 = turnDuration(currentActor)。 */
+  windowDuration?(session: S, policy: GovernanceDurations): number;
 }
 
 /** 供 registry 存储擦除泛型用（各 runtime 的 S 不同）。 */

@@ -73,6 +73,8 @@ export interface CurrencyEntryIn {
  * 两值上限 2^31−1 = int 列容量哨兵（越界会落 MySQL 1264 ⇒ 伪 10007 重试链）。
  */
 export interface CurrencyBurn {
+  /** 花猪罚分等系统销毁（可选；旧载荷缺失 = 0）。 */
+  penalty?: number;
   /** 截断残差：正常路径恒 0（零头已分给赢家）；防御路径可能非 0；`0 ≤ n ≤ 2^31−1`。 */
   residue: number;
   /** 抽水，`0 ≤ n ≤ 2^31−1`。 */
@@ -269,21 +271,24 @@ export function validateCurrencyApply(req: unknown): void {
     if (!isObj(burn) || !('residue' in burn) || !('rake' in burn)) {
       throw new ProtocolError('burn 必须是含 residue 与 rake 两个字段的对象');
     }
-    const { residue, rake } = burn;
+    const { residue, rake, penalty } = burn as { residue: unknown; rake: unknown; penalty?: unknown };
     if (typeof residue !== 'number' || !Number.isInteger(residue) || residue < 0 || residue > 2147483647) {
       throw new ProtocolError(`burn.residue 必须是 0 ≤ n ≤ 2147483647 的整数（收到 ${JSON.stringify(residue)}）`);
     }
     if (typeof rake !== 'number' || !Number.isInteger(rake) || rake < 0 || rake > 2147483647) {
       throw new ProtocolError(`burn.rake 必须是 0 ≤ n ≤ 2147483647 的整数（收到 ${JSON.stringify(rake)}）`);
     }
+    if (penalty !== undefined && (typeof penalty !== 'number' || !Number.isInteger(penalty) || penalty < 0 || penalty > 2147483647)) {
+      throw new ProtocolError('burn.penalty 必须是 0 ≤ n ≤ 2147483647 的整数');
+    }
     if (source !== 'game_settle') {
       throw new ProtocolError(`burn 仅 game_settle 来源可携带（收到 ${JSON.stringify(source)}）`);
     }
     // entries 上方已逐条校验（对象 + delta 为整数）⇒ 收窄求和安全
     const entrySum = (entries as Array<{ delta: number }>).reduce((acc, entry) => acc + entry.delta, 0);
-    if (entrySum + residue + rake !== 0) {
+    if (entrySum + residue + rake + (typeof penalty === 'number' ? penalty : 0) !== 0) {
       throw new ProtocolError(
-        `burn 与分录金额不符：Σentries(${entrySum}) + residue(${residue}) + rake(${rake}) 必须为 0`,
+        `burn 与分录金额不符：Σentries(${entrySum}) + residue(${residue}) + rake(${rake}) + penalty(${typeof penalty === 'number' ? penalty : 0}) 必须为 0`,
       );
     }
   }
@@ -448,7 +453,7 @@ export function currencyApplyHash(input: {
     refId: input.refId ?? null,
     // 本片 D4「有才出现」：burn 缺席 ⇒ undefined ⇒ JSON.stringify 省略该键 ⇒ canonical 串
     // 与加片前逐字节相同（历史指纹兼容的判据；金标向量一字不改仍绿）。
-    ...(input.burn !== undefined ? { burn: { residue: input.burn.residue, rake: input.burn.rake } } : {}),
+    ...(input.burn !== undefined ? { burn: { ...(input.burn.penalty !== undefined ? { penalty: input.burn.penalty } : {}), residue: input.burn.residue, rake: input.burn.rake } } : {}),
   });
   return sha256HexUtf8(canonical);
 }

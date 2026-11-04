@@ -35,9 +35,11 @@ function waitFor(
   });
 }
 
-/** 本 e2e 只驱动斗地主；pdk 视图出现即说明服务端/房间串了玩法。 */
+/** 本 e2e 只驱动斗地主；pdk/麻将视图出现即说明服务端/房间串了玩法。 */
 function asDdzView(view: GameView): PlayerView {
-  if (view.gameType === 'paodekuai') throw new Error('expected doudizhu view');
+  if (view.gameType === 'paodekuai' || view.gameType === 'mahjong') {
+    throw new Error('expected doudizhu view');
+  }
   return view;
 }
 
