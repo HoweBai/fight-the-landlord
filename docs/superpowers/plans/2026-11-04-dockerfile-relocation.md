@@ -686,7 +686,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: 机械闸——14 个 build 引用全部存在、13 个 Dockerfile 全部被引用、根目录零 Dockerfile
 
-- [ ] **Step 1: 写测试文件**
+- [x] **Step 1: 写测试文件**
 
 ```ts
 /**
@@ -789,12 +789,12 @@ describe('compose → Dockerfile 路径对账闸', () => {
 });
 ```
 
-- [ ] **Step 2: 跑绿（当前状态应已合规）**
+- [x] **Step 2: 跑绿（当前状态应已合规）**
 
 Run: `pnpm -C packages/shared test -- dockerfile-compose-refs`
 Expected: PASS（3 个 it）。
 
-- [ ] **Step 3: 变异验证 A —— 根目录放回 Dockerfile 必红**
+- [x] **Step 3: 变异验证 A —— 根目录放回 Dockerfile 必红**
 
 ```bash
 printf 'FROM scratch\n' > Dockerfile.__mutation
@@ -807,7 +807,7 @@ Expected: FAIL —— `根目录不得出现 Dockerfile*`，diff 含 `Dockerfile
 rm Dockerfile.__mutation
 ```
 
-- [ ] **Step 4: 变异验证 B —— compose 路径改坏必红**
+- [x] **Step 4: 变异验证 B —— compose 路径改坏必红**
 
 ```bash
 git diff --quiet -- docker-compose.yml || { echo 'docker-compose.yml 有未提交改动，停止'; exit 1; }
@@ -821,17 +821,17 @@ Expected: FAIL —— 违规列表含 `dockerfile 不存在或不是文件（dep
 git checkout -- docker-compose.yml
 ```
 
-- [ ] **Step 5: 恢复后跑绿**
+- [x] **Step 5: 恢复后跑绿**
 
 Run: `pnpm -C packages/shared test -- dockerfile-compose-refs`
 Expected: PASS。
 
-- [ ] **Step 6: 类型检查**
+- [x] **Step 6: 类型检查**
 
 Run: `pnpm -C packages/shared lint`
 Expected: exit 0。
 
-- [ ] **Step 7: 提交（先勾选本任务全部 Step，并带上计划文件）**
+- [x] **Step 7: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
 git add packages/shared/test/dockerfile-compose-refs.gate.test.ts \
