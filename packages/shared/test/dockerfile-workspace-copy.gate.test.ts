@@ -28,6 +28,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DOCKERFILE_DIR, listDockerfiles } from './helpers/dockerfile-scan';
 
 /** 从本文件所在目录向上找仓库根（锚 = `packages/shared` + `packages/protocol`；找不到抛错）。 */
 function findRepoRoot(): string {
@@ -151,9 +152,7 @@ function depsOfDir(dir: string): DepRef[] {
 const dirOfName = (name: string): string | null => DIR_OF.get(name) ?? null;
 
 describe('镜像侧 workspace 依赖对账闸：COPY 到的包，其 workspace 依赖必须也被 COPY', () => {
-  const dockerfiles = readdirSync(REPO)
-    .filter((name) => name.startsWith('Dockerfile.'))
-    .sort();
+  const dockerfiles = listDockerfiles(REPO);
 
   it('哨兵（R179）：Dockerfile 集合非空且含已知成员（防 glob 失效恒绿）', () => {
     expect(dockerfiles.length).toBeGreaterThanOrEqual(7);
@@ -168,7 +167,10 @@ describe('镜像侧 workspace 依赖对账闸：COPY 到的包，其 workspace �
       ]),
     );
     // 台账 N46 的已知约束成员：user-service 的 Dockerfile 必须给 test-utils 一行 COPY
-    const us = readFileSync(join(REPO, 'Dockerfile.user-service'), 'utf-8');
+    const us = readFileSync(
+      join(REPO, DOCKERFILE_DIR, 'Dockerfile.user-service'),
+      'utf-8',
+    );
     expect(us).toContain('COPY packages/test-utils');
   });
 
@@ -176,7 +178,7 @@ describe('镜像侧 workspace 依赖对账闸：COPY 到的包，其 workspace �
     const violations: string[] = [];
     for (const name of dockerfiles) {
       for (const v of workspaceCopyViolations(
-        readFileSync(join(REPO, name), 'utf-8'),
+        readFileSync(join(REPO, DOCKERFILE_DIR, name), 'utf-8'),
         depsOfDir,
         dirOfName,
       )) {

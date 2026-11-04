@@ -1,4 +1,4 @@
-# platform/Dockerfile.grafana —— 监控片：Grafana（provisioning + 七面板进镜像；口令 fail-closed 守卫）。
+# platform/deploy/docker/Dockerfile.grafana —— 监控片：Grafana（provisioning + 七面板进镜像；口令 fail-closed 守卫）。
 #
 # 「配置进镜像」纪律：datasource/面板 as code 的唯一真源在 `deploy/monitoring/grafana/`。
 # ⚠️ 面板落 **/etc/grafana/dashboards（卷外）**——R1：`grafana-data` 命名卷挂

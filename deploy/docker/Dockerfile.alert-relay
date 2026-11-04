@@ -1,4 +1,4 @@
-# platform/Dockerfile.alert-relay —— 监控片：Alertmanager webhook → 飞书/钉钉/企微 转发服务。
+# platform/deploy/docker/Dockerfile.alert-relay —— 监控片：Alertmanager webhook → 飞书/钉钉/企微 转发服务。
 # 通知通道管理化片（T15）起本镜像**承两个入口**：relay（`dist/server.js`，本镜像缺省 CMD）
 # + am-renderer（`dist/am-renderer.js`，compose 以 `command:` 覆写起独立容器）。
 #

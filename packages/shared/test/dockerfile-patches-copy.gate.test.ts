@@ -9,11 +9,17 @@
  * COPY 识别由 `./helpers/dockerfile-scan` 统一提供（覆盖 `./patches`、尾斜杠、JSON 数组、
  * 多源 COPY；`--from=` 不算本地 COPY）。
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { copiesPackageJson, copiesPatches, logicalLines } from './helpers/dockerfile-scan';
+import {
+  copiesPackageJson,
+  copiesPatches,
+  DOCKERFILE_DIR,
+  listDockerfiles,
+  logicalLines,
+} from './helpers/dockerfile-scan';
 
 /** 从本文件所在目录向上找仓库根（锚 = `packages/shared` + `packages/protocol`；找不到抛错）。 */
 function findRepoRoot(): string {
@@ -80,9 +86,7 @@ describe('假红④镜像侧对账闸：patchedDependencies ⇒ 镜像 Dockerfil
   };
   const patched = Object.entries(pkg.pnpm?.patchedDependencies ?? {});
 
-  const dockerfiles = readdirSync(REPO)
-    .filter((name) => name.startsWith('Dockerfile'))
-    .sort();
+  const dockerfiles = listDockerfiles(REPO);
 
   it('哨兵（R179）：Dockerfile 集合非空且含已知成员（防 glob 失效恒绿）', () => {
     expect(dockerfiles.length).toBeGreaterThanOrEqual(7);
@@ -100,7 +104,7 @@ describe('假红④镜像侧对账闸：patchedDependencies ⇒ 镜像 Dockerfil
     const requirePatches = patched.length > 0;
     const violations: string[] = [];
     for (const name of dockerfiles) {
-      const src = readFileSync(join(REPO, name), 'utf-8');
+      const src = readFileSync(join(REPO, DOCKERFILE_DIR, name), 'utf-8');
       const found = requirePatches ? checkDockerfile(src) : stalePatchesCopy(src);
       for (const v of found) violations.push(`${name}: ${v}`);
     }

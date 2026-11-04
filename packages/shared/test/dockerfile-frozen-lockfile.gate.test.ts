@@ -27,11 +27,16 @@
  * no-frozen / 无 flag / 第二条 install 违规 / `pnpm --filter ... install` 变体 /
  * `--config.frozen-lockfile=false` / 注释里的 flag 不算数 / 多行续行 / 不参与者。
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { copiesPackageJson, logicalLines } from './helpers/dockerfile-scan';
+import {
+  copiesPackageJson,
+  DOCKERFILE_DIR,
+  listDockerfiles,
+  logicalLines,
+} from './helpers/dockerfile-scan';
 
 /** 从本文件所在目录向上找仓库根（锚 = packages/shared + packages/protocol + pnpm-workspace.yaml）。 */
 function findRepoRoot(): string {
@@ -109,11 +114,9 @@ function isParticipating(src: string): boolean {
 }
 
 describe('镜像依赖可复现闸：pnpm install 必须 --frozen-lockfile', () => {
-  const dockerfiles = readdirSync(REPO)
-    .filter((name) => name.startsWith('Dockerfile'))
-    .sort();
+  const dockerfiles = listDockerfiles(REPO);
   const participating = dockerfiles.filter((name) =>
-    isParticipating(readFileSync(join(REPO, name), 'utf-8')),
+    isParticipating(readFileSync(join(REPO, DOCKERFILE_DIR, name), 'utf-8')),
   );
 
   it('哨兵（R179）：集合非空、参与集合恰好等于已知 10 个 node 镜像', () => {
@@ -125,7 +128,9 @@ describe('镜像依赖可复现闸：pnpm install 必须 --frozen-lockfile', () 
   it('消费端：所有参与 Dockerfile 的每一条 install 都是 --frozen-lockfile', () => {
     const violations: string[] = [];
     for (const name of dockerfiles) {
-      for (const v of frozenViolations(readFileSync(join(REPO, name), 'utf-8'))) {
+      for (const v of frozenViolations(
+        readFileSync(join(REPO, DOCKERFILE_DIR, name), 'utf-8'),
+      )) {
         violations.push(`${name}: ${v}`);
       }
     }

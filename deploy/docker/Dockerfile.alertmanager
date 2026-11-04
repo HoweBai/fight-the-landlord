@@ -1,4 +1,4 @@
-# platform/Dockerfile.alertmanager —— 监控片：Alertmanager（通知通道管理化片 T15 起**不再拼装配置**）。
+# platform/deploy/docker/Dockerfile.alertmanager —— 监控片：Alertmanager（通知通道管理化片 T15 起**不再拼装配置**）。
 #
 # 配置来源（T15 起）：am-renderer（alert-relay 镜像的第二入口）渲染到**共享命名卷**
 # `alertmanager-live` 的 `/alertmanager-live/alertmanager.yml`；本镜像的 entrypoint 只剩

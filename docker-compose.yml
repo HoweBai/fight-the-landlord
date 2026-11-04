@@ -133,7 +133,7 @@ services:
   user-service:
     build:
       context: .
-      dockerfile: Dockerfile.user-service
+      dockerfile: deploy/docker/Dockerfile.user-service
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-user-service:${IMAGE_TAG:-latest}
     container_name: ftl-user-service
@@ -210,7 +210,7 @@ services:
   config-service:
     build:
       context: .
-      dockerfile: Dockerfile.config-service
+      dockerfile: deploy/docker/Dockerfile.config-service
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-config-service:${IMAGE_TAG:-latest}
     container_name: ftl-config-service
@@ -297,7 +297,7 @@ services:
   # ⚠️ HTTP 3004 / RPC 3104 / metrics 9004（货币片规格 §2.1 逐字写死；三处均为既有序列空位）。
   # ⚠️ 与 user/config **共库**（fight_the_landlord）⇒ 迁移表第三份独立（`migrations_currency`，⚙️9）。
   currency-service:
-    build: { context: ., dockerfile: Dockerfile.currency-service }
+    build: { context: ., dockerfile: deploy/docker/Dockerfile.currency-service }
     image: ${IMAGE_PREFIX:-pokergame}-currency-service:${IMAGE_TAG:-latest}
     container_name: ftl-currency-service
     restart: unless-stopped
@@ -351,7 +351,7 @@ services:
   # ⚠️ 与 user/config/currency **共库**（fight_the_landlord）⇒ 迁移表第四份独立
   #    （`migrations_payment`，⚙️1）—— 五表迁移在 T3。
   payment-service:
-    build: { context: ., dockerfile: Dockerfile.payment-service }
+    build: { context: ., dockerfile: deploy/docker/Dockerfile.payment-service }
     image: ${IMAGE_PREFIX:-pokergame}-payment-service:${IMAGE_TAG:-latest}
     container_name: ftl-payment-service
     restart: unless-stopped
@@ -399,7 +399,7 @@ services:
   room-service:
     build:
       context: .
-      dockerfile: Dockerfile.room-service
+      dockerfile: deploy/docker/Dockerfile.room-service
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-room-service:${IMAGE_TAG:-latest}
     container_name: ftl-room-service
@@ -458,7 +458,7 @@ services:
   game-service:
     build:
       context: .
-      dockerfile: Dockerfile.game-service
+      dockerfile: deploy/docker/Dockerfile.game-service
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-game-service:${IMAGE_TAG:-latest}
     container_name: ftl-game-service
@@ -512,7 +512,7 @@ services:
   robot-service:
     build:
       context: .
-      dockerfile: Dockerfile.robot-service
+      dockerfile: deploy/docker/Dockerfile.robot-service
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-robot-service:${IMAGE_TAG:-latest}
     container_name: ftl-robot-service
@@ -577,7 +577,7 @@ services:
   api-gateway:
     build:
       context: .
-      dockerfile: Dockerfile.api-gateway
+      dockerfile: deploy/docker/Dockerfile.api-gateway
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-api-gateway:${IMAGE_TAG:-latest}
     container_name: ftl-api-gateway
@@ -667,7 +667,7 @@ services:
   edge:
     build:
       context: .
-      dockerfile: Dockerfile.edge
+      dockerfile: deploy/docker/Dockerfile.edge
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-edge:${IMAGE_TAG:-latest}
     container_name: ftl-edge
@@ -713,7 +713,7 @@ services:
   prometheus:
     build:
       context: .
-      dockerfile: Dockerfile.prometheus
+      dockerfile: deploy/docker/Dockerfile.prometheus
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-prometheus:${IMAGE_TAG:-latest}
     container_name: ftl-prometheus
@@ -746,7 +746,7 @@ services:
   grafana:
     build:
       context: .
-      dockerfile: Dockerfile.grafana
+      dockerfile: deploy/docker/Dockerfile.grafana
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-grafana:${IMAGE_TAG:-latest}
     container_name: ftl-grafana
@@ -790,7 +790,7 @@ services:
   alertmanager:
     build:
       context: .
-      dockerfile: Dockerfile.alertmanager
+      dockerfile: deploy/docker/Dockerfile.alertmanager
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-alertmanager:${IMAGE_TAG:-latest}
     container_name: ftl-alertmanager
@@ -893,7 +893,7 @@ services:
   alert-relay:
     build:
       context: .
-      dockerfile: Dockerfile.alert-relay
+      dockerfile: deploy/docker/Dockerfile.alert-relay
     # R1303：镜像命名唯一规则（见文件头）
     image: ${IMAGE_PREFIX:-pokergame}-alert-relay:${IMAGE_TAG:-latest}
     container_name: ftl-alert-relay

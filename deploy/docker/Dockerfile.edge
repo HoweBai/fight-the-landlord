@@ -1,4 +1,4 @@
-# platform/Dockerfile.edge —— 门口（TLS 终止 + H5 静态站 + 反代）。两段式：
+# platform/deploy/docker/Dockerfile.edge —— 门口（TLS 终止 + H5 静态站 + 反代）。两段式：
 #   阶段一在**镜像内**构建 H5（宿主 dist 不进镜像 —— 部署原则：容器不依赖宿主产物）。
 #   阶段二只把产物与配置塞进 caddy 官方镜像。
 # ⚠️ 不得 COPY 任何 `.env*`（R1202 契约；`.dockerignore` 已排除）。

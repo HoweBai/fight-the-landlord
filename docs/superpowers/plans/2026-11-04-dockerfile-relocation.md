@@ -462,7 +462,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: Task 1 的 `DOCKERFILE_DIR` / `listDockerfiles`
 - Produces: `deploy/docker/Dockerfile.*` 13 个文件；供 Task 3 的对账闸枚举
 
-- [ ] **Step 1: 先改三个闸的枚举源（此时跑红）**
+- [x] **Step 1: 先改三个闸的枚举源（此时跑红）**
 
 `packages/shared/test/dockerfile-frozen-lockfile.gate.test.ts`：
 
@@ -566,19 +566,19 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 （`dockerfile-workspace-copy.gate.test.ts` 的 `readdirSync` 仍被 `workspacePackages()` 使用，保留其 import。）
 
-- [ ] **Step 2: 跑红（证明闸真的看新目录）**
+- [x] **Step 2: 跑红（证明闸真的看新目录）**
 
 Run: `pnpm -C packages/shared test -- dockerfile-`
 Expected: 3 个 Dockerfile 闸失败——frozen / patches 的哨兵 `expect(dockerfiles.length).toBeGreaterThanOrEqual(7)` 红（`expected 0 to be greater than or equal to 7`），workspace 的同类哨兵红；helper 单测通过。
 
-- [ ] **Step 3: 执行迁移**
+- [x] **Step 3: 执行迁移**
 
 ```bash
 mkdir -p deploy/docker
 git mv Dockerfile.* deploy/docker/
 ```
 
-- [ ] **Step 4: 更新 compose 13 处路径**
+- [x] **Step 4: 更新 compose 13 处路径**
 
 ```bash
 perl -pi -e 's/dockerfile: Dockerfile\./dockerfile: deploy\/docker\/Dockerfile./g' docker-compose.yml
@@ -604,7 +604,7 @@ Expected output（14 行）：13 行 `deploy/docker/Dockerfile.*`，1 行 `docke
 896:      dockerfile: deploy/docker/Dockerfile.alert-relay
 ```
 
-- [ ] **Step 5: 更新 13 个 Dockerfile 首行注释**
+- [x] **Step 5: 更新 13 个 Dockerfile 首行注释**
 
 ```bash
 perl -pi -e 's{^# platform/Dockerfile\.}{# platform/deploy/docker/Dockerfile.}' deploy/docker/Dockerfile.*
@@ -613,7 +613,7 @@ head -1 deploy/docker/Dockerfile.*
 
 Expected: 每行形如 `# platform/deploy/docker/Dockerfile.user-service ...`。
 
-- [ ] **Step 6: 更新 `scripts/verify-agent-static.mjs`**
+- [x] **Step 6: 更新 `scripts/verify-agent-static.mjs`**
 
 ```diff
 -const edge = read('Dockerfile.edge');
@@ -627,14 +627,14 @@ Expected: 每行形如 `# platform/deploy/docker/Dockerfile.user-service ...`。
 
 同时把文件头注释第 6 条里的 `Dockerfile.edge` 改为 `deploy/docker/Dockerfile.edge`。
 
-- [ ] **Step 7: 更新 `scripts/deploy/build-images.sh` 注释**
+- [x] **Step 7: 更新 `scripts/deploy/build-images.sh` 注释**
 
 ```diff
 -    # ⚠️ `mode=max` 才能让被多阶段复用的层（`Dockerfile.edge` 的 web 阶段）也进缓存。
 +    # ⚠️ `mode=max` 才能让被多阶段复用的层（`deploy/docker/Dockerfile.edge` 的 web 阶段）也进缓存。
 ```
 
-- [ ] **Step 8: 新建 `deploy/docker/README.md`**
+- [x] **Step 8: 新建 `deploy/docker/README.md`**
 
 ```markdown
 # Dockerfile 目录
@@ -650,7 +650,7 @@ Expected: 每行形如 `# platform/deploy/docker/Dockerfile.user-service ...`。
 - `.dockerignore` 必须留在仓库根（BuildKit 从上下文根读取），不能移进本目录。
 ```
 
-- [ ] **Step 9: 跑绿 + 验证脚本**
+- [x] **Step 9: 跑绿 + 验证脚本**
 
 Run:
 
@@ -662,7 +662,7 @@ pnpm -C packages/shared lint
 
 Expected: 全绿；`verify:agent` 输出全部 `✅`。
 
-- [ ] **Step 10: 提交（先勾选本任务全部 Step，并带上计划文件）**
+- [x] **Step 10: 提交（先勾选本任务全部 Step，并带上计划文件）**
 
 ```bash
 git add deploy/docker docker-compose.yml scripts/verify-agent-static.mjs scripts/deploy/build-images.sh \

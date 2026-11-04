@@ -1,4 +1,4 @@
-# platform/Dockerfile.room-service
+# platform/deploy/docker/Dockerfile.game-service
 FROM node:20-slim
 
 WORKDIR /app
@@ -20,7 +20,7 @@ COPY tsconfig.base.json ./
 COPY packages/test-utils ./packages/test-utils
 COPY packages/protocol ./packages/protocol
 COPY packages/shared ./packages/shared
-COPY packages/room-service ./packages/room-service
+COPY packages/game-service ./packages/game-service
 
 # Install dependencies (skip optional native modules)
 # --frozen-lockfile：容器只 COPY 所需 workspace 子集，pnpm 按盘上实际存在的包对账；
@@ -32,12 +32,12 @@ RUN npm install -g pnpm@9.15.0 && pnpm install --frozen-lockfile --ignore-script
 RUN pnpm --filter @fight-the-landlord/test-utils build \
  && pnpm --filter @fight-the-landlord/protocol build \
  && pnpm --filter @fight-the-landlord/shared build \
- && pnpm --filter @fight-the-landlord/room-service build
+ && pnpm --filter @fight-the-landlord/game-service build
 
-EXPOSE 3002
+EXPOSE 3003
 
 # 安全扫描（M0.1 T7）：非 root 运行（trivy DS-0002）。node:20-slim 自带 uid 1000 的 `node`；
 # 服务运行期不写 /app（状态在 MySQL/Redis、日志走 stdout）⇒ 无需 chown。
 USER node
 
-CMD ["node", "packages/room-service/dist/main.js"]
+CMD ["node", "packages/game-service/dist/main.js"]
