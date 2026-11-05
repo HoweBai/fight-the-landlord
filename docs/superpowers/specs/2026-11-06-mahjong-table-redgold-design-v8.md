@@ -1,7 +1,7 @@
 # 麻将牌桌「川麻红金」重做设计 spec v8
 
 日期：2026-11-06
-状态：v8，最终设计（定点验证后进入实现计划）
+状态：已被 v9 取代（`2026-11-06-mahjong-table-redgold-design-v9.md`）；本文件保留 v8 复审前版本。
 取代：`2026-11-05-mahjong-table-redgold-design-v7.md`
 继承：v7 + v6 + v5 + v4；**未列部分按 v7/v6/v5/v4 执行**。
 几何证据：`docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs`（v8 原型；七档 × 14 态 **ALL GREEN**）。

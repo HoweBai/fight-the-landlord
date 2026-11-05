@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v8（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v9（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
- * v8 修正：
- * - 侧副露不旋转：left/right 49×40 素材 + vertical，盒 36.4×29.7@0.65
+ * v9 修正：
+ * - 侧副露不旋转；四河窗口字段（windowStart/windowCount/latestIndex/badge）
  * - 自己/对家副露按真实 3/4 张组宽 + 组距 8
  * - 侧背按 back.png 83×125（30.5×45.7），不是 49:40
  * - 上/下河 24 格：溢出时显示最新 23 + 第 24 格 +N；侧河 24+徽标
@@ -105,7 +105,22 @@ function layout(W, H, state) {
     const backH = 13 * pitch + sc(T.sideTileH);
     const mf = sideMeldFit(sizes, avail);
     const zoneW = backW + gap + riverW + (mf.w ? gap + mf.w : 0);
-    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed };
+    const capacity = rows * cols;
+    const windowCount = overflow > 0 ? (capacity >= 25 ? 24 : 23) : visible;
+    const badgeCount = raw - windowCount;
+    const windowStart = raw - windowCount;
+    const latestIndex = windowCount - 1;
+    const badgeCell = windowCount;
+    const gridW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
+    const gridH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
+    const badgeCol = badgeCell % cols;
+    const badgeRow = Math.floor(badgeCell / cols);
+    const badgeRect = overflow > 0 ? rect(
+      (riverW - gridW) / 2 + badgeCol * (sc(T.sideTileW) + gapT),
+      (riverH - gridH) / 2 + badgeRow * (sc(T.sideTileH) + gapT),
+      sc(T.sideTileW), sc(T.sideTileH),
+    ) : null;
+    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed, windowCount, badgeCount, windowStart, latestIndex, badgeCell, badgeRect };
   }
   const leftZ = sideZone('left', leftPlate);
   const rightZ = sideZone('right', rightPlate);
@@ -126,8 +141,19 @@ function layout(W, H, state) {
     const width = cols * tileW + (cols - 1) * gapT, height = 2 * tileH + gapT;
     const windowCount = overflow > 0 ? 23 : visible;
     const badgeCount = raw - windowCount;
+    const windowStart = raw - windowCount;
     const latestIndex = windowCount - 1;
-    return { rect: rect(centerCx - width / 2, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow, windowCount, badge: overflow > 0, badgeCount, latestIndex };
+    const gridW = cols * tileW + (cols - 1) * gapT;
+    const gridH = 2 * tileH + gapT;
+    const badgeCell = windowCount;
+    const badgeCol = badgeCell % cols;
+    const badgeRow = Math.floor(badgeCell / cols);
+    const badgeRect = overflow > 0 ? rect(
+      (width - gridW) / 2 + badgeCol * (tileW + gapT),
+      (height - gridH) / 2 + badgeRow * (tileH + gapT),
+      tileW, tileH,
+    ) : null;
+    return { rect: rect(centerCx - width / 2, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow, windowCount, windowStart, badge: overflow > 0, badgeCount, latestIndex, badgeCell, badgeRect };
   }
   const topRiverBox = riverTopSelf('top', topRiverTop);
   const ownRiverBox = riverTopSelf('self', ownRiverBottom - ownRiverH);
@@ -240,10 +266,10 @@ function layout(W, H, state) {
     if (rects[n].width > 0 && hit(lift, rects[n])) checks.push(`选中抬起×${n}`);
   }
   if (!hubContentOk(hubD, hub.compact)) checks.push('hub 内容放不下');
-  if (leftZ.visible + (leftZ.overflow > 0 ? 1 : 0) > leftZ.rows * leftZ.cols) checks.push(`左河容量 ${leftZ.rows * leftZ.cols}<${leftZ.visible}+徽标`);
-  if (rightZ.visible + (rightZ.overflow > 0 ? 1 : 0) > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}+徽标`);
-  if (topRiverBox.visible > topRiverBox.cols * 2) checks.push(`上河容量 ${topRiverBox.cols * 2}<${topRiverBox.visible}`);
-  if (ownRiverBox.visible > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}`);
+  if (leftZ.windowCount + (leftZ.overflow > 0 ? 1 : 0) > leftZ.rows * leftZ.cols) checks.push(`左河容量 ${leftZ.rows * leftZ.cols}<${leftZ.visible}+徽标`);
+  if (rightZ.windowCount + (rightZ.overflow > 0 ? 1 : 0) > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}+徽标`);
+  if (topRiverBox.windowCount + (topRiverBox.overflow > 0 ? 1 : 0) > topRiverBox.cols * 2) checks.push(`上河容量 ${topRiverBox.cols * 2}<${topRiverBox.visible}+徽标`);
+  if (ownRiverBox.windowCount + (ownRiverBox.overflow > 0 ? 1 : 0) > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}+徽标`);
   if (topMeldW > centerW) checks.push(`对家副露条宽 ${topMeldW.toFixed(1)}>${centerW.toFixed(1)}`);
   if (topMeldContentW > topBacksW) checks.push(`对家副露内容 ${topMeldContentW.toFixed(1)}>顶背 ${topBacksW.toFixed(1)}`);
 
@@ -253,8 +279,9 @@ function layout(W, H, state) {
       hub: `${hubD.toFixed(1)}${hub.compact ? 'c' : ''}`,
       side: `${leftZ.rows}/${rightZ.rows}r ${leftZ.cols}/${rightZ.cols}c cap=${leftZ.rows * leftZ.cols}/${rightZ.rows * rightZ.cols}`,
       over: `${leftZ.overflow}/${rightZ.overflow}`,
+      sideWin: `${leftZ.windowStart}+${leftZ.windowCount}/${leftZ.badgeCount} | ${rightZ.windowStart}+${rightZ.windowCount}/${rightZ.badgeCount}`,
       sideMeld: `${leftZ.meld.scale.toFixed(2)}/${leftZ.meld.h.toFixed(1)}`,
-      top: `${topRiverBox.cols}c+${topRiverBox.overflow}/${topRiverBox.badgeCount}`,
+      top: `${topRiverBox.cols}c+${topRiverBox.overflow}/${topRiverBox.badgeCount} win=${topRiverBox.windowStart}+${topRiverBox.windowCount}`,
       hand: `${hand.left.toFixed(1)}..${right(hand).toFixed(1)}`,
       actions: `${actions.left.toFixed(1)},${actions.top.toFixed(1)}`,
       centerW: centerW.toFixed(1),
@@ -287,7 +314,7 @@ for (const [W, H] of CANVASES) {
     const r = layout(W, H, state);
     const ok = r.checks.length === 0;
     if (!ok) failures += 1;
-    console.log(`${ok ? '✅' : '❌'} ${W}x${H} ${name.padEnd(13)} s=${r.s.toFixed(3)} hub=${r.key.hub} side=${r.key.side} over=${r.key.over} meld=${r.key.sideMeld} top=${r.key.top} act=${r.key.actions} cw=${r.key.centerW}${r.overlays.length ? ` [${r.overlays.join(',')}]` : ''}`);
+    console.log(`${ok ? '✅' : '❌'} ${W}x${H} ${name.padEnd(13)} s=${r.s.toFixed(3)} hub=${r.key.hub} side=${r.key.side} over=${r.key.over} win=${r.key.sideWin} meld=${r.key.sideMeld} top=${r.key.top} act=${r.key.actions} cw=${r.key.centerW}${r.overlays.length ? ` [${r.overlays.join(',')}]` : ''}`);
     for (const c of r.checks) console.log(`    - ${c}`);
   }
 }
