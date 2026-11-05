@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型（随 spec 入库；生产代码不引用）。
- * 目的：在写 v3 spec / mockup 前，用代码把六档画布 + 可达最坏态的矩形账算实，
- * 并机械检查不相交/越界。不是生产实现，不接 UI。
+ * 川麻红金牌桌 —— 设计期几何原型 v4（路线 A：动作浮层 + 牌河显示 24+N）。
+ * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
  * 口径：设计 px；s = max(1, min(H/750, 0.86W / 手牌行宽))。
+ * 108 张川麻：两家早胡后两家交替，单家弃牌可达 ~29；显示上限 24，超额 +N。
  */
 
 const T = {
@@ -17,17 +17,17 @@ const T = {
   tileRatio: 75 / 113,
   tileGap: 2,
   drawnGap: 12,
-  handClearance: 16, // 选中抬起 10 + 6 净空
+  handClearance: 16,
   topBackH: 46,
   riverH: 56,
   sideTileW: 56,
-  sideTileH: (56 * 40) / 49, // 49:40 素材比例
+  sideTileH: (56 * 40) / 49,
   meldScale: 0.8,
   sideMeldScale: 0.65,
   seatPlateW: 140,
   seatPlateH: 56,
   topPlateW: 144,
-  selfPlateW: 56,
+  selfPlateW: 64,
   selfPlateH: 76,
   actionBtn: 84,
   actionGap: 8,
@@ -40,11 +40,13 @@ const T = {
   tingPerRow: 5,
   hubMin: 160,
   hubMax: 200,
+  displayCap: 24,
 };
 const HAND_ROW_W = T.handCount * T.handH * T.tileRatio + (T.handCount - 1) * T.tileGap + T.drawnGap;
 
 const CANVASES = [
   [1334, 750],
+  [1500, 750],
   [1623, 750],
   [1778, 750],
   [1334, 833],
@@ -59,10 +61,6 @@ const inside = (r, W, H) => r.left >= -0.01 && r.top >= -0.01 && right(r) <= W +
 const hit = (a, b) =>
   a.left < right(b) - 0.01 && b.left < right(a) - 0.01 && a.top < bottom(b) - 0.01 && b.top < bottom(a) - 0.01;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-
-function riverCols(count, perRow) {
-  return Math.max(1, Math.ceil(count / perRow));
-}
 
 function layout(W, H, state) {
   const s = Math.max(1, Math.min(H / 750, (0.86 * W) / HAND_ROW_W));
@@ -79,8 +77,10 @@ function layout(W, H, state) {
 
   // —— 底部栈 ——
   const selfMeldH = state.self.melds > 0 ? sc(T.riverH * T.meldScale) : 0;
+  const meldTileW = sc(T.riverH * T.meldScale * T.tileRatio);
+  const selfMeldContentW = state.self.melds > 0 ? Math.min(handW, state.self.melds * 3 * meldTileW + (state.self.melds - 1) * gap) : 0;
   const selfMeld = selfMeldH
-    ? rect(handLeft, handTop - sc(T.handClearance) - selfMeldH, handW, selfMeldH)
+    ? rect(handLeft + (handW - selfMeldContentW) / 2, handTop - sc(T.handClearance) - selfMeldH, selfMeldContentW, selfMeldH)
     : rect(0, 0, 0, 0);
   const ownRiverBottom = selfMeldH ? selfMeld.top - gap : handTop - sc(T.handClearance);
   const ownRiverH = sc(T.riverH * 2 + T.tileGap);
@@ -89,50 +89,30 @@ function layout(W, H, state) {
   const topBackH = sc(T.topBackH);
   const topBackW = topBackH * T.tileRatio;
   const topBacksW = T.handCount * topBackW + (T.handCount - 1) * gapT;
-  const topBacks = rect(handLeft, bar + gap, topBacksW, topBackH);
+  const topBacksTop = bar + gap;
   const topMeldH = state.top.melds > 0 ? sc(T.riverH * T.meldScale) : 0;
-  const topMeldTop = bottom(topBacks) + gap;
+  const topMeldTop = topBacksTop + topBackH + gap;
   const topRiverTop = topMeldTop + (topMeldH ? topMeldH + gap : 0);
-  const topRiver = rect(handLeft, topRiverTop, handW, ownRiverH);
-
-  // —— 血战盘 ——
-  const centerTop = bottom(topRiver) + gap;
-  const centerBottom = ownRiverBottom - ownRiverH - gap;
-  const available = Math.max(0, centerBottom - centerTop);
-  const hubD = clamp(available, sc(T.hubMin), sc(T.hubMax));
-  const hubRect = rect(W / 2 - hubD / 2, centerTop + (available - hubD) / 2, hubD, hubD);
-  const hub = { ...hubRect, cx: hubRect.left + hubD / 2, cy: hubRect.top + hubD / 2, r: hubD / 2 };
 
   // —— 座位牌 ——
   const leftPlate = rect(outer, bar + gap, sc(T.seatPlateW), sc(T.seatPlateH));
   const rightPlate = rect(W - outer - sc(T.seatPlateW), bar + gap, sc(T.seatPlateW), sc(T.seatPlateH));
   const topPlate = rect((W - sc(T.topPlateW)) / 2, sc(4), sc(T.topPlateW), sc(T.seatPlateH));
-  const selfPlate = rect(
-    outer,
-    handTop + (handH - sc(T.selfPlateH)) / 2,
-    sc(T.selfPlateW),
-    sc(T.selfPlateH),
-  );
+  const selfPlate = rect(outer, handTop + (handH - sc(T.selfPlateH)) / 2, sc(T.selfPlateW), sc(T.selfPlateH));
 
-  // —— 动作区（先定，侧区底缘依赖它）——
-  const actions = rect(
-    W - outer - sc(T.actionW),
-    handTop - sc(T.handClearance) - sc(T.actionH),
-    sc(T.actionW),
-    sc(T.actionH),
-  );
-
-  // —— 侧区 ——
+  // —— 侧区（先算，决定 center）——
   function sideZone(side, plate) {
     const discards = state[side].discards;
     const revealed = state[side].revealed ?? 0;
-    const visible = Math.max(discards, revealed);
+    const raw = Math.max(discards, revealed);
+    const visible = Math.min(raw, T.displayCap);
+    const overflow = raw - visible;
     const melds = state[side].melds;
-    const sideTop = Math.max(bottom(topRiver), bottom(plate) + gap);
-    const sideBottom = actions.top - gap;
+    const sideTop = Math.max(topRiverTop, bottom(plate) + gap);
+    const sideBottom = handTop - sc(T.handClearance);
     const avail = sideBottom - sideTop;
-    const rows = clamp(Math.floor((avail + gapT) / (sc(T.sideTileH) + gapT)), 3, 8);
-    const cols = clamp(riverCols(visible, rows), 2, 8);
+    const rows = clamp(Math.floor((avail + gapT) / (sc(T.sideTileH) + gapT)), 3, 10);
+    const cols = clamp(Math.ceil(visible / rows), 2, 6);
     const riverW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
     const riverH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
     const backW = sc(T.sideTileW);
@@ -141,11 +121,7 @@ function layout(W, H, state) {
     const meldW = melds > 0 ? sc(T.sideTileW * T.sideMeldScale) : 0;
     const meldH = melds > 0 ? melds * sc(T.sideTileH * T.sideMeldScale) + (melds - 1) * gap : 0;
     const zoneW = backW + gap + riverW + (meldW ? gap + meldW : 0);
-    const zoneH = Math.max(backH, riverH, meldH);
-    return {
-      sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meldW, meldH, zoneW, zoneH,
-      visible,
-    };
+    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meldW, meldH, zoneW, visible, overflow, raw };
   }
   const leftZ = sideZone('left', leftPlate);
   const rightZ = sideZone('right', rightPlate);
@@ -153,35 +129,50 @@ function layout(W, H, state) {
   const centerLeft = outer + leftZ.zoneW + gap;
   const centerRight = W - outer - rightZ.zoneW - gap;
   const centerW = centerRight - centerLeft;
+  const centerCx = (centerLeft + centerRight) / 2;
 
-  function river(side, z, top, bottomY) {
-    const visible = z.visible;
-    const discards = state[side].discards;
-    const perRow = 2;
-    const cols = clamp(riverCols(Math.max(visible, discards), perRow), 8, 18);
-    // 上/下河按列扩展：8 → 12（24 张，108 张川麻的可达上限；36 张不可达）
+  // —— 上/下河（8/12 列 ×2，显示上限 24）——
+  function riverTopSelf(side, top) {
+    const raw = state[side].discards;
+    const visible = Math.min(raw, T.displayCap);
     const wantedCols = visible <= 16 ? 8 : 12;
     const fit = Math.min(1, centerW / (wantedCols * sc(T.riverH * T.tileRatio) + (wantedCols - 1) * gapT));
     const tileW = sc(T.riverH * T.tileRatio) * fit;
     const tileH = sc(T.riverH) * fit;
     const width = wantedCols * tileW + (wantedCols - 1) * gapT;
     const height = 2 * tileH + gapT;
-    const heightFit = Math.min(1, (bottomY - top) / height);
     return {
-      rect: rect(centerLeft + (centerW - width) / 2, top, width, height * heightFit),
-      cols: wantedCols,
-      rows: 2,
-      tile: { w: tileW, h: tileH * heightFit },
-      fit: Math.min(fit, heightFit),
-      visible,
+      rect: rect(centerCx - width / 2, top, width, height),
+      cols: wantedCols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow: raw - visible,
     };
   }
+  const topRiverBox = riverTopSelf('top', topRiverTop);
+  const ownRiverBox = riverTopSelf('self', ownRiverBottom - ownRiverH);
 
-  const topRiverBox = river('top', { visible: state.top.discards }, topRiverTop, ownRiverBottom);
-  const ownRiverBox = river('self', { visible: state.self.discards }, ownRiverBottom - ownRiverH, ownRiverBottom);
+  // —— 顶背/顶副露：按上河中心居中 ——
+  const topBacks = rect(centerCx - topBacksW / 2, topBacksTop, topBacksW, topBackH);
+  const topMeld = topMeldH
+    ? rect(centerCx - topRiverBox.rect.width / 2, topMeldTop, topRiverBox.rect.width, topMeldH)
+    : rect(0, 0, 0, 0);
 
-  // 侧区矩形（背面 + 河 + 副露）
-  function sideRects(side, z, plate) {
+  // —— 血战盘：center 区居中 + 宽度夹取 ——
+  const centerTop = bottom(topRiverBox.rect) + gap;
+  const centerBottom = ownRiverBox.rect.top - gap;
+  const available = Math.max(0, centerBottom - centerTop);
+  const hubD = Math.min(clamp(available, sc(T.hubMin), sc(T.hubMax)), Math.max(0, centerW - 2 * gap));
+  const hubRect = rect(centerCx - hubD / 2, centerTop + (available - hubD) / 2, hubD, hubD);
+  const hub = { ...hubRect, cx: hubRect.left + hubD / 2, cy: hubRect.top + hubD / 2, r: hubD / 2, compact: hubD / s < 180 };
+
+  // —— 动作区：手牌右上、右侧区左缘内、覆盖自家河右缘（路线 A） ——
+  const actions = rect(
+    Math.max(outer, W - outer - rightZ.zoneW - gap - sc(T.actionW)),
+    handTop - sc(T.handClearance) - sc(T.actionH),
+    sc(T.actionW),
+    sc(T.actionH),
+  );
+
+  // —— 侧区矩形 ——
+  function sideRects(side, z) {
     const isLeft = side === 'left';
     const backX = isLeft ? outer : W - outer - z.backW;
     const riverX = isLeft ? outer + z.backW + gap : W - outer - z.backW - gap - z.riverW;
@@ -190,13 +181,12 @@ function layout(W, H, state) {
       backs: rect(backX, z.sideTop, z.backW, z.backH),
       river: rect(riverX, z.sideTop, z.riverW, z.riverH),
       melds: z.meldW ? rect(meldX, z.sideTop, z.meldW, z.meldH) : rect(0, 0, 0, 0),
-      plate,
     };
   }
-  const leftR = sideRects('left', leftZ, leftPlate);
-  const rightR = sideRects('right', rightZ, rightPlate);
+  const leftR = sideRects('left', leftZ);
+  const rightR = sideRects('right', rightZ);
 
-  // —— 听牌行：手牌左上方、自家牌河左侧；2 行 × 5 ——
+  // —— 听牌行：自家河左侧 2×5 ——
   const tingCount = Math.min(state.ting ?? 0, T.tingMax);
   const tingCols = Math.min(tingCount, T.tingPerRow);
   const tingRows = Math.ceil(tingCount / T.tingPerRow) || 1;
@@ -208,25 +198,11 @@ function layout(W, H, state) {
     : rect(0, 0, 0, 0);
 
   const rects = {
-    hand,
-    actions,
-    hub,
-    topPlate,
-    leftPlate,
-    rightPlate,
-    selfPlate,
-    topBacks,
-    topRiver: topRiverBox.rect,
-    ownRiver: ownRiverBox.rect,
-    leftBacks: leftR.backs,
-    leftRiver: leftR.river,
-    leftMelds: leftR.melds,
-    rightBacks: rightR.backs,
-    rightRiver: rightR.river,
-    rightMelds: rightR.melds,
-    selfMeld,
-    topMeld: topMeldH ? rect(handLeft, topMeldTop, handW, topMeldH) : rect(0, 0, 0, 0),
-    ting,
+    hand, actions, hub, topPlate, leftPlate, rightPlate, selfPlate,
+    topBacks, topRiver: topRiverBox.rect, ownRiver: ownRiverBox.rect,
+    leftBacks: leftR.backs, leftRiver: leftR.river, leftMelds: leftR.melds,
+    rightBacks: rightR.backs, rightRiver: rightR.river, rightMelds: rightR.melds,
+    selfMeld, topMeld, ting,
   };
 
   const checks = [];
@@ -236,9 +212,11 @@ function layout(W, H, state) {
   }
   const pairs = [
     ['hub', 'topRiver'], ['hub', 'ownRiver'], ['hub', 'leftRiver'], ['hub', 'rightRiver'],
+    ['hub', 'leftMelds'], ['hub', 'rightMelds'], ['hub', 'leftBacks'], ['hub', 'rightBacks'],
     ['hub', 'hand'], ['hub', 'actions'], ['hub', 'topPlate'], ['hub', 'leftPlate'], ['hub', 'rightPlate'],
-    ['actions', 'hand'], ['actions', 'ownRiver'], ['actions', 'rightRiver'], ['actions', 'rightMelds'], ['actions', 'rightBacks'],
+    ['actions', 'hand'], ['actions', 'ownRiver'], ['actions', 'selfMeld'], ['actions', 'rightRiver'], ['actions', 'rightMelds'], ['actions', 'rightBacks'],
     ['leftPlate', 'leftBacks'], ['leftPlate', 'leftRiver'], ['rightPlate', 'rightBacks'], ['rightPlate', 'rightRiver'],
+    ['leftPlate', 'topBacks'], ['rightPlate', 'topBacks'], ['leftPlate', 'topMeld'], ['rightPlate', 'topMeld'],
     ['selfPlate', 'hand'], ['selfPlate', 'ownRiver'], ['selfPlate', 'selfMeld'],
     ['selfMeld', 'hand'], ['topMeld', 'topRiver'], ['topMeld', 'topBacks'],
     ['ting', 'ownRiver'], ['ting', 'hand'], ['ting', 'actions'], ['ting', 'selfMeld'],
@@ -251,33 +229,32 @@ function layout(W, H, state) {
       checks.push(`${a}×${b} 相交 ${x.toFixed(1)}×${y.toFixed(1)}`);
     }
   }
-  // 选中抬起 10：抬升后的手牌顶不能碰动作区/自家河/副露/听牌行
+  // 路线 A 允许动作区覆盖自家河右缘；只记录不报错
+  const overlays = [];
+  if (hit(actions, ownRiverBox.rect)) overlays.push('actions×ownRiver(允许)');
+
   const lift = rect(hand.left, hand.top - sc(10), hand.width, 10);
   for (const n of ['actions', 'ownRiver', 'selfMeld', 'ting']) {
     if (rects[n].width > 0 && hit(lift, rects[n])) checks.push(`选中抬起×${n}`);
   }
 
-  // 容量
-  const sideCapLeft = leftZ.rows * leftZ.cols;
-  const sideCapRight = rightZ.rows * rightZ.cols;
-  if (leftZ.visible > sideCapLeft) checks.push(`左河容量 ${sideCapLeft}<${leftZ.visible}`);
-  if (rightZ.visible > sideCapRight) checks.push(`右河容量 ${sideCapRight}<${rightZ.visible}`);
+  if (leftZ.visible > leftZ.rows * leftZ.cols) checks.push(`左河容量 ${leftZ.rows * leftZ.cols}<${leftZ.visible}`);
+  if (rightZ.visible > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}`);
   if (topRiverBox.visible > topRiverBox.cols * 2) checks.push(`上河容量 ${topRiverBox.cols * 2}<${topRiverBox.visible}`);
   if (ownRiverBox.visible > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}`);
 
   return {
-    s, hubD, checks,
+    s, hubD, checks, overlays,
     key: {
-      hand: hand.left.toFixed(1) + '..' + right(hand).toFixed(1),
-      actions: actions.left.toFixed(1) + ',' + actions.top.toFixed(1),
-      hub: hubD.toFixed(1),
-      sideRows: leftZ.rows + '/' + rightZ.rows,
-      sideCols: leftZ.cols + '/' + rightZ.cols,
-      sideCap: sideCapLeft + '/' + sideCapRight,
+      hub: `${hubD.toFixed(1)}${hub.compact ? 'c' : ''}`,
+      sideRows: `${leftZ.rows}/${rightZ.rows}`,
+      sideCols: `${leftZ.cols}/${rightZ.cols}`,
+      sideCap: `${leftZ.rows * leftZ.cols}/${rightZ.rows * rightZ.cols}`,
+      sideOverflow: `${leftZ.overflow}/${rightZ.overflow}`,
       topCols: topRiverBox.cols,
-      topFit: topRiverBox.fit.toFixed(2),
-      selfPlateRight: right(selfPlate).toFixed(1),
-      handLeft: hand.left.toFixed(1),
+      topOverflow: topRiverBox.overflow,
+      hand: `${hand.left.toFixed(1)}..${right(hand).toFixed(1)}`,
+      actions: `${actions.left.toFixed(1)},${actions.top.toFixed(1)}`,
       centerW: centerW.toFixed(1),
     },
     rects,
@@ -285,8 +262,7 @@ function layout(W, H, state) {
 }
 
 const base = () => ({ discards: 0, melds: 0, revealed: 0 });
-// 108 张川麻：四家手牌 52 张 + 牌墙 56 张；36 张/家弃牌不可达。
-// 可达最坏态按“弃牌 + 副露（4 张/组上限）”控制总量，覆盖边家 17/24、上家 4 副露、已胡亮牌 14 张。
+// 可达态：两家早胡后只剩两家交替；56 墙约 27–28 轮/家，碰再加轮。
 const states = {
   normal: { top: base(), left: base(), right: base(), self: base(), ting: 0 },
   mid: {
@@ -296,18 +272,18 @@ const states = {
     self: { discards: 9, melds: 1, revealed: 0 },
     ting: 8,
   },
-  top24: {
-    top: { discards: 24, melds: 0, revealed: 0 },
-    left: { discards: 8, melds: 0, revealed: 0 },
-    right: { discards: 8, melds: 0, revealed: 0 },
-    self: { discards: 8, melds: 0, revealed: 0 },
-    ting: 0,
+  top29: {
+    top: { discards: 29, melds: 1, revealed: 0 },
+    left: { discards: 27, melds: 0, revealed: 0 },
+    right: { discards: 0, melds: 0, revealed: 0 },
+    self: { discards: 0, melds: 0, revealed: 0 },
+    ting: 9,
   },
-  side17: {
-    top: { discards: 10, melds: 0, revealed: 0 },
-    left: { discards: 17, melds: 1, revealed: 0 },
-    right: { discards: 8, melds: 0, revealed: 0 },
-    self: { discards: 8, melds: 0, revealed: 0 },
+  twoSurvivors: {
+    top: { discards: 6, melds: 1, revealed: 8 },
+    left: { discards: 29, melds: 1, revealed: 0 },
+    right: { discards: 25, melds: 0, revealed: 0 },
+    self: { discards: 0, melds: 0, revealed: 8 },
     ting: 9,
   },
   revealed: {
@@ -322,13 +298,6 @@ const states = {
     left: { discards: 8, melds: 1, revealed: 0 },
     right: { discards: 8, melds: 0, revealed: 0 },
     self: { discards: 8, melds: 0, revealed: 0 },
-    ting: 9,
-  },
-  maxDiscards: {
-    top: { discards: 24, melds: 0, revealed: 0 },
-    left: { discards: 14, melds: 0, revealed: 0 },
-    right: { discards: 9, melds: 0, revealed: 0 },
-    self: { discards: 9, melds: 0, revealed: 0 },
     ting: 9,
   },
   fourMelds: {
@@ -347,10 +316,10 @@ for (const [W, H] of CANVASES) {
     const ok = r.checks.length === 0;
     if (!ok) failures += 1;
     console.log(
-      `${ok ? '✅' : '❌'} ${W}x${H} ${name.padEnd(11)} s=${r.s.toFixed(3)} hub=${r.key.hub} ` +
-        `sideRows=${r.key.sideRows} sideCols=${r.key.sideCols} cap=${r.key.sideCap} ` +
-        `topCols=${r.key.topCols} fit=${r.key.topFit} hand=${r.key.hand} actions=${r.key.actions} ` +
-        `selfPlateR=${r.key.selfPlateRight} handL=${r.key.handLeft} centerW=${r.key.centerW}`,
+      `${ok ? '✅' : '❌'} ${W}x${H} ${name.padEnd(12)} s=${r.s.toFixed(3)} hub=${r.key.hub} ` +
+        `side=${r.key.sideRows}r/${r.key.sideCols}c cap=${r.key.sideCap} over=${r.key.sideOverflow} ` +
+        `top=${r.key.topCols}c+${r.key.topOverflow} hand=${r.key.hand} act=${r.key.actions} center=${r.key.centerW}` +
+        (r.overlays.length ? ` [${r.overlays.join(',')}]` : ''),
     );
     for (const c of r.checks) console.log(`    - ${c}`);
   }
