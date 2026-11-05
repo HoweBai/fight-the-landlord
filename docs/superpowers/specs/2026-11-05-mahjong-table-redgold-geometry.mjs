@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v5（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v7（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
- * v5 修正：
- * - 左右副露竖排（组高 101–134），按真实组内容宽/高建模，超高动态缩 scale
+ * v7 修正：
+ * - 左右副露用旧 53b5da01 视觉尺寸（34×51@0.65），组高 78.6/101.4
  * - 自己/对家副露按真实 3/4 张组宽 + 组距 8
  * - 侧背按 back.png 83×125（30.5×45.7），不是 49:40
  * - 上/下河 24 格：溢出时显示最新 23 + 第 24 格 +N；侧河 24+徽标
@@ -18,7 +18,7 @@ const T = {
   handH: 108, handCount: 14, tileRatio: 75 / 113, tileGap: 2, drawnGap: 12, handClearance: 16,
   topBackH: 46, riverH: 56, sideTileW: 56, sideTileH: (56 * 40) / 49,
   meldScale: 0.8, meldOverlap: 4, meldGroupGap: 8,
-  sideMeldScale: 0.65,
+  sideMeldScale: 0.65, sideMeldVisualH: 51, sideMeldVisualW: 34, sideMeldOverlap: 16,
   seatPlateW: 160, seatPlateH: 56, topPlateW: 164, selfPlateW: 64, selfPlateH: 76,
   actionBtn: 84, actionGap: 8, actionW: 176, actionH: 176,
   tingW: 20, tingH: 30, tingGap: 2, tingMax: 9, tingPerRow: 5,
@@ -78,12 +78,13 @@ function layout(W, H, state) {
   function sideMeldFit(sizes, avail) {
     if (sizes.length === 0) return { w: 0, h: 0, scale: 0 };
     let scale = T.sideMeldScale;
-    const tileH = () => sc(T.sideTileW * scale);
-    const overlap = sc(T.meldOverlap);
-    const groupH = (n) => n * tileH() - (n - 1) * overlap;
+    // 旧实现 53b5da01：rotate 模式 sm DOM 51×34，视觉 34×51；vertical margin-top 1px 补偿
+    const tileH = () => sc(T.sideMeldVisualH * scale);
+    const overlap = () => sc(T.sideMeldOverlap * scale);
+    const groupH = (n) => n * tileH() - (n - 1) * overlap();
     const total = () => sizes.reduce((sum, n) => sum + groupH(n), 0) + (sizes.length - 1) * meldGroupGap;
     while (total() > avail && scale > 0.4) scale -= 0.01;
-    return { w: sc(T.sideTileH * scale) + 4, h: total(), scale };
+    return { w: sc(T.sideMeldVisualW * scale) + 4, h: total(), scale };
   }
   function sideZone(side, plate) {
     const revealed = state[side].revealed ?? 0;
