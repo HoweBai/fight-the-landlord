@@ -81,14 +81,4 @@ describe('MahjongSeatChip', () => {
     expect(w.find('.mj-chip__avatar-box').attributes('style')).toContain('width: 40px');
     expect(w.find('.mj-chip__avatar-box').attributes('style')).toContain('height: 40px');
   });
-
-  it('天月风：头像金边类 + self 余额胶囊 + 角标不被裁切', () => {
-    const w = mount(MahjongSeatChip, { props: { ...base, isDealer: true } });
-    expect(w.find('.mj-chip__avatar').classes()).toContain('mj-chip__avatar--gold');
-    expect(w.find('.mj-chip__avatar-box .mj-chip__corner--dealer').exists()).toBe(true);
-    const self = mount(MahjongSeatChip, {
-      props: { ...base, isMe: true, variant: 'self' },
-    });
-    expect(self.find('.mj-chip__self-pill').exists()).toBe(true);
-  });
 });

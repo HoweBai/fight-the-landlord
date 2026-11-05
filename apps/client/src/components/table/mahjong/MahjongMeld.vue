@@ -78,7 +78,7 @@ function onAnimEnd(e: AnimationEvent): void {
 <template>
   <view
     class="mj-meld"
-    :class="[styleClass, `mj-meld--${size}`, popAnimClass, 'mj-meld--tray']"
+    :class="[styleClass, `mj-meld--${size}`, popAnimClass]"
     @animationend="onAnimEnd"
   >
     <!-- 碰 3 张；杠/暗杠 4 张同行（第 4 张不再绝对定位叠高） -->
@@ -105,15 +105,6 @@ function onAnimEnd(e: AnimationEvent): void {
   align-items: flex-end;
   position: relative;
   line-height: 0; // 消除 image inline 间隙
-}
-
-/** 天月风：白牌贴在亮青桌面上发飘，加一层极淡海军蓝底托 */
-.mj-meld--tray {
-  padding: $ftl-space-2;
-  /* 负 margin 抵消 padding：底托视觉外扩，但不改变布局足迹（4 杠组仍 ≤ 牌河宽） */
-  margin: -$ftl-space-2;
-  border-radius: $ftl-radius-md;
-  background: $ftl-color-mj-glass-soft;
 }
 
 /** 组内 tile 默认无负 margin；叠压量由父组件 overlap prop 精确控制 */

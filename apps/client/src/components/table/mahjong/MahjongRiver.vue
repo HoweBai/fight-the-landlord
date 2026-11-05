@@ -139,20 +139,7 @@ function onDiscardClick(t: Tile): void {
   align-items: center;
   justify-content: center;
   overflow: visible;
-  // P1: 共享背景框 — 淡色圆角矩形框住"这一排都是 XX 家的副露 + 弃牌"
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 8px;
-    border: $ftl-hairline solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    pointer-events: none;
-    z-index: -1;
-  }
 }
-// ownRiver（自己的弃牌区）不加共享框
-.mj-river--my::before { display: none; }
 .mj-river__grid {
   align-content: center;
   justify-content: center;
@@ -172,20 +159,18 @@ function onDiscardClick(t: Tile): void {
   left: 0;
   padding: 0 3px;
   border-radius: 999px;
-  border: $ftl-hairline solid $ftl-color-mj-gold;
-  background: rgba($ftl-color-mj-navy, 0.8);
-  color: $ftl-color-mj-gold;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba($ftl-color-on-primary, 0.85);
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
   pointer-events: none;
 }
 .mj-river__tile--latest {
-  box-shadow: 0 0 8px rgba($ftl-color-mj-gold, 0.65);
-  transform: translateY(-2px);
+  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.55);
 }
 .mj-river__tile--filtered {
-  outline: $ftl-hairline solid $ftl-color-mj-cyan;
+  outline: 2px solid $ftl-color-primary;
   outline-offset: -2px;
 }
 .mj-river__tile--clickable {
@@ -197,8 +182,8 @@ function onDiscardClick(t: Tile): void {
   left: 0;
   padding: 0 3px;
   border-radius: 999px;
-  background: $ftl-color-mj-gold;
-  color: $ftl-color-mj-on-gold;
+  background: rgba($ftl-color-gold, 0.85);
+  color: $ftl-color-on-primary;
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
