@@ -19,7 +19,7 @@ const T = {
   topBackH: 46, riverH: 56, sideTileW: 56, sideTileH: (56 * 40) / 49,
   meldScale: 0.8, meldOverlap: 4, meldGroupGap: 8,
   sideMeldScale: 0.65,
-  seatPlateW: 140, seatPlateH: 56, topPlateW: 144, selfPlateW: 64, selfPlateH: 76,
+  seatPlateW: 160, seatPlateH: 56, topPlateW: 164, selfPlateW: 64, selfPlateH: 76,
   actionBtn: 84, actionGap: 8, actionW: 176, actionH: 176,
   tingW: 20, tingH: 30, tingGap: 2, tingMax: 9, tingPerRow: 5,
   hubMin: 160, hubMax: 200, displayCap: 24,
@@ -46,12 +46,14 @@ function layout(W, H, state) {
   const meldGroupGap = sc(T.meldGroupGap);
 
   const meldGroupW = (n) => n * meldTileW - (n - 1) * meldOverlap;
-  const meldContentW = (melds, tiles) => melds * meldGroupW(tiles) + (melds - 1) * meldGroupGap;
+  const meldSizes = (obj) => obj.meldSizes ?? Array.from({ length: obj.melds }, () => 3);
+  const meldContentW = (sizes) =>
+    sizes.length === 0 ? 0 : sizes.reduce((sum, n) => sum + meldGroupW(n), 0) + (sizes.length - 1) * meldGroupGap;
 
   // —— 底部栈 ——
-  const selfTiles = state.self.meldTiles ?? 3;
-  const selfMeldH = state.self.melds > 0 ? sc(T.riverH * T.meldScale) : 0;
-  const selfMeldW = state.self.melds > 0 ? Math.min(handW, meldContentW(state.self.melds, selfTiles)) : 0;
+  const selfSizes = meldSizes(state.self);
+  const selfMeldH = selfSizes.length > 0 ? sc(T.riverH * T.meldScale) : 0;
+  const selfMeldW = selfSizes.length > 0 ? Math.min(handW, meldContentW(selfSizes)) : 0;
   const selfMeld = selfMeldH ? rect(0, handTop - sc(T.handClearance) - selfMeldH, selfMeldW, selfMeldH) : rect(0, 0, 0, 0);
   const ownRiverBottom = selfMeldH ? selfMeld.top - gap : handTop - sc(T.handClearance);
   const ownRiverH = sc(T.riverH * 2 + T.tileGap);
@@ -60,9 +62,9 @@ function layout(W, H, state) {
   const topBackH = sc(T.topBackH), topBackW = topBackH * T.tileRatio;
   const topBacksW = T.handCount * topBackW + (T.handCount - 1) * gapT;
   const topBacksTop = bar + gap;
-  const topTiles = state.top.meldTiles ?? 3;
-  const topMeldH = state.top.melds > 0 ? sc(T.riverH * T.meldScale) : 0;
-  const topMeldContentW = state.top.melds > 0 ? meldContentW(state.top.melds, topTiles) : 0;
+  const topSizes = meldSizes(state.top);
+  const topMeldH = topSizes.length > 0 ? sc(T.riverH * T.meldScale) : 0;
+  const topMeldContentW = topSizes.length > 0 ? meldContentW(topSizes) : 0;
   const topMeldTop = topBacksTop + topBackH + gap;
   const topRiverTop = topMeldTop + (topMeldH ? topMeldH + gap : 0);
 
@@ -73,23 +75,23 @@ function layout(W, H, state) {
   const selfPlate = rect(outer, handTop + (handH - sc(T.selfPlateH)) / 2, sc(T.selfPlateW), sc(T.selfPlateH));
 
   // —— 侧区 ——
-  function sideMeldFit(melds, tiles, avail) {
-    if (melds <= 0) return { w: 0, h: 0, scale: 0 };
+  function sideMeldFit(sizes, avail) {
+    if (sizes.length === 0) return { w: 0, h: 0, scale: 0 };
     let scale = T.sideMeldScale;
-    const tileH = () => sc(T.sideTileW * scale); // 竖排：每张的屏幕高 = 牌宽×scale
-    const overlap = () => sc(T.meldOverlap * (scale / T.sideMeldScale));
-    const groupH = () => tiles * tileH() - (tiles - 1) * overlap();
-    const total = () => melds * groupH() + (melds - 1) * meldGroupGap;
+    const tileH = () => sc(T.sideTileW * scale);
+    const overlap = sc(T.meldOverlap);
+    const groupH = (n) => n * tileH() - (n - 1) * overlap;
+    const total = () => sizes.reduce((sum, n) => sum + groupH(n), 0) + (sizes.length - 1) * meldGroupGap;
     while (total() > avail && scale > 0.4) scale -= 0.01;
     return { w: sc(T.sideTileH * scale) + 4, h: total(), scale };
   }
   function sideZone(side, plate) {
-    const raw = Math.max(state[side].discards, state[side].revealed ?? 0);
+    const revealed = state[side].revealed ?? 0;
+    const raw = revealed > 0 ? revealed : state[side].discards;
     const visible = Math.min(raw, T.displayCap);
-    const overflow = raw - visible;
-    const melds = state[side].melds;
-    const tiles = state[side].meldTiles ?? 3;
-    const sideTop = Math.max(topRiverTop, bottom(plate) + gap);
+    const overflow = revealed > 0 ? 0 : raw - visible;
+    const sizes = meldSizes(state[side]);
+    const sideTop = Math.max(topRiverTop, bottom(plate) + gap) + (revealed > 0 ? sc(16) : 0);
     const sideBottom = handTop - sc(T.handClearance);
     const avail = sideBottom - sideTop;
     const rows = clamp(Math.floor((avail + gapT) / (sc(T.sideTileH) + gapT)), 3, 10);
@@ -99,9 +101,9 @@ function layout(W, H, state) {
     const backW = sc(T.sideTileH * T.tileRatio); // 83×125
     const pitch = clamp((avail - sc(T.sideTileH)) / 13, sc(8), sc(22));
     const backH = 13 * pitch + sc(T.sideTileH);
-    const mf = sideMeldFit(melds, tiles, avail);
+    const mf = sideMeldFit(sizes, avail);
     const zoneW = backW + gap + riverW + (mf.w ? gap + mf.w : 0);
-    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw };
+    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed };
   }
   const leftZ = sideZone('left', leftPlate);
   const rightZ = sideZone('right', rightPlate);
@@ -121,13 +123,15 @@ function layout(W, H, state) {
     const tileW = sc(T.riverH * T.tileRatio) * fit, tileH = sc(T.riverH) * fit;
     const width = cols * tileW + (cols - 1) * gapT, height = 2 * tileH + gapT;
     const windowCount = overflow > 0 ? 23 : visible;
-    return { rect: rect(centerCx - width / 2, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow, windowCount, badge: overflow > 0 };
+    const badgeCount = raw - windowCount;
+    const latestIndex = windowCount - 1;
+    return { rect: rect(centerCx - width / 2, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow, windowCount, badge: overflow > 0, badgeCount, latestIndex };
   }
   const topRiverBox = riverTopSelf('top', topRiverTop);
   const ownRiverBox = riverTopSelf('self', ownRiverBottom - ownRiverH);
 
   const topBacks = rect(centerCx - topBacksW / 2, topBacksTop, topBacksW, topBackH);
-  const topMeldW = Math.max(topRiverBox.rect.width, topMeldContentW);
+  const topMeldW = Math.min(Math.max(topRiverBox.rect.width, topMeldContentW), topBacksW);
   const topMeld = topMeldH ? rect(centerCx - topMeldW / 2, topMeldTop, topMeldW, topMeldH) : rect(0, 0, 0, 0);
 
   // —— hub ——
@@ -178,12 +182,14 @@ function layout(W, H, state) {
     const r = d / 2;
     const wall = compact ? 32 : 40, sec = compact ? 18 : 22, status = compact ? 12 : 14;
     const maxChars = compact ? 8 : 10;
-    const statusW = maxChars * status + status * 0.5;
-    const dy = compact ? 22 : 28;
+    const statusW = maxChars * status + status; // 省略号按 1em
+    const dy = compact ? 50 : 55;
     const chord = 2 * Math.sqrt(Math.max(0, r * r - dy * dy));
-    const vertical = wall + 4 + sec + 4 + status;
+    const label = compact ? 0 : 14;
+    const ting = compact ? 12 : 14;
+    const vertical = wall + 4 + label + (label ? 4 : 0) + sec + 4 + status + 4 + ting;
     const badge = compact ? 14 : 16;
-    const badgeOk = r - badge * 0.75 >= (badge * 1.5);
+    const badgeOk = r - badge * 0.75 >= badge * 1.5;
     return statusW <= chord - 8 && vertical <= 2 * (r - 12) && badgeOk;
   }
 
@@ -236,7 +242,8 @@ function layout(W, H, state) {
   if (rightZ.visible > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}`);
   if (topRiverBox.visible > topRiverBox.cols * 2) checks.push(`上河容量 ${topRiverBox.cols * 2}<${topRiverBox.visible}`);
   if (ownRiverBox.visible > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}`);
-  if (topMeldW > centerW) checks.push(`对家副露宽 ${topMeldW.toFixed(1)}>${centerW.toFixed(1)}`);
+  if (topMeldW > centerW) checks.push(`对家副露条宽 ${topMeldW.toFixed(1)}>${centerW.toFixed(1)}`);
+  if (topMeldContentW > topBacksW) checks.push(`对家副露内容 ${topMeldContentW.toFixed(1)}>顶背 ${topBacksW.toFixed(1)}`);
 
   return {
     s, hubD, checks, overlays,
@@ -245,7 +252,7 @@ function layout(W, H, state) {
       side: `${leftZ.rows}/${rightZ.rows}r ${leftZ.cols}/${rightZ.cols}c cap=${leftZ.rows * leftZ.cols}/${rightZ.rows * rightZ.cols}`,
       over: `${leftZ.overflow}/${rightZ.overflow}`,
       sideMeld: `${leftZ.meld.scale.toFixed(2)}/${leftZ.meld.h.toFixed(1)}`,
-      top: `${topRiverBox.cols}c+${topRiverBox.overflow}`,
+      top: `${topRiverBox.cols}c+${topRiverBox.overflow}/${topRiverBox.badgeCount}`,
       hand: `${hand.left.toFixed(1)}..${right(hand).toFixed(1)}`,
       actions: `${actions.left.toFixed(1)},${actions.top.toFixed(1)}`,
       centerW: centerW.toFixed(1),
@@ -263,9 +270,11 @@ const states = {
   revealed: { top: { discards: 10, melds: 0, revealed: 0 }, left: { discards: 5, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: { discards: 8, melds: 1, revealed: 0 }, ting: 8 },
   heavy: { top: { discards: 12, melds: 4, revealed: 0 }, left: { discards: 8, melds: 1, revealed: 0 }, right: { discards: 8, melds: 0, revealed: 0 }, self: { discards: 8, melds: 0, revealed: 0 }, ting: 9 },
   fourMelds: { top: { discards: 8, melds: 4, revealed: 0 }, left: { discards: 8, melds: 4, revealed: 0 }, right: { discards: 8, melds: 0, revealed: 0 }, self: { discards: 8, melds: 0, revealed: 0 }, ting: 8 },
-  selfFourGang: { top: { discards: 8, melds: 0, revealed: 0 }, left: { discards: 8, melds: 0, revealed: 0 }, right: { discards: 25, melds: 1, revealed: 0 }, self: { discards: 8, melds: 4, meldTiles: 4, revealed: 0 }, ting: 9 },
-  gangHeavy: { top: { discards: 8, melds: 4, meldTiles: 4, revealed: 0 }, left: { discards: 8, melds: 4, meldTiles: 4, revealed: 0 }, right: { discards: 8, melds: 4, meldTiles: 4, revealed: 0 }, self: { discards: 8, melds: 4, meldTiles: 4, revealed: 0 }, ting: 9 },
+  selfFourGang: { top: { discards: 8, melds: 0, revealed: 0 }, left: { discards: 8, melds: 0, revealed: 0 }, right: { discards: 25, melds: 1, revealed: 0 }, self: { discards: 8, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, ting: 9 },
+  gangHeavy: { top: { discards: 8, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, left: { discards: 8, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, right: { discards: 8, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, self: { discards: 8, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, ting: 9 },
   overlay: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 16, melds: 1, revealed: 0 }, right: { discards: 25, melds: 1, revealed: 0 }, self: { discards: 17, melds: 0, revealed: 0 }, ting: 9 },
+  overlayWorst: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 4, meldSizes: [3, 3, 3, 3], revealed: 0 }, right: { discards: 29, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, self: { discards: 29, melds: 0, revealed: 0 }, ting: 9 },
+  revealed29: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: { discards: 8, melds: 1, revealed: 0 }, ting: 9 },
 };
 
 let failures = 0;
