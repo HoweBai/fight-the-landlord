@@ -87,33 +87,6 @@ $ftl-color-night-soft: #1d4f8c;
 /// 四川麻将桌底（深绿/亮绿渐变）
 $ftl-color-mahjong-table-deep: #0e4f28;
 $ftl-color-mahjong-table: #1a7a3a;
-
-/// 麻将牌桌「天月麻雀」风色板（2026-11-02）。
-/// 组件只用这组 token；旧 `$ftl-color-mahjong-table*` 保留但不再被牌桌引用。
-$ftl-color-mj-table-light: #7fa8c0;
-$ftl-color-mj-table-mid: #5c93ac;
-$ftl-color-mj-table-deep: #436c87;
-$ftl-color-mj-panel: #3a3d42;
-$ftl-color-mj-panel-light: #4a4d54;
-$ftl-color-mj-navy: #1e3352;
-$ftl-color-mj-navy-light: #2c4270;
-$ftl-color-mj-glass: rgba(27, 41, 80, 0.72);
-$ftl-color-mj-glass-soft: rgba(27, 41, 80, 0.35);
-$ftl-color-mj-gold: #e8c56a;
-$ftl-color-mj-gold-deep: #a8792e;
-$ftl-color-mj-cyan: #6fe3e8;
-$ftl-color-mj-urgent: #ff8a8a;
-$ftl-color-mj-muted: #b9c6e0;
-$ftl-color-mj-wood-light: #6b5a4a;
-$ftl-color-mj-wood-mid: #5a4d42;
-$ftl-color-mj-wood-deep: #4a3f36;
-$ftl-color-mj-on-gold: #1b2950;
-$ftl-color-mj-shadow: rgba(10, 25, 50, 0.35);
-$ftl-color-mj-highlight: rgba(255, 255, 255, 0.28);
-/// 麻将专用小字号（14/18 不在主字号阶；登记例外）
-$ftl-font-mj-badge: 18px;
-$ftl-font-mj-mini: 14px;
-
 /// 听牌提示（绿=保住全部听牌 / 黄=丢部分听牌）
 $ftl-color-hint-safe: #4ade80;
 $ftl-color-hint-warn: #fbbf24;

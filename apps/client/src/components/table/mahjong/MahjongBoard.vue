@@ -337,6 +337,11 @@ function claimKey(opt: MahjongClaimOption, index: number): string {
   return `${opt.claim}:${opt.tile ? tileType(opt.tile) : 'x'}:${index}`;
 }
 
+/** 当前窗口里第一个可响应的牌（用于中央提示）。 */
+const claimTile = computed<Tile | null>(
+  () => myClaims.value.find((o) => o.tile !== undefined)?.tile ?? null,
+);
+
 function nameOf(seat: number): string {
   if (seat === me.value) return '我';
   return props.seatNames[seat] || `玩家${seat}`;
@@ -552,38 +557,12 @@ const hasActions = computed(() => {
     phase.value === 'claim'
   );
 });
-/** 中央四家：杠分/临时分投影 + 庄/缺/听/胡/出局。 */
-const centerSeats = computed(() => {
-  const v = props.view;
-  const pending = new Map<number, number>();
-  for (const c of v?.pendingScoreChanges ?? []) {
-    pending.set(c.seat, (pending.get(c.seat) ?? 0) + c.delta);
-  }
-  const score = (seat: number) => pending.get(seat) ?? 0;
-  const badgeFor = (seat: number): string => {
-    const hu = v?.huInfos?.some((h) => h.seat === seat) ?? false;
-    const out = v?.isOut?.[seat] ?? false;
-    const ting = v?.tingSeats?.includes(seat) ?? false;
-    const lack = v?.lackSuits?.[seat] ?? null;
-    return hu ? '胡' : out ? '出局' : ting ? '听' : lack !== null ? `缺${MAHJONG_SUIT_NAMES[lack]}` : '';
-  };
-  return [
-    { label: '对', score: score(topSeat.value), dealer: v?.dealerSeat === topSeat.value, badge: badgeFor(topSeat.value) },
-    { label: '左', score: score(leftSeat.value), dealer: v?.dealerSeat === leftSeat.value, badge: badgeFor(leftSeat.value) },
-    { label: '右', score: score(rightSeat.value), dealer: v?.dealerSeat === rightSeat.value, badge: badgeFor(rightSeat.value) },
-    { label: '我', score: score(me.value), dealer: v?.dealerSeat === me.value, badge: badgeFor(me.value) },
-  ];
-});
-
-/** 终局摘要：已胡 N 家 / 牌墙摸空。 */
-const endedSummary = computed(() =>
-  endReason.value > 0 ? `已胡 ${endReason.value} 家` : '牌墙摸空',
-);
-
 const centerProps = computed(() => ({
   wallCount: wallCount.value,
   phaseText: phaseText.value,
-  seats: centerSeats.value,
+  claimTile: claimTile.value,
+  claimW: layout.value.centerTiles.claim.w,
+  claimH: layout.value.centerTiles.claim.h,
   tingTiles: tingTiles.value,
   tingW: layout.value.centerTiles.ting.w,
   tingH: layout.value.centerTiles.ting.h,
@@ -591,8 +570,12 @@ const centerProps = computed(() => ({
   seconds: props.seconds,
   active: amActive.value && !props.settlementRevealed,
   compact: layout.value.centerCompact,
-  ended: phase.value === 'ended',
-  endedText: phase.value === 'ended' ? endedSummary.value : '',
+  endedText:
+    phase.value === 'ended'
+      ? ''
+      : endReason.value > 0
+        ? `已胡 ${endReason.value} 家`
+        : '',
 }));
 
 // —— Batch 2 新增逻辑 ——
@@ -908,15 +891,13 @@ function onMeldPopDone(key: string) {
           :filtered-options="discardClickTarget ? filteredClaimsForDiscard : undefined"
           :busy="busy"
           :show-pass="canPass"
-          :preview-w="layout.centerTiles.claim.w"
-          :preview-h="layout.centerTiles.claim.h"
           @claim="submitClaim"
           @pass="submitPass"
         />
       </view>
 
-      <!-- 自己胡了（myRevealed 不为空）时，revealed 牌直接在本 .mj__hand 槽内渲染，
-           不再额外渲染普通手牌；settlementRevealed 同理。 -->
+      <!-- 自己胡了（myRevealed 不为空）时，手牌已在 .mj__my-revealed 展示，
+           隐藏 .mj__hand 避免重复渲染。settlementRevealed 同理。 -->
       <view
         v-if="myTrustee && !settlementRevealed && phase !== 'ended'"
         class="mj__trustee-mask"
@@ -984,38 +965,40 @@ function onMeldPopDone(key: string) {
   padding: 0;
   position: relative;
   color: $ftl-color-text;
-  // 天月风：亮青桌面 + 中心柔光 + 同心圆压纹（CSS background 第一层在最上面）
+  // P3: 牌桌背景增强 — 多层叠底：深→浅渐变 + 中心光斑 + 边缘暗角 + 微纹理
   background:
-    repeating-radial-gradient(
-      circle at 50% 45%,
-      transparent 0 58px,
-      $ftl-color-mj-highlight 58px 59px
+    // 最顶：极细的对角微纹（让纯色不那么塑料感）
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.012) 3px,
+      rgba(0, 0, 0, 0.012) 4px
     ),
-    radial-gradient(ellipse at 50% 45%, rgba(255, 255, 255, 0.18), transparent 62%),
+    // 中层：中心光斑（桌面打光效果）
+    radial-gradient(ellipse at center 45%, rgba(255, 240, 180, 0.07) 0%, transparent 60%),
+    // 底层：深→浅→深三段渐变
     linear-gradient(
       180deg,
-      $ftl-color-mj-table-light 0%,
-      $ftl-color-mj-table-mid 45%,
-      $ftl-color-mj-table-deep 100%
+      $ftl-color-mahjong-table-deep 0%,
+      $ftl-color-mahjong-table 40%,
+      $ftl-color-mahjong-table 60%,
+      $ftl-color-mahjong-table-deep 100%
     );
+  background-size: auto, auto, auto;
+  // P3: 外框 + 深层叠影模拟木框 + 暗角绒面
+  border: 3px solid rgba(20, 50, 30, 0.85);
+  box-shadow:
+    // 外框高光（模拟木框上边反光）
+    inset 0 2px 0 rgba(255, 200, 100, 0.08),
+    // 外框底边阴影
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    // 内部暗角（大半径柔化）
+    inset 0 0 160px rgba(0, 25, 12, 0.55),
+    inset 0 0 40px rgba(0, 0, 0, 0.35),
+    // 中心极弱高光（呼应 radial gradient）
+    inset 0 0 80px rgba(255, 220, 100, 0.04);
   overflow: hidden;
-}
-
-// 木色外框：伪元素绘制，不参与布局（避免给 .mj 加 border 导致全桌偏移）
-.mj::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 10px solid transparent;
-  border-image: linear-gradient(
-      135deg,
-      $ftl-color-mj-wood-mid,
-      $ftl-color-mj-wood-light,
-      $ftl-color-mj-wood-deep
-    )
-    1;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* —— 顶栏 —— */
@@ -1027,13 +1010,6 @@ function onMeldPopDone(key: string) {
   justify-content: space-between;
   gap: $ftl-space-5;
   padding: 0 20px;
-  border-bottom: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.35);
-  border-radius: 0 0 $ftl-radius-md $ftl-radius-md;
-  background: linear-gradient(
-    180deg,
-    rgba($ftl-color-mj-navy-light, 0.92),
-    rgba($ftl-color-mj-navy, 0.86)
-  );
 }
 .mj__bar-left,
 .mj__bar-right {
@@ -1069,28 +1045,20 @@ function onMeldPopDone(key: string) {
 
 /* —— 等待 / 静音 —— */
 .mj__waiting {
-  width: fit-content;
-  margin: $ftl-space-6 auto;
-  padding: $ftl-space-4 $ftl-space-7;
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.3);
-  border-radius: $ftl-radius-md;
-  background: $ftl-color-mj-glass;
+  padding: $ftl-space-9;
   text-align: center;
-  color: $ftl-color-mj-muted;
+  color: $ftl-color-text-muted;
   font-size: $ftl-font-md;
 }
 
 /* —— 动作栏 —— */
 .mj__hint,
 .mj__warn {
-  padding: 2px 6px;
-  border-radius: $ftl-radius-sm;
-  background: $ftl-color-mj-glass;
   font-size: $ftl-font-sm;
-  color: $ftl-color-mj-muted;
+  color: $ftl-color-text-muted;
 }
 .mj__warn {
-  color: $ftl-color-mj-urgent;
+  color: $ftl-color-danger;
 }
 .mj__lack,
 .mj__claim,
@@ -1122,10 +1090,10 @@ function onMeldPopDone(key: string) {
   transform: translateX(-50%);
   padding: 0 6px;
   border-radius: 4px;
-  background: rgba($ftl-color-mj-navy, 0.7);
+  background: rgba(0, 0, 0, 0.55);
   font-size: 11px;
-  color: $ftl-color-mj-gold;
-  opacity: 0.95;
+  color: $ftl-color-gold-light;
+  opacity: 0.9;
   pointer-events: none;
   white-space: nowrap;
 }
@@ -1152,8 +1120,8 @@ function onMeldPopDone(key: string) {
 .mj__hand-hint-popup__card {
   padding: 16px 24px;
   border-radius: 12px;
-  background: $ftl-color-mj-glass;
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.6);
+  background: rgba(20, 50, 30, 0.92);
+  border: 2px solid rgba($ftl-color-gold, 0.6);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1161,8 +1129,8 @@ function onMeldPopDone(key: string) {
 }
 .mj__hand-hint-popup__title { color: rgba(255,255,255,0.9); font-size: 16px; }
 .mj__hand-hint-popup__result--safe { color: $ftl-color-hint-safe; font-size: 18px; font-weight: 700; }
-.mj__hand-hint-popup__result--warn { color: $ftl-color-mj-urgent; font-size: 18px; font-weight: 700; }
-.mj__hand-hint-popup__ting { color: $ftl-color-mj-muted; font-size: 12px; }
+.mj__hand-hint-popup__result--warn { color: $ftl-color-hint-warn; font-size: 18px; font-weight: 700; }
+.mj__hand-hint-popup__ting { color: $ftl-color-text-muted; font-size: 12px; }
 
 /* —— 托管遮罩 —— */
 .mj__trustee-mask {
@@ -1177,16 +1145,16 @@ function onMeldPopDone(key: string) {
   gap: $ftl-space-2;
   padding: $ftl-space-4 $ftl-space-7;
   border-radius: $ftl-radius-md;
-  background: rgba($ftl-color-mj-navy, 0.82);
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.4);
+  background: rgba(0, 0, 0, 0.72);
+  border: $ftl-hairline solid rgba($ftl-color-gold, 0.4);
 }
 .mj__trustee-title {
-  color: $ftl-color-mj-gold;
+  color: $ftl-color-gold;
   font-size: $ftl-font-md;
   font-weight: 700;
 }
 .mj__trustee-desc {
-  color: $ftl-color-mj-muted;
+  color: $ftl-color-text-muted;
   font-size: $ftl-font-sm;
 }
 .mj__trustee-cancel {
@@ -1196,23 +1164,17 @@ function onMeldPopDone(key: string) {
 /* —— 按钮（自持样式：父组件 scoped 规则进不来）—— */
 .btn {
   @include ftl-btn;
-  border-color: rgba($ftl-color-mj-gold, 0.45);
+  border-color: rgba(160, 170, 190, 0.5);
   border-radius: $ftl-radius-md;
-  background: linear-gradient(
-    180deg,
-    rgba($ftl-color-mj-navy-light, 0.9),
-    rgba($ftl-color-mj-navy, 0.95)
-  );
-  color: rgba($ftl-color-on-primary, 0.85);
-  box-shadow:
-    0 4px 10px rgba($ftl-color-mj-navy, 0.35),
-    inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.18);
+  background: linear-gradient(180deg, rgba(120, 130, 150, 0.35), rgba(80, 90, 110, 0.5));
+  color: rgba($ftl-color-on-primary, 0.7);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   transition: transform 0.1s, box-shadow 0.1s, border-color 0.15s;
   background-image: none;
   &:hover {
-    border-color: $ftl-color-mj-gold;
-    color: $ftl-color-on-primary;
+    border-color: rgba(180, 190, 210, 0.7);
+    color: rgba($ftl-color-on-primary, 0.85);
   }
   &:active {
     transform: translateY(2px);
@@ -1223,37 +1185,33 @@ function onMeldPopDone(key: string) {
   min-height: $ftl-control-h-sm;
   padding: 0 $ftl-space-6;
   font-size: $ftl-font-sm;
-  box-shadow:
-    0 2px 6px rgba($ftl-color-mj-navy, 0.25),
-    inset 0 $ftl-hairline 0 rgba($ftl-color-mj-gold, 0.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 2px 0 rgba(255, 255, 255, 0.06);
 }
 .btn--primary {
-  border-color: $ftl-color-mj-gold-deep;
-  background: $ftl-color-mj-gold;
-  color: $ftl-color-mj-on-gold;
+  border-color: $ftl-color-gold-deep;
+  background: $ftl-color-gold;
+  color: $ftl-color-on-primary;
   border-radius: $ftl-radius-md;
   box-shadow:
-    0 6px 0 $ftl-color-mj-gold-deep,
-    0 8px 20px rgba($ftl-color-mj-gold, 0.45),
-    inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.6),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+    0 6px 0 $ftl-color-gold-deep,
+    0 8px 20px rgb(255 152 0 / 0.45),
+    inset 0 2px 0 rgb(255 255 255 / 0.6),
+    inset 0 -2px 0 rgb(0 0 0 / 0.1);
   transition: transform 0.1s, box-shadow 0.1s;
   background-image: none;
   &:hover {
     transform: translateY(-2px);
-    color: $ftl-color-mj-on-gold;
     box-shadow:
-      0 8px 0 $ftl-color-mj-gold-deep,
-      0 12px 28px rgba($ftl-color-mj-gold, 0.55),
-      inset 0 $ftl-hairline 0 rgba(255, 255, 255, 0.6);
+      0 8px 0 $ftl-color-gold-deep,
+      0 12px 28px rgb(255 152 0 / 0.55),
+      inset 0 2px 0 rgb(255 255 255 / 0.6);
   }
   &:active {
     transform: translateY(4px);
-    color: $ftl-color-mj-on-gold;
     box-shadow:
-      0 2px 0 $ftl-color-mj-gold-deep,
-      0 4px 10px rgba($ftl-color-mj-gold-deep, 0.3),
-      inset 0 3px 8px rgba(0, 0, 0, 0.2);
+      0 2px 0 $ftl-color-gold-deep,
+      0 4px 10px rgb(255 152 0 / 0.3),
+      inset 0 3px 8px rgb(0 0 0 / 0.2);
   }
 }
 .btn[disabled] {
@@ -1275,15 +1233,15 @@ function onMeldPopDone(key: string) {
 
 /* —— Batch 2：定缺推荐高亮 —— */
 .mj__lack--recommend {
-  border-color: $ftl-color-mj-gold-deep !important;
-  background: $ftl-color-mj-gold !important;
-  color: $ftl-color-mj-on-gold !important;
-  box-shadow: 0 4px 12px rgba($ftl-color-mj-gold, 0.5) !important;
+  border-color: $ftl-color-gold-deep !important;
+  background: linear-gradient(180deg, rgba(255, 200, 80, 0.45), rgba(200, 130, 30, 0.5)) !important;
+  color: $ftl-color-on-primary !important;
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.5) !important;
 }
 .mj__lack--hint {
   margin-left: 4px;
   font-size: 10px;
-  color: $ftl-color-mj-on-gold;
+  color: $ftl-color-gold-light;
   font-weight: 700;
 }
 </style>

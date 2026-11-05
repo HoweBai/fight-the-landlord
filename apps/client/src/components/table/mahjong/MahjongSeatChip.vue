@@ -84,7 +84,7 @@ const metaText = computed(() => {
     ]"
   >
     <view class="mj-chip__avatar-box" :style="{ width: `${avatar}px`, height: `${avatar}px` }">
-      <image class="mj-chip__avatar mj-chip__avatar--gold" src="/static/ui/default.png" mode="aspectFit" />
+      <image class="mj-chip__avatar" src="/static/ui/default.png" mode="aspectFit" />
       <text v-if="isDealer" class="mj-chip__corner mj-chip__corner--dealer">庄</text>
       <text v-if="lackLabel" class="mj-chip__corner mj-chip__corner--lack">{{ lackLabel }}</text>
       <text v-if="hu" class="mj-chip__corner mj-chip__corner--hu">
@@ -113,7 +113,7 @@ const metaText = computed(() => {
       </view>
     </view>
 
-    <view v-else class="mj-chip__self-info mj-chip__self-pill">
+    <view v-else class="mj-chip__self-info">
       <text class="mj-chip__meta">{{ balance ?? '—' }}</text>
       <text
         v-if="deltaLabel"
@@ -141,10 +141,7 @@ const metaText = computed(() => {
 .mj-chip--side {
   width: 100%;
   height: 100%;
-  padding: 0 $ftl-space-2;
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.45);
-  border-radius: $ftl-radius-md;
-  background: $ftl-color-mj-glass;
+  padding: 0 2px;
 }
 .mj-chip--bar {
   height: 100%;
@@ -164,12 +161,9 @@ const metaText = computed(() => {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  border: $ftl-hairline solid $ftl-color-mj-gold;
+  border: $ftl-hairline solid rgba($ftl-color-on-primary, 0.8);
   border-radius: $ftl-radius-pill;
   background: $ftl-color-surface;
-}
-.mj-chip__avatar--gold {
-  box-shadow: 0 0 $ftl-space-2 rgba($ftl-color-mj-gold, 0.35);
 }
 .mj-chip__corner {
   position: absolute;
@@ -184,20 +178,17 @@ const metaText = computed(() => {
 .mj-chip__corner--dealer {
   top: -2px;
   right: -2px;
-  background: $ftl-color-mj-gold;
-  color: $ftl-color-mj-on-gold;
+  background: $ftl-color-accent;
 }
 .mj-chip__corner--lack {
   bottom: -2px;
   left: -2px;
-  background: $ftl-color-mj-navy;
-  color: $ftl-color-mj-cyan;
+  background: rgba(120, 170, 255, 0.85);
 }
 .mj-chip__corner--hu {
   top: -2px;
   left: -2px;
-  background: $ftl-color-mj-gold;
-  color: $ftl-color-mj-on-gold;
+  background: rgba($ftl-color-gold, 0.9);
 }
 .mj-chip__corner--ting {
   top: -2px;
@@ -222,7 +213,7 @@ const metaText = computed(() => {
 }
 .mj-chip__meta {
   overflow: hidden;
-  color: $ftl-color-mj-muted;
+  color: rgba($ftl-color-on-primary, 0.8);
   font-size: 10px;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -236,34 +227,28 @@ const metaText = computed(() => {
 .mj-chip__badge {
   padding: 0 4px;
   border-radius: 999px;
-  background: rgba($ftl-color-mj-navy-light, 0.65);
+  background: rgba(255, 255, 255, 0.16);
   color: rgba($ftl-color-on-primary, 0.9);
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;
 }
 .mj-chip__badge--pos {
-  background: rgba($ftl-color-mj-gold, 0.22);
-  color: $ftl-color-mj-gold;
+  background: rgba($ftl-color-gold, 0.35);
+  color: $ftl-color-gold-light;
 }
 .mj-chip__badge--neg {
   background: rgba($ftl-color-danger, 0.3);
 }
 .mj-chip__badge--fan {
-  background: $ftl-color-mj-navy;
-  color: $ftl-color-mj-cyan;
+  background: rgba($ftl-color-accent, 0.3);
+  color: $ftl-color-hint-warn;
 }
 .mj-chip__self-info {
   display: flex;
   align-items: center;
   gap: 3px;
   min-width: 0;
-}
-.mj-chip__self-pill {
-  padding: 0 $ftl-space-2;
-  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.5);
-  border-radius: $ftl-radius-pill;
-  background: $ftl-color-mj-glass;
 }
 .mj-chip__delta {
   font-size: 9px;
@@ -274,18 +259,18 @@ const metaText = computed(() => {
 .mj-chip--active-strong {
   border-radius: $ftl-radius-md;
   animation: ftl-active-glow 1.2s ease-in-out infinite;
-  box-shadow: 0 0 14px rgba($ftl-color-mj-gold, 0.5);
+  box-shadow: 0 0 14px rgba($ftl-color-gold, 0.5);
 }
 .mj-chip--active-weak {
   border-radius: $ftl-radius-md;
   animation: ftl-active-glow 2.2s ease-in-out infinite;
-  box-shadow: 0 0 6px rgba($ftl-color-mj-gold, 0.25);
+  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.25);
 }
 @media (prefers-reduced-motion: reduce) {
   .mj-chip--active-strong,
   .mj-chip--active-weak {
     animation: none !important;
-    box-shadow: 0 0 8px rgba($ftl-color-mj-gold, 0.2);
+    box-shadow: 0 0 8px rgba($ftl-color-gold, 0.2);
   }
 }
 </style>

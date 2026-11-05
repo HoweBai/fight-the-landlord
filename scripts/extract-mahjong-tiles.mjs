@@ -1,15 +1,4 @@
 /**
- * @deprecated 2026-11-02 起由 `scripts/build-mahjong-tile-set.py` 取代。
- *
- * 旧素材（幼麟棋牌 babykylin_scmj）已整批替换为 FluffyStuff CC0 牌面；
- * 本脚本保留仅作历史追溯，**拒绝运行**以免把新素材覆盖回旧图。
- */
-console.error(
-  '已退役：2026-11-02 起由 scripts/build-mahjong-tile-set.py 取代；拒绝运行以免覆盖新素材。',
-);
-process.exit(1);
-
-/**
  * 从 babykylin_scmj 的 Cocos Creator Atlas (plist + PNG) 切出独立麻将牌面 PNG。
  *
  * 用法：

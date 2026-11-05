@@ -2,9 +2,9 @@
 /**
  * 单张麻将牌（哑组件）。只把 `Tile` 翻译成牌面素材路径。
  *
- * 素材：FluffyStuff/riichi-mahjong-tiles（CC0）合成——
- *   my/top (180×240 竖置), left/right (240×180 横置)，
- *   每个方向目录自带牌背；生成脚本 `scripts/build-mahjong-tile-set.py`。
+ * 素材：幼麟棋牌 4 方向 Atlas 提取——
+ *   my (75×113 正), top (55×84 倒置), left/right (49×40 横置)，
+ *   每个方向目录自带牌背。
  * 不传 `direction` → 默认 `my/`（根目录平铺旧资源已于 2026-10-29 清理）。
  * 牌面路径是**纯展示映射**，不含任何规则判定。
  * 见 `THIRD-PARTY-NOTICES.md`。
@@ -79,46 +79,62 @@ const tileStyle = computed(() =>
 </template>
 
 <style scoped lang="scss">
-/** 牌面比例 3:4；圆角跟随素材（约 12%），drop-shadow 跟随 alpha。 */
+/** 牌面比例 75:113 ≈ 0.664；宽度按档位，高度由比例推出。 */
 .mj-tile {
   display: block;
   flex: 0 0 auto;
-  border-radius: 12%;
+  border-radius: 3px;
   background: transparent;
-  filter: drop-shadow(0 2px 3px $ftl-color-mj-shadow);
-  transition: transform 0.08s, box-shadow 0.08s, filter 0.08s;
+  transition: transform 0.08s, box-shadow 0.08s;
 }
+/**
+ * 所有档位等比例放大 1.3×（方案：2026-10-29 牌面尺寸升级）。
+ * 原始素材 my=75×113 (0.664), top=55×84 (0.655), l/r=49×40 (1.225)。
+ * 放大后容器撑满素材利用率 ~80%，改善当前手牌/弃牌/对手牌都偏小的问题。
+ * 所有档位保持素材原始比例，仅缩放倍率不同档。
+ */
 .mj-tile--sm {
   width: 34px;
-  height: 45px;
+  height: 51px;
 }
 .mj-tile--md {
   width: 46px;
-  height: 61px;
+  height: 69px;
 }
 .mj-tile--lg {
   width: 60px;
-  height: 80px;
-}
-/* 左右家横置牌：240×180 素材，容器交换宽高 */
-.mj-tile--dir-left,
-.mj-tile--dir-right {
-  &.mj-tile--sm { width: 45px; height: 34px; }
-  &.mj-tile--md { width: 61px; height: 46px; }
-  &.mj-tile--lg { width: 80px; height: 60px; }
+  height: 90px;
 }
 .mj-tile--selected {
   transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
-  box-shadow: 0 0 0 $ftl-hairline $ftl-color-mj-gold;
-  filter: drop-shadow(0 0 4px rgba($ftl-color-mj-gold, 0.65));
+  box-shadow: 0 0 0 2px $ftl-color-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 .mj-tile--disabled {
-  /* 不可点击但仍要看清手牌（天月风亮桌面下 0.45 会洗白） */
-  opacity: 0.85;
-  cursor: default;
+  opacity: 0.45;
 }
 .mj-tile--dim {
   opacity: 0.5;
-  filter: grayscale(0.6) drop-shadow(0 2px 3px $ftl-color-mj-shadow);
+  filter: grayscale(0.6);
+}
+/**
+ * top 方向素材 55×84 (0.655) 与 my 方向 75×113 (0.664) 比例有差，
+ * 竖置牌（非横置）需要独立容器尺寸避免 aspectFit letterbox。
+ * 牌背同样跳过（四个方向同一张 83×125 图）。
+ * 放大后保持各自素材原始比例。
+ */
+.mj-tile--dir-top:not(.mj-tile--back) {
+  &.mj-tile--sm { width: 33px; height: 50px; }
+  &.mj-tile--md { width: 45px; height: 69px; }
+  &.mj-tile--lg { width: 59px; height: 90px; }
+}
+/**
+ * left/right 方向的牌面素材是横置（49×40，宽>高），容器需按横牌比例调整。
+ * 牌背（.mj-tile--back）图是竖的，四个方向都是同一张，所以保持默认竖牌容器尺寸。
+ */
+.mj-tile--dir-left:not(.mj-tile--back),
+.mj-tile--dir-right:not(.mj-tile--back) {
+  &.mj-tile--sm { width: 51px; height: 42px; }
+  &.mj-tile--md { width: 66px; height: 54px; }
+  &.mj-tile--lg { width: 88px; height: 72px; }
 }
 </style>
