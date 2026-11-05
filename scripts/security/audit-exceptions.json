@@ -1,16 +1,1 @@
-[
-  {
-    "id": 1243637,
-    "module": "@intlify/shared",
-    "reason": "修补只在 11.4.14+；9.x 无修复版（advisory 仅命中 =9.14.5）。命中链 100% 在 apps/client 的 @dcloudio uni 构建工具链（@dcloudio/uni-*@alpha > uni-cli-shared > @intlify/core-base@9.14.5，根 overrides 钉死 9.14.5）；形态 = vue-i18n 的 escapeParameter 未阻止翻译消息经 srcdoc 的 XSS —— 本仓翻译消息全部为静态内置文案、玩家输入不进入 i18n，且生产 H5 为 CSR 静态产物（App/mp 为 uni 编译器产物），玩家/生产不可达。2026-11-04 由门脚本按 advisory DB 漂移首报（master 权威轮）。",
-    "reviewTrigger": "uni 工具链升级到 @intlify/core-base / @intlify/shared ≥11.4.14（或官方声明支持 11.x）⇒ 重审并移除 9.14.5 override 与本豁免。",
-    "ghsa": "GHSA-83rm-6c8r-g728"
-  },
-  {
-    "id": 1243649,
-    "module": "@intlify/core-base",
-    "reason": "同 id=1243637（GHSA-83rm-6c8r-g728）：修补只在 11.4.14+；9.x 无修复版（advisory 仅命中 =9.14.5）。命中链 = @dcloudio uni 构建工具链；本仓翻译消息全部为静态内置文案，玩家输入不进入 i18n，生产 H5 为 CSR 静态产物 ⇒ 玩家/生产不可达。",
-    "reviewTrigger": "uni 工具链升级到 @intlify/core-base ≥11.4.14（或官方声明支持 11.x）⇒ 重审并移除 9.14.5 override 与本豁免。",
-    "ghsa": "GHSA-83rm-6c8r-g728"
-  }
-]
+[]

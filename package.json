@@ -54,7 +54,7 @@
       "jpeg-js": "^0.4.4",
       "ws": "^8.21.3",
       "postcss": "^8.5.18",
-      "@intlify/core-base": "9.14.5",
+      "@intlify/core-base": "9.14.4",
       "@intlify/message-resolver": "9.1.11",
       "source-map-js": "^1.2.2",
       "body-parser@1": "1.20.9",
