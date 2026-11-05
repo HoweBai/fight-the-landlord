@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v9（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v10（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
@@ -85,7 +85,7 @@ function layout(W, H, state) {
     const groupH = (n) => n * tileH() - (n - 1) * overlap;
     const total = () => sizes.reduce((sum, n) => sum + groupH(n), 0) + (sizes.length - 1) * meldGroupGap;
     while (total() > avail && scale > 0.4) scale -= 0.01;
-    return { w: tileW() + 4, h: total(), scale };
+    return { w: tileW() + sc(4), h: total(), scale };
   }
   function sideZone(side, plate) {
     const revealed = state[side].revealed ?? 0;
@@ -148,18 +148,20 @@ function layout(W, H, state) {
     const badgeCell = windowCount;
     const badgeCol = badgeCell % cols;
     const badgeRow = Math.floor(badgeCell / cols);
+    const rx = centerCx - width / 2;
     const badgeRect = overflow > 0 ? rect(
-      (width - gridW) / 2 + badgeCol * (tileW + gapT),
-      (height - gridH) / 2 + badgeRow * (tileH + gapT),
+      rx + (width - gridW) / 2 + badgeCol * (tileW + gapT),
+      top + (height - gridH) / 2 + badgeRow * (tileH + gapT),
       tileW, tileH,
     ) : null;
-    return { rect: rect(centerCx - width / 2, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, visible, overflow, windowCount, windowStart, badge: overflow > 0, badgeCount, latestIndex, badgeCell, badgeRect };
+    return { rect: rect(rx, top, width, height), cols, rows: 2, tile: { w: tileW, h: tileH }, fit, raw: state[side].discards, visible, overflow, windowCount, windowStart, badge: overflow > 0, badgeCount, latestIndex, badgeCell, badgeRect };
   }
   const topRiverBox = riverTopSelf('top', topRiverTop);
   const ownRiverBox = riverTopSelf('self', ownRiverBottom - ownRiverH);
 
   const topBacks = rect(centerCx - topBacksW / 2, topBacksTop, topBacksW, topBackH);
-  const topMeldW = Math.min(Math.max(topRiverBox.rect.width, topMeldContentW), topBacksW);
+  const topMeldScale = topMeldContentW > 0 ? Math.min(1, (topBacksW - sc(4)) / topMeldContentW) : 1;
+  const topMeldW = Math.min(Math.max(topRiverBox.rect.width, topMeldContentW * topMeldScale), topBacksW);
   const topMeld = topMeldH ? rect(centerCx - topMeldW / 2, topMeldTop, topMeldW, topMeldH) : rect(0, 0, 0, 0);
 
   // —— hub ——
@@ -192,6 +194,18 @@ function layout(W, H, state) {
       backs: rect(backX, z.sideTop, z.backW, z.backH),
       river: rect(riverX, z.sideTop, z.riverW, z.riverH),
       melds: z.meld.w ? rect(meldX, z.sideTop + Math.max(0, (z.avail - z.meld.h) / 2), z.meld.w, z.meld.h) : rect(0, 0, 0, 0),
+      badge: (() => {
+        if (!(z.overflow > 0)) return null;
+        const gridW = z.cols * sc(T.sideTileW) + (z.cols - 1) * gapT;
+        const gridH = z.rows * sc(T.sideTileH) + (z.rows - 1) * gapT;
+        const row = Math.floor(z.badgeCell / z.cols);
+        const col = z.badgeCell % z.cols;
+        return rect(
+          riverX + (z.riverW - gridW) / 2 + col * (sc(T.sideTileW) + gapT),
+          z.sideTop + (z.riverH - gridH) / 2 + row * (sc(T.sideTileH) + gapT),
+          sc(T.sideTileW), sc(T.sideTileH),
+        );
+      })(),
     };
   }
   const leftR = sideRects('left', leftZ), rightR = sideRects('right', rightZ);
@@ -272,6 +286,7 @@ function layout(W, H, state) {
   if (ownRiverBox.windowCount + (ownRiverBox.overflow > 0 ? 1 : 0) > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}+徽标`);
   if (topMeldW > centerW) checks.push(`对家副露条宽 ${topMeldW.toFixed(1)}>${centerW.toFixed(1)}`);
   if (topMeldContentW > topBacksW) checks.push(`对家副露内容 ${topMeldContentW.toFixed(1)}>顶背 ${topBacksW.toFixed(1)}`);
+  if (topMeldContentW > 0 && topBacksW - topMeldContentW * topMeldScale < sc(4) - 0.01) checks.push(`对家副露余量 <4s`);
 
   return {
     s, hubD, checks, overlays,
@@ -306,6 +321,7 @@ const states = {
   revealed29: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: { discards: 8, melds: 1, revealed: 0 }, ting: 9 },
   oneSideRevealed: { top: base(), left: { discards: 5, melds: 0, revealed: 14 }, right: base(), self: base(), ting: 8 },
   threeRevealed: { top: { discards: 0, melds: 0, revealed: 14 }, left: { discards: 5, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: base(), ting: 9 },
+  revealedGang: { top: base(), left: { discards: 5, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 14 }, right: base(), self: base(), ting: 9 },
 };
 
 let failures = 0;
