@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v7（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v8（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
- * v7 修正：
- * - 左右副露用旧 53b5da01 视觉尺寸（34×51@0.65），组高 78.6/101.4
+ * v8 修正：
+ * - 侧副露不旋转：left/right 49×40 素材 + vertical，盒 36.4×29.7@0.65
  * - 自己/对家副露按真实 3/4 张组宽 + 组距 8
  * - 侧背按 back.png 83×125（30.5×45.7），不是 49:40
  * - 上/下河 24 格：溢出时显示最新 23 + 第 24 格 +N；侧河 24+徽标
@@ -18,10 +18,10 @@ const T = {
   handH: 108, handCount: 14, tileRatio: 75 / 113, tileGap: 2, drawnGap: 12, handClearance: 16,
   topBackH: 46, riverH: 56, sideTileW: 56, sideTileH: (56 * 40) / 49,
   meldScale: 0.8, meldOverlap: 4, meldGroupGap: 8,
-  sideMeldScale: 0.65, sideMeldVisualH: 51, sideMeldVisualW: 34, sideMeldOverlap: 16,
+  sideMeldScale: 0.65, sideMeldVisualH: 45.714, sideMeldVisualW: 56, sideMeldOverlap: 4,
   seatPlateW: 160, seatPlateH: 56, topPlateW: 164, selfPlateW: 64, selfPlateH: 76,
   actionBtn: 84, actionGap: 8, actionW: 176, actionH: 176,
-  tingW: 20, tingH: 30, tingGap: 2, tingMax: 9, tingPerRow: 5,
+  tingW: 20, tingH: 30, tingGap: 2, tingMax: 9, tingPerRow: 4,
   hubMin: 160, hubMax: 200, displayCap: 24,
 };
 const HAND_ROW_W = T.handCount * T.handH * T.tileRatio + (T.handCount - 1) * T.tileGap + T.drawnGap;
@@ -78,13 +78,14 @@ function layout(W, H, state) {
   function sideMeldFit(sizes, avail) {
     if (sizes.length === 0) return { w: 0, h: 0, scale: 0 };
     let scale = T.sideMeldScale;
-    // 旧实现 53b5da01：rotate 模式 sm DOM 51×34，视觉 34×51；vertical margin-top 1px 补偿
+    // 不旋转：left/right 49×40 素材 + vertical 竖排；盒 36.4×29.7@0.65，aspectFit 正好填满
     const tileH = () => sc(T.sideMeldVisualH * scale);
-    const overlap = () => sc(T.sideMeldOverlap * scale);
-    const groupH = (n) => n * tileH() - (n - 1) * overlap();
+    const tileW = () => sc(T.sideMeldVisualW * scale);
+    const overlap = sc(T.sideMeldOverlap);
+    const groupH = (n) => n * tileH() - (n - 1) * overlap;
     const total = () => sizes.reduce((sum, n) => sum + groupH(n), 0) + (sizes.length - 1) * meldGroupGap;
     while (total() > avail && scale > 0.4) scale -= 0.01;
-    return { w: sc(T.sideMeldVisualW * scale) + 4, h: total(), scale };
+    return { w: tileW() + 4, h: total(), scale };
   }
   function sideZone(side, plate) {
     const revealed = state[side].revealed ?? 0;
@@ -239,8 +240,8 @@ function layout(W, H, state) {
     if (rects[n].width > 0 && hit(lift, rects[n])) checks.push(`选中抬起×${n}`);
   }
   if (!hubContentOk(hubD, hub.compact)) checks.push('hub 内容放不下');
-  if (leftZ.visible > leftZ.rows * leftZ.cols) checks.push(`左河容量 ${leftZ.rows * leftZ.cols}<${leftZ.visible}`);
-  if (rightZ.visible > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}`);
+  if (leftZ.visible + (leftZ.overflow > 0 ? 1 : 0) > leftZ.rows * leftZ.cols) checks.push(`左河容量 ${leftZ.rows * leftZ.cols}<${leftZ.visible}+徽标`);
+  if (rightZ.visible + (rightZ.overflow > 0 ? 1 : 0) > rightZ.rows * rightZ.cols) checks.push(`右河容量 ${rightZ.rows * rightZ.cols}<${rightZ.visible}+徽标`);
   if (topRiverBox.visible > topRiverBox.cols * 2) checks.push(`上河容量 ${topRiverBox.cols * 2}<${topRiverBox.visible}`);
   if (ownRiverBox.visible > ownRiverBox.cols * 2) checks.push(`自河容量 ${ownRiverBox.cols * 2}<${ownRiverBox.visible}`);
   if (topMeldW > centerW) checks.push(`对家副露条宽 ${topMeldW.toFixed(1)}>${centerW.toFixed(1)}`);
@@ -276,6 +277,8 @@ const states = {
   overlay: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 16, melds: 1, revealed: 0 }, right: { discards: 25, melds: 1, revealed: 0 }, self: { discards: 17, melds: 0, revealed: 0 }, ting: 9 },
   overlayWorst: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 4, meldSizes: [3, 3, 3, 3], revealed: 0 }, right: { discards: 29, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 0 }, self: { discards: 29, melds: 0, revealed: 0 }, ting: 9 },
   revealed29: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: { discards: 8, melds: 1, revealed: 0 }, ting: 9 },
+  oneSideRevealed: { top: base(), left: { discards: 5, melds: 0, revealed: 14 }, right: base(), self: base(), ting: 8 },
+  threeRevealed: { top: { discards: 0, melds: 0, revealed: 14 }, left: { discards: 5, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: base(), ting: 9 },
 };
 
 let failures = 0;
