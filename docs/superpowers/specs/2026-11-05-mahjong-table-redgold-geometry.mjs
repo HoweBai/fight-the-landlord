@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v10（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v11（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
@@ -113,14 +113,7 @@ function layout(W, H, state) {
     const badgeCell = windowCount;
     const gridW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
     const gridH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
-    const badgeCol = badgeCell % cols;
-    const badgeRow = Math.floor(badgeCell / cols);
-    const badgeRect = overflow > 0 ? rect(
-      (riverW - gridW) / 2 + badgeCol * (sc(T.sideTileW) + gapT),
-      (riverH - gridH) / 2 + badgeRow * (sc(T.sideTileH) + gapT),
-      sc(T.sideTileW), sc(T.sideTileH),
-    ) : null;
-    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed, windowCount, badgeCount, windowStart, latestIndex, badgeCell, badgeRect };
+    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed, windowCount, badgeCount, windowStart, latestIndex, badgeCell };
   }
   const leftZ = sideZone('left', leftPlate);
   const rightZ = sideZone('right', rightPlate);
@@ -241,6 +234,10 @@ function layout(W, H, state) {
     leftBacks: leftR.backs, leftRiver: leftR.river, leftMelds: leftR.melds,
     rightBacks: rightR.backs, rightRiver: rightR.river, rightMelds: rightR.melds,
     selfMeld, topMeld, ting,
+    ...(topRiverBox.badgeRect ? { topBadge: topRiverBox.badgeRect } : {}),
+    ...(ownRiverBox.badgeRect ? { ownBadge: ownRiverBox.badgeRect } : {}),
+    ...(leftR.badge ? { leftBadge: leftR.badge } : {}),
+    ...(rightR.badge ? { rightBadge: rightR.badge } : {}),
   };
   const checks = [];
   for (const [name, r] of Object.entries(rects)) {
@@ -296,7 +293,7 @@ function layout(W, H, state) {
       over: `${leftZ.overflow}/${rightZ.overflow}`,
       sideWin: `${leftZ.windowStart}+${leftZ.windowCount}/${leftZ.badgeCount} | ${rightZ.windowStart}+${rightZ.windowCount}/${rightZ.badgeCount}`,
       sideMeld: `${leftZ.meld.scale.toFixed(2)}/${leftZ.meld.h.toFixed(1)}`,
-      top: `${topRiverBox.cols}c+${topRiverBox.overflow}/${topRiverBox.badgeCount} win=${topRiverBox.windowStart}+${topRiverBox.windowCount}`,
+      top: `${topRiverBox.cols}c+${topRiverBox.overflow}/${topRiverBox.badgeCount} win=${topRiverBox.windowStart}+${topRiverBox.windowCount} k=${topMeldScale.toFixed(3)}`,
       hand: `${hand.left.toFixed(1)}..${right(hand).toFixed(1)}`,
       actions: `${actions.left.toFixed(1)},${actions.top.toFixed(1)}`,
       centerW: centerW.toFixed(1),
