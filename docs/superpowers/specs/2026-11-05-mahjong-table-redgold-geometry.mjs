@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v11（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v12（路线 A：动作浮层 + 牌河 24+N）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
@@ -318,7 +318,7 @@ const states = {
   revealed29: { top: { discards: 0, melds: 0, revealed: 0 }, left: { discards: 29, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: { discards: 8, melds: 1, revealed: 0 }, ting: 9 },
   oneSideRevealed: { top: base(), left: { discards: 5, melds: 0, revealed: 14 }, right: base(), self: base(), ting: 8 },
   threeRevealed: { top: { discards: 0, melds: 0, revealed: 14 }, left: { discards: 5, melds: 0, revealed: 14 }, right: { discards: 5, melds: 0, revealed: 14 }, self: base(), ting: 9 },
-  revealedGang: { top: base(), left: { discards: 5, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 14 }, right: base(), self: base(), ting: 9 },
+  revealedGang: { top: base(), left: { discards: 5, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 2 }, right: base(), self: base(), ting: 9 },
 };
 
 let failures = 0;
