@@ -1,6 +1,6 @@
 # 川麻红金牌桌重做 —— 实现交接（2026-11-07）
 
-分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..e5a003df`（18 提交，含交接与终审修复）
+分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..e5a003df`（18 个代码/交接提交；其后的文档提交另计）
 计划：`docs/superpowers/plans/2026-11-07-mahjong-table-redgold.md`
 设计：`docs/superpowers/specs/2026-11-07-mahjong-table-redgold-design-v13.md`（v12 及更早为继承）
 
