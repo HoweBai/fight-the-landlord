@@ -174,7 +174,6 @@ function onFlashEnd(e: AnimationEvent): void {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  overflow: hidden;
   border: 6px solid $ftl-color-mj-gold;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 42%, $ftl-color-mj-hub-core 0%, $ftl-color-mj-lacquer 70%);

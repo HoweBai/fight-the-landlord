@@ -13,7 +13,7 @@
  *  - last-discard：`lastDiscardAbs` 记 serverDiscards 绝对下标，再映射到可见窗口；
  *  - 发牌：`dealEpoch`/`dealNonce`（挂载即 v1 exchange/lack 播，v>1 seed）。
  */
-import { computed, inject, ref, watch } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   MAHJONG_SUIT_NAMES,
   sortTiles,
@@ -832,17 +832,52 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * 血战盘胡牌金光（Task 2）：单调键，只在**新胡**（huInfos 增长）时自增；
- * 挂载 seed / resync（长度不变）不闪；reduced-motion 下不设（animationend 不触发 ⇒ 金光层会永久残留）。
+ * 血战盘胡牌金光（Task 2）：单调键，只在**新胡**（huInfos 长度创新高）时自增。
+ *  - 水位 `maxHuSeen` 只升不降：stale 包先收缩再长回旧最大值不闪（不是新胡）；
+ *  - 挂载 seed / 首个非空 view（watch 首调 `prev === undefined`）只记水位，不闪；
+ *  - reduced-motion 下不设（animationend 不触发 ⇒ 金光层会永久残留）；
+ *    运行中切到 reduce 时由 matchMedia change 监听把键清零（见下方 onMounted）。
  */
+const maxHuSeen = ref(props.view?.huInfos.length ?? 0);
 const huFlashKey = ref(0);
 watch(
   () => props.view?.huInfos.length,
   (next, prev) => {
-    if (prev === undefined || next === undefined) return;
-    if (next > prev && !prefersReducedMotion()) huFlashKey.value += 1;
+    if (next === undefined) return;
+    // 首次拿到长度（挂载时 view 为空，之后才到达）：只 seed 水位。
+    if (prev === undefined) {
+      maxHuSeen.value = next;
+      return;
+    }
+    if (next <= maxHuSeen.value) return;
+    maxHuSeen.value = next;
+    if (!prefersReducedMotion()) huFlashKey.value += 1;
   },
 );
+
+/**
+ * 金光飞行中（0.8s）切到 reduce：全局 `animation: none !important` 让 `animationend`
+ * 永不到达 ⇒ 覆盖层会永久残留。change 监听在 matches=true 时主动清键。
+ * jsdom 25 没有 `matchMedia`、老端可能只有废弃的 `addListener` ⇒ 两者都做能力探测。
+ */
+let motionQuery: MediaQueryList | null = null;
+function onReducedMotionChange(e: MediaQueryListEvent): void {
+  if (e.matches) huFlashKey.value = 0;
+}
+onMounted(() => {
+  const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  if (!mq) return;
+  motionQuery = mq;
+  if (typeof mq.addEventListener === 'function') {
+    mq.addEventListener('change', onReducedMotionChange);
+  }
+});
+onUnmounted(() => {
+  if (motionQuery && typeof motionQuery.removeEventListener === 'function') {
+    motionQuery.removeEventListener('change', onReducedMotionChange);
+  }
+  motionQuery = null;
+});
 
 function showNextBanner(): void {
   bannerSeq.value += 1;

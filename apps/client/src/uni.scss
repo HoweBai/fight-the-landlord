@@ -84,8 +84,8 @@ $ftl-color-gold-deep: #e07b00;
 /// 金 = 牌桌主描边/徽标；gold-soft = 徽标描边等半透明金；lacquer = 血战盘/徽标深漆底；
 /// cream = 盘面与徽标文字；urgent = 末 5 秒紧迫红。
 ///
-/// ⚠️ `MahjongHub.vue` 的金环是**内联 JS 样式**（`ringStyle` 对象），读不到 SCSS 变量
-/// ⇒ 那里仍写 `#D4A24C` 字面量，与 `$ftl-color-mj-gold` 同值；改本令牌时**两处一起改**。
+/// ⚠️ `MahjongHub.vue` 的 6px 金环直接消费本令牌（SCSS 规则里的 `border`）；
+/// 组件样式同样读 `$ftl-color-mj-gold`，**没有**内联色值副本（旧 `ringStyle` 已删）。
 $ftl-color-mj-gold: #d4a24c;
 $ftl-color-mj-gold-light: #f5d98a;
 $ftl-color-mj-gold-soft: rgba(212, 162, 76, 0.55);

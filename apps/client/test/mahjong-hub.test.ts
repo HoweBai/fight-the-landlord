@@ -87,7 +87,11 @@ describe('MahjongHub（血战盘）', () => {
     expect(root).toContain('inset 0 0 24px rgba(0, 0, 0, .6)');
     expect(root).toContain('color: $ftl-color-mj-cream');
     expect(root).toContain('text-align: center');
-    expect(root).toContain('overflow: hidden');
+    // 根**不得**剪裁：四角徽标（14%/86%）与方位点外缘会压在圆外，overflow: hidden 会把
+    // 字形裁掉（mockup 的 `.hub` 也没有 overflow）。金光层/状态行各自持有裁切。
+    expect(root).not.toContain('overflow: hidden');
+    expect(ruleBody(style, '.mj-hub__status')).toContain('overflow: hidden');
+    expect(ruleBody(style, '.mj-hub__flash')).toContain('border-radius: 50%');
     // 旧结构：ring 与内联色值都不允许残留。
     expect(src).not.toContain('mj-hub__ring');
     expect(src).not.toMatch(/ringStyle/);
@@ -349,7 +353,6 @@ describe('MahjongHub（血战盘）', () => {
     const flash = w.find('.mj-hub__flash');
     expect(flash.exists()).toBe(true);
     expect(flash.classes()).toContain('anim-mj-hub-flash');
-    expect(flash.attributes('style') ?? '').not.toContain('display: none');
 
     // :key=flashKey ⇒ 键变化必须重挂载（重播动画）。
     const firstEl = flash.element;

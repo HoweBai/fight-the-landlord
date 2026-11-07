@@ -968,6 +968,45 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
 // ---------------------------------------------------------------------------
 
 describe('MahjongBoard：红金皮肤（Task 2：听牌标签 / 盘金光）', () => {
+  /**
+   * matchMedia 替身：可控 matches + change 事件。
+   * jsdom 25 没有 `window.matchMedia`，老实现也没有 `addEventListener` —— Board 侧做了能力探测，
+   * 这里同时提供 add/removeEventListener 以便验证「运行中切 reduce ⇒ 清键」的兜底。
+   */
+  function stubMatchMedia(initial: boolean) {
+    const listeners = new Set<(e: { matches: boolean }) => void>();
+    const mql = {
+      matches: initial,
+      addEventListener: (type: string, cb: (e: { matches: boolean }) => void) => {
+        if (type === 'change') listeners.add(cb);
+      },
+      removeEventListener: (type: string, cb: (e: { matches: boolean }) => void) => {
+        if (type === 'change') listeners.delete(cb);
+      },
+    };
+    const original = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => mql),
+    });
+    return {
+      mql,
+      fire(matches: boolean) {
+        mql.matches = matches;
+        for (const cb of Array.from(listeners)) cb({ matches });
+      },
+      listenerCount: () => listeners.size,
+      restore() {
+        Object.defineProperty(window, 'matchMedia', {
+          configurable: true,
+          writable: true,
+          value: original,
+        });
+      },
+    };
+  }
+
   const emptyLoads = {
     bySlot: {
       self: { discards: 0, melds: [] as number[], revealedCount: 0 },
@@ -1065,6 +1104,66 @@ describe('MahjongBoard：红金皮肤（Task 2：听牌标签 / 盘金光）', (
         value: original,
       });
     }
+  });
+
+  it('金光飞行中切到 reduced-motion：change 监听把 flashKey 清零，覆盖层消失；卸载时移除监听', async () => {
+    const mm = stubMatchMedia(false);
+    try {
+      const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+      expect(mm.listenerCount(), 'onMounted 必须挂 change 监听').toBe(1);
+
+      await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+      await nextTick();
+      const hub = wrapper.findComponent(MahjongHub);
+      expect(hub.props('flashKey')).toBe(1);
+      expect(wrapper.find('.mj-hub__flash').exists()).toBe(true);
+
+      // 0.8s 金光途中系统开启「减少动态效果」⇒ 全局 animation:none 让 animationend
+      // 永不到达 ⇒ 必须由 change 监听主动清键，否则覆盖层永久残留。
+      mm.fire(true);
+      await nextTick();
+      expect(hub.props('flashKey')).toBe(0);
+      expect(wrapper.find('.mj-hub__flash').exists()).toBe(false);
+
+      wrapper.unmount();
+      expect(mm.listenerCount(), 'onUnmounted 必须移除 change 监听').toBe(0);
+    } finally {
+      mm.restore();
+    }
+  });
+
+  it('huInfos 先收缩再长回旧最大值：水位只升不降，不重复闪', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+    const hub = () => wrapper.findComponent(MahjongHub);
+
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(1);
+
+    // stale 包（例如旧 resync）：长度收缩 ⇒ 不闪，水位保持 1。
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(1);
+
+    // 长回旧最大值（同一批胡，非新增）⇒ 不得再闪。
+    await wrapper.setProps({ view: view({ version: 4, huInfos: [hu(0)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(1);
+
+    // 真正超过旧最大值（新胡）⇒ 照常闪。
+    await wrapper.setProps({ view: view({ version: 5, huInfos: [hu(0), hu(2)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(2);
+  });
+
+  it('挂载时 view 为空、之后到达的 view 已带 huInfos：首调只 seed，不闪', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: null }) });
+    expect(wrapper.findComponent(MahjongHub).exists()).toBe(false);
+
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(1)] }) });
+    await nextTick();
+    expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(0);
+    expect(wrapper.find('.mj-hub__flash').exists()).toBe(false);
   });
 });
 
