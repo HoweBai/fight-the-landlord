@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 川麻红金牌桌 —— 设计期几何原型 v12（路线 A：动作浮层 + 牌河 24+N）。
+ * 川麻红金牌桌 —— 设计期几何原型 v13（B：固定 1334×750 构图 + 比例）。
  * 随 spec 入库；生产代码不引用。
  * 运行：node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs
  *
@@ -34,7 +34,7 @@ const inside = (r, W, H) => r.left >= -0.01 && r.top >= -0.01 && right(r) <= W +
 const hit = (a, b) => a.left < right(b) - 0.01 && b.left < right(a) - 0.01 && a.top < bottom(b) - 0.01 && b.top < bottom(a) - 0.01;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-function layout(W, H, state) {
+function layoutBase(W, H, state) {
   const s = Math.max(1, Math.min(H / 750, (0.86 * W) / HAND_ROW_W));
   const sc = (v) => v * s;
   const gap = sc(T.gap), gapT = sc(T.tileGap), outer = sc(T.outer), bar = sc(T.bar);
@@ -300,6 +300,16 @@ function layout(W, H, state) {
     },
     rects,
   };
+}
+
+/** B 方案：固定 1334×750 构图，居中放置；多余空间留边。 */
+function layout(W, H, state) {
+  const BW = 1334, BH = 750;
+  const u = Math.min(W / BW, H / BH);
+  const ox = (W - BW * u) / 2;
+  const oy = (H - BH * u) / 2;
+  const base = layoutBase(BW, BH, state);
+  return { ...base, s: u, offsetX: ox, offsetY: oy };
 }
 
 const base = () => ({ discards: 0, melds: 0, revealed: 0 });
