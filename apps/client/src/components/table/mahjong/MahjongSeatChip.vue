@@ -234,16 +234,19 @@ const scoreLabel = computed(() => (props.balance === null ? '—' : `${props.bal
   white-space: nowrap;
 }
 .mj-chip__score {
+  overflow: hidden;
+  min-width: 0;
   color: $ftl-color-gold-light;
   font-weight: 600;
   line-height: 1.15;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mj-chip__self-info {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 .mj-chip__delta {
@@ -266,7 +269,7 @@ const scoreLabel = computed(() => (props.balance === null ? '—' : `${props.bal
   box-shadow: 0 0 14px rgba($ftl-color-gold, 0.5);
 }
 .mj-chip--active-line {
-  border: 1px solid $ftl-color-gold;
+  border: $ftl-hairline solid $ftl-color-gold;
   border-radius: $ftl-radius-md;
 }
 .mj-chip--winner {

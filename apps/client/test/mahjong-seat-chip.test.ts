@@ -116,6 +116,33 @@ describe('MahjongSeatChip', () => {
     expect(src).not.toContain('infinite');
   });
 
+  it('分数省略：`.mj-chip__score` 规则含 text-overflow: ellipsis（v6 §3.4 分数省略）', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongSeatChip.vue', 'utf8');
+    const style = [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+      .map((m) => m[1]!)
+      .join('\n');
+    const rule = /\.mj-chip__score\s*\{([^}]*)\}/.exec(style);
+    expect(rule, '.mj-chip__score 规则必须存在').not.toBeNull();
+    const body = rule![1]!;
+    expect(body).toContain('text-overflow: ellipsis');
+    expect(body).toContain('overflow: hidden');
+    expect(body).toContain('white-space: nowrap');
+    expect(body).toContain('min-width: 0');
+  });
+
+  it('源码闸：`<style>` 内无裸 1px（发丝线一律走 $ftl-hairline）', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongSeatChip.vue', 'utf8');
+    const style = [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+      .map((m) => m[1]!)
+      .join('\n');
+    // 与 test/ui-tokens.test.ts 的 hairlineOffenders 同型：避开 241px 这类子串误报。
+    const offenders = style
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => /(?:^|[^\d])1px\b/.test(l));
+    expect(offenders, '发丝线必须走 $ftl-hairline（2px），不得手写 1px').toEqual([]);
+  });
+
   it('内联字号：对手 名字18/分数18/delta14；自己 分数16/delta10', () => {
     const opponent = mountChip({ pendingDelta: 12 });
     expect(opponent.find('.mj-chip__name').attributes('style')).toContain('font-size: 18px');

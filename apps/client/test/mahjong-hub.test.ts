@@ -218,4 +218,10 @@ describe('MahjongHub（血战盘）', () => {
     expect(src).not.toMatch(/animation/);
     expect(src).not.toMatch(/infinite/);
   });
+
+  it('源码闸：金环 inline border 走 2px（与 $ftl-hairline 等价；1px 缩放后不可见）', () => {
+    const src = readFileSync('src/components/table/mahjong/MahjongHub.vue', 'utf8');
+    expect(src).not.toMatch(/border:\s*'1px/);
+    expect(src).toMatch(/border:\s*'2px solid/);
+  });
 });

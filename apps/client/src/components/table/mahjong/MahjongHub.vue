@@ -105,7 +105,7 @@ const ringStyle = {
   right: '3px',
   bottom: '3px',
   left: '3px',
-  border: '1px solid #D4A24C',
+  border: '2px solid #D4A24C',
   borderRadius: '50%',
   pointerEvents: 'none',
 } as const;
@@ -168,7 +168,7 @@ const ringStyle = {
   overflow: hidden;
   border-radius: 50%;
   background: rgba(28, 8, 8, 0.55);
-  color: #f5e6c8;
+  color: rgb(245, 230, 200);
   text-align: center;
 }
 .mj-hub__ring {
@@ -178,7 +178,7 @@ const ringStyle = {
   right: 3px;
   bottom: 3px;
   left: 3px;
-  border: 1px solid #d4a24c;
+  border: $ftl-hairline solid rgb(212, 162, 76);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -201,26 +201,26 @@ const ringStyle = {
   line-height: 1.05;
 }
 .mj-hub__wall-label {
-  color: #c9a9a0;
+  color: rgb(201, 169, 160);
   line-height: 1.1;
 }
 .mj-hub__wall-count {
-  color: #d4a24c;
+  color: rgb(212, 162, 76);
   font-weight: 700;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 .mj-hub__clock {
-  color: #f5e6c8;
+  color: rgb(245, 230, 200);
   font-weight: 600;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .mj-hub__clock--urgent {
-  color: #ff6b5a;
+  color: rgb(255, 107, 90);
 }
 .mj-hub__ting {
-  color: #d4a24c;
+  color: rgb(212, 162, 76);
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -230,7 +230,7 @@ const ringStyle = {
   left: 50%;
   overflow: hidden;
   max-width: 88%;
-  color: #c9a9a0;
+  color: rgb(201, 169, 160);
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -272,16 +272,16 @@ const ringStyle = {
   transform: translateX(-50%);
 }
 .mj-hub__dot--lit {
-  background: #d4a24c;
+  background: rgb(212, 162, 76);
   box-shadow: 0 0 6px rgba(212, 162, 76, 0.9);
 }
 .mj-hub__badge {
   position: absolute;
   padding: 0 4px;
-  border: 1px solid rgba(212, 162, 76, 0.55);
+  border: $ftl-hairline solid rgba(212, 162, 76, 0.55);
   border-radius: 999px;
   background: rgba(28, 8, 8, 0.86);
-  color: #f5e6c8;
+  color: rgb(245, 230, 200);
   line-height: 1.15;
   white-space: nowrap;
 }
@@ -318,23 +318,23 @@ const ringStyle = {
   bottom: 12px;
 }
 .mj-hub__badge--hu {
-  border-color: #d4a24c;
+  border-color: rgb(212, 162, 76);
   background: rgba(212, 162, 76, 0.9);
-  color: #2b1608;
+  color: rgb(43, 22, 8);
 }
 .mj-hub__badge--ting {
   border-color: rgba(74, 222, 128, 0.8);
   background: rgba(74, 222, 128, 0.85);
-  color: #2b1608;
+  color: rgb(43, 22, 8);
 }
 .mj-hub__badge--lack {
   border-color: rgba(120, 170, 255, 0.8);
   background: rgba(120, 170, 255, 0.85);
-  color: #1c0808;
+  color: rgb(28, 8, 8);
 }
 .mj-hub__badge--trustee {
   border-color: rgba(201, 169, 160, 0.6);
   background: rgba(43, 12, 12, 0.9);
-  color: #c9a9a0;
+  color: rgb(201, 169, 160);
 }
 </style>
