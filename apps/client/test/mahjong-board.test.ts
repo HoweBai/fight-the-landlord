@@ -1167,3 +1167,53 @@ describe('MahjongBoard：红金皮肤（Task 2：听牌标签 / 盘金光）', (
   });
 });
 
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 3）—— 亮牌翻转 revealNonce
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：红金皮肤（Task 3：亮牌翻转 revealNonce）', () => {
+  function revealedSeat(seat: number) {
+    return {
+      seat,
+      tiles: [
+        { s: 0 as const, r: 1 },
+        { s: 1 as const, r: 2 },
+      ],
+      huTile: { s: 0 as const, r: 1 },
+    };
+  }
+
+  const riverOfDir = (wrapper: Wrapper, dir: string) =>
+    wrapper.findAllComponents(MahjongRiver).find((r) => r.classes().includes(`mj-river--${dir}`))!;
+
+  it('挂载时已有 revealedHands：seed 不播（revealNonce 保持 0，无翻转类）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ revealedHands: [revealedSeat(3)] }) }),
+    });
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(0);
+    expect(wrapper.findAll('.mj-river--left .anim-reveal-in')).toHaveLength(0);
+  });
+
+  it('新座位亮牌：revealNonce 自增，左/右河挂翻转；顶/自家不收该 prop', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view() }) });
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(0);
+
+    await wrapper.setProps({ view: view({ version: 2, revealedHands: [revealedSeat(3)] }) });
+    await nextTick();
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(1);
+    expect(wrapper.findAll('.mj-river--left .anim-reveal-in')).toHaveLength(2);
+
+    // 右家也亮 ⇒ 再自增（同一 nonce 下发到两条侧河）。
+    await wrapper.setProps({
+      view: view({ version: 3, revealedHands: [revealedSeat(3), revealedSeat(1)] }),
+    });
+    await nextTick();
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(2);
+    expect(riverOfDir(wrapper, 'right').props('revealNonce')).toBe(2);
+
+    // 对家亮牌走牌背位、自家亮牌走手牌位：两者不接 revealNonce。
+    expect(riverOfDir(wrapper, 'top').props('revealNonce')).toBe(0);
+    expect(riverOfDir(wrapper, 'my').props('revealNonce')).toBe(0);
+  });
+});
+

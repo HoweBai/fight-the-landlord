@@ -59,6 +59,11 @@ const props = withDefaults(
     meldRect?: Rect | null;
     /** 内侧 lane 宽度（`meldRect.width` 为 0 时兜底）。 */
     laneWidth?: number;
+    /**
+     * 亮牌翻转帧序号（2026-11-08 红金皮肤 Task 3）：Board 在**新 reveal**（新座位亮牌）时自增。
+     * 0 / 缺省 ⇒ 该次亮牌是挂载 seed（重连/中途进房），不播翻转。
+     */
+    revealNonce?: number;
     /** claimed 来源的窗口相对下标；非空时只描边该张、且只允许点该张。 */
     claimSourceIndex?: number | null;
   }>(),
@@ -72,6 +77,7 @@ const props = withDefaults(
     badgeRect: null,
     meldRect: null,
     laneWidth: 0,
+    revealNonce: 0,
     claimSourceIndex: null,
   },
 );
@@ -80,12 +86,6 @@ const emit = defineEmits<{
   (e: 'discard-click', payload: { tile: Tile; index: number }): void;
   (e: 'meld-pop-done', key: string): void;
 }>();
-
-const MELD_LABEL: Record<MahjongMeldView['kind'], string> = {
-  peng: '碰',
-  gang: '杠',
-  angang: '暗杠',
-};
 
 const vertical = computed(() => props.direction === 'left' || props.direction === 'right');
 
@@ -109,13 +109,17 @@ const gridStyle = computed<Record<string, string>>(() => ({
   gap: `${props.gap}px`,
 }));
 
+/**
+ * `+N` 徽标（2026-11-08 红金皮肤）：内容尺寸药丸，钉在 `badgeRect` **中心**。
+ * 不再把 width/height 设成整格 —— mockup 的 `+N` 是浮在格子中心的小金块，
+ * 铺满整格会让它看起来像一张牌。
+ */
 const badgeStyle = computed<Record<string, string> | undefined>(() =>
   props.badgeRect
     ? {
-        left: `${props.badgeRect.left}px`,
-        top: `${props.badgeRect.top}px`,
-        width: `${props.badgeRect.width}px`,
-        height: `${props.badgeRect.height}px`,
+        left: `${props.badgeRect.left + props.badgeRect.width / 2}px`,
+        top: `${props.badgeRect.top + props.badgeRect.height / 2}px`,
+        transform: 'translate(-50%, -50%)',
       }
     : undefined,
 );
@@ -175,7 +179,6 @@ function onDiscardClick(t: Tile, index: number): void {
   <view class="mj-river" :class="`mj-river--${direction}`">
     <view v-if="melds.length > 0" class="mj-river__melds" :style="meldStripStyle">
       <view v-for="m in melds" :key="m.key" class="mj-river__meld">
-        <text class="mj-river__meld-label">{{ MELD_LABEL[m.meld.kind] }}</text>
         <MahjongMeld
           :meld="m.meld"
           :direction="direction"
@@ -192,11 +195,13 @@ function onDiscardClick(t: Tile, index: number): void {
     <view v-if="revealed" class="mj-river__grid mj-river__revealed" :style="gridStyle">
       <MahjongTile
         v-for="(t, i) in revealed.tiles"
-        :key="`revealed-${i}`"
+        :key="`revealed-${revealNonce}-${i}`"
         :tile="t"
         :direction="direction"
         :w="tileW"
         :h="tileH"
+        :class="{ 'anim-reveal-in': revealNonce > 0 }"
+        :style="{ '--ftl-delay': `${i * 40}ms` }"
         dim
       />
     </view>
@@ -265,50 +270,46 @@ function onDiscardClick(t: Tile, index: number): void {
   align-items: center;
   justify-content: center;
 }
-.mj-river__meld-label {
-  position: absolute;
-  top: 0;
-  left: 0;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba($ftl-color-on-primary, 0.85);
-  font-size: 9px;
-  line-height: 1.3;
-  white-space: nowrap;
-  pointer-events: none;
-}
+/* 最新弃牌（红金皮肤）：发丝线高亮描边 + 金色光晕（旧 box-shadow 会被牌图遮住一半）。 */
 .mj-river__tile--latest {
-  box-shadow: 0 0 6px rgba($ftl-color-gold, 0.55);
+  outline: $ftl-hairline solid $ftl-color-mj-highlight;
+  outline-offset: 0;
+  filter: drop-shadow(0 0 6px rgba($ftl-color-mj-highlight, .8));
 }
+/* claimed 来源描边（红金皮肤）：不再用主色蓝，改红金着色。 */
 .mj-river__tile--filtered {
-  outline: 2px solid $ftl-color-primary;
-  outline-offset: -2px;
+  outline: $ftl-hairline solid $ftl-color-mj-gold;
+  outline-offset: 0;
 }
 .mj-river__tile--clickable {
   cursor: pointer;
 }
+/* `+N` 徽标（红金皮肤）：内容尺寸金底药丸，中心由内联 left/top + translate 定位。 */
 .mj-river__badge {
   position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba($ftl-color-gold, 0.95);
-  font-size: 18px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: $ftl-color-mj-gold;
+  color: $ftl-color-mj-ink;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   pointer-events: none;
 }
+/* 已胡标签（红金皮肤）：移到河内底部，金底深字。 */
 .mj-river__revealed-label {
   position: absolute;
-  top: -13px;
+  bottom: 0;
+  top: auto;
   left: 0;
   padding: 0 3px;
-  border-radius: 999px;
-  background: rgba($ftl-color-gold, 0.85);
-  color: $ftl-color-on-primary;
+  border-radius: 6px;
+  background: $ftl-color-mj-gold;
+  color: $ftl-color-mj-ink;
   font-size: 9px;
   line-height: 1.3;
   white-space: nowrap;

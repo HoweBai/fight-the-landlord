@@ -296,3 +296,46 @@ describe('方向只靠左右横置素材 + 竖叠，不用 rotate', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 3）—— 牌面投影 / 置灰合并 / 选中金边
+// ---------------------------------------------------------------------------
+
+describe('MahjongTile：红金皮肤（Task 3）', () => {
+  const tileSrc = stripComments(
+    readFileSync(join(SRC_ROOT, 'components/table/mahjong/MahjongTile.vue'), 'utf8'),
+  );
+  const style = [...tileSrc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) => m[1]!)
+    .join('\n');
+
+  it('face-up（非牌背）统一投影 drop-shadow', () => {
+    const rule = /\.mj-tile:not\(\.mj-tile--back\)\s*\{([^}]*)\}/.exec(style);
+    expect(rule, 'face-up 投影规则必须存在').not.toBeNull();
+    expect(rule![1]).toContain('filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45))');
+  });
+
+  it('置灰牌合并 grayscale + 投影（不得单独声明 filter 覆盖掉阴影）', () => {
+    const rule = /\.mj-tile:not\(\.mj-tile--back\)\.mj-tile--dim\s*\{([^}]*)\}/.exec(style);
+    expect(rule, '.mj-tile--dim 合并 filter 规则必须存在').not.toBeNull();
+    expect(rule![1]).toContain(
+      'filter: grayscale(.6) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45))',
+    );
+    // 反面对照：单独的 `.mj-tile--dim { filter: grayscale(...) }` 会把 face-up 投影覆盖掉。
+    const loneDim = /(?:^|\n)\s*\.mj-tile--dim\s*\{([^}]*)\}/.exec(style);
+    if (loneDim) expect(loneDim[1], '单独 .mj-tile--dim 规则不得带 filter').not.toContain('filter');
+  });
+
+  it('牌背不加 filter（性能）', () => {
+    // 不得有独立 `.mj-tile--back { filter: … }` 规则（`:not(.mj-tile--back)` 不算）。
+    expect(/(?:^|\n)\s*\.mj-tile--back\s*\{[^}]*filter\s*:/m.test(style)).toBe(false);
+  });
+
+  it('selected 描边用红金令牌 $ftl-color-mj-gold（不是旧 $ftl-color-gold），保留抬升', () => {
+    const rule = /\.mj-tile--selected\s*\{([^}]*)\}/.exec(style);
+    expect(rule, '.mj-tile--selected 规则必须存在').not.toBeNull();
+    expect(rule![1]).toContain('$ftl-color-mj-gold');
+    expect(rule![1]).not.toMatch(/\$ftl-color-gold\b/);
+    expect(rule![1], '保留选中抬升').toContain('translateY');
+  });
+});

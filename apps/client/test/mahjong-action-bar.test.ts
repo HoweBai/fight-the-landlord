@@ -67,13 +67,15 @@ describe('MahjongActionBar', () => {
     }
   });
 
-  it('play：出牌是宽主按钮，点击 emit discard；胡按钮 emit 其 option', async () => {
+  it('play：出牌是 84px 主按钮、固定在右下格 (2,2)；胡按钮 emit 其 option', async () => {
     const w = mountBar({ mode: 'play', options: [hu5], selectedCount: 1 });
     const discard = w.findAll('.mj-action-bar__btn').find((b) => b.text() === '出牌');
     expect(discard).toBeDefined();
     const discardStyle = discard!.attributes('style') ?? '';
-    expect(discardStyle).toContain('width: 176px');
-    expect(discardStyle).toContain('grid-column: span 2');
+    expect(discardStyle).toContain('width: 84px');
+    expect(discardStyle).toContain('height: 84px');
+    expect(discardStyle).toContain('grid-column: 2');
+    expect(discardStyle).toContain('grid-row: 2');
 
     const hu = w.findAll('.mj-action-bar__btn').find((b) => b.text().includes('胡'));
     expect(hu).toBeDefined();
@@ -85,6 +87,33 @@ describe('MahjongActionBar', () => {
       [{ kind: 'discard' }],
       [{ kind: 'claim', option: hu5 }],
     ]);
+  });
+
+  it('play 严格 2×2：胡 (1,1)、杠 (2,1)、过 (1,2)；没有任何 176px 宽按钮', () => {
+    const w = mountBar({ mode: 'play', options: [hu5, gang3], showPass: true, selectedCount: 1 });
+    const byText = (t: string) => w.findAll('.mj-action-bar__btn').find((b) => b.text() === t)!;
+    expect(byText('胡').attributes('style')).toContain('grid-column: 1');
+    expect(byText('胡').attributes('style')).toContain('grid-row: 1');
+    expect(byText('杠').attributes('style')).toContain('grid-column: 2');
+    expect(byText('杠').attributes('style')).toContain('grid-row: 1');
+    expect(byText('过').attributes('style')).toContain('grid-column: 1');
+    expect(byText('过').attributes('style')).toContain('grid-row: 2');
+    for (const b of w.findAll('.mj-action-bar__btn')) {
+      const style = b.attributes('style') ?? '';
+      expect(style).not.toContain('176px');
+      expect(style).not.toContain('span 2');
+    }
+  });
+
+  it('claim：非过选项自动排布；过固定在右下 (2,2)', () => {
+    const w = mountBar({ mode: 'claim', options: [peng, gang3, hu5, pass], showPass: true });
+    const btns = w.findAll('.mj-action-bar__btn');
+    const passBtn = btns.find((b) => b.text() === '过')!;
+    expect(passBtn.attributes('style')).toContain('grid-column: 2');
+    expect(passBtn.attributes('style')).toContain('grid-row: 2');
+    for (const b of btns.filter((x) => x.text() !== '过')) {
+      expect(b.attributes('style') ?? '').not.toContain('grid-column');
+    }
   });
 
   it('play：出牌只在恰好选中 1 张时可用（0/2 张禁用，胡/杠不受影响）', () => {
@@ -125,6 +154,24 @@ describe('MahjongActionBar', () => {
   it('claim rob 胡：胡按钮显示待响应牌「胡 5万」', () => {
     const w = mountBar({ mode: 'claim', options: [hu5], showPass: false });
     expect(w.find('.mj-action-bar__btn').text()).toContain('胡 5万');
+  });
+
+  it('claim rob 胡带 tile：按钮内渲染 20×30 小牌（胡文本保留）', () => {
+    const w = mountBar({ mode: 'claim', options: [hu5], showPass: false });
+    const btn = w.find('.mj-action-bar__btn');
+    const img = btn.find('image');
+    expect(img.exists(), '待响应小牌必须渲染').toBe(true);
+    expect(img.attributes('style')).toContain('width: 20px');
+    expect(img.attributes('style')).toContain('height: 30px');
+    expect(img.attributes('aria-label')).toBe('万5');
+    expect(btn.text()).toContain('胡 5万');
+  });
+
+  it('claim 胡无 tile：只渲染文本，无小牌', () => {
+    const w = mountBar({ mode: 'claim', options: [{ claim: 'hu' }], showPass: false });
+    const btn = w.find('.mj-action-bar__btn');
+    expect(btn.find('image').exists()).toBe(false);
+    expect(btn.text()).toContain('胡');
   });
 
   it('exchange：宽按钮换三张 + 已选 1/3；点击 emit exchange', async () => {
@@ -183,5 +230,66 @@ describe('MahjongActionBar', () => {
     // Task 10：claim 按钮引用 `anim-claim-pulse`（定义在 animations.scss），
     // 组件自身仍不得写 `infinite` 声明；只看**代码**，注释里的解释不算违规。
     expect(stripComments(src)).not.toContain('infinite');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 3）—— 动作区按钮 / 滑入
+// ---------------------------------------------------------------------------
+
+const barSrc = readFileSync('src/components/table/mahjong/MahjongActionBar.vue', 'utf8');
+const barStyle = [...barSrc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+  .map((m) => m[1]!)
+  .join('\n');
+
+/** 取一条选择器规则的声明体（本文件的这些规则没有嵌套块）。 */
+function barRule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(barStyle);
+  expect(m, `${selector} 规则必须存在`).not.toBeNull();
+  return m![1]!;
+}
+
+describe('MahjongActionBar：红金皮肤（Task 3）', () => {
+  it('按钮：漆底 / 金棕发丝边 / 12px 圆角 / 24px cream / 3D 阴影', () => {
+    const body = barRule('.mj-action-bar__btn');
+    expect(body).toContain('background: rgba($ftl-color-mj-lacquer, .92)');
+    expect(body).toContain('border: $ftl-hairline solid $ftl-color-mj-border');
+    expect(body).toContain('border-radius: 12px');
+    expect(body).toContain('color: $ftl-color-mj-cream');
+    expect(body).toContain('font-size: 24px');
+    expect(body).toContain('font-weight: 700');
+    expect(body).toContain('box-shadow: 0 4px 0 $ftl-color-mj-border');
+    expect(body).not.toMatch(/rgba\(40, 76, 51|rgba\(23, 50, 33/);
+  });
+
+  it('主按钮：status→gold 渐变 + ink 字 + edge 描边', () => {
+    const body = barRule('.mj-action-bar__btn--primary');
+    expect(body).toContain('background: linear-gradient($ftl-color-mj-status, $ftl-color-mj-gold)');
+    expect(body).toContain('color: $ftl-color-mj-ink');
+    expect(body).toContain('border-color: $ftl-color-mj-edge');
+  });
+
+  it('过 / 幽灵：muted 字 + 半透明漆底', () => {
+    const body = barRule('.mj-action-bar__btn--pass');
+    expect(body).toContain('$ftl-color-mj-muted');
+    expect(body).toContain('rgba($ftl-color-mj-lacquer');
+  });
+
+  it('多杠选择器项：漆底金边（绿色渐变已删）', () => {
+    const body = barRule('.mj-action-bar__gang-item');
+    expect(body).toContain('rgba($ftl-color-mj-lacquer');
+    expect(body).toContain('$ftl-color-mj-gold');
+    expect(body).not.toMatch(/rgba\(60, 110, 75|rgba\(35, 75, 50/);
+  });
+
+  it('推荐缺：金色描边（recommended 保留）', () => {
+    const body = barRule('.mj-action-bar__btn--recommended');
+    expect(body).toContain('$ftl-color-mj-gold');
+  });
+
+  it('根挂 anim-action-slide-in（入场滑入）', () => {
+    const w = mountBar();
+    expect(w.find('.mj-action-bar').classes()).toContain('anim-action-slide-in');
   });
 });

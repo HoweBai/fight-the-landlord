@@ -110,16 +110,31 @@ const tileStyle = computed(() =>
   width: 60px;
   height: 90px;
 }
+/**
+ * 牌面投影（2026-11-08 红金皮肤）：face-up 牌统一落影。
+ * 牌背不挂 filter —— 对手整排牌背数量大，逐张投影在低端机上是持续合成开销。
+ */
+.mj-tile:not(.mj-tile--back) {
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
+}
 .mj-tile--selected {
   transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
-  box-shadow: 0 0 0 2px $ftl-color-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 2px $ftl-color-mj-gold, 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 .mj-tile--disabled {
   opacity: 0.45;
 }
 .mj-tile--dim {
   opacity: 0.5;
-  filter: grayscale(0.6);
+}
+/**
+ * 置灰必须**合并**投影：单独写 `filter: grayscale(.6)` 会把 face-up 的 drop-shadow
+ * 整个覆盖掉（filter 不是叠加属性）⇒ 置灰牌反而比正常牌更“浮”。
+ * 选择器重复 `.mj-tile:not(.mj-tile--back)` 提高权重以压过上面的 face-up 规则；
+ * 牌背 + 置灰仍不挂 filter（性能）。
+ */
+.mj-tile:not(.mj-tile--back).mj-tile--dim {
+  filter: grayscale(.6) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
 }
 /**
  * top 方向素材 55×84 (0.655) 与 my 方向 75×113 (0.664) 比例有差，

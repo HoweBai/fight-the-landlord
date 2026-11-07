@@ -36,6 +36,7 @@ export type ActionBarAction =
  */
 import { computed, ref, watch } from 'vue';
 import { MAHJONG_SUIT_NAMES } from '@fight-the-landlord/protocol';
+import MahjongTile from './MahjongTile.vue';
 
 const props = withDefaults(defineProps<{
   mode: ActionBarMode;
@@ -77,6 +78,17 @@ const gridStyle = {
 } as const;
 
 const btnStyle = { width: '84px', height: '84px' } as const;
+/**
+ * 严格 2×2 布局（2026-11-08 红金皮肤 Task 3，mockup `.actions`）：
+ * play 窗口四格固定 —— 胡 (1,1) / 杠 (2,1) / 过 (1,2) / 出牌 (2,2)。
+ * 出牌不再是 176px 宽按钮（mockup 里 2×2 的右下格才是主按钮）。
+ */
+const discardBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '2' } as const;
+const huBtnStyle = { width: '84px', height: '84px', gridColumn: '1', gridRow: '1' } as const;
+const gangBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '1' } as const;
+const playPassBtnStyle = { width: '84px', height: '84px', gridColumn: '1', gridRow: '2' } as const;
+/** claim 窗口：非过选项自动排布，过固定在右下格。 */
+const claimPassBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '2' } as const;
 const wideBtnStyle = { width: '176px', height: '84px', gridColumn: 'span 2' } as const;
 const wideRowStyle = { gridColumn: 'span 2' } as const;
 const gangSelectorStyle = { gridColumn: 'span 2' } as const;
@@ -126,13 +138,13 @@ function pickGang(opt: MahjongClaimOption): void {
 </script>
 
 <template>
-  <view class="mj-action-bar">
+  <view class="mj-action-bar anim-action-slide-in">
     <view class="mj-action-bar__grid" :style="gridStyle">
       <template v-if="mode === 'play'">
         <button
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--discard"
-          :style="wideBtnStyle"
+          :style="discardBtnStyle"
           :disabled="busy || (mode === 'play' && selectedCount !== 1)"
           @click="emitAction({ kind: 'discard' })"
         >
@@ -143,7 +155,7 @@ function pickGang(opt: MahjongClaimOption): void {
           v-if="huOption"
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--hu"
-          :style="btnStyle"
+          :style="huBtnStyle"
           :disabled="busy"
           @click="pickHu"
         >
@@ -154,7 +166,7 @@ function pickGang(opt: MahjongClaimOption): void {
           v-if="gangOptions.length === 1"
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--gang"
-          :style="btnStyle"
+          :style="gangBtnStyle"
           :disabled="busy"
           @click="pickSoleGang"
         >
@@ -164,7 +176,7 @@ function pickGang(opt: MahjongClaimOption): void {
           v-else-if="gangOptions.length > 1"
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--gang"
-          :style="btnStyle"
+          :style="gangBtnStyle"
           :disabled="busy"
           @click="toggleGang"
         >
@@ -175,7 +187,7 @@ function pickGang(opt: MahjongClaimOption): void {
           v-if="showPass"
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--pass"
-          :style="btnStyle"
+          :style="playPassBtnStyle"
           :disabled="busy"
           @click="emitAction({ kind: 'pass' })"
         >
@@ -214,13 +226,21 @@ function pickGang(opt: MahjongClaimOption): void {
           :disabled="busy"
           @click="emitClaim(opt)"
         >
+          <!-- rob 胡待响应牌（v13 §10.2 / 红金皮肤 Task 3）：20×30 小牌浮在「胡」文本上方。 -->
+          <MahjongTile
+            v-if="opt.claim === 'hu' && opt.tile"
+            :tile="opt.tile"
+            direction="my"
+            :w="20"
+            :h="30"
+          />
           {{ claimLabel(opt) }}
         </button>
         <button
           v-if="showPass"
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--pass anim-claim-pulse"
-          :style="btnStyle"
+          :style="claimPassBtnStyle"
           :disabled="busy"
           @click="emitAction({ kind: 'pass' })"
         >
@@ -270,54 +290,61 @@ function pickGang(opt: MahjongClaimOption): void {
   justify-content: flex-end;
 }
 
+// 红金皮肤（Task 3，mockup `.act`）：漆底 / 金棕发丝边 / 12px 圆角 / 24px cream / 3D 阴影。
 .mj-action-bar__btn {
   @include ftl-btn;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-height: 0;
   padding: 0;
-  border: $ftl-hairline solid rgba($ftl-color-gold, 0.55);
-  border-radius: $ftl-radius-md;
-  background: linear-gradient(180deg, rgba(40, 76, 51, 0.9), rgba(23, 50, 33, 0.94));
-  color: rgba($ftl-color-on-primary, 0.94);
-  font-size: $ftl-font-md;
+  border: $ftl-hairline solid $ftl-color-mj-border;
+  border-radius: 12px;
+  background: rgba($ftl-color-mj-lacquer, .92);
+  color: $ftl-color-mj-cream;
+  font-size: 24px;
   font-weight: 700;
+  box-shadow: 0 4px 0 $ftl-color-mj-border;
 }
 
-// 主按钮：金实心（出牌 / 胡 / 换三张）
+// 主按钮：status→gold 渐变 + 深字（出牌 / 胡 / 换三张）
 .mj-action-bar__btn--primary {
-  border-color: $ftl-color-gold-deep;
-  background: $ftl-color-gold;
-  color: $ftl-color-on-primary;
+  border-color: $ftl-color-mj-edge;
+  background: linear-gradient($ftl-color-mj-status, $ftl-color-mj-gold);
+  color: $ftl-color-mj-ink;
 }
 
 // 杠：描金加强
 .mj-action-bar__btn--gang {
-  border-color: rgba($ftl-color-gold, 0.75);
-  color: $ftl-color-gold-light;
+  border-color: rgba($ftl-color-mj-gold, .75);
+  color: $ftl-color-mj-gold-light;
 }
 
-// 过：弱化处理
+// 过：弱化处理（幽灵按钮）
 .mj-action-bar__btn--pass {
-  border-color: rgba($ftl-color-border, 0.5);
-  background: rgba($ftl-color-surface, 0.45);
-  color: rgba($ftl-color-text, 0.7);
+  border-color: rgba($ftl-color-mj-muted, .5);
+  background: rgba($ftl-color-mj-lacquer, .6);
+  color: $ftl-color-mj-muted;
 }
 
 // 推荐缺：金色描边 + 小标记
 .mj-action-bar__btn--recommended {
-  border-color: $ftl-color-gold;
-  box-shadow: 0 0 0 $ftl-hairline rgba($ftl-color-gold, 0.5);
+  border-color: $ftl-color-mj-gold;
+  box-shadow: 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, .5);
 }
 
 .mj-action-bar__rec {
   display: block;
   font-size: $ftl-font-xs;
   font-weight: 400;
-  color: $ftl-color-gold-light;
+  color: $ftl-color-mj-gold-light;
 }
 
 .mj-action-bar__hint {
   font-size: $ftl-font-sm;
-  color: $ftl-color-gold-light;
+  color: $ftl-color-mj-gold-light;
   text-align: center;
 }
 
@@ -327,15 +354,16 @@ function pickGang(opt: MahjongClaimOption): void {
   gap: 8px;
 }
 
+// 多杠选择器项（红金皮肤）：漆底金边（旧绿渐变已删）。
 .mj-action-bar__gang-item {
   @include ftl-btn;
   min-height: 0;
   height: 56px;
   padding: 0 $ftl-space-4;
-  border: $ftl-hairline solid rgba($ftl-color-gold, 0.7);
-  border-radius: $ftl-radius-md;
-  background: linear-gradient(180deg, rgba(60, 110, 75, 0.92), rgba(35, 75, 50, 0.95));
-  color: $ftl-color-on-primary;
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, .7);
+  border-radius: 12px;
+  background: rgba($ftl-color-mj-lacquer, .92);
+  color: $ftl-color-mj-cream;
   font-size: $ftl-font-md;
   font-weight: 700;
 }

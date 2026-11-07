@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { mount } from '@vue/test-utils';
 import { tileType, type MahjongMeldView, type Tile } from '@fight-the-landlord/protocol';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
 import MahjongMeld from '../src/components/table/mahjong/MahjongMeld.vue';
-import { collectSourceFiles, stripComments } from './helpers/source-scan';
+import { collectSourceFiles, SRC_ROOT, stripComments } from './helpers/source-scan';
 
 const wan1: Tile = { s: 0, r: 1 };
 const wan2: Tile = { s: 0, r: 2 };
@@ -105,10 +107,12 @@ describe('MahjongRiver', () => {
     expect(badge.exists()).toBe(true);
     expect(badge.text()).toBe('+6');
     const style = badge.attributes('style') ?? '';
-    expect(stylePx(style, 'left')).toBe(100);
-    expect(stylePx(style, 'top')).toBe(4);
-    expect(stylePx(style, 'width')).toBe(50);
-    expect(stylePx(style, 'height')).toBe(75);
+    // 红金皮肤（Task 3）：内容尺寸药丸，绝对定位在 badgeRect **中心**（不再铺满整格）。
+    expect(stylePx(style, 'left')).toBe(badgeRect.left + badgeRect.width / 2);
+    expect(stylePx(style, 'top')).toBe(badgeRect.top + badgeRect.height / 2);
+    expect(style).toContain('translate(-50%, -50%)');
+    expect(style).not.toContain('width');
+    expect(style).not.toContain('height');
   });
 
   it('窗口内点击：index 是窗口相对下标（首张 → 0）', async () => {
@@ -176,7 +180,7 @@ describe('MahjongRiver', () => {
     expect(w.find('.mj-river__badge').exists()).toBe(false);
   });
 
-  it('副露条：碰 3 张 + 杠 4 张，标签/位置正确', () => {
+  it('副露条：碰 3 张 + 杠 4 张，只剩牌组、无碰/杠/暗杠文字标签', () => {
     const w = mount(MahjongRiver, {
       props: props({
         discards: [],
@@ -189,8 +193,11 @@ describe('MahjongRiver', () => {
     });
     expect(w.findAll('.mj-river__meld')).toHaveLength(2);
     expect(w.findAll('.mj-tile')).toHaveLength(7);
-    expect(w.text()).toContain('碰');
-    expect(w.text()).toContain('杠');
+    // 红金皮肤（Task 3）：mockup 无副露文字标签 ⇒ 整片移除（只留副露牌组）。
+    expect(w.find('.mj-river__meld-label').exists()).toBe(false);
+    expect(w.text()).not.toContain('碰');
+    expect(w.text()).not.toContain('杠');
+    expect(w.text()).not.toContain('暗杠');
     const strip = w.find('.mj-river__melds');
     expect(strip.attributes('style')).toContain('bottom: calc(100% + 8px)');
     expect(strip.attributes('style')).toContain('height: 60px');
@@ -352,7 +359,10 @@ describe('MahjongRiver：+N 徽标与网格对齐', () => {
     expect(badge.exists()).toBe(true);
     expect(badge.text()).toBe('+1');
     expect(w.findAll('.mj-river__grid .mj-river__badge')).toHaveLength(0);
-    expect(stylePx(badge.attributes('style') ?? '', 'top')).toBe(4);
+    expect(stylePx(badge.attributes('style') ?? '', 'top')).toBeCloseTo(
+      badgeRect.top + badgeRect.height / 2,
+      3,
+    );
   });
 
   it('badgeCount = 0：网格不加 mj-river__grid--badged（保持居中）', () => {
@@ -377,5 +387,99 @@ describe('MahjongRiver：+N 徽标与网格对齐', () => {
     // 判别力：只有居中网格的合成样本不得命中。
     const bad = '.mj-river__grid { align-content: center; justify-content: center; }';
     expect(/\.mj-river__grid--badged\s*\{([^}]*)\}/.exec(bad)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 3）—— 最新/来源描边 / +N 药丸 / 已胡标签 / 亮牌翻转
+// ---------------------------------------------------------------------------
+
+const riverSrc = stripComments(
+  readFileSync(join(SRC_ROOT, 'components/table/mahjong/MahjongRiver.vue'), 'utf8'),
+);
+const riverStyle = [...riverSrc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+  .map((m) => m[1]!)
+  .join('\n');
+
+/** 取源码里一条选择器规则的声明体（本文件的这些规则没有嵌套块）。 */
+function riverRule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(riverStyle);
+  expect(m, `${selector} 规则必须存在`).not.toBeNull();
+  return m![1]!;
+}
+
+describe('MahjongRiver：红金皮肤（Task 3：描边 / 徽标 / 标签）', () => {
+  it('最新牌：发丝线高亮 outline + offset 0 + 高亮色光晕（旧 box-shadow 已删）', () => {
+    const body = riverRule('.mj-river__tile--latest');
+    expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-highlight');
+    expect(body).toContain('outline-offset: 0');
+    expect(body).toContain('filter: drop-shadow(0 0 6px rgba($ftl-color-mj-highlight, .8))');
+    expect(body).not.toContain('box-shadow');
+  });
+
+  it('claimed 来源描边用红金 $ftl-color-mj-gold（不再用 $ftl-color-primary 蓝）', () => {
+    const body = riverRule('.mj-river__tile--filtered');
+    expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(body).toContain('outline-offset: 0');
+    expect(body).not.toContain('$ftl-color-primary');
+  });
+
+  it('+N 徽标：内容尺寸金底药丸（16px / 700 / ink 字），不铺满整格', () => {
+    const body = riverRule('.mj-river__badge');
+    expect(body).toContain('padding: 2px 4px');
+    expect(body).toContain('border-radius: 6px');
+    expect(body).toContain('background: $ftl-color-mj-gold');
+    expect(body).toContain('color: $ftl-color-mj-ink');
+    expect(body).toContain('font-size: 16px');
+    expect(body).toContain('font-weight: 700');
+  });
+
+  it('已胡标签移到河内底部（bottom: 0 / top: auto），金底深字', () => {
+    const body = riverRule('.mj-river__revealed-label');
+    expect(body).toContain('bottom: 0');
+    expect(body).toContain('top: auto');
+    expect(body).toContain('left: 0');
+    expect(body).toContain('background: $ftl-color-mj-gold');
+    expect(body).toContain('color: $ftl-color-mj-ink');
+    // DOM 侧确认标签仍渲染。
+    const w = mount(MahjongRiver, {
+      props: props({ revealed: { tiles: [wan1], huTile: wan1 } }),
+    });
+    expect(w.find('.mj-river__revealed-label').text()).toBe('已胡');
+  });
+
+  it('副露标签整片移除（MELD_LABEL / 模板 / 样式）', () => {
+    expect(riverSrc).not.toContain('MELD_LABEL');
+    expect(riverSrc).not.toContain('mj-river__meld-label');
+  });
+});
+
+describe('MahjongRiver：亮牌翻转（revealNonce）', () => {
+  const revealed = { tiles: makeDiscards(3), huTile: wan1 };
+
+  it('seed（revealNonce 缺省 / 0）不播翻转：无 anim-reveal-in', () => {
+    const dflt = mount(MahjongRiver, { props: props({ revealed }) });
+    expect(dflt.findAll('.anim-reveal-in')).toHaveLength(0);
+    const zero = mount(MahjongRiver, { props: props({ revealed, revealNonce: 0 }) });
+    expect(zero.findAll('.anim-reveal-in')).toHaveLength(0);
+  });
+
+  it('revealNonce > 0：每张挂 anim-reveal-in + 40ms 错峰', () => {
+    const w = mount(MahjongRiver, { props: props({ revealed, revealNonce: 1 }) });
+    const tiles = w.findAll('.mj-tile');
+    expect(tiles).toHaveLength(3);
+    for (const t of tiles) expect(t.classes()).toContain('anim-reveal-in');
+    expect(tiles[0]!.attributes('style')).toContain('--ftl-delay: 0ms');
+    expect(tiles[1]!.attributes('style')).toContain('--ftl-delay: 40ms');
+    expect(tiles[2]!.attributes('style')).toContain('--ftl-delay: 80ms');
+  });
+
+  it('key 含 revealNonce：nonce 变化 ⇒ 整组重挂（重播翻转）', async () => {
+    const w = mount(MahjongRiver, { props: props({ revealed, revealNonce: 1 }) });
+    const firstEl = w.findAll('.mj-tile')[0]!.element;
+    await w.setProps({ revealNonce: 2 });
+    expect(w.findAll('.mj-tile')[0]!.element).not.toBe(firstEl);
+    expect(w.findAll('.mj-tile')[0]!.classes()).toContain('anim-reveal-in');
   });
 });

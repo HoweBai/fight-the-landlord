@@ -373,6 +373,23 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   animation: ftl-mj-hub-flash .8s $ftl-ease forwards;
 }
 
+// —— 川麻红金皮肤：动作区滑入（Task 3，2026-11-08）——
+
+/**
+ * 动作区入场：从下方 12px 滑入（0.16s 一次性）。
+ * ⚠️ 独立规则（动画闸的 `parseAnimRules` 只捕获分组里最后一个选择器）。
+ * ⚠️ `backwards`：延迟期摆好起始姿势，播完把 transform 归还普通规则（action bar 无基类 transform，
+ *    `both` 与 `backwards` 视觉等价，但本片统一用更保守的 backwards）。
+ * ⚠️ 只动 transform（起始态可见纪律）。
+ */
+@keyframes ftl-action-slide-in {
+  from { transform: translateY(12px); }
+  to   { transform: none; }
+}
+.anim-action-slide-in {
+  animation: ftl-action-slide-in .16s $ftl-ease backwards;
+}
+
 /**
  * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
  * 形态照参考实现（`transition: none` + `animation: none !important`）。
@@ -387,6 +404,7 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-discard-land,
   .anim-mj-urgent,
   .anim-mj-hub-flash,
+  .anim-action-slide-in,
   .anim-redeal-in,
   .anim-redeal-banner,
   .anim-played-in,

@@ -325,6 +325,32 @@ const handSelectable = computed(() => {
   return false;
 });
 
+// —— 亮牌翻转（2026-11-08 红金皮肤 Task 3）：新 reveal 座位时自增 nonce ——
+// 挂载 seed 不播（重连/中途进房时对手早已亮牌，不该整排翻一遍）；只有**新座位**出现才播。
+const seenRevealedSeats = new Set<number>(
+  (props.view?.revealedHands ?? []).map((r) => r.seat),
+);
+const revealNonce = ref(0);
+watch(
+  () => props.view?.revealedHands.map((r) => r.seat),
+  (seats, prev) => {
+    if (!seats) return;
+    // 首个 view 到达（挂载时 view 为空）：只 seed，不播。
+    if (prev === undefined) {
+      for (const seat of seats) seenRevealedSeats.add(seat);
+      return;
+    }
+    let added = false;
+    for (const seat of seats) {
+      if (!seenRevealedSeats.has(seat)) {
+        seenRevealedSeats.add(seat);
+        added = true;
+      }
+    }
+    if (added) revealNonce.value += 1;
+  },
+);
+
 const selected = ref<number[]>([]);
 // 双击出牌需要的追踪状态（T4 Batch 1）
 const lastClickIndex = ref<number>(-1);
@@ -769,6 +795,8 @@ function riverProps(seat: number) {
     badgeRect: localRect(river.badgeRect, river.rect),
     meldRect: localRect(river.meldRect, river.rect),
     laneWidth: river.laneWidth,
+    // 亮牌翻转帧序号只喂左右侧河（对家亮牌走牌背位、自家走手牌位，均不播）。
+    ...(isLeft || isRight ? { revealNonce: revealNonce.value } : {}),
   };
 }
 

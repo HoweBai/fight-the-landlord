@@ -59,19 +59,20 @@ function onAnimEnd(e: AnimationEvent): void {
   align-items: center;
   padding: 4px 12px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(255, 180, 60, 0.95), rgba(220, 100, 30, 0.9));
-  box-shadow: 0 4px 16px rgba(255, 120, 0, 0.5);
-  border: $ftl-hairline solid rgba(255, 220, 100, 0.6);
+  /* 红金皮肤（Task 3）：金渐变 + 深字 + 金棕描边 / 阴影。 */
+  background: linear-gradient(180deg, $ftl-color-mj-status, $ftl-color-mj-gold);
+  box-shadow: 0 4px 16px rgba($ftl-color-mj-gold, .45);
+  border: $ftl-hairline solid $ftl-color-mj-edge;
   white-space: nowrap;
 }
 .mj-hu-banner__text {
-  color: $ftl-color-on-primary;
+  color: $ftl-color-mj-ink;
   font-size: $ftl-font-md;
   font-weight: 700;
   text-shadow: 0 $ftl-hairline 2px rgba(0, 0, 0, 0.4);
 }
 .mj-hu-banner__fan {
-  color: $ftl-color-on-primary;
+  color: $ftl-color-mj-ink;
   font-size: $ftl-font-lg;
   font-weight: 800;
 }
