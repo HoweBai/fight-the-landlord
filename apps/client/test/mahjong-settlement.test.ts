@@ -107,6 +107,62 @@ describe('MahjongSettlement：红金皮肤（Task 4）', () => {
     expect(source).toContain('mj-settlement__again--redgold');
   });
 
+  it('主按钮交互态：hover/active 保持 ink 字 + edge 边（压过 .btn:hover / .btn--primary:active）', () => {
+    const sfc = readFileSync(join(SRC_ROOT, 'components/MahjongSettlement.vue'), 'utf8');
+    const source = stripComments(sfc);
+    const style = [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+      .map((m) => m[1]!)
+      .join('\n');
+    // 按花括号配对截出整段规则体（含嵌套的 &:hover / &:active 子块）。
+    const sel = '.mj-settlement__again--redgold';
+    const idx = style.indexOf(sel);
+    expect(idx, `${sel} 规则必须存在`).toBeGreaterThanOrEqual(0);
+    const open = style.indexOf('{', idx);
+    let depth = 0;
+    let block = '';
+    for (let i = open; i < style.length; i += 1) {
+      if (style[i] === '{') depth += 1;
+      else if (style[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          block = style.slice(open + 1, i);
+          break;
+        }
+      }
+    }
+    expect(block, `${sel} 花括号必须配平`).not.toBe('');
+
+    // 同权重（0,2,0）下后置胜出：redgold 规则必须在 .btn / .btn--primary 之后。
+    expect(
+      idx,
+      '红金规则必须在 .btn--primary 之后（同权重靠源码顺序压过旧主态）',
+    ).toBeGreaterThan(style.indexOf('.btn--primary'));
+
+    const hover = /&:hover\s*\{([^}]*)\}/.exec(block);
+    expect(hover, '红金按钮 :hover 子规则必须存在').not.toBeNull();
+    expect(hover![1], ':hover 字色必须保持 ink（不得被 .btn:hover 压成灰白）').toContain(
+      'color: $ftl-color-mj-ink',
+    );
+    expect(hover![1], ':hover 描边必须保持 mj-edge').toContain(
+      'border-color: $ftl-color-mj-edge',
+    );
+
+    const active = /&:active\s*\{([^}]*)\}/.exec(block);
+    expect(active, '红金按钮 :active 子规则必须存在').not.toBeNull();
+    expect(active![1], ':active 字色必须保持 ink').toContain('color: $ftl-color-mj-ink');
+    expect(active![1], ':active 描边必须保持 mj-edge').toContain(
+      'border-color: $ftl-color-mj-edge',
+    );
+    expect(active![1], ':active 阴影用 mj-edge（不得回退旧 gold-deep 主态）').toContain(
+      'box-shadow: 0 2px 0 $ftl-color-mj-edge',
+    );
+
+    // 静息态厚阴影保留（按下态不得顶替它）。
+    expect(block).toContain(
+      'box-shadow: 0 4px 0 $ftl-color-mj-edge, 0 6px 16px rgba($ftl-color-mj-gold, .35);',
+    );
+  });
+
   it('动画登记：keyframe / 独立规则 / 错峰变量 / reduced-motion', () => {
     const anim = collectSourceFiles().find((f) => f.path === 'src/styles/animations.scss');
     expect(anim, 'src/styles/animations.scss 必须在源码扫描集合里').toBeDefined();

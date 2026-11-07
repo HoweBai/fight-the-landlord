@@ -319,6 +319,9 @@ watch(
       seenRevealedSeats.clear();
       revealNonce.value = 0;
       seenHuSeats.clear();
+      // 胡金光水位同样归零（新局 huInfos 清空）：不重置的话旧局胡到 2 家后，
+      // 新局第一家胡（长度 1 ≤ 旧水位）永远不再闪金光。
+      maxHuSeen.value = props.view?.huInfos.length ?? 0;
     }
   },
 );

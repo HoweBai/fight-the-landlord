@@ -1492,5 +1492,46 @@ describe('MahjongBoard：Task 4 收口（水位 / matchMedia 兜底 / 跨局已�
       '新局同座胡必须重新弹 banner（seenHuSeats 已清）',
     ).toBe(true);
   });
+
+  it('同一挂载跨局：新局重置胡金光水位（新局第一胡重新闪）', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+    const hub = () => wrapper.findComponent(MahjongHub);
+
+    // 旧局胡到 2 家：水位 = 2，闪两次。
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+    await nextTick();
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(0), hu(2)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(2);
+    hub().vm.$emit('flash-done');
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(0);
+
+    // 新局：v1 exchange、huInfos 清空 ⇒ maxHuSeen 必须归零。
+    await wrapper.setProps({
+      view: view({
+        version: 1,
+        state: 'exchange',
+        activeSeats: [0],
+        windowId: 'exchange',
+        huInfos: [],
+      }),
+    });
+    await nextTick();
+    expect(hub().props('flashKey'), '清空局不闪').toBe(0);
+
+    // 新局第一胡（长度 1 ≤ 旧局水位 2）：水位不归零就永远不再闪。
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(1)] }) });
+    await nextTick();
+    expect(
+      hub().props('flashKey'),
+      '新局第一胡必须闪（maxHuSeen 已随新局重置）',
+    ).toBe(1);
+
+    // 新局第二胡照常单调自增。
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(1), hu(2)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(2);
+  });
 });
 

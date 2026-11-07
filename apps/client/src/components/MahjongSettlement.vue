@@ -723,5 +723,20 @@ const rulesSummary = computed(() => {
   background: linear-gradient(180deg, $ftl-color-mj-status, $ftl-color-mj-gold);
   color: $ftl-color-mj-ink;
   box-shadow: 0 4px 0 $ftl-color-mj-edge, 0 6px 16px rgba($ftl-color-mj-gold, .35);
+  /*
+   * 交互态必须写进本规则（Task 4 收口）：
+   *  - `.btn:hover` 会把字色压成 on-primary 85% 灰白、描边压成灰蓝，浅金底上不可读；
+   *  - `.btn--primary:active` 会把阴影换回旧金/deep 色。
+   * 同权重（0,2,0）下后置规则胜出 —— 本规则在 `.btn`/`.btn--primary` 之后，故直接覆盖。
+   */
+  &:hover {
+    color: $ftl-color-mj-ink;
+    border-color: $ftl-color-mj-edge;
+  }
+  &:active {
+    color: $ftl-color-mj-ink;
+    border-color: $ftl-color-mj-edge;
+    box-shadow: 0 2px 0 $ftl-color-mj-edge, 0 4px 10px rgba($ftl-color-mj-gold, .3);
+  }
 }
 </style>
