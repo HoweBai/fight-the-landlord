@@ -29,8 +29,13 @@ const props = withDefaults(
     /** 显式尺寸（设计 px）；w/h 同时提供时覆盖 size 档位。 */
     w?: number;
     h?: number;
+    /**
+     * `<image>` 裁切模式。
+     * 默认 aspectFit 保持牌面比例；暗杠牌背传 aspectFill 填满方框。
+     */
+    mode?: 'aspectFit' | 'aspectFill';
   }>(),
-  { size: 'md', selected: false, disabled: false, dim: false },
+  { size: 'md', selected: false, disabled: false, dim: false, mode: 'aspectFit' },
 );
 
 const emit = defineEmits<{ (e: 'click'): void }>();
@@ -72,7 +77,7 @@ const tileStyle = computed(() =>
     ]"
     :src="src"
     :style="tileStyle"
-    mode="aspectFit"
+    :mode="mode"
     :aria-label="label"
     @click="emit('click')"
   />

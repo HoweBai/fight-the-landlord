@@ -10,6 +10,11 @@
  *   新增 pop?: boolean prop — Board.vue 通过 seenMeldKeys 增量判定后传 true
  *   仅新增副露播 pop（初始 mount / 中途进入房的已有副露不播 — 防视觉爆炸 B3 阻断修法）
  *   动画播完 emit('pop-done') 让父组件清理临时标记
+ *
+ * 侧家方向（vertical）：
+ *   left/right 方向没有任何旋转——继续用 left/right 目录的 49×40 横置素材，
+ *   只把组内牌张上下竖叠（flex-direction: column + 非首张 marginTop）。
+ *   暗杠 4 张牌背 aspectFill 填满方框。
  */
 import { computed } from 'vue';
 import type { MahjongMeldView } from '@fight-the-landlord/protocol';
@@ -30,8 +35,13 @@ const props = withDefaults(
     tileH?: number;
     /** 组内叠压 px（正数）；不传则用 size 档位的默认负 margin。 */
     overlap?: number;
+    /**
+     * 竖向堆叠（侧家副露）。true 时组内牌张从上到下叠，非首张用 marginTop: -overlap。
+     * 不旋转——方向靠 left/right 横置素材本身。
+     */
+    vertical?: boolean;
   }>(),
-  { size: 'sm', pop: false },
+  { size: 'sm', pop: false, vertical: false },
 );
 
 const emit = defineEmits<{
@@ -57,10 +67,11 @@ const popAnimClass = computed(() => {
   }
 });
 
-function tileStyle(index: number): { marginLeft?: string } | undefined {
-  return index > 0 && props.overlap !== undefined
-    ? { marginLeft: `-${props.overlap}px` }
-    : undefined;
+function tileStyle(index: number): { marginLeft?: string; marginTop?: string } | undefined {
+  if (index === 0 || props.overlap === undefined) return undefined;
+  return props.vertical
+    ? { marginTop: `-${props.overlap}px` }
+    : { marginLeft: `-${props.overlap}px` };
 }
 
 function onAnimEnd(e: AnimationEvent): void {
@@ -78,7 +89,7 @@ function onAnimEnd(e: AnimationEvent): void {
 <template>
   <view
     class="mj-meld"
-    :class="[styleClass, `mj-meld--${size}`, popAnimClass]"
+    :class="[styleClass, `mj-meld--${size}`, popAnimClass, { 'mj-meld--vertical': vertical }]"
     @animationend="onAnimEnd"
   >
     <!-- 碰 3 张；杠/暗杠 4 张同行（第 4 张不再绝对定位叠高） -->
@@ -91,6 +102,7 @@ function onAnimEnd(e: AnimationEvent): void {
       :size="size"
       :w="tileW"
       :h="tileH"
+      :mode="meld.kind === 'angang' ? 'aspectFill' : 'aspectFit'"
       :style="tileStyle(i)"
     />
   </view>
@@ -105,6 +117,12 @@ function onAnimEnd(e: AnimationEvent): void {
   align-items: flex-end;
   position: relative;
   line-height: 0; // 消除 image inline 间隙
+}
+
+/** 侧家：上下竖叠（不旋转），叠压量仍由 overlap prop 通过 marginTop 控制 */
+.mj-meld--vertical {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 /** 组内 tile 默认无负 margin；叠压量由父组件 overlap prop 精确控制 */
