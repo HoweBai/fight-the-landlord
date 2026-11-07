@@ -3,7 +3,7 @@
  * 麻将座位小卡（哑组件）：只渲染 props，不判规则、不取数、不造计时器。
  *
  * 四变体：corner-tl / corner-tr / corner-top（对手与对家，名字+分数+delta 一行）、
- * self（自己，头像+分数+delta 竖排）。
+ * self（自己，头像 + 分数/delta 单行；64×76 竖排会裁掉 delta）。
  * `side` / `bar` 是旧 Board 的兼容别名，Task 8 重接 Board 时删除。
  *
  * 角标最多 2 个（2026-11-08 红金皮肤起相对牌面）：左上 1 字（胡 > 听 > 托 > 庄）；左下 2 字（缺X）。
@@ -123,7 +123,7 @@ const scoreLabel = computed(() =>
       </view>
     </view>
 
-    <view v-else class="mj-chip__self-info">
+    <view v-else class="mj-chip__self-sub">
       <text class="mj-chip__score" style="font-size: 16px">{{ scoreLabel }}</text>
       <text
         v-if="deltaLabel"
@@ -176,7 +176,8 @@ const scoreLabel = computed(() =>
   width: 100%;
   height: 100%;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 0;
   padding: 2px;
 }
@@ -254,13 +255,22 @@ const scoreLabel = computed(() =>
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mj-chip__self-info {
+/* 自己：分数 + delta 单行（与 .mj-chip__sub 同型），避免竖排总高超 64×76 牌面；
+   分数可弹性收缩省略，delta 不收缩（不被横向裁掉）。 */
+.mj-chip__self-sub {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
   max-width: 100%;
+}
+.mj-chip__self-sub .mj-chip__score {
+  flex: 0 1 auto;
+}
+.mj-chip__self-sub .mj-chip__delta {
+  flex: 0 0 auto;
 }
 .mj-chip__delta {
   line-height: 1.1;

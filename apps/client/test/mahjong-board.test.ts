@@ -848,6 +848,7 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
     );
     expect(inline).toContain('inset 0 0 0 calc(12px * var(--mj-u))');
     expect(inline).toContain('inset 0 0 0 calc(14px * var(--mj-u))');
+    expect(inline).toContain('position: absolute');
     expect(inline).toContain('pointer-events: none');
     expect(inline).toContain('width: 1334px');
     expect(inline).toContain('height: 750px');
@@ -882,6 +883,7 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
     const title = ruleBody(boardStyle, '.mj__bar-title');
     expect(title).toContain('font-size: 22px');
     expect(title).toContain('$ftl-color-mj-cream');
+    expect(title).toContain('letter-spacing: 0.4px');
     const sub = ruleBody(boardStyle, '.mj__bar-sub');
     expect(sub).toContain('font-size: 16px');
     expect(sub).toContain('$ftl-color-mj-muted');
@@ -889,6 +891,38 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
     const wrapper = mount(MahjongBoard, { props: props() });
     expect(wrapper.find('.mj__bar-title').text()).toBe('休闲场 · 底分 1');
     expect(wrapper.find('.mj__bar-sub').text()).toContain('MJ1');
+  });
+
+  it('顶栏左右组可收缩（flex: 0 1 auto + min-width: 0）：长场次名挤占并省略', () => {
+    const m = /\.mj__bar-left,\s*\.mj__bar-right\s*\{([^}]*)\}/.exec(boardStyle);
+    expect(m, '.mj__bar-left/.mj__bar-right 分组规则必须存在').not.toBeNull();
+    expect(m![1]).toContain('flex: 0 1 auto');
+    expect(m![1]).toContain('min-width: 0');
+    expect(m![1]).not.toContain('flex: 0 0 auto');
+  });
+
+  it('等待发牌文案：绝对定位居中、z-index 高于绒面（lacquer 底 + cream 字）', () => {
+    const wrapper = mount(MahjongBoard, { props: props({ waitingForDeal: true }) });
+    const waiting = wrapper.find('.mj__waiting');
+    expect(waiting.exists()).toBe(true);
+    expect(waiting.text()).toContain('等待服务端发牌');
+
+    const rule = ruleBody(boardStyle, '.mj__waiting');
+    expect(rule).toContain('position: absolute');
+    expect(rule).toContain('left: 50%');
+    expect(rule).toContain('top: 50%');
+    expect(rule).toContain('transform: translate(-50%, -50%)');
+    expect(rule).toContain('color: $ftl-color-mj-cream');
+    expect(rule).toContain('background: rgba($ftl-color-mj-lacquer');
+
+    // 绒面（.mj__felt）是定位元素但没有 z-index（auto ⇒ 0 层）；
+    // 等待文案必须有正的 z-index 才能画在绒面/顶栏之上。
+    const feltInline = wrapper.find('.mj__felt').attributes('style') ?? '';
+    expect(feltInline).toContain('position: absolute');
+    expect(feltInline).not.toContain('z-index');
+    const z = /z-index:\s*(\d+)/.exec(rule);
+    expect(z, '.mj__waiting 必须设数值 z-index').not.toBeNull();
+    expect(Number(z![1])).toBeGreaterThan(0);
   });
 
   it('返回按钮：40×40 金框 flex 居中 ‹（不再依赖 PNG 箭头）', () => {

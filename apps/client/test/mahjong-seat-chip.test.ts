@@ -168,6 +168,36 @@ describe('MahjongSeatChip', () => {
     expect(me.find('.mj-chip__delta').attributes('style')).toContain('font-size: 12px');
   });
 
+  it('self 变体：分数与 delta 同一行（.mj-chip__self-sub），不竖排堆叠（64×76 不裁 delta）', () => {
+    const w = mountChip({
+      variant: 'self',
+      isMe: true,
+      avatar: 44,
+      balance: 15500,
+      pendingDelta: 12,
+    });
+    const sub = w.find('.mj-chip__self-sub');
+    expect(sub.exists(), '自己分数行 .mj-chip__self-sub 必须存在').toBe(true);
+    expect(sub.find('.mj-chip__score').text()).toBe('15,500');
+    expect(sub.find('.mj-chip__delta').text()).toBe('+12');
+    // DOM 父元素检查：score 与 delta 的父元素相同（同一行），不是各自整行。
+    expect(sub.find('.mj-chip__score').element.parentElement).toBe(sub.element);
+    expect(sub.find('.mj-chip__delta').element.parentElement).toBe(sub.element);
+
+    // 源码闸：self 行是横向 row（与 .mj-chip__sub 同型）；旧竖排 .mj-chip__self-info 已删除。
+    const rule = ruleBody(chipStyle(), '.mj-chip__self-sub');
+    expect(rule).toContain('flex-direction: row');
+    expect(rule).not.toContain('flex-direction: column');
+    expect(chipStyle()).not.toContain('mj-chip__self-info');
+  });
+
+  it('self 变体列向居中（mockup：align-items center + 2px padding）', () => {
+    const rule = ruleBody(chipStyle(), '.mj-chip--self');
+    expect(rule).toContain('flex-direction: column');
+    expect(rule).toContain('align-items: center');
+    expect(rule).toContain('padding: 2px');
+  });
+
   it('分数千分位（显式 en-US）：4200→4,200 / 15500→15,500 / 1234567→1,234,567 / null→—', () => {
     expect(mountChip({ balance: 4200 }).find('.mj-chip__score').text()).toBe('4,200');
     expect(mountChip({ balance: 15500 }).find('.mj-chip__score').text()).toBe('15,500');

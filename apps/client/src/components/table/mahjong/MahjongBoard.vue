@@ -1191,10 +1191,11 @@ function onMeldPopDone(key: string) {
   background: linear-gradient($ftl-color-mj-bar-top, $ftl-color-mj-lacquer);
   border-bottom: $ftl-hairline solid $ftl-color-mj-gold;
 }
+/* 可收缩（flex-basis auto + min-width 0）：长场次名可挤掉自己一侧，title 走 ellipsis。 */
 .mj__bar-left,
 .mj__bar-right {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -1204,6 +1205,8 @@ function onMeldPopDone(key: string) {
   max-width: 100%;
   color: $ftl-color-mj-cream;
   font-size: 22px;
+  /* mockup 的 1px 放宽 0.02em（22px × 0.02 ≈ 0.44px）；仓内单位闸禁 em，写 px 等价。 */
+  letter-spacing: 0.4px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1259,12 +1262,22 @@ function onMeldPopDone(key: string) {
   line-height: 1;
 }
 
-/* —— 等待 / 静音 —— */
+/* —— 等待发牌（红金皮肤）：绝对定位到绒面之上居中，避免被 felt/bar 覆盖 —— */
 .mj__waiting {
-  padding: $ftl-space-9;
-  text-align: center;
-  color: $ftl-color-text-muted;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  max-width: 80%;
+  padding: $ftl-space-4 $ftl-space-7;
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.4);
+  border-radius: $ftl-radius-md;
+  background: rgba($ftl-color-mj-lacquer, 0.85);
+  color: $ftl-color-mj-cream;
   font-size: $ftl-font-md;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* —— 听牌行（自己听牌时的 20×30 小牌） —— */
