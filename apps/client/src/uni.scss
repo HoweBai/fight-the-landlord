@@ -93,6 +93,29 @@ $ftl-color-mj-lacquer: #1c0808;
 $ftl-color-mj-cream: #f5e6c8;
 $ftl-color-mj-urgent: #ff6b5a;
 
+/// 红金牌桌皮肤 pass（2026-11-08 Task 1，mockup `.superpowers/mahjong-redgold/mockup/index.html`）：
+/// 边框阶（牌面/角标/血战盘共用金棕）、画布留边（stage 比 frame 更深）、
+/// 绒面三档径向渐变、内圈金线 / 顶栏 / 弱文字 / 状态 / 正 delta / 金底深字。
+/// ⚠️ `MahjongBoard.vue` 的 `.mj__felt` 背景与框线是**内联 JS 样式**（读不到 SCSS 变量），
+/// 其中的 rgb 字面量与 `-felt-1/2/3` / `-frame` / `-border` 同值；改本组令牌时**两处一起改**。
+$ftl-color-mj-border: #8c6224;
+$ftl-color-mj-edge: #a8792e;
+$ftl-color-mj-frame: #2b0c0c;
+$ftl-color-mj-stage: #120404;
+$ftl-color-mj-highlight: #ffd873;
+$ftl-color-mj-sheen: #ffe7a8;
+$ftl-color-mj-muted: #c9a9a0;
+$ftl-color-mj-status: #e8c56a;
+$ftl-color-mj-positive: #6fe3a0;
+$ftl-color-mj-bar-top: #2a0e0e;
+$ftl-color-mj-ink: #2b1608;
+$ftl-color-mj-dot: #6b4a2a;
+$ftl-color-mj-hub-core: #3a1414;
+$ftl-color-mj-felt-1: #6a2420;
+$ftl-color-mj-felt-2: #4a1515;
+$ftl-color-mj-felt-3: #2b0c0c;
+$ftl-color-mj-gold-line: rgba(212, 162, 76, 0.35);
+
 /// 深蓝底阶（片① 视觉基座 / 参考图的背景与牌桌底色）。
 $ftl-color-night-deep: #0b2545;
 $ftl-color-night: #143a68;

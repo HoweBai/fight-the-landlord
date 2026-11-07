@@ -226,6 +226,33 @@ const trusteeMaskStyle = computed(() => ({
   bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.u)}px`,
 }));
 
+/**
+ * 牌桌绒面（2026-11-08 红金皮肤）：**只覆盖 1334×750 构图**（offset 居中），
+ * 不铺满整个画布 —— 留边交给 `.mj` 的 stage 底色。框线/金线用 `--mj-u` 随构图缩放。
+ * ⚠️ 颜色字面量与 `uni.scss` 的 `$ftl-color-mj-felt-1/2/3`、`-frame`、`-border` **同值**
+ * （内联样式读不到 SCSS 变量；改令牌时两处一起改）。
+ */
+const feltStyle = computed(() => ({
+  position: 'absolute' as const,
+  left: `${layout.value.offsetX}px`,
+  top: `${layout.value.offsetY}px`,
+  width: `${1334 * layout.value.u}px`,
+  height: `${750 * layout.value.u}px`,
+  pointerEvents: 'none' as const,
+  background:
+    'radial-gradient(ellipse at 50% 46%, rgb(106 36 32) 0%, rgb(74 21 21) 46%, rgb(43 12 12) 100%)',
+  boxShadow:
+    'inset 0 0 0 calc(12px * var(--mj-u)) rgb(43 12 12), inset 0 0 0 calc(14px * var(--mj-u)) rgb(140 98 36)',
+}));
+
+/** 顶栏标题：场次 + 底分合成一行（mockup「休闲场 · 底分 1」）。 */
+const barTitle = computed(() => {
+  const parts: string[] = [];
+  if (props.levelName) parts.push(props.levelName);
+  if (sceneBase.value !== null) parts.push(`底分 ${sceneBase.value}`);
+  return parts.join(' · ');
+});
+
 // —— last-discard：serverDiscards 绝对下标 → 可见窗口 latest ——
 const initialDiscards = props.view?.discards ?? [];
 function seededLastAbs(seat: number): number | null {
@@ -881,26 +908,29 @@ function onMeldPopDone(key: string) {
 
 <template>
   <view class="mj" :style="{ '--mj-u': `${layout.u}` }">
+    <!-- 牌桌绒面：1334×750 构图（offset 居中），必须排在所有内容之前 -->
+    <view class="mj__felt" :style="feltStyle">
+      <view class="mj__felt-line" />
+    </view>
     <view class="mj__bar" :style="rectStyle(layout.rects.bar)">
       <view class="mj__bar-left">
         <button
           type="button"
-          class="btn btn--small mj__back"
+          class="mj__back"
           aria-label="返回大厅"
           @click="emit('leave')"
         >
-          <image class="mj__back-icon" src="/static/ui/back_arrow.png" mode="aspectFit" />
+          <text class="mj__back-glyph">‹</text>
         </button>
-        <text v-if="roomCode" class="mj__bar-text mj__room">房间 {{ roomCode }}</text>
-        <text v-if="levelName" class="mj__bar-text">{{ levelName }}</text>
-        <text v-if="sceneBase !== null" class="mj__bar-text">底分 {{ sceneBase }}</text>
+        <text v-if="barTitle" class="mj__bar-title">{{ barTitle }}</text>
+        <text v-if="roomCode" class="mj__bar-sub">房间 {{ roomCode }}</text>
       </view>
       <view class="mj__bar-right">
         <button
           v-if="!settlementRevealed && phase !== 'ended'"
           type="button"
-          class="btn btn--small mj__trustee"
-          :class="{ 'mj__trustee--on': myTrustee }"
+          class="mj__bar-action mj__trustee"
+          :class="{ 'mj__bar-action--on': myTrustee }"
           :aria-pressed="myTrustee"
           @click="onTrustee(!myTrustee)"
         >
@@ -909,7 +939,7 @@ function onMeldPopDone(key: string) {
         <button
           v-if="!settlementRevealed"
           type="button"
-          class="btn btn--small mj__more"
+          class="mj__bar-action mj__more"
           @click="emit('more')"
         >
           更多
@@ -1135,40 +1165,18 @@ function onMeldPopDone(key: string) {
   padding: 0;
   position: relative;
   color: $ftl-color-text;
-  // P3: 牌桌背景增强 — 多层叠底：深→浅渐变 + 中心光斑 + 边缘暗角 + 微纹理
-  background:
-    // 最顶：极细的对角微纹（让纯色不那么塑料感）
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 3px,
-      rgba(0, 0, 0, 0.012) 3px,
-      rgba(0, 0, 0, 0.012) 4px
-    ),
-    // 中层：中心光斑（桌面打光效果）
-    radial-gradient(ellipse at center 45%, rgba(255, 240, 180, 0.07) 0%, transparent 60%),
-    // 底层：深→浅→深三段渐变
-    linear-gradient(
-      180deg,
-      $ftl-color-mahjong-table-deep 0%,
-      $ftl-color-mahjong-table 40%,
-      $ftl-color-mahjong-table 60%,
-      $ftl-color-mahjong-table-deep 100%
-    );
-  background-size: auto, auto, auto;
-  // P3: 外框 + 深层叠影模拟木框 + 暗角绒面
-  border: 3px solid rgba(20, 50, 30, 0.85);
-  box-shadow:
-    // 外框高光（模拟木框上边反光）
-    inset 0 2px 0 rgba(255, 200, 100, 0.08),
-    // 外框底边阴影
-    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
-    // 内部暗角（大半径柔化）
-    inset 0 0 160px rgba(0, 25, 12, 0.55),
-    inset 0 0 40px rgba(0, 0, 0, 0.35),
-    // 中心极弱高光（呼应 radial gradient）
-    inset 0 0 80px rgba(255, 220, 100, 0.04);
+  /* 画布留边 = stage 底色（近黑）；1334×750 构图由 .mj__felt 单独铺（offset 居中）。 */
+  background: $ftl-color-mj-stage;
   overflow: hidden;
+}
+
+/* —— 牌桌绒面（2026-11-08 红金皮肤）：位置/渐变为内联样式，这里只放内圈金线 —— */
+.mj__felt-line {
+  position: absolute;
+  inset: calc(12px * var(--mj-u));
+  box-sizing: border-box;
+  border: $ftl-hairline solid $ftl-color-mj-gold-line;
+  pointer-events: none;
 }
 
 /* —— 顶栏 —— */
@@ -1178,29 +1186,77 @@ function onMeldPopDone(key: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $ftl-space-5;
-  padding: 0 20px;
+  gap: 10px;
+  padding: 0 14px;
+  background: linear-gradient($ftl-color-mj-bar-top, $ftl-color-mj-lacquer);
+  border-bottom: $ftl-hairline solid $ftl-color-mj-gold;
 }
 .mj__bar-left,
 .mj__bar-right {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: $ftl-space-3;
+  gap: 10px;
+  min-width: 0;
 }
-.mj__bar-text {
-  font-size: $ftl-font-sm;
-  color: rgba($ftl-color-on-primary, 0.9);
-  line-height: 1.2;
+.mj__bar-title {
+  overflow: hidden;
+  max-width: 100%;
+  color: $ftl-color-mj-cream;
+  font-size: 22px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mj__bar-sub {
+  color: $ftl-color-mj-muted;
+  font-size: 16px;
   white-space: nowrap;
 }
-.mj__trustee--on {
-  border-color: $ftl-color-gold-deep;
-  color: $ftl-color-gold-light;
+/* 托管 / 更多：纯文字按钮（透明底、无边框，保留 40px 点击热区） */
+.mj__bar-action {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: $ftl-color-mj-muted;
+  font-size: 16px;
+  line-height: 1.2;
+  &::after {
+    border: none;
+  }
 }
-.mj__back-icon {
-  width: 22px;
-  height: 22px;
+.mj__bar-action--on {
+  color: $ftl-color-mj-status;
+}
+
+/* —— 返回按钮：40×40 金框 + flex 居中 `‹`（2026-11-08 起不再用 PNG 箭头） —— */
+.mj__back {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: $ftl-hairline solid $ftl-color-mj-gold;
+  border-radius: 10px;
+  background: transparent;
+  color: $ftl-color-mj-gold;
+  font-size: 28px;
+  line-height: 1;
+  &::after {
+    border: none;
+  }
+}
+.mj__back-glyph {
+  line-height: 1;
 }
 
 /* —— 等待 / 静音 —— */
@@ -1264,8 +1320,8 @@ function onMeldPopDone(key: string) {
 .mj__hand-hint-popup__card {
   padding: 16px 24px;
   border-radius: 12px;
-  background: rgba(20, 50, 30, 0.92);
-  border: 2px solid rgba($ftl-color-gold, 0.6);
+  background: rgba($ftl-color-mj-lacquer, 0.92);
+  border: 2px solid rgba($ftl-color-mj-gold, 0.6);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1276,7 +1332,7 @@ function onMeldPopDone(key: string) {
 .mj__hand-hint-popup__result--warn { color: $ftl-color-hint-warn; font-size: 18px; font-weight: 700; }
 .mj__hand-hint-popup__ting { color: $ftl-color-text-muted; font-size: 12px; }
 
-/* —— 托管遮罩 —— */
+/* —— 托管遮罩（红金皮肤） —— */
 .mj__trustee-mask {
   position: absolute;
   right: 50%;
@@ -1289,89 +1345,39 @@ function onMeldPopDone(key: string) {
   gap: $ftl-space-2;
   padding: $ftl-space-4 $ftl-space-7;
   border-radius: $ftl-radius-md;
-  background: rgba(0, 0, 0, 0.72);
-  border: $ftl-hairline solid rgba($ftl-color-gold, 0.4);
+  background: rgba($ftl-color-mj-lacquer, 0.85);
+  border: $ftl-hairline solid rgba($ftl-color-mj-gold, 0.4);
 }
 .mj__trustee-title {
-  color: $ftl-color-gold;
+  color: $ftl-color-mj-gold;
   font-size: $ftl-font-md;
   font-weight: 700;
 }
 .mj__trustee-desc {
-  color: $ftl-color-text-muted;
+  color: $ftl-color-mj-muted;
   font-size: $ftl-font-sm;
 }
 .mj__trustee-cancel {
   margin-top: $ftl-space-2;
 }
 
-/* —— 按钮（自持样式：父组件 scoped 规则进不来）—— */
+/* —— 托管取消按钮（本组件唯一 .btn 消费者）：漆底金边 / 主态金渐变深字 —— */
 .btn {
   @include ftl-btn;
-  border-color: rgba(160, 170, 190, 0.5);
+  border-color: $ftl-color-mj-border;
   border-radius: $ftl-radius-md;
-  background: linear-gradient(180deg, rgba(120, 130, 150, 0.35), rgba(80, 90, 110, 0.5));
-  color: rgba($ftl-color-on-primary, 0.7);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(10px);
-  transition: transform 0.1s, box-shadow 0.1s, border-color 0.15s;
+  background: rgba($ftl-color-mj-lacquer, 0.92);
+  color: $ftl-color-mj-cream;
   background-image: none;
-  &:hover {
-    border-color: rgba(180, 190, 210, 0.7);
-    color: rgba($ftl-color-on-primary, 0.85);
-  }
-  &:active {
-    transform: translateY(2px);
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-}
-.btn--small {
-  min-height: $ftl-control-h-sm;
-  padding: 0 $ftl-space-6;
-  font-size: $ftl-font-sm;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 2px 0 rgba(255, 255, 255, 0.06);
 }
 .btn--primary {
-  border-color: $ftl-color-gold-deep;
-  background: $ftl-color-gold;
-  color: $ftl-color-on-primary;
-  border-radius: $ftl-radius-md;
-  box-shadow:
-    0 6px 0 $ftl-color-gold-deep,
-    0 8px 20px rgb(255 152 0 / 0.45),
-    inset 0 2px 0 rgb(255 255 255 / 0.6),
-    inset 0 -2px 0 rgb(0 0 0 / 0.1);
-  transition: transform 0.1s, box-shadow 0.1s;
-  background-image: none;
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 8px 0 $ftl-color-gold-deep,
-      0 12px 28px rgb(255 152 0 / 0.55),
-      inset 0 2px 0 rgb(255 255 255 / 0.6);
-  }
-  &:active {
-    transform: translateY(4px);
-    box-shadow:
-      0 2px 0 $ftl-color-gold-deep,
-      0 4px 10px rgb(255 152 0 / 0.3),
-      inset 0 3px 8px rgb(0 0 0 / 0.2);
-  }
+  border-color: $ftl-color-mj-edge;
+  /* background 简写自带重置 background-image（§5.2.1 主按钮不带贴图,闸见 table-bid-bottom） */
+  background: linear-gradient($ftl-color-mj-status, $ftl-color-mj-gold);
+  color: $ftl-color-mj-ink;
 }
 .btn[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
-  transform: none !important;
-  filter: grayscale(0.4);
-}
-
-/* —— 返回大厅按钮：PNG 图标 —— */
-.mj__back {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 40px;
-  width: 40px;
-  padding: 0;
 }
 </style>

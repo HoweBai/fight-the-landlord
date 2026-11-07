@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { computed, nextTick } from 'vue';
@@ -804,5 +805,125 @@ describe('MahjongBoard：摸牌分离与 display 下标', () => {
     await buttonByText(wrapper, '换三张').trigger('click');
     const emitted = wrapper.emitted('mahjong')?.[0]?.[0] as { tiles: unknown[] };
     expect(emitted.tiles).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 1）—— 牌桌 / 顶栏
+// ---------------------------------------------------------------------------
+
+const boardSfc = readFileSync('src/components/table/mahjong/MahjongBoard.vue', 'utf8');
+const boardStyle = [...boardSfc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+  .map((m) => m[1]!)
+  .join('\n');
+
+/** 取一条选择器规则的声明体（本文件的这些规则没有嵌套块）。 */
+function ruleBody(style: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(style);
+  expect(m, `${selector} 规则必须存在`).not.toBeNull();
+  return m![1]!;
+}
+
+describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
+  it('.mj 用 stage 底色；无旧绿背景 / 绿边框 / 多层 box-shadow', () => {
+    const root = ruleBody(boardStyle, '.mj');
+    expect(root).toContain('background: $ftl-color-mj-stage');
+    expect(root).not.toContain('box-shadow');
+    expect(boardStyle).not.toContain('$ftl-color-mahjong-table');
+    expect(boardStyle).not.toContain('rgba(20, 50, 30');
+    expect(boardStyle).not.toContain('3px solid');
+  });
+
+  it('.mj__felt 是第一个子元素：offset+1334u×750u 构图，radial + 双层 inset 框线', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const felt = wrapper.find('.mj__felt');
+    expect(felt.exists(), '.mj__felt 必须存在').toBe(true);
+    expect(wrapper.find('.mj').element.firstElementChild, '.mj__felt 必须是第一个子元素').toBe(
+      felt.element,
+    );
+    const inline = felt.attributes('style') ?? '';
+    expect(inline).toContain(
+      'radial-gradient(ellipse at 50% 46%, rgb(106 36 32) 0%, rgb(74 21 21) 46%, rgb(43 12 12) 100%)',
+    );
+    expect(inline).toContain('inset 0 0 0 calc(12px * var(--mj-u))');
+    expect(inline).toContain('inset 0 0 0 calc(14px * var(--mj-u))');
+    expect(inline).toContain('pointer-events: none');
+    expect(inline).toContain('width: 1334px');
+    expect(inline).toContain('height: 750px');
+    expect(inline).toContain('left: 0px');
+    expect(inline).toContain('top: 0px');
+    // 内圈金线：牌桌子层（发丝线 token），随 --mj-u 内缩 12px
+    expect(wrapper.find('.mj__felt .mj__felt-line').exists()).toBe(true);
+    const line = ruleBody(boardStyle, '.mj__felt-line');
+    expect(line).toContain('inset: calc(12px * var(--mj-u))');
+    expect(line).toContain('border: $ftl-hairline solid $ftl-color-mj-gold-line');
+  });
+
+  it('宽画布：绒面跟随 1334×750 构图居中（offset 而不是铺满画布）', () => {
+    const metrics = computed(() => ({ width: 1623, height: 750, scale: 1 }));
+    const wrapper = mount(MahjongBoard, {
+      props: props(),
+      global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
+    });
+    const layout = mahjongTableLayoutV2(1623, 750);
+    const inline = wrapper.find('.mj__felt').attributes('style') ?? '';
+    expect(inline).toContain(`left: ${layout.offsetX}px`);
+    expect(inline).toContain(`top: ${layout.offsetY}px`);
+    expect(inline).toContain(`width: ${1334 * layout.u}px`);
+    expect(inline).toContain(`height: ${750 * layout.u}px`);
+  });
+
+  it('顶栏：bar-top→lacquer 渐变 + 金线底；标题 22 cream / 房间 16 muted', () => {
+    const bar = ruleBody(boardStyle, '.mj__bar');
+    expect(bar).toContain('linear-gradient($ftl-color-mj-bar-top, $ftl-color-mj-lacquer)');
+    expect(bar).toContain('border-bottom: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(bar).toContain('padding: 0 14px');
+    const title = ruleBody(boardStyle, '.mj__bar-title');
+    expect(title).toContain('font-size: 22px');
+    expect(title).toContain('$ftl-color-mj-cream');
+    const sub = ruleBody(boardStyle, '.mj__bar-sub');
+    expect(sub).toContain('font-size: 16px');
+    expect(sub).toContain('$ftl-color-mj-muted');
+
+    const wrapper = mount(MahjongBoard, { props: props() });
+    expect(wrapper.find('.mj__bar-title').text()).toBe('休闲场 · 底分 1');
+    expect(wrapper.find('.mj__bar-sub').text()).toContain('MJ1');
+  });
+
+  it('返回按钮：40×40 金框 flex 居中 ‹（不再依赖 PNG 箭头）', () => {
+    const back = ruleBody(boardStyle, '.mj__back');
+    expect(back).toContain('width: 40px');
+    expect(back).toContain('height: 40px');
+    expect(back).toContain('border: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(back).toContain('color: $ftl-color-mj-gold');
+    expect(back).toContain('font-size: 28px');
+
+    const wrapper = mount(MahjongBoard, { props: props() });
+    expect(wrapper.find('.mj__back').text()).toBe('‹');
+    expect(wrapper.find('.mj__back image').exists()).toBe(false);
+  });
+
+  it('托管 / 更多：16px muted 纯文字按钮（透明底、无边框、无灰蓝渐变）', () => {
+    const action = ruleBody(boardStyle, '.mj__bar-action');
+    expect(action).toContain('font-size: 16px');
+    expect(action).toContain('color: $ftl-color-mj-muted');
+    expect(action).toContain('background: transparent');
+    expect(action).toContain('border: none');
+    expect(boardStyle).not.toContain('rgba(120, 130, 150');
+    expect(boardStyle).not.toContain('rgba(80, 90, 110');
+
+    const wrapper = mount(MahjongBoard, { props: props() });
+    expect(wrapper.find('.mj__trustee').text()).toBe('托管');
+    expect(wrapper.find('.mj__more').text()).toBe('更多');
+  });
+
+  it('托管中：状态色 $ftl-color-mj-status', () => {
+    const on = ruleBody(boardStyle, '.mj__bar-action--on');
+    expect(on).toContain('color: $ftl-color-mj-status');
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ trustees: [true, false, false, false] }) }),
+    });
+    expect(wrapper.find('.mj__trustee').classes()).toContain('mj__bar-action--on');
   });
 });
