@@ -492,4 +492,34 @@ describe('Task 10：麻将动效 + 无限闸', () => {
       '合成负样本必须被判负',
     ).toBe(true);
   });
+
+  /**
+   * 终审残留：reduced-motion 的整组 `transform: none !important` 会压掉
+   * 组件基类的 `translate(-50%, -100%)`，把胡 banner 钉在锚点左上角。
+   * 因此 `.anim-hu-banner` 必须单列，只关 animation/transition，不动 transform。
+   */
+  it('⑩ reduced-motion 只关胡 banner 动画，不压掉居中 transform', () => {
+    const code = stripComments(anim!.content);
+    const at = code.search(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    expect(at, 'prefers-reduced-motion 媒体查询必须存在').toBeGreaterThanOrEqual(0);
+    const block = braceBlock(code, at);
+    expect(block).not.toBeNull();
+
+    // 1) 不得出现在整组 `transform: none !important` 的清单里。
+    const blanket = /([^{}]*\{[^}]*transform:\s*none\s*!important[^}]*\})/.exec(block!);
+    expect(blanket, '整组降级规则必须存在').not.toBeNull();
+    expect(blanket![1], '胡 banner 不得被整组清除 transform').not.toContain('.anim-hu-banner');
+
+    // 2) 自己的降级规则只关动画，不碰 transform。
+    const own = /\.anim-hu-banner\s*\{([^}]*)\}/.exec(block!);
+    expect(own, 'reduced-motion 下仍要有一条 .anim-hu-banner 规则').not.toBeNull();
+    expect(own![1]).toMatch(/animation:\s*none/);
+    expect(own![1], '不得 transform: none（会压掉基类居中）').not.toMatch(/transform:\s*none/);
+
+    // 判别力：把 transform: none 写回单列规则必须被判负。
+    const bad =
+      '@media (prefers-reduced-motion: reduce) { .anim-hu-banner { animation: none !important; transform: none !important; } }';
+    const badBlock = braceBlock(bad, bad.search(/@media/))!;
+    expect(/\.anim-hu-banner\s*\{([^}]*)\}/.exec(badBlock)![1]).toMatch(/transform:\s*none/);
+  });
 });

@@ -381,11 +381,19 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-meld-pop,
   .anim-meld-pop--gang,
   .anim-meld-pop--angang,
-  .anim-hu-banner,
   .anim-claim-pulse,
   .anim-mj-settlement-in {
     animation: none !important;
     transition: none !important;
     transform: none !important;
+  }
+
+  /**
+   * 胡 banner 只关动画，**保留**基类 `translate(-50%, -100%)` 的锚点居中。
+   * 不得并入上面的 `transform: none !important` 组：那会把 banner 钉在锚点左上角。
+   */
+  .anim-hu-banner {
+    animation: none !important;
+    transition: none !important;
   }
 }

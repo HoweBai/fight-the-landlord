@@ -110,7 +110,8 @@ describe('visibleDiscards', () => {
   it('rob 窗口不保护任何河牌：最后一枚同 type 仍被隐藏', () => {
     const raw = [t(0, 5), t(0, 3), t(0, 5)];
     const visible = visibleDiscards(raw, meldsFromSeat0(), {
-      phase: 'rob',
+      // 生产形态：rob 窗口的 state 仍是 'claim'，只有 windowId 前缀区分。
+      phase: 'claim',
       windowId: 'rob:0',
       seat: 0,
       sourceSeat: 0,
