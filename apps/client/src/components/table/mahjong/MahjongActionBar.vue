@@ -132,7 +132,7 @@ function pickGang(opt: MahjongClaimOption): void {
           type="button"
           class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--discard"
           :style="wideBtnStyle"
-          :disabled="busy"
+          :disabled="busy || (mode === 'play' && selectedCount !== 1)"
           @click="emitAction({ kind: 'discard' })"
         >
           出牌

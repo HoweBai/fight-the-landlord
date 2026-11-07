@@ -62,7 +62,7 @@ describe('MahjongActionBar', () => {
   });
 
   it('play：出牌是宽主按钮，点击 emit discard；胡按钮 emit 其 option', async () => {
-    const w = mountBar({ mode: 'play', options: [hu5] });
+    const w = mountBar({ mode: 'play', options: [hu5], selectedCount: 1 });
     const discard = w.findAll('.mj-action-bar__btn').find((b) => b.text() === '出牌');
     expect(discard).toBeDefined();
     const discardStyle = discard!.attributes('style') ?? '';
@@ -79,6 +79,19 @@ describe('MahjongActionBar', () => {
       [{ kind: 'discard' }],
       [{ kind: 'claim', option: hu5 }],
     ]);
+  });
+
+  it('play：出牌只在恰好选中 1 张时可用（0/2 张禁用，胡/杠不受影响）', () => {
+    const discardOf = (w: ReturnType<typeof mountBar>) =>
+      w.findAll('.mj-action-bar__btn').find((b) => b.text() === '出牌')!.element as HTMLButtonElement;
+
+    expect(discardOf(mountBar({ mode: 'play', selectedCount: 0 })).disabled).toBe(true);
+    expect(discardOf(mountBar({ mode: 'play', selectedCount: 2 })).disabled).toBe(true);
+
+    const one = mountBar({ mode: 'play', selectedCount: 1, options: [hu5] });
+    expect(discardOf(one).disabled).toBe(false);
+    const hu = one.findAll('.mj-action-bar__btn').find((b) => b.text() === '胡')!.element;
+    expect((hu as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('多杠：两个杠 → 恰好一个「杠 2」；点开出 5万/6万，点 5万 emit 第一个 option', async () => {

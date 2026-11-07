@@ -10,6 +10,7 @@ import {
   type Tile,
 } from '@fight-the-landlord/protocol';
 import MahjongBoard from '../src/components/table/mahjong/MahjongBoard.vue';
+import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.vue';
 import MahjongHuBanner from '../src/components/table/mahjong/MahjongHuBanner.vue';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
 import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
@@ -315,6 +316,55 @@ describe('MahjongBoard：牌河契约（claimed / claimSource / lastDiscard）',
     await tiles[0]!.trigger('click');
     expect(wrapper.emitted('mahjong')).toBeUndefined();
     expect(buttonTexts(wrapper)).toContain('碰');
+  });
+
+  it('claim 来源牌点击 toggle：点来源保持碰、再点清除；点旧牌无效果', async () => {
+    const claims: MahjongClaimOption[] = [
+      { claim: 'peng', tile: tile(0, 5) },
+      { claim: 'pass' },
+    ];
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          state: 'claim',
+          currentPlayer: 0,
+          activeSeats: [0],
+          windowId: 'claim:0',
+          discards: [[tile(0, 5), tile(0, 3), tile(0, 5)], [], [], []],
+          melds: [[], [PENG_5], [], []],
+          claimsForMe: claims,
+        }),
+      }),
+    });
+    const tiles = wrapper.findAll('.mj-river--my .mj-tile');
+    expect(tiles).toHaveLength(2);
+    const older = tiles[0]!; // 3万：旧牌，不可点
+    const source = tiles[1]!; // 5万：claim 来源
+
+    const barOptions = () =>
+      wrapper.findComponent(MahjongActionBar).props('options') as MahjongClaimOption[];
+
+    // 初始：全量 options（pass 无 tile，toggle 后会被过滤；过按钮由 showPass 单独渲染）。
+    expect(barOptions()).toHaveLength(2);
+
+    // 第一次点来源牌：toggle 生效，碰仍在（同型选项保留）。
+    await source.trigger('click');
+    expect(barOptions()).toEqual([{ claim: 'peng', tile: tile(0, 5) }]);
+    expect(buttonTexts(wrapper)).toContain('碰');
+
+    // 再点同型来源牌：toggle 清除，options 回到全量。
+    await source.trigger('click');
+    expect(barOptions()).toHaveLength(2);
+
+    // 点旧牌（非来源）：River 不 emit，options 不变、无动作上抛。
+    await older.trigger('click');
+    expect(barOptions()).toHaveLength(2);
+    expect(wrapper.emitted('mahjong')).toBeUndefined();
+
+    // toggle 后碰仍可正常上抛（带窗口 id）。
+    await source.trigger('click');
+    await buttonByText(wrapper, '碰').trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]).toEqual([{ type: 'claim', claim: 'peng' }, 'claim:0']);
   });
 
   it('rob 窗口：无河牌可点（点击不上抛），胡按钮显示待响应牌、无过', async () => {

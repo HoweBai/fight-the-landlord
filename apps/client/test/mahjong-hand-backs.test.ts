@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import MahjongHandBacks from '../src/components/table/mahjong/MahjongHandBacks.vue';
@@ -89,5 +90,14 @@ describe('MahjongHandBacks', () => {
       props: { count: 14, direction: 'top', tileW: 36, tileH: 54, dealNonce: 7, tail: false },
     });
     expect(w.findAll('.anim-deal-in')).toHaveLength(14);
+  });
+
+  it('源码闸：模板使用 anim- 类时，scoped 样式必须 @import animations.scss', () => {
+    // scoped CSS 会把 @keyframes 按组件重命名 ⇒ Board 里的动画类匹配不到本组件元素，
+    // 必须把 animations.scss 导进本组件（MahjongMeld/HuBanner 同款纪律）。
+    const src = readFileSync('src/components/table/mahjong/MahjongHandBacks.vue', 'utf8');
+    expect(src).toMatch(/['"]anim-[a-z]/);
+    const style = src.slice(src.indexOf('<style'));
+    expect(style).toMatch(/@import\s+['"][^'"]*styles\/animations\.scss['"]/);
   });
 });

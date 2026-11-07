@@ -75,11 +75,13 @@ function tileStyle(index: number): { marginLeft?: string; marginTop?: string } |
 }
 
 function onAnimEnd(e: AnimationEvent): void {
-  // 只处理 pop 动画结束（ftl-peng-pop / ftl-gang-pop / ftl-angang-pop）
+  // 只处理 pop 动画结束（ftl-peng-pop / ftl-gang-pop / ftl-angang-pop）。
+  // 用 `startsWith`：scoped CSS 会把 @keyframes 重命名成 `ftl-peng-pop-<hash>`，
+  // 精确比较在构建产物里永远不命中（HuBanner 同款修法）。
   if (
-    e.animationName === 'ftl-peng-pop' ||
-    e.animationName === 'ftl-gang-pop' ||
-    e.animationName === 'ftl-angang-pop'
+    e.animationName.startsWith('ftl-peng-pop') ||
+    e.animationName.startsWith('ftl-gang-pop') ||
+    e.animationName.startsWith('ftl-angang-pop')
   ) {
     emit('pop-done');
   }

@@ -104,6 +104,36 @@ describe('MahjongMeld 可变尺寸与杠/暗杠', () => {
   });
 });
 
+describe('MahjongMeld pop-done（scoped keyframes 重命名）', () => {
+  function mountWithPop(kind: MahjongMeldView['kind']) {
+    return mount(MahjongMeld, { props: { meld: meld(kind, [wan1, wan1, wan1]), pop: true } });
+  }
+
+  function fire(w: VueWrapper, name: string): void {
+    const e = new Event('animationend') as AnimationEvent;
+    Object.defineProperty(e, 'animationName', { value: name });
+    w.element.dispatchEvent(e);
+  }
+
+  it('scoped 重命名后的 ftl-*-pop-<hash> 仍 emit pop-done', () => {
+    for (const [kind, name] of [
+      ['peng', 'ftl-peng-pop-abc123'],
+      ['gang', 'ftl-gang-pop-def456'],
+      ['angang', 'ftl-angang-pop-ghi789'],
+    ] as const) {
+      const w = mountWithPop(kind);
+      fire(w, name);
+      expect(w.emitted('pop-done'), name).toHaveLength(1);
+    }
+  });
+
+  it('无关动画名（其他 ftl 动画）不 emit', () => {
+    const w = mountWithPop('peng');
+    fire(w, 'ftl-deal-in-abc123');
+    expect(w.emitted('pop-done')).toBeUndefined();
+  });
+});
+
 describe('MahjongTile image mode', () => {
   it('默认 mode=aspectFit', () => {
     const w = mount(MahjongTile, { props: { tile: wan1 } });

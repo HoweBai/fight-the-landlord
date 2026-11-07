@@ -122,6 +122,52 @@ const claimSrc = computed<ClaimSourceInfo>(() =>
     : { tile: null, sourceSeat: null, canClick: false, claimSourceMeldKey: null },
 );
 
+// —— v12 §2「保留 toggle」：点 claim 来源牌 → 以牌型过滤响应选项；再点同型清除 ——
+const discardClickTarget = ref<Tile | null>(null);
+
+const filteredClaims = computed<MahjongClaimOption[]>(() => {
+  const target = discardClickTarget.value;
+  if (!target) return myClaims.value;
+  const type = tileType(target);
+  return myClaims.value.filter((o) => o.tile != null && tileType(o.tile) === type);
+});
+
+/** 该座河流当前可点的来源下标（与 riverProps 同一口径）。 */
+function claimSourceIndexFor(seat: number): number | null {
+  if (!claimSrc.value.canClick || claimSrc.value.sourceSeat !== seat) return null;
+  const latest = riverOf(seat).latestIndex;
+  return latest >= 0 ? latest : null;
+}
+
+/** River 只在来源牌上 emit；这里再按「来源座 + 来源下标」核对一次并做同型 toggle。 */
+function onDiscardClick(seat: number, payload: { tile: Tile; index: number }): void {
+  if (!claimSrc.value.canClick || claimSrc.value.sourceSeat !== seat) return;
+  const sourceIndex = claimSourceIndexFor(seat);
+  if (sourceIndex === null || payload.index !== sourceIndex) return;
+  discardClickTarget.value =
+    discardClickTarget.value && tileType(discardClickTarget.value) === tileType(payload.tile)
+      ? null
+      : payload.tile;
+}
+
+/** 旧目标不得跨窗口残留：phase 离开 claim / 选项变化 / 来源变化都清。 */
+const claimsSignature = computed(() =>
+  myClaims.value.map((o) => `${o.claim}:${o.tile ? tileType(o.tile) : '-'}`).join(','),
+);
+const claimSourceSignature = computed(() => {
+  const src = claimSrc.value;
+  return `${src.canClick}:${src.sourceSeat ?? '-'}:${src.tile ? tileType(src.tile) : '-'}`;
+});
+watch(phase, (to) => {
+  if (to !== 'claim') discardClickTarget.value = null;
+});
+watch(claimsSignature, () => {
+  discardClickTarget.value = null;
+});
+watch(claimSourceSignature, () => {
+  discardClickTarget.value = null;
+});
+
 const meldsBySeat = computed<MahjongMeldView[][]>(() => props.view?.melds ?? [[], [], [], []]);
 const serverDiscards = computed<Tile[][]>(() => props.view?.discards ?? [[], [], [], []]);
 
@@ -672,7 +718,7 @@ function riverProps(seat: number) {
     meldGap: 0,
     meldHeight: 0,
     interactive: isSource,
-    claimSourceIndex: isSource && river.latestIndex >= 0 ? river.latestIndex : null,
+    claimSourceIndex: claimSourceIndexFor(seat),
     revealed: isLeft || isRight
       ? (sortedRevealedHands.value.find((r) => r.seat === seat) ?? null)
       : null,
@@ -906,24 +952,28 @@ function onMeldPopDone(key: string) {
         v-bind="riverProps(topSeat)"
         :style="rectStyle(layout.rivers.top.rect)"
         @meld-pop-done="onMeldPopDone"
+        @discard-click="onDiscardClick(topSeat, $event)"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--left"
         v-bind="riverProps(leftSeat)"
         :style="rectStyle(layout.rivers.left.rect)"
         @meld-pop-done="onMeldPopDone"
+        @discard-click="onDiscardClick(leftSeat, $event)"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--right"
         v-bind="riverProps(rightSeat)"
         :style="rectStyle(layout.rivers.right.rect)"
         @meld-pop-done="onMeldPopDone"
+        @discard-click="onDiscardClick(rightSeat, $event)"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--self"
         v-bind="riverProps(me)"
         :style="rectStyle(layout.rivers.self.rect)"
         @meld-pop-done="onMeldPopDone"
+        @discard-click="onDiscardClick(me, $event)"
       />
 
       <MahjongHub
@@ -1000,7 +1050,7 @@ function onMeldPopDone(key: string) {
       <MahjongActionBar
         v-if="hasActions"
         :mode="actionMode"
-        :options="myClaims"
+        :options="filteredClaims"
         :show-pass="showPass"
         :busy="busy || (phase === 'exchange' && !exchangeReady)"
         :selected-count="selected.length"

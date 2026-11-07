@@ -87,6 +87,10 @@ function backAnimated(i: number): boolean {
 </template>
 
 <style scoped lang="scss">
+// 闸纪律：scoped CSS 会按组件重命名 @keyframes，Board 的拷贝匹配不到这里的元素，
+// 必须把动画类 `@import` 进本组件（不能 @use，见 animations.scss 顶部注释）。
+@import '../../../styles/animations.scss';
+
 .mj-backs {
   box-sizing: border-box;
   display: flex;
