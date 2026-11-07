@@ -54,6 +54,8 @@ describe('MahjongRiver', () => {
     const tiles = w.findAll('.mj-tile');
     expect(tiles).toHaveLength(3);
     expect(tiles[2]!.classes()).toContain('mj-river__tile--latest');
+    expect(tiles[2]!.classes()).toContain('anim-discard-land');
+    expect(tiles[1]!.classes()).not.toContain('anim-discard-land');
     const grid = w.find('.mj-river__grid');
     expect(grid.attributes('style')).toContain('grid-template-columns: repeat(12, 50px)');
     expect(grid.attributes('style')).toContain('gap: 2px');

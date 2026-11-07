@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import type { MahjongClaimOption } from '@fight-the-landlord/protocol';
 import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.vue';
+import { stripComments } from './helpers/source-scan';
 
 /**
  * Task 7：ActionBar 统一 claim / 多杠 / 换三张 / 定缺。
@@ -34,6 +35,11 @@ describe('MahjongActionBar', () => {
     expect(buttons.filter((b) => b.text() === '碰')).toHaveLength(1);
     // options 里的 pass 被过滤：碰/过之外没有第三个按钮
     expect(mainButtonTexts(w)).toEqual(['碰', '过']);
+    // Task 10：claim 窗口的按钮挂唯一 infinite 类（定义在 animations.scss）。
+    for (const b of buttons) expect(b.classes()).toContain('anim-claim-pulse');
+    expect(
+      mountBar({ mode: 'play', selectedCount: 1 }).findAll('.anim-claim-pulse'),
+    ).toHaveLength(0);
   });
 
   it('强制胡（options 只有 hu、showPass=false）：没有过', () => {
@@ -171,9 +177,11 @@ describe('MahjongActionBar', () => {
     }
   });
 
-  it('源码闸：SFC 无 1px、无 infinite', () => {
+  it('源码闸：SFC 无 1px、无 infinite（注释已剥：Task 10 起 claim 呼吸类在 code 里）', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongActionBar.vue', 'utf8');
     expect(src).not.toMatch(/1px/);
-    expect(src).not.toContain('infinite');
+    // Task 10：claim 按钮引用 `anim-claim-pulse`（定义在 animations.scss），
+    // 组件自身仍不得写 `infinite` 声明；只看**代码**，注释里的解释不算违规。
+    expect(stripComments(src)).not.toContain('infinite');
   });
 });

@@ -267,6 +267,23 @@ describe('暗杠：aspectFill 牌背 + 与杠组高一致', () => {
       expect(img.attributes('mode')).toBe('aspectFit');
     }
   });
+
+  it('暗杠金边：outline 走 $ftl-hairline/$ftl-color-mj-gold，不用 border / inset 阴影', () => {
+    const src = stripComments(
+      readFileSync(join(SRC_ROOT, 'components/table/mahjong/MahjongMeld.vue'), 'utf8'),
+    );
+    const rule = /\.mj-meld--angang\s+:deep\(\.mj-tile\)\s*\{([^}]*)\}/.exec(src);
+    expect(rule, '暗杠金边规则必须存在').not.toBeNull();
+    const body = rule![1]!;
+    expect(body, '描边必须走发丝线变量 + 红金令牌').toMatch(
+      /outline:\s*\$ftl-hairline\s+solid\s+\$ftl-color-mj-gold\s*;/,
+    );
+    expect(body, 'offset 必须用负发丝线（内描边）').toMatch(
+      /outline-offset:\s*-\$ftl-hairline\s*;/,
+    );
+    expect(body, '不得用 border（会改盒模型）').not.toMatch(/border\s*:/);
+    expect(body, '不得用 inset 阴影（会被牌面图盖住）').not.toContain('inset');
+  });
 });
 
 describe('方向只靠左右横置素材 + 竖叠，不用 rotate', () => {

@@ -382,6 +382,15 @@ const displayTiles = computed<
   return [...entries, { tile: entry!.tile, drawn: true, dealNonce: null }];
 });
 
+/** Task 10：发牌径向起点 —— 每张牌的起手横向偏移 = 手牌行中心到本张的距离。
+ *  只服务 `.anim-deal-in-radial`（`--mj-deal-x`）；摸牌位不挂发牌类，值无副作用。 */
+function dealOffsetX(index: number): string {
+  const count = displayTiles.value.filter((e) => !e.drawn).length;
+  const center = (count - 1) / 2;
+  const pitch = layout.value.hand.tile.w + layout.value.hand.gap;
+  return `${Math.round((center - index) * pitch)}px`;
+}
+
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
   emit('select');
@@ -1029,11 +1038,12 @@ function onMeldPopDone(key: string) {
             :selected="selected.includes(i)"
             :disabled="!handSelectable"
             :class="{
-              'anim-deal-in': entry.dealNonce != null && entry.dealNonce === dealEpoch && !entry.drawn,
+              'anim-deal-in-radial': entry.dealNonce != null && entry.dealNonce === dealEpoch && !entry.drawn,
               'mj__hand-tile--drawn': entry.drawn,
             }"
             :style="{
               '--ftl-delay': `${i * 30}ms`,
+              '--mj-deal-x': dealOffsetX(i),
               marginLeft: entry.drawn
                 ? `${layout.hand.drawnGap - layout.hand.gap}px`
                 : undefined,

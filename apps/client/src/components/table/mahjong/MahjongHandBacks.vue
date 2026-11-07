@@ -3,8 +3,8 @@
  * 对手手牌区（哑组件）：牌背横排/竖排；已胡者用亮牌替换牌背。
  * 只渲染 props，不判规则、不取数。
  *
- * 发牌契约（v6 §4 / Task 8）：
- *  - `dealNonce` 非空时牌背挂 `anim-deal-in`；key 为 `${dealNonce ?? 'seed'}-${i}`；
+ * 发牌契约（v6 §4 / Task 8 / Task 10）：
+ *  - `dealNonce` 非空时牌背挂 `anim-deal-in-side`；key 为 `${dealNonce ?? 'seed'}-${i}`；
  *  - `tail` 为真时最后一张是「摸牌尾部」：独立 key、不挂发牌类（13→14 不重播发牌）。
  */
 import { computed } from 'vue';
@@ -79,7 +79,7 @@ function backAnimated(i: number): boolean {
         :direction="direction"
         :w="tileW"
         :h="tileH"
-        :class="{ 'anim-deal-in': backAnimated(i) }"
+        :class="{ 'anim-deal-in-side': backAnimated(i) }"
         :style="i > 1 && overlapTop !== 0 ? { marginTop: `${overlapTop}px` } : undefined"
       />
     </template>

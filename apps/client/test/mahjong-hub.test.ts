@@ -61,13 +61,16 @@ describe('MahjongHub（血战盘）', () => {
     expect(w.findAll('.mj-hub__dot')).toHaveLength(4);
   });
 
-  it('倒计时最后 5 秒加紧迫类', () => {
+  it('倒计时最后 5 秒加紧迫类（颜色 + 有限脉动类）', () => {
     const urgent = mount(MahjongHub, { props: { ...base, seconds: 4 } });
     expect(urgent.find('.mj-hub__clock').classes()).toContain('mj-hub__clock--urgent');
+    expect(urgent.find('.mj-hub__clock').classes()).toContain('anim-mj-urgent');
     const calm = mount(MahjongHub, { props: { ...base, seconds: 6 } });
     expect(calm.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
+    expect(calm.find('.mj-hub__clock').classes()).not.toContain('anim-mj-urgent');
     const zero = mount(MahjongHub, { props: { ...base, seconds: 0 } });
     expect(zero.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
+    expect(zero.find('.mj-hub__clock').classes()).not.toContain('anim-mj-urgent');
   });
 
   it('方位点：play 亮 currentPlayer', () => {
@@ -213,10 +216,15 @@ describe('MahjongHub（血战盘）', () => {
     expect(w.text()).not.toMatch(/分数|底分|积分/);
   });
 
-  it('源码闸：本组件不含 animation/infinite（动效归 Task 10）', () => {
+  it('源码闸：本组件不定义 animation / infinite（Task 10 起动效类由 animations.scss 提供）', () => {
     const src = readFileSync('src/components/table/mahjong/MahjongHub.vue', 'utf8');
-    expect(src).not.toMatch(/animation/);
+    const style = src.slice(src.indexOf('<style'));
+    // 组件自己不写 animation 声明（类与 keyframes 全在 animations.scss；scoped 需 import）。
+    expect(style).not.toMatch(/animation\s*:/);
     expect(src).not.toMatch(/infinite/);
+    // Task 10 接线：紧迫钟必须引用有限脉动类，且样式块必须导入动画文件。
+    expect(src).toContain('anim-mj-urgent');
+    expect(style).toMatch(/@import\s+['"][^'"]*styles\/animations\.scss['"]/);
   });
 
   it('源码闸：金环 inline border 走 2px（与 $ftl-hairline 等价；1px 缩放后不可见）', () => {

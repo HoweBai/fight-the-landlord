@@ -211,6 +211,7 @@ function onDiscardClick(t: Tile, index: number): void {
           :h="tileH"
           :class="{
             'mj-river__tile--latest': isLatest(i),
+            'anim-discard-land': isLatest(i),
             'mj-river__tile--filtered': isFiltered(i, t),
             'mj-river__tile--clickable': interactive,
           }"
@@ -227,6 +228,10 @@ function onDiscardClick(t: Tile, index: number): void {
 </template>
 
 <style scoped lang="scss">
+// Task 10：最新弃牌落桌动画。scoped CSS 按组件重命名 @keyframes ⇒ 必须导入动画类文件
+//（同 MahjongMeld / MahjongHandBacks 的纪律；不能 @use，见 animations.scss 顶部注释）。
+@import '../../../styles/animations.scss';
+
 .mj-river {
   box-sizing: border-box;
   position: relative;

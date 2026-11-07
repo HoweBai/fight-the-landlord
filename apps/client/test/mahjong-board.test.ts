@@ -293,7 +293,7 @@ describe('MahjongBoard：装配与动作上抛', () => {
       });
       expect(wrapper.find('.mj__hand').exists()).toBe(true);
       expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(revealedTiles.length);
-      expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
+      expect(wrapper.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(0);
       await wrapper.findAll('.mj__hand .mj-tile')[0]!.trigger('click');
       expect(wrapper.findAll('.mj-tile--selected')).toHaveLength(0);
       expect(wrapper.emitted('mahjong')).toBeUndefined();
@@ -493,7 +493,7 @@ describe('MahjongBoard：发牌 dealEpoch / dealNonce', () => {
     });
     await nextTick();
     expect(wrapper.findAll('.mj__hand .mj-tile')).toHaveLength(13);
-    expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(13);
+    expect(wrapper.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(13);
   });
 
   it('v1 lack 挂载：同样播发牌动画', async () => {
@@ -501,7 +501,7 @@ describe('MahjongBoard：发牌 dealEpoch / dealNonce', () => {
       props: props({ view: view({ version: 1, state: 'lack', activeSeats: [0], windowId: 'lack' }) }),
     });
     await nextTick();
-    expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(13);
+    expect(wrapper.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(13);
   });
 
   it('v5 play 挂载（中途进房/重连）：不播', async () => {
@@ -509,7 +509,7 @@ describe('MahjongBoard：发牌 dealEpoch / dealNonce', () => {
       props: props({ view: view({ version: 5, state: 'play' }) }),
     });
     await nextTick();
-    expect(wrapper.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
+    expect(wrapper.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(0);
   });
 
   it('第二局新挂载（v1 exchange）重新播', async () => {
@@ -517,12 +517,12 @@ describe('MahjongBoard：发牌 dealEpoch / dealNonce', () => {
       props: props({ view: view({ version: 5, state: 'play' }) }),
     });
     await nextTick();
-    expect(first.findAll('.mj__hand .anim-deal-in')).toHaveLength(0);
+    expect(first.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(0);
     const second = mount(MahjongBoard, {
       props: props({ view: view({ version: 1, state: 'exchange', activeSeats: [0], windowId: 'exchange' }) }),
     });
     await nextTick();
-    expect(second.findAll('.mj__hand .anim-deal-in')).toHaveLength(13);
+    expect(second.findAll('.mj__hand .anim-deal-in-radial')).toHaveLength(13);
   });
 
   it('摸牌位不带发牌类（v1 exchange → play 摸牌）', async () => {
@@ -534,7 +534,7 @@ describe('MahjongBoard：发牌 dealEpoch / dealNonce', () => {
     await nextTick();
     const drawn = wrapper.findAll('.mj__hand .mj-tile').at(-1)!;
     expect(drawn.classes()).toContain('mj__hand-tile--drawn');
-    expect(drawn.classes()).not.toContain('anim-deal-in');
+    expect(drawn.classes()).not.toContain('anim-deal-in-radial');
   });
 });
 

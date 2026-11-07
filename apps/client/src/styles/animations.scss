@@ -146,24 +146,6 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   100% { transform: scale(0.9) translateY(-20px); opacity: 0; }
 }
 
-/// 手牌双击后向右上飞出（对齐弃牌河位置）。起始态可见。
-@keyframes ftl-fly-out {
-  from { transform: none; }
-  to   { transform: translateY(-20px) translateX(12px) scale(0.7); opacity: 0; }
-}
-
-/// 当前玩家座位面板发光循环：box-shadow 呼吸。
-@keyframes ftl-active-glow {
-  0%, 100% { box-shadow: 0 0 8px rgba($ftl-color-gold, 0.25); }
-  50%      { box-shadow: 0 0 22px rgba($ftl-color-gold, 0.55); }
-}
-
-/// 定缺推荐按钮呼吸（独立于 urgent-pulse，1.6s vs 0.8s）。
-@keyframes ftl-lack-pulse {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.08); }
-}
-
 // —— 麻将 Batch 3 动画（2026-10-28）——
 
 /// Claim 窗口紧急呼吸：1.6s 循环 scale 脉动（claim 响应紧急态）。
@@ -292,18 +274,6 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
 .anim-hu-banner {
   animation: ftl-hu-banner 0.8s $ftl-ease forwards;
 }
-/// 手牌双击飞出：0.24s 向右上飞出 + 淡出。forwards 填充停在飞出位置。
-.anim-fly-out {
-  animation: ftl-fly-out 0.24s $ftl-ease forwards;
-}
-/// 当前玩家座位面板发光：box-shadow 呼吸循环。
-.anim-active-glow {
-  animation: ftl-active-glow 1.8s ease-in-out infinite;
-}
-/// 定缺推荐按钮呼吸：独立于 urgent-pulse（1.6s vs 0.8s），不污染已用组件。
-.anim-lack-pulse {
-  animation: ftl-lack-pulse 1.6s ease-in-out infinite;
-}
 
 // —— 麻将 Batch 3 anim- 类（2026-10-28）——
 
@@ -316,6 +286,73 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   animation: ftl-mj-settlement-in 0.36s $ftl-ease both;
 }
 
+// —— 川麻红金牌桌重做：动效 + 无限闸（Task 10，2026-11-07）——
+//
+// 纪律同 `.anim-deal-in`：起始态**可见**（只从位移/缩放起手，零 `opacity: 0`），
+// 错峰只走内联 `--ftl-delay`，不新造 JS 时钟（牌桌区 §9.6）。
+// ⚠️ 唯一 infinite 类是 `.anim-claim-pulse`（下方 Batch 3 已定义）；本段全部一次性或有限次。
+
+/// 本家手牌发牌：从手牌行中心（`--mj-deal-x/--mj-deal-y`）缩放入场（radial）。
+/// `backwards` 与 `.anim-deal-in` 同款：`both` 的 forwards 填充会永久压住选中抬升。
+@keyframes ftl-deal-in-radial {
+  from {
+    transform: translate(var(--mj-deal-x, 0px), var(--mj-deal-y, 0px)) scale(.66);
+  }
+  to {
+    transform: none;
+  }
+}
+.anim-deal-in-radial {
+  animation: ftl-deal-in-radial .36s $ftl-ease backwards;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
+/// 对手牌背发牌：从该侧方向缩放入场（side）；同 radial 的 backwards 纪律。
+@keyframes ftl-deal-in-side {
+  from {
+    transform: translate(var(--mj-deal-x, 0px), var(--mj-deal-y, 0px)) scale(.9);
+  }
+  to {
+    transform: none;
+  }
+}
+.anim-deal-in-side {
+  animation: ftl-deal-in-side .36s $ftl-ease backwards;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
+/// 弃牌落桌：一次性的轻砸（上浮 → 回弹 → 归位）。
+/// 元素基础 transform 恒为 `none`，`both` 与 `backwards` 视觉等价，按 v4 §6.2 用 `both`。
+@keyframes ftl-discard-land {
+  0% {
+    transform: translateY(-4px) scale(1.04);
+  }
+  60% {
+    transform: translateY(1px) scale(.99);
+  }
+  100% {
+    transform: none;
+  }
+}
+.anim-discard-land {
+  animation: ftl-discard-land .24s $ftl-ease both;
+}
+
+/// 倒计时紧迫脉动（麻将盘）：**有限 3 次**（0.8s × 3），播完即停。
+/// ⚠️ 本仓麻将组件的唯一 infinite 只能是 claim 呼吸 —— 这里刻意不写 infinite。
+@keyframes ftl-mj-urgent {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+.anim-mj-urgent {
+  animation: ftl-mj-urgent .8s ease-in-out 3;
+}
+
 /**
  * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
  * 形态照参考实现（`transition: none` + `animation: none !important`）。
@@ -325,6 +362,10 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
  */
 @media (prefers-reduced-motion: reduce) {
   .anim-deal-in,
+  .anim-deal-in-radial,
+  .anim-deal-in-side,
+  .anim-discard-land,
+  .anim-mj-urgent,
   .anim-redeal-in,
   .anim-redeal-banner,
   .anim-played-in,
@@ -338,9 +379,6 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-meld-pop--gang,
   .anim-meld-pop--angang,
   .anim-hu-banner,
-  .anim-fly-out,
-  .anim-active-glow,
-  .anim-lack-pulse,
   .anim-claim-pulse,
   .anim-mj-settlement-in {
     animation: none !important;

@@ -141,4 +141,13 @@ function onAnimEnd(e: AnimationEvent): void {
 .mj-meld--lg :deep(.mj-tile) {
   margin-left: 0;
 }
+
+/**
+ * 暗杠金边（v11 §3）：`outline` 画在内容之上、**不占布局**（宽高不变）；
+ * 不用 `border`（会改盒模型）、不用 `box-shadow: inset`（会被牌面图盖住）。
+ */
+.mj-meld--angang :deep(.mj-tile) {
+  outline: $ftl-hairline solid $ftl-color-mj-gold;
+  outline-offset: -$ftl-hairline;
+}
 </style>

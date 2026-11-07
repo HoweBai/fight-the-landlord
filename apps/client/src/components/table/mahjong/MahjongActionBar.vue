@@ -31,7 +31,8 @@ export type ActionBarAction =
  *   - rob 的胡按钮显示待响应牌「胡 5万」（v13 §10.2）。
  *
  * 尺寸：2 列 × 84 按钮、gap 8（内联样式由测试钉死）；主按钮金实心、次按钮描金。
- * 无动画（本组件不引入 @keyframes），呼吸动效留在 Board 的 claim 闸里。
+ * 动效（Task 10）：claim 窗口给按钮挂 `anim-claim-pulse` —— 它是**麻将唯一允许的
+ * infinite 类**（定义在 animations.scss；本组件不写 @keyframes）。
  */
 import { computed, ref, watch } from 'vue';
 import { MAHJONG_SUIT_NAMES } from '@fight-the-landlord/protocol';
@@ -204,7 +205,7 @@ function pickGang(opt: MahjongClaimOption): void {
           v-for="(opt, i) in claimOptions"
           :key="i"
           type="button"
-          class="mj-action-bar__btn"
+          class="mj-action-bar__btn anim-claim-pulse"
           :class="{
             'mj-action-bar__btn--primary': opt.claim === 'hu',
             'mj-action-bar__btn--gang': opt.claim === 'gang',
@@ -218,7 +219,7 @@ function pickGang(opt: MahjongClaimOption): void {
         <button
           v-if="showPass"
           type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--pass"
+          class="mj-action-bar__btn mj-action-bar__btn--pass anim-claim-pulse"
           :style="btnStyle"
           :disabled="busy"
           @click="emitAction({ kind: 'pass' })"
@@ -260,6 +261,10 @@ function pickGang(opt: MahjongClaimOption): void {
 </template>
 
 <style scoped lang="scss">
+// Task 10：claim 呼吸（`.anim-claim-pulse`）。scoped CSS 按组件重命名 @keyframes
+// ⇒ 必须导入动画类文件（同 MahjongMeld / MahjongHandBacks 的纪律）。
+@import '../../../styles/animations.scss';
+
 .mj-action-bar {
   display: flex;
   justify-content: flex-end;

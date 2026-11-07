@@ -8,7 +8,7 @@
  *    其余（draw/ended）不亮；没有映射座位的方向永不点亮。
  *  - 徽标每座最多一个，由 Board 按 胡 > 听 > 缺 > 托管 求好紧急度后传入。
  *  - 金环 / 方位点 / 徽标都只是盘缘装饰。
- * 动效（紧迫脉冲）不在此处，由 Task 10 的动画层负责。
+ *  - 紧迫动效（Task 10）：末 5 秒给钟挂 `anim-mj-urgent`（有限 3 次，定义在 animations.scss）。
  */
 import { computed } from 'vue';
 import type { MahjongPhase } from '@fight-the-landlord/protocol';
@@ -127,7 +127,7 @@ const ringStyle = {
       </view>
       <text
         class="mj-hub__clock"
-        :class="{ 'mj-hub__clock--urgent': urgent }"
+        :class="{ 'mj-hub__clock--urgent': urgent, 'anim-mj-urgent': urgent }"
         :style="{ fontSize: `${fonts.clock}px` }"
       >{{ seconds }}s</text>
       <text
@@ -159,7 +159,10 @@ const ringStyle = {
 </template>
 
 <style scoped lang="scss">
-/* 川麻红金调色（设计 v4 §8）：金 #D4A24C / 漆 #1C0808 / cream #F5E6C8 / urgent #FF6B5A。 */
+// Task 10：紧迫钟的 `anim-mj-urgent`（scoped 会重命名 @keyframes ⇒ 必须导入）。
+@import '../../../styles/animations.scss';
+
+/* 川麻红金调色（设计 v4 §8）：token 定义在 src/uni.scss 的 $ftl-color-mj-* 一档。 */
 .mj-hub {
   position: relative;
   box-sizing: border-box;
@@ -167,8 +170,8 @@ const ringStyle = {
   height: 100%;
   overflow: hidden;
   border-radius: 50%;
-  background: rgba(28, 8, 8, 0.55);
-  color: rgb(245, 230, 200);
+  background: rgba($ftl-color-mj-lacquer, 0.55);
+  color: $ftl-color-mj-cream;
   text-align: center;
 }
 .mj-hub__ring {
@@ -178,7 +181,7 @@ const ringStyle = {
   right: 3px;
   bottom: 3px;
   left: 3px;
-  border: $ftl-hairline solid rgb(212, 162, 76);
+  border: $ftl-hairline solid $ftl-color-mj-gold;
   border-radius: 50%;
   pointer-events: none;
 }
@@ -205,22 +208,22 @@ const ringStyle = {
   line-height: 1.1;
 }
 .mj-hub__wall-count {
-  color: rgb(212, 162, 76);
+  color: $ftl-color-mj-gold;
   font-weight: 700;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 .mj-hub__clock {
-  color: rgb(245, 230, 200);
+  color: $ftl-color-mj-cream;
   font-weight: 600;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .mj-hub__clock--urgent {
-  color: rgb(255, 107, 90);
+  color: $ftl-color-mj-urgent;
 }
 .mj-hub__ting {
-  color: rgb(212, 162, 76);
+  color: $ftl-color-mj-gold;
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -245,7 +248,7 @@ const ringStyle = {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: rgba(245, 230, 200, 0.22);
+  background: rgba($ftl-color-mj-cream, 0.22);
 }
 .mj-hub--compact .mj-hub__dot {
   width: 8px;
@@ -272,16 +275,16 @@ const ringStyle = {
   transform: translateX(-50%);
 }
 .mj-hub__dot--lit {
-  background: rgb(212, 162, 76);
-  box-shadow: 0 0 6px rgba(212, 162, 76, 0.9);
+  background: $ftl-color-mj-gold;
+  box-shadow: 0 0 6px rgba($ftl-color-mj-gold, 0.9);
 }
 .mj-hub__badge {
   position: absolute;
   padding: 0 4px;
-  border: $ftl-hairline solid rgba(212, 162, 76, 0.55);
+  border: $ftl-hairline solid $ftl-color-mj-gold-soft;
   border-radius: 999px;
-  background: rgba(28, 8, 8, 0.86);
-  color: rgb(245, 230, 200);
+  background: rgba($ftl-color-mj-lacquer, 0.86);
+  color: $ftl-color-mj-cream;
   line-height: 1.15;
   white-space: nowrap;
 }
@@ -318,8 +321,8 @@ const ringStyle = {
   bottom: 12px;
 }
 .mj-hub__badge--hu {
-  border-color: rgb(212, 162, 76);
-  background: rgba(212, 162, 76, 0.9);
+  border-color: $ftl-color-mj-gold;
+  background: rgba($ftl-color-mj-gold, 0.9);
   color: rgb(43, 22, 8);
 }
 .mj-hub__badge--ting {
@@ -330,7 +333,7 @@ const ringStyle = {
 .mj-hub__badge--lack {
   border-color: rgba(120, 170, 255, 0.8);
   background: rgba(120, 170, 255, 0.85);
-  color: rgb(28, 8, 8);
+  color: $ftl-color-mj-lacquer;
 }
 .mj-hub__badge--trustee {
   border-color: rgba(201, 169, 160, 0.6);

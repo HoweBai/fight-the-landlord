@@ -254,3 +254,202 @@ describe('重新发牌动画（2026-10-22）', () => {
     expect(/(?:0%|from)\s*\{([^}]*)\}/.exec(bad)![1]).toMatch(/opacity:\s*0\b/);
   });
 });
+
+/**
+ * Task 10（2026-11-07，川麻红金牌桌重做）：红金动效 + **无限闸**。
+ *
+ * 判据射程（同文件头，诚实版）：jsdom 不注入 CSS、不跑动画 ⇒ 这里**不证明**观感。
+ * 它钉的是会**静默蔓延**的机械事实（v6 §4 / v11 §4 / v12 §6）：
+ *  · 麻将组件里**唯一**允许的 infinite 动画是 `anim-claim-pulse`（定义在 animations.scss）；
+ *  · 组件 `<style>` 里不得另写 infinite（长写 `animation-iteration-count: infinite` 也算）；
+ *  · 发牌两类必须 `backwards`（`both` 的 forwards 填充会永久压住选中抬升）；
+ *  · 新动画必须进 `prefers-reduced-motion` 降级清单；
+ *  · 死类（fly-out / active-glow / lack-pulse）必须真的删干净，不许留回收站。
+ *
+ * ⚠️ 已知限制（v12 §6）：`'anim-' + kind` 这类动态拼接扫不到；当前代码均为字面量，
+ *    将来新增动态拼接需人工评审。
+ */
+describe('Task 10：麻将动效 + 无限闸', () => {
+  const MAHJONG_DIR = 'src/components/table/mahjong/';
+  /** 麻将 SFC 全集（扫描面自证：少于 8 个说明扫描器没读到）。 */
+  const mahjongFiles = sources.filter(
+    (f) => f.path.startsWith(MAHJONG_DIR) && f.path.endsWith('.vue'),
+  );
+  /** 唯一允许在麻将组件里出现的 infinite 类。 */
+  const ALLOWED_INFINITE = 'anim-claim-pulse';
+
+  /** 从 `at` 起按花括号配对截块（与 C9 / 重发片 helper 同形）。 */
+  function braceBlock(src: string, at: number): string | null {
+    const open = src.indexOf('{', at);
+    if (open < 0) return null;
+    let depth = 0;
+    for (let i = open; i < src.length; i += 1) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return src.slice(open + 1, i);
+      }
+    }
+    return null;
+  }
+
+  function reducedMotionBlock(src: string): string | null {
+    const at = src.search(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    return at < 0 ? null : braceBlock(src, at);
+  }
+
+  /** 取 SFC 的 `<style>` 块内容（供 style 闸使用）。 */
+  function styleBlocks(src: string): string[] {
+    return [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]!);
+  }
+
+  /** 剥掉 `<style>` 块（无限闸只看 template + script）。 */
+  function stripStyleBlocks(src: string): string {
+    return src.replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, ' ');
+  }
+
+  /** 解析 `.anim-*` 规则 → 类名到规则体。 */
+  function parseAnimRules(css: string): Map<string, string> {
+    const rules = new Map<string, string>();
+    for (const m of css.matchAll(/\.(anim-[a-z0-9-]+)\s*\{([^}]*)\}/g)) {
+      rules.set(m[1]!, m[2]!);
+    }
+    return rules;
+  }
+
+  /** `classInfinite`：规则体里含 `infinite` 的 `.anim-*` 类名集合。 */
+  function classInfinite(css: string): Set<string> {
+    const infinite = new Set<string>();
+    for (const [name, body] of parseAnimRules(css)) {
+      if (/\binfinite\b/.test(body)) infinite.add(name);
+    }
+    return infinite;
+  }
+
+  /** 扫 SFC 的 template + script（剥 style 与注释）里的 `anim-*` 字面量。 */
+  function animUsages(src: string): string[] {
+    return [...stripComments(stripStyleBlocks(src)).matchAll(/anim-[a-z0-9-]+/g)].map(
+      (m) => m[0],
+    );
+  }
+
+  /** 违禁 infinite 用法 = 字面量 ∩ classInfinite − 白名单。 */
+  function infiniteOffenders(src: string, infinite: Set<string>): string[] {
+    return [...new Set(animUsages(src).filter((c) => infinite.has(c) && c !== ALLOWED_INFINITE))];
+  }
+
+  it('① 无限类解析器：`.anim-*` 规则体含 infinite 才算（正反对照）', () => {
+    const synthetic = classInfinite(
+      '.anim-loop { animation: x 1s ease infinite; } .anim-once { animation: x 1s 3; }',
+    );
+    expect(synthetic.has('anim-loop'), '含 infinite 的规则必须被识别').toBe(true);
+    expect(synthetic.has('anim-once'), '有限次数的规则不得误判').toBe(false);
+
+    const real = classInfinite(stripComments(anim!.content));
+    expect(real.has('anim-claim-pulse'), 'claim 呼吸必须仍是 infinite').toBe(true);
+    for (const finite of [
+      'anim-deal-in-radial',
+      'anim-deal-in-side',
+      'anim-discard-land',
+      'anim-mj-urgent',
+    ]) {
+      expect(real.has(finite), `${finite} 不得是 infinite`).toBe(false);
+    }
+  });
+
+  it('② 麻将模板/脚本：anim-* ∩ infinite 只允许 anim-claim-pulse（合成违例必红）', () => {
+    expect(mahjongFiles.length, '扫描器必须读到麻将组件').toBeGreaterThanOrEqual(8);
+    const infinite = classInfinite(stripComments(anim!.content));
+    const offenders = mahjongFiles.flatMap((f) =>
+      infiniteOffenders(f.content, infinite).map((c) => `${f.path}: ${c}`),
+    );
+    expect(offenders, `麻将组件不得使用无限动画：${offenders.join(', ')}`).toEqual([]);
+
+    // 判别力：引用已有的 infinite 全局类（urgent-pulse）必须红；白名单类必须放行。
+    expect(
+      infiniteOffenders('<template><view class="anim-urgent-pulse" /></template>', infinite),
+      '合成违例必须被判负',
+    ).toEqual(['anim-urgent-pulse']);
+    expect(
+      infiniteOffenders('<template><view class="anim-claim-pulse" /></template>', infinite),
+      '白名单类必须放行',
+    ).toEqual([]);
+  });
+
+  it('③ 麻将 <style>：animation / animation-name / animation-iteration-count 不得含 infinite', () => {
+    const re = /(?:animation|animation-name|animation-iteration-count)\s*:[^;{}]*\binfinite\b/;
+    const offenders: string[] = [];
+    for (const f of mahjongFiles) {
+      const style = styleBlocks(f.content).map(stripComments).join('\n');
+      if (re.test(style)) offenders.push(f.path);
+    }
+    expect(offenders, `infinite 只能写在 animations.scss：${offenders.join(', ')}`).toEqual([]);
+
+    // 长写 `animation-iteration-count: infinite` 也必须被识别。
+    expect(re.test('.x { animation-iteration-count: infinite; }'), '长写必须被判负').toBe(true);
+    expect(re.test('.x { animation: none !important; }'), '降级写法必须放行').toBe(false);
+  });
+
+  it('④ 发牌两类必须 backwards（不得 both/forwards：填充会压住选中抬升）', () => {
+    const code = stripComments(anim!.content);
+    for (const cls of ['anim-deal-in-radial', 'anim-deal-in-side']) {
+      const rule = new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`).exec(code);
+      expect(rule, `.${cls} 规则必须存在`).not.toBeNull();
+      const body = rule![1]!;
+      expect(body, `${cls} 必须用 backwards`).toMatch(/animation:[^;]*\bbackwards\b/);
+      expect(body, `${cls} 不得用 both/forwards`).not.toMatch(/\b(?:both|forwards)\b/);
+    }
+  });
+
+  it('⑤ reduced-motion 降级清单覆盖四个新动画类', () => {
+    const block = reducedMotionBlock(stripComments(anim!.content));
+    expect(block, 'prefers-reduced-motion 块必须存在').not.toBeNull();
+    for (const cls of [
+      'anim-deal-in-radial',
+      'anim-deal-in-side',
+      'anim-discard-land',
+      'anim-mj-urgent',
+    ]) {
+      expect(block, `降级清单必须覆盖 .${cls}`).toContain(`.${cls}`);
+    }
+  });
+
+  it('⑥ 死类已删除：fly-out / active-glow / lack-pulse 的类与关键帧都不在', () => {
+    const code = stripComments(anim!.content);
+    for (const dead of [
+      'anim-fly-out',
+      'anim-active-glow',
+      'anim-lack-pulse',
+      'ftl-fly-out',
+      'ftl-active-glow',
+      'ftl-lack-pulse',
+    ]) {
+      expect(code, `${dead} 应已删除（无组件使用）`).not.toContain(dead);
+    }
+  });
+
+  it('⑦ claim pulse 仍在，且是麻将组件里唯一的 infinite 类', () => {
+    const code = stripComments(anim!.content);
+    const rule = /\.anim-claim-pulse\s*\{([^}]*)\}/.exec(code);
+    expect(rule, '.anim-claim-pulse 规则必须存在').not.toBeNull();
+    expect(rule![1], 'claim pulse 必须保留 infinite').toMatch(/\binfinite\b/);
+
+    const infinite = classInfinite(code);
+    const used = new Set(
+      mahjongFiles.flatMap((f) => animUsages(f.content).filter((c) => infinite.has(c))),
+    );
+    expect([...used].sort(), '麻将里唯一 infinite 类').toEqual([ALLOWED_INFINITE]);
+  });
+
+  it('⑧ 接线在位（类真的被组件引用，不只是定义）', () => {
+    const has = (file: string, cls: string): boolean => {
+      const f = sources.find((x) => x.path === `${MAHJONG_DIR}${file}`);
+      return f ? f.content.includes(cls) : false;
+    };
+    expect(has('MahjongBoard.vue', 'anim-deal-in-radial'), 'Board 手牌必须用 radial').toBe(true);
+    expect(has('MahjongHandBacks.vue', 'anim-deal-in-side'), 'HandBacks 必须用 side').toBe(true);
+    expect(has('MahjongRiver.vue', 'anim-discard-land'), 'River 最新弃牌必须落桌').toBe(true);
+    expect(has('MahjongHub.vue', 'anim-mj-urgent'), 'Hub 紧迫钟必须有限脉动').toBe(true);
+    expect(has('MahjongActionBar.vue', 'anim-claim-pulse'), 'ActionBar claim 必须呼吸').toBe(true);
+  });
+});
