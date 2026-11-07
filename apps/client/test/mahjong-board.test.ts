@@ -15,6 +15,7 @@ import MahjongHub from '../src/components/table/mahjong/MahjongHub.vue';
 import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.vue';
 import MahjongHuBanner from '../src/components/table/mahjong/MahjongHuBanner.vue';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
+import MahjongMeld from '../src/components/table/mahjong/MahjongMeld.vue';
 import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
 import { mahjongTableLayoutV2 } from '../src/game/mahjong-layout-v2';
 
@@ -1287,6 +1288,209 @@ describe('MahjongHuBanner：红金皮肤（Task 3 源码闸）', () => {
     for (const selector of ['.mj-hu-banner__text', '.mj-hu-banner__fan']) {
       expect(ruleBody(bannerStyle, selector)).toContain('color: $ftl-color-mj-ink');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 4）—— rob 副露高亮 / 对家副露压缩 / 摸牌位
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：红金皮肤（Task 4：rob 副露高亮 claimSourceMeldKey）', () => {
+  /** rob 窗口生产形态：state=claim + windowId=rob:N；座位 1（右家）碰了 5 万。 */
+  const robProps = () =>
+    props({
+      view: view({
+        state: 'claim',
+        currentPlayer: 1,
+        activeSeats: [0],
+        windowId: 'rob:1',
+        discards: [[], [], [], []],
+        melds: [[], [PENG_5], [], []],
+        claimsForMe: [{ claim: 'hu', tile: tile(0, 5) }],
+      }),
+    });
+
+  it('rob 窗口：claimSourceMeldKey 下发给所有河，只有来源河（右家）标出匹配副露', () => {
+    const wrapper = mount(MahjongBoard, { props: robProps() });
+    // claimSource 派生的 key = meldKey(currentPlayer, 同 type 最新 peng) = '1:peng:4'
+    for (const river of wrapper.findAllComponents(MahjongRiver)) {
+      expect(river.props('claimSourceMeldKey')).toBe('1:peng:4');
+    }
+    // River 内部只让 key 匹配的那组副露高亮：PENG_5 在座位 1（右家）河上。
+    const melds = wrapper.findAllComponents(MahjongMeld);
+    expect(melds).toHaveLength(1);
+    expect(melds[0]!.props('highlight')).toBe(true);
+    expect(wrapper.findAll('.mj-meld--highlight')).toHaveLength(1);
+    expect(wrapper.find('.mj-river--right .mj-meld--highlight').exists()).toBe(true);
+  });
+
+  it('非 rob（普通 turn 窗口）：所有河 claimSourceMeldKey 为 null，无副露高亮', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    for (const river of wrapper.findAllComponents(MahjongRiver)) {
+      expect(river.props('claimSourceMeldKey')).toBeNull();
+    }
+    expect(wrapper.find('.mj-meld--highlight').exists()).toBe(false);
+  });
+});
+
+describe('MahjongBoard：红金皮肤（Task 4：对家副露压缩 k）', () => {
+  const gang5: MahjongMeldView = {
+    kind: 'gang',
+    tiles: [tile(0, 5), tile(0, 5), tile(0, 5), tile(0, 5)],
+  };
+
+  it('对家 4 组杠：meldTileW/overlap/groupGap 乘 k，meldTileH 保持原始（v12 §3）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [gang5, gang5, gang5, gang5], []] }) }),
+    });
+    // 与 Board 同一口径的布局输入（me=0 ⇒ top=2；just top has 4 gang groups）
+    const layout = mahjongTableLayoutV2(1334, 750, {
+      bySlot: {
+        self: { discards: 0, melds: [], revealedCount: 0 },
+        top: { discards: 0, melds: [4, 4, 4, 4], revealedCount: 0 },
+        left: { discards: 0, melds: [], revealedCount: 0 },
+        right: { discards: 0, melds: [], revealedCount: 0 },
+      },
+      phase: 'play',
+      tingCount: 0,
+    });
+    const k = layout.rivers.top.meld.scale;
+    expect(k, 'gangHeavy 场景的压缩比').toBeCloseTo(0.99487, 4);
+
+    const top = wrapper
+      .findAllComponents(MahjongRiver)
+      .find((r) => r.classes().includes('mj-river--top'))!;
+    expect(top.props('meldTileW')).toBeCloseTo(layout.rivers.top.meld.tileW * k, 6);
+    expect(top.props('meldTileH'), 'meldTileH 不乘 k').toBeCloseTo(
+      layout.rivers.top.meld.tileH,
+      6,
+    );
+    expect(top.props('meldOverlap')).toBeCloseTo(layout.rivers.top.meld.overlap * k, 6);
+    expect(top.props('meldGroupGap')).toBeCloseTo(layout.rivers.top.meld.groupGap * k, 6);
+    // 反例：未乘 k 的原始宽度不得等于实际传入值（k<1 才可判，故先确认 k 真的小于 1）
+    expect(k).toBeLessThan(1);
+    expect(top.props('meldTileW')).not.toBeCloseTo(layout.rivers.top.meld.tileW, 3);
+  });
+});
+
+describe('MahjongBoard：红金皮肤（Task 4：摸牌位抬 8 + 金边）', () => {
+  it('源码闸：摸牌位 translateY(-8px * u) + 金边 outline（不占布局）', () => {
+    const rule = /\.mj__hand\s+:deep\(\.mj__hand-tile--drawn\)\s*\{([^}]*)\}/.exec(boardStyle);
+    expect(rule, '.mj__hand :deep(.mj__hand-tile--drawn) 规则必须存在').not.toBeNull();
+    const body = rule![1]!;
+    expect(body).toContain('transform: translateY(calc(-8px * var(--mj-u)))');
+    expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(body).toContain('outline-offset: 0');
+    expect(body).toContain('border-radius: 3px');
+  });
+
+  it('源码闸：摸牌位同时选中 ⇒ 选中抬 10 优先（权重更高的专属规则）', () => {
+    const rule =
+      /\.mj__hand\s+:deep\(\.mj-tile--selected\.mj__hand-tile--drawn\)\s*\{([^}]*)\}/.exec(
+        boardStyle,
+      );
+    expect(rule, '选中 + 摸牌位联合规则必须存在').not.toBeNull();
+    expect(rule![1]).toContain('transform: translateY(calc(-10px * var(--mj-u)))');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 4）—— Task 2 遗留 Minor 收口
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：Task 4 收口（水位 / matchMedia 兜底 / 跨局已见胡）', () => {
+  it('hu 水位只升不降：view 短暂为 null 后的首个快照不得把 maxHuSeen 调低', async () => {
+    // 挂载时已有 2 条胡：水位 seed = 2。
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ huInfos: [hu(1), hu(2)] }) }),
+    });
+    // view 短暂清空（页面重挂载间隙 / resync 空包）。
+    await wrapper.setProps({ view: null });
+    await nextTick();
+    // stale 快照只带 1 条胡：prev === undefined 分支不得降水位。
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(1)] }) });
+    await nextTick();
+    // 长回旧最大值（2 条，同一批胡）⇒ 不是新胡，不闪。
+    await wrapper.setProps({ view: view({ version: 4, huInfos: [hu(1), hu(2)] }) });
+    await nextTick();
+    expect(
+      wrapper.findComponent(MahjongHub).props('flashKey'),
+      '收缩→长回旧最大值不得闪（水位被降会误闪）',
+    ).toBe(0);
+    // 真正新胡（3 条）⇒ 照常闪。
+    await wrapper.setProps({ view: view({ version: 5, huInfos: [hu(1), hu(2), hu(3)] }) });
+    await nextTick();
+    expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(1);
+  });
+
+  it('老端只有废弃 addListener/removeListener：change 监听同样生效并清理', async () => {
+    const listeners = new Set<(e: { matches: boolean }) => void>();
+    const mql = {
+      matches: false,
+      addListener: (cb: (e: { matches: boolean }) => void) => listeners.add(cb),
+      removeListener: (cb: (e: { matches: boolean }) => void) => listeners.delete(cb),
+    };
+    const original = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => mql),
+    });
+    try {
+      const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+      expect(listeners.size, 'onMounted 必须挂 change 监听（legacy 分支）').toBe(1);
+
+      await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+      await nextTick();
+      expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(1);
+
+      mql.matches = true;
+      for (const cb of Array.from(listeners)) cb({ matches: true });
+      await nextTick();
+      expect(
+        wrapper.findComponent(MahjongHub).props('flashKey'),
+        'legacy change 监听也要能清金光键',
+      ).toBe(0);
+
+      wrapper.unmount();
+      expect(listeners.size, 'onUnmounted 必须移除 legacy 监听').toBe(0);
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
+
+  it('同一挂载跨局：新局清空已见胡座位（同一座位再胡重新弹 banner）', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+    await nextTick();
+    expect(wrapper.findComponent(MahjongHuBanner).exists(), '首局胡 banner').toBe(true);
+    wrapper.findComponent(MahjongHuBanner).vm.$emit('done');
+    await nextTick();
+    expect(wrapper.findComponent(MahjongHuBanner).exists()).toBe(false);
+
+    // 新局：服务端每局重置 version ⇒ v1 exchange、胡牌清空。
+    await wrapper.setProps({
+      view: view({
+        version: 1,
+        state: 'exchange',
+        activeSeats: [0],
+        windowId: 'exchange',
+        huInfos: [],
+      }),
+    });
+    await nextTick();
+
+    // 新局同一座位再胡：旧局 seenHuSeats 不得残留，否则永远不再弹 banner。
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+    await nextTick();
+    expect(
+      wrapper.findComponent(MahjongHuBanner).exists(),
+      '新局同座胡必须重新弹 banner（seenHuSeats 已清）',
+    ).toBe(true);
   });
 });
 

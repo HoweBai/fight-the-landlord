@@ -1163,6 +1163,24 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
     expect(srcs(), 'setup 时已有的 v1 局首视图也要洗牌').toContain(CUES.MjShuffle);
   });
 
+  it('局首洗牌轻震（Task 4）：v1 exchange ⇒ MjShuffle + 一次 vibrateShort', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const audioBefore = audioContexts.length;
+    const shortBefore = stub.calls.vibrateShort;
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    expect(countCue(audioBefore, CUES.MjShuffle)).toBe(1);
+    expect(stub.calls.vibrateShort, '发牌轻震').toBe(shortBefore + 1);
+  });
+
+  it('局首轻震：v>1 首版视图（中途挂载/重连）不洗牌也不震', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const audioBefore = audioContexts.length;
+    const shortBefore = stub.calls.vibrateShort;
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 5, state: 'exchange' }));
+    expect(countCue(audioBefore, CUES.MjShuffle), 'v>1 不补洗牌').toBe(0);
+    expect(stub.calls.vibrateShort, 'v>1 不补震').toBe(shortBefore);
+  });
+
   it('首次 play：exchange → lack → play 只响一次 MjDeal；后续 play 不重播', async () => {
     const { wrapper, socket } = mountTable(0);
     await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));

@@ -80,7 +80,10 @@ function backAnimated(i: number): boolean {
         :w="tileW"
         :h="tileH"
         :class="{ 'anim-deal-in-side': backAnimated(i) }"
-        :style="i > 1 && overlapTop !== 0 ? { marginTop: `${overlapTop}px` } : undefined"
+        :style="{
+          ...(i > 1 && overlapTop !== 0 ? { marginTop: `${overlapTop}px` } : {}),
+          '--ftl-delay': `${(i - 1) * 20}ms`,
+        }"
       />
     </template>
   </view>

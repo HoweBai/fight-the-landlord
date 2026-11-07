@@ -66,6 +66,11 @@ const props = withDefaults(
     revealNonce?: number;
     /** claimed 来源的窗口相对下标；非空时只描边该张、且只允许点该张。 */
     claimSourceIndex?: number | null;
+    /**
+     * rob 窗口的来源碰 meldKey（v12 §2 / v13 §10.2）：与本单位副露 key 匹配的那组加金边高亮。
+     * Board 对四条河都下发同一 key；只有来源座河里真的有这组副露。
+     */
+    claimSourceMeldKey?: string | null;
   }>(),
   {
     filterTileType: null,
@@ -79,6 +84,7 @@ const props = withDefaults(
     laneWidth: 0,
     revealNonce: 0,
     claimSourceIndex: null,
+    claimSourceMeldKey: null,
   },
 );
 
@@ -196,6 +202,7 @@ function onDiscardClick(t: Tile, index: number): void {
           :overlap="meldOverlap"
           :vertical="vertical"
           :pop="m.pop"
+          :highlight="claimSourceMeldKey != null && m.key === claimSourceMeldKey"
           @pop-done="emit('meld-pop-done', m.key)"
         />
       </view>

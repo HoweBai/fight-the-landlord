@@ -245,13 +245,14 @@ const rulesSummary = computed(() => {
         <text class="mj-settlement__th mj-settlement__th--action">操作</text>
       </view>
 
-      <template v-for="row in rows" :key="row.seat">
+      <template v-for="(row, i) in rows" :key="row.seat">
         <view
-          class="mj-settlement__row"
+          class="mj-settlement__row anim-mj-settlement-row"
           :class="{
             'mj-settlement__row--me': isMe(row.seat),
             'mj-settlement__row--winner': winners.has(row.seat),
           }"
+          :style="{ '--ftl-delay': `${i * 35}ms` }"
         >
           <view class="mj-settlement__row-name-wrap">
             <text class="mj-settlement__row-name">{{ nameOf(row.seat) }}<template v-if="huazhu.has(row.seat)">（花猪）</template></text>
@@ -347,7 +348,11 @@ const rulesSummary = computed(() => {
     </view>
 
     <view class="mj-settlement__actions">
-      <button type="button" class="btn btn--primary mj-settlement__again" @click="emit('again')">
+      <button
+        type="button"
+        class="btn btn--primary mj-settlement__again mj-settlement__again--redgold"
+        @click="emit('again')"
+      >
         再来一局
       </button>
       <button type="button" class="btn mj-settlement__lobby" @click="emit('back')">
@@ -706,5 +711,17 @@ const rulesSummary = computed(() => {
       0 4px 8px rgb(255 152 0 / 0.35),
       inset 0 2px 4px rgba(0, 0, 0, 0.2);
   }
+}
+
+/**
+ * 红金皮肤 Task 4：主按钮「再来一局」红金态（v4 §3 只要求主按钮 + 行错峰）。
+ * 写在 `.btn--primary` 之后：同权重后置即压过金色主态；background 简写同时
+ * 重置 `background-image`（贴图）—— 与全仓主按钮「不带贴图」的纪律一致。
+ */
+.mj-settlement__again--redgold {
+  border: $ftl-hairline solid $ftl-color-mj-edge;
+  background: linear-gradient(180deg, $ftl-color-mj-status, $ftl-color-mj-gold);
+  color: $ftl-color-mj-ink;
+  box-shadow: 0 4px 0 $ftl-color-mj-edge, 0 6px 16px rgba($ftl-color-mj-gold, .35);
 }
 </style>

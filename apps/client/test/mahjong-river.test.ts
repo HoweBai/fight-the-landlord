@@ -507,3 +507,37 @@ describe('MahjongRiver：亮牌翻转（revealNonce）', () => {
     expect(w.findAll('.mj-tile')[0]!.classes()).toContain('anim-reveal-in');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 4）—— rob 副露高亮（claimSourceMeldKey）
+// ---------------------------------------------------------------------------
+
+describe('MahjongRiver：rob 副露高亮（claimSourceMeldKey）', () => {
+  const melds = [
+    { key: '1:peng:4', meld: { kind: 'peng' as const, tiles: [wan1, wan1, wan1] }, pop: false },
+    { key: '1:peng:8', meld: { kind: 'peng' as const, tiles: [wan2, wan2, wan2] }, pop: false },
+  ];
+
+  it('只把与 claimSourceMeldKey 匹配的那组副露传 highlight=true', () => {
+    const w = mount(MahjongRiver, {
+      props: props({ discards: [], melds, claimSourceMeldKey: '1:peng:4' }),
+    });
+    const comps = w.findAllComponents(MahjongMeld);
+    expect(comps).toHaveLength(2);
+    expect(comps[0]!.props('highlight')).toBe(true);
+    expect(comps[1]!.props('highlight')).toBe(false);
+    expect(w.findAll('.mj-meld--highlight')).toHaveLength(1);
+    expect(w.findAll('.mj-river__meld')[0]!.find('.mj-meld--highlight').exists()).toBe(true);
+  });
+
+  it('缺省 / null：两组副露都不高亮', () => {
+    for (const extra of [{}, { claimSourceMeldKey: null }]) {
+      const w = mount(MahjongRiver, { props: props({ discards: [], melds, ...extra }) });
+      expect(w.findAllComponents(MahjongMeld).map((m) => m.props('highlight'))).toEqual([
+        false,
+        false,
+      ]);
+      expect(w.find('.mj-meld--highlight').exists()).toBe(false);
+    }
+  });
+});

@@ -167,7 +167,11 @@ export function useTableSound(): void {
     lastMjPhase = v.state;
     mjDealPlayed = !isMahjongGameStart(v);
     // 局首（v1 exchange/lack）补一声洗牌；v>1 的中途挂载/重连不补。
-    if (isMahjongGameStart(v)) playCue('MjShuffle');
+    // 红金皮肤 Task 4：洗牌同时轻震一次（与副露/出牌同一「触碰牌桌」语义）。
+    if (isMahjongGameStart(v)) {
+      playCue('MjShuffle');
+      haptic('light');
+    }
   }
 
   let mjBootstrapped = store.mahjongView !== null;

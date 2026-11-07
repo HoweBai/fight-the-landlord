@@ -312,11 +312,13 @@ watch(
     // 但缺这道闸时重连/回放类变化会误播整手发牌动画。
     if (to === 'exchange' && from !== 'exchange' && props.view?.version === 1) {
       dealEpoch.value = props.view?.version ?? null;
-      // 同一挂载内的新局（review M2）：清空亮牌水位与 nonce，否则旧局「已见」座位会把
-      // 新局同座位的亮牌压成 seed —— 翻转动效永远不播。（seenRevealedSeats / revealNonce
-      // 在下方声明：watch 回调只在后续 flush 执行，不存在 TDZ。）
+      // 同一挂载内的新局（review M2）：清空亮牌水位、nonce 与已见胡座位，否则旧局「已见」
+      // 会把新局同座位的亮牌/胡牌压成 seed —— 翻转动效与胡 banner 永远不播。
+      // （seenRevealedSeats / revealNonce / seenHuSeats 在下方声明：watch 回调只在后续 flush
+      // 执行，不存在 TDZ。）
       seenRevealedSeats.clear();
       revealNonce.value = 0;
+      seenHuSeats.clear();
     }
   },
 );
@@ -771,6 +773,12 @@ function riverProps(seat: number) {
   const isLeft = seat === leftSeat.value;
   const isRight = seat === rightSeat.value;
   const isSource = claimSrc.value.canClick && claimSrc.value.sourceSeat === seat;
+  /**
+   * 对家副露压缩 k（v12 §3）：layout 输出 raw dims + k；宽度/叠压/组距各乘一次 k，
+   * **高度不乘**（横向压缩只收窄，不压扁牌面）。侧河的 `scale` 是已烘焙进 tileW/tileH
+   * 的侧栏适配系数（乘了会二次缩小），因此只对**对家**应用。
+   */
+  const meldScale = seat === topSeat.value ? river.meld.scale || 1 : 1;
   return {
     discards: visibleBySeat.value[seat] ?? [],
     melds: riverMelds(seat),
@@ -780,16 +788,18 @@ function riverProps(seat: number) {
     gap: river.gap,
     cols: river.cols,
     rows: river.rows,
-    meldTileW: river.meld.tileW,
+    meldTileW: river.meld.tileW * meldScale,
     meldTileH: river.meld.tileH,
-    meldOverlap: river.meld.overlap,
-    meldGroupGap: river.meld.groupGap,
+    meldOverlap: river.meld.overlap * meldScale,
+    meldGroupGap: river.meld.groupGap * meldScale,
     // River 的 legacy 必填 prop（meldRect 恒传，走局部坐标分支，不再使用它们）。
     meldPlacement: 'above' as const,
     meldGap: 0,
     meldHeight: 0,
     interactive: isSource,
     claimSourceIndex: claimSourceIndexFor(seat),
+    /** rob 窗口：来源碰的 meldKey（下发给所有河；River 只高亮 key 匹配的副露）。 */
+    claimSourceMeldKey: claimSrc.value.claimSourceMeldKey,
     revealed: isLeft || isRight
       ? (sortedRevealedHands.value.find((r) => r.seat === seat) ?? null)
       : null,
@@ -878,8 +888,10 @@ watch(
   (next, prev) => {
     if (next === undefined) return;
     // 首次拿到长度（挂载时 view 为空，之后才到达）：只 seed 水位。
+    // ⚠️ 只升不降（Task 4 收口）：view 空档后再来的 stale 快照可能比旧水位短，
+    // 直接赋值会把水位调低 ⇒ 长回旧最大值时被误判成「新胡」再闪一次。
     if (prev === undefined) {
-      maxHuSeen.value = next;
+      maxHuSeen.value = Math.max(maxHuSeen.value, next);
       return;
     }
     if (next <= maxHuSeen.value) return;
@@ -891,9 +903,11 @@ watch(
 /**
  * 金光飞行中（0.8s）切到 reduce：全局 `animation: none !important` 让 `animationend`
  * 永不到达 ⇒ 覆盖层会永久残留。change 监听在 matches=true 时主动清键。
- * jsdom 25 没有 `matchMedia`、老端可能只有废弃的 `addListener` ⇒ 两者都做能力探测。
+ * jsdom 25 没有 `matchMedia`、老端可能只有废弃的 `addListener` ⇒ 两条路径都实现：
+ * 优先 `addEventListener`，缺失时回退 `addListener`（Task 4 收口：注释与实现一致）。
  */
 let motionQuery: MediaQueryList | null = null;
+let motionLegacy = false;
 function onReducedMotionChange(e: MediaQueryListEvent): void {
   if (e.matches) huFlashKey.value = 0;
 }
@@ -903,12 +917,21 @@ onMounted(() => {
   motionQuery = mq;
   if (typeof mq.addEventListener === 'function') {
     mq.addEventListener('change', onReducedMotionChange);
+  } else if (typeof mq.addListener === 'function') {
+    // 老端（Safari < 14 等）：MediaQueryList 只有 addListener/removeListener。
+    motionLegacy = true;
+    mq.addListener(onReducedMotionChange);
   }
 });
 onUnmounted(() => {
-  if (motionQuery && typeof motionQuery.removeEventListener === 'function') {
-    motionQuery.removeEventListener('change', onReducedMotionChange);
+  if (motionQuery) {
+    if (motionLegacy && typeof motionQuery.removeListener === 'function') {
+      motionQuery.removeListener(onReducedMotionChange);
+    } else if (typeof motionQuery.removeEventListener === 'function') {
+      motionQuery.removeEventListener('change', onReducedMotionChange);
+    }
   }
+  motionLegacy = false;
   motionQuery = null;
 });
 
@@ -1419,6 +1442,17 @@ function onMeldPopDone(key: string) {
 }
 .mj__hand--selectable :deep(.mj-tile) {
   cursor: pointer;
+}
+/* —— 摸牌位（红金皮肤 Task 4）：抬 8u + 金边（outline 不占布局，v4 §6.2） —— */
+.mj__hand :deep(.mj__hand-tile--drawn) {
+  transform: translateY(calc(-8px * var(--mj-u)));
+  outline: $ftl-hairline solid $ftl-color-mj-gold;
+  outline-offset: 0;
+  border-radius: 3px;
+}
+/* 摸牌位同时被选中：选中抬升 10u 必须赢（专属选择器权重更高，压过上面两条规则）。 */
+.mj__hand :deep(.mj-tile--selected.mj__hand-tile--drawn) {
+  transform: translateY(calc(-10px * var(--mj-u)));
 }
 
 .mj__hand-hint {

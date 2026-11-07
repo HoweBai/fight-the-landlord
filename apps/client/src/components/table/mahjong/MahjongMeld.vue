@@ -40,8 +40,13 @@ const props = withDefaults(
      * 不旋转——方向靠 left/right 横置素材本身。
      */
     vertical?: boolean;
+    /**
+     * rob 来源副露高亮（v12 §2 / v13 §10.2）：由 River 对匹配 `claimSourceMeldKey` 的组传 true。
+     * 只加 `outline`（不占布局），不打断 pop 动画。
+     */
+    highlight?: boolean;
   }>(),
-  { size: 'sm', pop: false, vertical: false },
+  { size: 'sm', pop: false, vertical: false, highlight: false },
 );
 
 const emit = defineEmits<{
@@ -91,7 +96,7 @@ function onAnimEnd(e: AnimationEvent): void {
 <template>
   <view
     class="mj-meld"
-    :class="[styleClass, `mj-meld--${size}`, popAnimClass, { 'mj-meld--vertical': vertical }]"
+    :class="[styleClass, `mj-meld--${size}`, popAnimClass, { 'mj-meld--vertical': vertical, 'mj-meld--highlight': highlight }]"
     @animationend="onAnimEnd"
   >
     <!-- 碰 3 张；杠/暗杠 4 张同行（第 4 张不再绝对定位叠高） -->
@@ -149,5 +154,16 @@ function onAnimEnd(e: AnimationEvent): void {
 .mj-meld--angang :deep(.mj-tile) {
   outline: $ftl-hairline solid $ftl-color-mj-gold;
   outline-offset: -$ftl-hairline;
+}
+
+/**
+ * rob 来源副露高亮（v12 §2 / v13 §10.2）：整组金边向外 1px。
+ * `outline` 不参与布局（不挤动牌河/副露条）；1px 写发丝线的一半 ——
+ * 本仓 `ui-tokens` 闸禁止裸 `1px`（R714）。
+ */
+.mj-meld--highlight {
+  outline: $ftl-hairline solid $ftl-color-mj-gold;
+  outline-offset: calc($ftl-hairline / 2);
+  border-radius: 4px;
 }
 </style>

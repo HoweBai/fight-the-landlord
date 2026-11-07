@@ -657,3 +657,69 @@ describe('Task 3：动作区滑入（anim-action-slide-in）', () => {
     expect(block, '亮牌翻转必须进降级清单').toContain('.anim-reveal-in');
   });
 });
+
+/**
+ * Task 4（2026-11-08，红金皮肤）：结算四行 35ms 错峰。
+ *
+ * ⚠️ 判据射程同文件头：jsdom 不跑动画。这里只钉会静默失效的机械事实：
+ *  · `.anim-mj-settlement-row` 必须是**独立规则**（动画闸的 `parseAnimRules` 只捕获分组最后一个选择器）；
+ *  · 0.24s 一次性、`backwards`、错峰走内联 `--ftl-delay`；
+ *  · 关键帧 translateY(8px) → none，起始态可见（无 opacity）；
+ *  · 必须进 `prefers-reduced-motion` 降级清单。
+ */
+describe('Task 4：结算行错峰（anim-mj-settlement-row）', () => {
+  function braceBlock(src: string, at: number): string | null {
+    const open = src.indexOf('{', at);
+    if (open < 0) return null;
+    let depth = 0;
+    for (let i = open; i < src.length; i += 1) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return src.slice(open + 1, i);
+      }
+    }
+    return null;
+  }
+
+  function reducedMotionBlock(src: string): string | null {
+    const at = src.search(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    return at < 0 ? null : braceBlock(src, at);
+  }
+
+  it('独立规则：0.24s / backwards / --ftl-delay / 无 infinite', () => {
+    const code = stripComments(anim!.content);
+    const standalone = /(?:^|[\n}])\s*\.anim-mj-settlement-row\s*\{([^}]*)\}/m.exec(code);
+    expect(standalone, '.anim-mj-settlement-row 必须是独立规则（不得挂进分组选择器）').not.toBeNull();
+    const body = standalone![1]!;
+    expect(body).toMatch(/animation:\s*ftl-mj-settlement-row\s+\.24s/);
+    expect(body).toContain('backwards');
+    expect(body).toContain('animation-delay: var(--ftl-delay, 0ms)');
+    expect(body).not.toMatch(/\binfinite\b/);
+
+    // 判别力：分组写法不得被当成独立规则命中。
+    const grouped =
+      '.anim-other { animation: x 1s; }\n.anim-other, .anim-mj-settlement-row { animation: ftl-mj-settlement-row .24s; }';
+    expect(/(?:^|[\n}])\s*\.anim-mj-settlement-row\s*\{/m.test(grouped)).toBe(false);
+  });
+
+  it('关键帧 translateY(8px) → none，起始态可见（无 opacity）', () => {
+    const code = stripComments(anim!.content);
+    const at = code.search(/@keyframes\s+ftl-mj-settlement-row/);
+    expect(at, '@keyframes ftl-mj-settlement-row 必须存在').toBeGreaterThanOrEqual(0);
+    const body = braceBlock(code, at);
+    expect(body).not.toBeNull();
+    expect(body!, 'from 帧必须从下方 8px 起手').toMatch(
+      /from\s*\{[^}]*transform:\s*translateY\(8px\)/,
+    );
+    expect(body!, 'to 帧必须归还 transform').toMatch(/to\s*\{[^}]*transform:\s*none/);
+    expect(body!, '起始态不得依赖 opacity').not.toContain('opacity');
+  });
+
+  it('reduced-motion 降级清单覆盖 .anim-mj-settlement-row', () => {
+    const code = stripComments(anim!.content);
+    const block = reducedMotionBlock(code);
+    expect(block, 'prefers-reduced-motion 块必须存在').not.toBeNull();
+    expect(block, '结算行错峰必须进降级清单').toContain('.anim-mj-settlement-row');
+  });
+});

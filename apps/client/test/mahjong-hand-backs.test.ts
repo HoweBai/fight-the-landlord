@@ -72,6 +72,27 @@ describe('MahjongHandBacks', () => {
     expect(w.findAll('.anim-deal-in-side')).toHaveLength(0);
   });
 
+  it('发牌错峰（Task 4）：每张牌背 --ftl-delay = (i-1)*20ms（0/20/40）', () => {
+    const w = mount(MahjongHandBacks, {
+      props: { count: 3, direction: 'top', tileW: 36, tileH: 54, dealNonce: 1 },
+    });
+    const tiles = w.findAll('.mj-tile');
+    expect(tiles).toHaveLength(3);
+    expect(tiles[0]!.attributes('style')).toContain('--ftl-delay: 0ms');
+    expect(tiles[1]!.attributes('style')).toContain('--ftl-delay: 20ms');
+    expect(tiles[2]!.attributes('style')).toContain('--ftl-delay: 40ms');
+  });
+
+  it('发牌错峰与竖排 marginTop 合并（不是二选一）', () => {
+    const w = mount(MahjongHandBacks, {
+      props: { count: 3, direction: 'left', tileW: 30, tileH: 45, pitch: 24, dealNonce: 1 },
+    });
+    const tiles = w.findAll('.mj-tile');
+    const second = tiles[1]!.attributes('style') ?? '';
+    expect(second, '原有叠压样式必须保留').toContain('margin-top: -21px');
+    expect(second, '错峰延迟同时存在').toContain('--ftl-delay: 20ms');
+  });
+
   it('tail：第 14 张尾部牌背不带发牌类（13→14 摸牌不重播发牌）', async () => {
     const w = mount(MahjongHandBacks, {
       props: { count: 13, direction: 'left', tileW: 30, tileH: 45, pitch: 24, dealNonce: 7 },

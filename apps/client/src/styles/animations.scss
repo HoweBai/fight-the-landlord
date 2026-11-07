@@ -390,6 +390,23 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   animation: ftl-action-slide-in .16s $ftl-ease backwards;
 }
 
+// —— 川麻红金皮肤：结算行错峰（Task 4，2026-11-08）——
+
+/**
+ * 结算四行依次上浮（0.24s，35ms 错峰由宿主内联 `--ftl-delay` 给）。
+ * ⚠️ 独立规则（动画闸的 `parseAnimRules` 只捕获分组里最后一个选择器）。
+ * ⚠️ `backwards`：延迟等待期先摆好起始姿势，播完把 transform 归还普通规则。
+ * ⚠️ 只动 transform（起始态可见纪律，零 `opacity: 0`）。
+ */
+@keyframes ftl-mj-settlement-row {
+  from { transform: translateY(8px); }
+  to   { transform: none; }
+}
+.anim-mj-settlement-row {
+  animation: ftl-mj-settlement-row .24s $ftl-ease backwards;
+  animation-delay: var(--ftl-delay, 0ms);
+}
+
 /**
  * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
  * 形态照参考实现（`transition: none` + `animation: none !important`）。
@@ -405,6 +422,7 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-mj-urgent,
   .anim-mj-hub-flash,
   .anim-action-slide-in,
+  .anim-mj-settlement-row,
   .anim-redeal-in,
   .anim-redeal-banner,
   .anim-played-in,

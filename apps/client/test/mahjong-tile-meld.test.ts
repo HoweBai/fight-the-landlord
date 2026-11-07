@@ -339,3 +339,38 @@ describe('MahjongTile：红金皮肤（Task 3）', () => {
     expect(rule![1], '保留选中抬升').toContain('translateY');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 4）—— rob 来源副露高亮
+// ---------------------------------------------------------------------------
+
+describe('MahjongMeld：rob 来源高亮（highlight）', () => {
+  it('highlight 默认 false；true 时根带 mj-meld--highlight，且保留 pop 动画类', () => {
+    const off = mount(MahjongMeld, { props: { meld: meld('peng', [wan1, wan1, wan1]) } });
+    expect(off.classes()).not.toContain('mj-meld--highlight');
+
+    const on = mount(MahjongMeld, {
+      props: { meld: meld('peng', [wan1, wan1, wan1]), highlight: true, pop: true },
+    });
+    expect(on.classes()).toContain('mj-meld--highlight');
+    expect(on.classes(), 'pop 动画不得被高亮挤掉').toContain('anim-meld-pop');
+  });
+
+  it('源码闸：outline 金边向外 1px（发丝线一半，裸 1px 被闸禁止）+ 4px 圆角，不用 border', () => {
+    const src = stripComments(
+      readFileSync(join(SRC_ROOT, 'components/table/mahjong/MahjongMeld.vue'), 'utf8'),
+    );
+    const style = [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+      .map((m) => m[1]!)
+      .join('\n');
+    const rule = /\.mj-meld--highlight\s*\{([^}]*)\}/.exec(style);
+    expect(rule, '.mj-meld--highlight 规则必须存在').not.toBeNull();
+    const body = rule![1]!;
+    expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(body, '向外 1px：写发丝线一半（裸 1px 违反 ui-tokens 闸）').toMatch(
+      /outline-offset:\s*calc\(\$ftl-hairline \/ 2\)/,
+    );
+    expect(body).toContain('border-radius: 4px');
+    expect(body, '不得用 border（会改盒模型/布局）').not.toMatch(/\bborder\s*:/);
+  });
+});
