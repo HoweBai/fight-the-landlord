@@ -380,7 +380,9 @@ function seatActiveLevel(seat: number): 'strong' | 'weak' | null {
 const discardClickTarget = ref<Tile | null>(null);
 
 /** 弃牌点击 handler：只在 claim 窗口 + 我 active + 该座是本次 claim 来源座时响应。 */
-function onSeatDiscardClick(seat: number, tile: Tile) {
+function onSeatDiscardClick(seat: number, payload: { tile: Tile; index: number }) {
+  // Task 8 会消费 payload.index / River 的 claimSourceIndex（窗口相对来源描边）。
+  const tile = payload.tile;
   if (phase.value !== 'claim' || !amActive.value) return;
   if (props.settlementArrived) return;
   // claim 窗口的 currentPlayer 就是弃牌/杠牌者（本次待响应来源）
