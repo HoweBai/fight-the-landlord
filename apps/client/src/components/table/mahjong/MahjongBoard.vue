@@ -220,6 +220,12 @@ const tingStyle = computed(() => ({
   ...rectStyle(layout.value.ting),
   gap: `${2 * layout.value.u}px`,
 }));
+/** 听牌行标签（Task 2）：钉在听牌行上方 18u 处；其余静态样式在 `.mj__ting-label`。 */
+const tingLabelStyle = computed(() => ({
+  position: 'absolute' as const,
+  left: `${layout.value.ting.left}px`,
+  top: `${layout.value.ting.top - 18 * layout.value.u}px`,
+}));
 /** 动作区在河/副露之上（河内副露条带 z-index: 1）。 */
 const actionsStyle = computed(() => ({ ...rectStyle(layout.value.actions), zIndex: 3 }));
 const trusteeMaskStyle = computed(() => ({
@@ -825,6 +831,19 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
+/**
+ * 血战盘胡牌金光（Task 2）：单调键，只在**新胡**（huInfos 增长）时自增；
+ * 挂载 seed / resync（长度不变）不闪；reduced-motion 下不设（animationend 不触发 ⇒ 金光层会永久残留）。
+ */
+const huFlashKey = ref(0);
+watch(
+  () => props.view?.huInfos.length,
+  (next, prev) => {
+    if (prev === undefined || next === undefined) return;
+    if (next > prev && !prefersReducedMotion()) huFlashKey.value += 1;
+  },
+);
+
 function showNextBanner(): void {
   bannerSeq.value += 1;
   currentBanner.value = bannerQueue.value.shift() ?? null;
@@ -1022,12 +1041,19 @@ function onMeldPopDone(key: string) {
         :current-player="currentPlayer"
         :active-seats="activeSeats"
         :seats="hubSeats"
-        :ting-count="tingTiles.length"
         :compact="layout.hub.compact"
         :status-text="statusText"
         ended-text=""
+        :flash-key="huFlashKey"
         :style="rectStyle(layout.hub.rect)"
+        @flash-done="huFlashKey = 0"
       />
+
+      <text
+        v-if="tingTiles.length > 0"
+        class="mj__ting-label"
+        :style="tingLabelStyle"
+      >听 {{ tingTiles.length }} 张</text>
 
       <view v-if="tingTiles.length > 0" class="mj__ting" :style="tingStyle">
         <MahjongTile
@@ -1287,6 +1313,19 @@ function onMeldPopDone(key: string) {
   flex-wrap: wrap;
   align-content: center;
   justify-content: center;
+}
+/* Task 2：听 N 张行标签（mockup `.ting-label`）；位置由 inline `tingLabelStyle` 给。 */
+.mj__ting-label {
+  position: absolute;
+  z-index: 1;
+  padding: 2px 4px;
+  border: $ftl-hairline solid $ftl-color-mj-gold;
+  border-radius: 6px;
+  background: rgba($ftl-color-mj-lacquer, .9);
+  color: $ftl-color-mj-sheen;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* —— 手牌 —— */

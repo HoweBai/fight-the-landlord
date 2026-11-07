@@ -523,3 +523,72 @@ describe('Task 10：麻将动效 + 无限闸', () => {
     expect(/\.anim-hu-banner\s*\{([^}]*)\}/.exec(badBlock)![1]).toMatch(/transform:\s*none/);
   });
 });
+
+/**
+ * Task 2（2026-11-08，红金皮肤）：血战盘胡牌金光。
+ *
+ * ⚠️ 判据射程同文件头：jsdom 不跑动画。这里只钉会静默失效的机械事实：
+ *  · 规则必须**独立**（动画闸的 `parseAnimRules` 只捕获分组里的最后一个选择器）；
+ *  · 0.8s 一次性（无 infinite）；关键帧 0% 可见 → 100% 透明；
+ *  · 必须进 `prefers-reduced-motion` 降级清单。
+ */
+describe('Task 2：血战盘金光（anim-mj-hub-flash）', () => {
+  function braceBlock(src: string, at: number): string | null {
+    const open = src.indexOf('{', at);
+    if (open < 0) return null;
+    let depth = 0;
+    for (let i = open; i < src.length; i += 1) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return src.slice(open + 1, i);
+      }
+    }
+    return null;
+  }
+
+  function reducedMotionBlock(src: string): string | null {
+    const at = src.search(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    return at < 0 ? null : braceBlock(src, at);
+  }
+
+  it('独立规则（不分组）：0.8s 一次性、无 infinite', () => {
+    const code = stripComments(anim!.content);
+    // 前面必须是行首或一条规则的收尾 —— 分组选择器（`, .anim-mj-hub-flash {`）不算。
+    const standalone = /(?:^|[\n}])\s*\.anim-mj-hub-flash\s*\{([^}]*)\}/m.exec(code);
+    expect(standalone, '.anim-mj-hub-flash 必须是独立规则（不得挂进分组选择器）').not.toBeNull();
+    const body = standalone![1]!;
+    expect(body).toMatch(/animation:\s*ftl-mj-hub-flash\s+\.8s/);
+    expect(body).not.toMatch(/\binfinite\b/);
+    expect(body).toContain('forwards');
+
+    // 判别力：分组写法不得被当成独立规则命中。
+    const grouped =
+      '.anim-other { animation: x 1s; }\n.anim-other, .anim-mj-hub-flash { animation: ftl-mj-hub-flash .8s; }';
+    expect(/(?:^|[\n}])\s*\.anim-mj-hub-flash\s*\{/m.test(grouped)).toBe(false);
+  });
+
+  it('关键帧 0/35/100：起始可见、35% 金环高光、100% 透明', () => {
+    const code = stripComments(anim!.content);
+    const at = code.search(/@keyframes\s+ftl-mj-hub-flash/);
+    expect(at, '@keyframes ftl-mj-hub-flash 必须存在').toBeGreaterThanOrEqual(0);
+    const body = braceBlock(code, at);
+    expect(body).not.toBeNull();
+    const zero = /0%\s*\{([^}]*)\}/.exec(body!);
+    const mid = /35%\s*\{([^}]*)\}/.exec(body!);
+    const end = /100%\s*\{([^}]*)\}/.exec(body!);
+    expect(zero, '0% 帧必须存在').not.toBeNull();
+    expect(mid, '35% 帧必须存在').not.toBeNull();
+    expect(end, '100% 帧必须存在').not.toBeNull();
+    expect(zero![1], '0% 必须可见').toMatch(/opacity:\s*1\b/);
+    expect(mid![1], '35% 金环高光').toMatch(/inset 0 0 48px 6px/);
+    expect(end![1], '100% 必须淡出').toMatch(/opacity:\s*0\b/);
+  });
+
+  it('reduced-motion 降级清单覆盖 .anim-mj-hub-flash', () => {
+    const code = stripComments(anim!.content);
+    const block = reducedMotionBlock(code);
+    expect(block, 'prefers-reduced-motion 块必须存在').not.toBeNull();
+    expect(block, '降级清单必须覆盖新动画').toContain('.anim-mj-hub-flash');
+  });
+});

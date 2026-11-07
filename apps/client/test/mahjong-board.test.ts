@@ -11,6 +11,7 @@ import {
   type Tile,
 } from '@fight-the-landlord/protocol';
 import MahjongBoard from '../src/components/table/mahjong/MahjongBoard.vue';
+import MahjongHub from '../src/components/table/mahjong/MahjongHub.vue';
 import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.vue';
 import MahjongHuBanner from '../src/components/table/mahjong/MahjongHuBanner.vue';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
@@ -961,3 +962,109 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
     expect(wrapper.find('.mj__trustee').classes()).toContain('mj__bar-action--on');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 2）—— 听牌行标签 / 血战盘金光
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：红金皮肤（Task 2：听牌标签 / 盘金光）', () => {
+  const emptyLoads = {
+    bySlot: {
+      self: { discards: 0, melds: [] as number[], revealedCount: 0 },
+      top: { discards: 0, melds: [] as number[], revealedCount: 0 },
+      left: { discards: 0, melds: [] as number[], revealedCount: 0 },
+      right: { discards: 0, melds: [] as number[], revealedCount: 0 },
+    },
+    phase: 'play' as const,
+    tingCount: 0,
+  };
+
+  it('听牌行标签：听 N 张 固定在 layout.ting 上方（不再塞进血战盘）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ tingTiles: [tile(0, 1), tile(0, 2)] }) }),
+    });
+    const label = wrapper.find('.mj__ting-label');
+    expect(label.exists(), '.mj__ting-label 必须存在').toBe(true);
+    expect(label.text()).toBe('听 2 张');
+
+    const layout = mahjongTableLayoutV2(1334, 750, {
+      ...emptyLoads,
+      tingCount: 2,
+    });
+    const inline = label.attributes('style') ?? '';
+    expect(inline).toContain('position: absolute');
+    expect(inline).toContain(`left: ${layout.ting.left}px`);
+    expect(inline).toContain(`top: ${layout.ting.top - 18 * layout.u}px`);
+
+    // 静态样式：12px sheen 字、漆底金边、6px 圆角、padding 2px 4px、z-index 1。
+    const rule = ruleBody(boardStyle, '.mj__ting-label');
+    expect(rule).toContain('font-size: 12px');
+    expect(rule).toContain('color: $ftl-color-mj-sheen');
+    expect(rule).toContain('border: $ftl-hairline solid $ftl-color-mj-gold');
+    expect(rule).toContain('border-radius: 6px');
+    expect(rule).toContain('padding: 2px 4px');
+    expect(rule).toContain('z-index: 1');
+    expect(rule).toContain('background: rgba($ftl-color-mj-lacquer');
+  });
+
+  it('无 tingTiles：行标签不渲染', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    expect(wrapper.find('.mj__ting-label').exists()).toBe(false);
+  });
+
+  it('血战盘不再接收 :ting-count（听 N 已移出盘）', () => {
+    expect(boardSfc).not.toContain(':ting-count');
+  });
+
+  it('huFlashKey：新胡才自增；同长度 resync 不加；flash-done 清零', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+    const hub = () => wrapper.findComponent(MahjongHub);
+    expect(hub().props('flashKey')).toBe(0);
+
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(1)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(1);
+
+    // 同长度 resync（无新胡）不再加键。
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(1)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(1);
+
+    // 真正新增胡 ⇒ 单调自增。
+    await wrapper.setProps({ view: view({ version: 4, huInfos: [hu(1), hu(2)] }) });
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(2);
+
+    // 金光 animationend ⇒ Board 清零。
+    hub().vm.$emit('flash-done');
+    await nextTick();
+    expect(hub().props('flashKey')).toBe(0);
+  });
+
+  it('挂载时已有 huInfos：seed 不闪（flashKey 保持 0）', () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [hu(1)] }) }) });
+    expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(0);
+  });
+
+  it('reduced-motion：新胡也不设 flashKey（避免永久残留的金光层）', async () => {
+    const original = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => ({ matches: true })),
+    });
+    try {
+      const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+      await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0)] }) });
+      await nextTick();
+      expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(0);
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
+});
+

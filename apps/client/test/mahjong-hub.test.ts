@@ -4,7 +4,10 @@ import { mount } from '@vue/test-utils';
 import type { MahjongPhase } from '@fight-the-landlord/protocol';
 import MahjongHub from '../src/components/table/mahjong/MahjongHub.vue';
 
-/** 血战盘：牌墙/倒计时/四向方位点/四家徽标/听 N/状态行；无分数、无中央 claim 牌。 */
+/**
+ * 血战盘：牌墙 / 倒计时 / 状态行 / 四向方位点 / 四家徽标 / 胡牌金光；
+ * 无分数、无中央 claim 牌、无听 N（听 N 已移到牌桌的行标签，Task 2）。
+ */
 
 const hub = {
   left: 0,
@@ -34,12 +37,22 @@ const base = {
   currentPlayer: 2,
   activeSeats: [0, 2],
   seats,
-  tingCount: 0,
   statusText: '等待出牌',
   endedText: '',
 };
 
 type Props = typeof base;
+
+const src = readFileSync('src/components/table/mahjong/MahjongHub.vue', 'utf8');
+const style = src.slice(src.indexOf('<style'));
+
+/** 取一条选择器规则的声明体（本组件这些规则没有嵌套块）。 */
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+  expect(m, `${selector} 规则必须存在`).not.toBeNull();
+  return m![1]!;
+}
 
 /** 挂载后返回被点亮的方位（固定 top/left/right/self 顺序）。 */
 function litDirs(over: Partial<Props> = {}): string[] {
@@ -50,10 +63,10 @@ function litDirs(over: Partial<Props> = {}): string[] {
 }
 
 describe('MahjongHub（血战盘）', () => {
-  it('牌墙/倒计时/状态行/四向点/金环/牌墙标签', () => {
+  it('牌墙/倒计时/状态行/四向点/牌墙标签；旧金环已删除', () => {
     const w = mount(MahjongHub, { props: base });
     expect(w.find('.mj-hub').exists()).toBe(true);
-    expect(w.find('.mj-hub__ring').exists()).toBe(true);
+    expect(w.find('.mj-hub__ring').exists()).toBe(false);
     expect(w.find('.mj-hub__wall-count').text()).toBe('42');
     expect(w.find('.mj-hub__wall-label').text()).toBe('牌墙');
     expect(w.find('.mj-hub__clock').text()).toBe('12s');
@@ -61,16 +74,145 @@ describe('MahjongHub（血战盘）', () => {
     expect(w.findAll('.mj-hub__dot')).toHaveLength(4);
   });
 
-  it('倒计时最后 5 秒加紧迫类（颜色 + 有限脉动类）', () => {
-    const urgent = mount(MahjongHub, { props: { ...base, seconds: 4 } });
+  it('源码闸：根用 6px 金环（border-box）+ 径向漆底 + 三段 box-shadow', () => {
+    const root = ruleBody(style, '.mj-hub');
+    expect(root).toContain('box-sizing: border-box');
+    expect(root).toContain('border: 6px solid $ftl-color-mj-gold');
+    expect(root).toContain('border-radius: 50%');
+    expect(root).toContain(
+      'radial-gradient(circle at 50% 42%, $ftl-color-mj-hub-core 0%, $ftl-color-mj-lacquer 70%)',
+    );
+    expect(root).toContain('0 0 0 $ftl-hairline $ftl-color-mj-border');
+    expect(root).toContain('0 0 28px rgba($ftl-color-mj-gold');
+    expect(root).toContain('inset 0 0 24px rgba(0, 0, 0, .6)');
+    expect(root).toContain('color: $ftl-color-mj-cream');
+    expect(root).toContain('text-align: center');
+    expect(root).toContain('overflow: hidden');
+    // 旧结构：ring 与内联色值都不允许残留。
+    expect(src).not.toContain('mj-hub__ring');
+    expect(src).not.toMatch(/ringStyle/);
+    expect(src).not.toMatch(/#D4A24C/i);
+    expect(src).not.toContain('mj-hub__body');
+  });
+
+  it('源码闸：牌墙 48/40（14% / 12%）、标签 14（38%，compact 也显示）', () => {
+    const wall = ruleBody(style, '.mj-hub__wall-count');
+    expect(wall).toContain('top: 14%');
+    expect(wall).toContain('color: $ftl-color-mj-sheen');
+    expect(wall).toContain('font-weight: 700');
+    expect(wall).toContain('tabular-nums');
+    expect(ruleBody(style, '.mj-hub--compact .mj-hub__wall-count')).toContain('top: 12%');
+
+    const label = ruleBody(style, '.mj-hub__wall-label');
+    expect(label).toContain('top: 38%');
+    expect(label).toContain('color: $ftl-color-mj-muted');
+    // compact 不再隐藏标签（无 display: none / 无 compact 覆盖规则隐藏）。
+    expect(style).not.toMatch(/\.mj-hub__wall-label[^{]*\{[^}]*display:\s*none/);
+  });
+
+  it('源码闸：秒 48%、状态 64%/66% + status 色 + 84% 省略', () => {
+    expect(ruleBody(style, '.mj-hub__clock')).toContain('top: 48%');
+    expect(ruleBody(style, '.mj-hub__clock')).toContain('color: $ftl-color-mj-cream');
+    const status = ruleBody(style, '.mj-hub__status');
+    expect(status).toContain('top: 64%');
+    expect(status).toContain('color: $ftl-color-mj-status');
+    expect(status).toContain('max-width: 84%');
+    expect(status).toContain('text-overflow: ellipsis');
+    expect(ruleBody(style, '.mj-hub--compact .mj-hub__status')).toContain('top: 66%');
+  });
+
+  it('源码闸：方位点 10/8 + dot/highlight token + 过渡；四向 2%/50%/98% 锚点', () => {
+    const dot = ruleBody(style, '.mj-hub__dot');
+    expect(dot).toContain('width: 10px');
+    expect(dot).toContain('height: 10px');
+    expect(dot).toContain('background: $ftl-color-mj-dot');
+    expect(dot).toContain('transition: background .3s, box-shadow .3s');
+    expect(ruleBody(style, '.mj-hub--compact .mj-hub__dot')).toContain('width: 8px');
+
+    const top = ruleBody(style, '.mj-hub__dot--top');
+    expect(top).toContain('top: 2%');
+    expect(top).toContain('left: 50%');
+    const right = ruleBody(style, '.mj-hub__dot--right');
+    expect(right).toContain('right: 2%');
+    expect(right).toContain('top: 50%');
+    const self = ruleBody(style, '.mj-hub__dot--self');
+    expect(self).toContain('bottom: 2%');
+    expect(self).toContain('left: 50%');
+    const left = ruleBody(style, '.mj-hub__dot--left');
+    expect(left).toContain('left: 2%');
+    expect(left).toContain('top: 50%');
+
+    const lit = ruleBody(style, '.mj-hub__dot--lit');
+    expect(lit).toContain('background: $ftl-color-mj-highlight');
+    expect(lit).toContain('box-shadow: 0 0 8px $ftl-color-mj-highlight');
+  });
+
+  it('源码闸：徽标 12px 统一漆底金边（无绿/蓝/金语义色），四角映射', () => {
+    const badge = ruleBody(style, '.mj-hub__badge');
+    expect(badge).toContain('padding: 2px 5px');
+    expect(badge).toContain('border: $ftl-hairline solid $ftl-color-mj-border');
+    expect(badge).toContain('border-radius: 8px');
+    expect(badge).toContain('background: $ftl-color-mj-lacquer');
+    expect(badge).toContain('color: $ftl-color-mj-cream');
+    expect(badge).toContain('transform: translate(-50%, -50%)');
+
+    const corners: Array<[string, string, string]> = [
+      ['.mj-hub__badge--left', 'top: 14%', 'left: 14%'],
+      ['.mj-hub__badge--top', 'top: 14%', 'left: 86%'],
+      ['.mj-hub__badge--right', 'top: 86%', 'left: 86%'],
+      ['.mj-hub__badge--self', 'top: 86%', 'left: 14%'],
+    ];
+    for (const [selector, top, left] of corners) {
+      const body = ruleBody(style, selector);
+      expect(body, selector).toContain(top);
+      expect(body, selector).toContain(left);
+    }
+
+    // 语义色修饰符全部删除。
+    expect(style).not.toMatch(/\.mj-hub__badge--(?:hu|ting|lack|trustee)/);
+    expect(style).not.toMatch(/rgba?\(\s*74,\s*222,\s*128/);
+    expect(style).not.toMatch(/rgba?\(\s*120,\s*170,\s*255/);
+  });
+
+  it('无听 N：文案与 prop 都已移除（听 N 改到牌桌行标签）', () => {
+    const w = mount(MahjongHub, { props: base });
+    expect(w.find('.mj-hub__ting').exists()).toBe(false);
+    expect(w.text()).not.toContain('听');
+    expect(src).not.toContain('tingCount');
+    expect(src).not.toContain('mj-hub__ting');
+  });
+
+  it('urgent：仅我方 play 且末 5 秒', () => {
+    const selfTurn = (over: Partial<Props> = {}) =>
+      mount(MahjongHub, { props: { ...base, currentPlayer: 0, seconds: 4, ...over } });
+
+    const urgent = selfTurn();
     expect(urgent.find('.mj-hub__clock').classes()).toContain('mj-hub__clock--urgent');
     expect(urgent.find('.mj-hub__clock').classes()).toContain('anim-mj-urgent');
-    const calm = mount(MahjongHub, { props: { ...base, seconds: 6 } });
-    expect(calm.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
-    expect(calm.find('.mj-hub__clock').classes()).not.toContain('anim-mj-urgent');
-    const zero = mount(MahjongHub, { props: { ...base, seconds: 0 } });
-    expect(zero.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
-    expect(zero.find('.mj-hub__clock').classes()).not.toContain('anim-mj-urgent');
+
+    for (const phase of ['claim', 'exchange', 'lack'] as MahjongPhase[]) {
+      const w = selfTurn({ phase });
+      expect(w.find('.mj-hub__clock').classes(), `${phase} 不得 urgent`).not.toContain(
+        'mj-hub__clock--urgent',
+      );
+      expect(w.find('.mj-hub__clock').classes()).not.toContain('anim-mj-urgent');
+    }
+
+    // 非我方出牌。
+    const other = selfTurn({ currentPlayer: 2 });
+    expect(other.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
+
+    // 6 秒不 urgent、0 秒不 urgent。
+    expect(selfTurn({ seconds: 6 }).find('.mj-hub__clock').classes()).not.toContain(
+      'mj-hub__clock--urgent',
+    );
+    expect(selfTurn({ seconds: 0 }).find('.mj-hub__clock').classes()).not.toContain(
+      'mj-hub__clock--urgent',
+    );
+
+    // 没有映射 self 座位 ⇒ undefined ⇒ 永不 urgent。
+    const noSelf = selfTurn({ seats: seats.filter((s) => s.dir !== 'self') });
+    expect(noSelf.find('.mj-hub__clock').classes()).not.toContain('mj-hub__clock--urgent');
   });
 
   it('方位点：play 亮 currentPlayer', () => {
@@ -142,52 +284,43 @@ describe('MahjongHub（血战盘）', () => {
     expect(empty.findAll('.mj-hub__badge')).toHaveLength(0);
   });
 
-  it('听牌：tingCount>0 显示「听 N 张」，0 不渲染', () => {
-    const w = mount(MahjongHub, { props: { ...base, tingCount: 3 } });
-    expect(w.find('.mj-hub__ting').text()).toBe('听 3 张');
-    const zero = mount(MahjongHub, { props: { ...base, tingCount: 0 } });
-    expect(zero.find('.mj-hub__ting').exists()).toBe(false);
-  });
-
   it('endedText 覆盖状态行', () => {
     const w = mount(MahjongHub, { props: { ...base, endedText: '已胡 2 家' } });
     expect(w.find('.mj-hub__status').text()).toBe('已胡 2 家');
   });
 
-  it('normal 字号内联：牌墙 40 / 秒 22 / 状态 14 / 听 14 / 徽标 16 / 点 10', () => {
+  it('normal 字号内联：牌墙 48 / 标签 14 / 秒 22 / 状态 14 / 徽标 12 / 点 10', () => {
     const w = mount(MahjongHub, {
       props: {
         ...base,
-        tingCount: 2,
         seats: [{ seat: 0, dir: 'self', badge: 'hu', badgeText: '胡 3' }],
       },
     });
-    expect(w.find('.mj-hub__wall-count').attributes('style')).toContain('font-size: 40px');
+    expect(w.find('.mj-hub__wall-count').attributes('style')).toContain('font-size: 48px');
+    expect(w.find('.mj-hub__wall-label').attributes('style')).toContain('font-size: 14px');
     expect(w.find('.mj-hub__clock').attributes('style')).toContain('font-size: 22px');
     expect(w.find('.mj-hub__status').attributes('style')).toContain('font-size: 14px');
-    expect(w.find('.mj-hub__ting').attributes('style')).toContain('font-size: 14px');
-    expect(w.find('.mj-hub__badge').attributes('style')).toContain('font-size: 16px');
+    expect(w.find('.mj-hub__badge').attributes('style')).toContain('font-size: 12px');
     expect(w.find('.mj-hub__dot').attributes('style')).toContain('font-size: 10px');
-    expect(w.find('.mj-hub__wall-label').exists()).toBe(true);
   });
 
-  it('compact 字号内联：牌墙 32 / 秒 18 / 状态 12 / 听 12 / 徽标 14 / 点 8，且隐藏牌墙标签', () => {
+  it('compact 字号内联：牌墙 40 / 标签 14（仍显示）/ 秒 18 / 状态 12 / 徽标 12 / 点 8', () => {
     const w = mount(MahjongHub, {
       props: {
         ...base,
         compact: true,
-        tingCount: 2,
         seats: [{ seat: 0, dir: 'self', badge: 'hu', badgeText: '胡 3' }],
       },
     });
     expect(w.classes()).toContain('mj-hub--compact');
-    expect(w.find('.mj-hub__wall-count').attributes('style')).toContain('font-size: 32px');
+    expect(w.find('.mj-hub__wall-count').attributes('style')).toContain('font-size: 40px');
+    expect(w.find('.mj-hub__wall-label').exists()).toBe(true);
+    expect(w.find('.mj-hub__wall-label').text()).toBe('牌墙');
+    expect(w.find('.mj-hub__wall-label').attributes('style')).toContain('font-size: 14px');
     expect(w.find('.mj-hub__clock').attributes('style')).toContain('font-size: 18px');
     expect(w.find('.mj-hub__status').attributes('style')).toContain('font-size: 12px');
-    expect(w.find('.mj-hub__ting').attributes('style')).toContain('font-size: 12px');
-    expect(w.find('.mj-hub__badge').attributes('style')).toContain('font-size: 14px');
+    expect(w.find('.mj-hub__badge').attributes('style')).toContain('font-size: 12px');
     expect(w.find('.mj-hub__dot').attributes('style')).toContain('font-size: 8px');
-    expect(w.find('.mj-hub__wall-label').exists()).toBe(false);
   });
 
   it('compact 未显式传 prop 时回退 hub.compact', () => {
@@ -208,6 +341,46 @@ describe('MahjongHub（血战盘）', () => {
     expect(compact.find('.mj-hub__status').text().length).toBe(9);
   });
 
+  it('盘金光：flashKey>0 渲染覆盖层，key 变化重挂载，animationend 才 emit flash-done', async () => {
+    const w = mount(MahjongHub, { props: base });
+    expect(w.find('.mj-hub__flash').exists()).toBe(false);
+
+    await w.setProps({ flashKey: 1 });
+    const flash = w.find('.mj-hub__flash');
+    expect(flash.exists()).toBe(true);
+    expect(flash.classes()).toContain('anim-mj-hub-flash');
+    expect(flash.attributes('style') ?? '').not.toContain('display: none');
+
+    // :key=flashKey ⇒ 键变化必须重挂载（重播动画）。
+    const firstEl = flash.element;
+    await w.setProps({ flashKey: 2 });
+    expect(w.find('.mj-hub__flash').element).not.toBe(firstEl);
+
+    // 无关动画的 animationend（例如内部其它元素冒泡）不得 emit。
+    await w.find('.mj-hub__flash').trigger('animationend', { animationName: 'other-anim' });
+    expect(w.emitted('flash-done')).toBeUndefined();
+
+    // scoped 会重命名 @keyframes（前缀 + hash）⇒ startsWith 必须放行。
+    await w.find('.mj-hub__flash').trigger('animationend', {
+      animationName: 'ftl-mj-hub-flash-7ba3f1',
+    });
+    expect(w.emitted('flash-done')).toHaveLength(1);
+  });
+
+  it('源码闸：金光覆盖层 inset 0 / 圆角 / pointer-events none / 径向金色高光', () => {
+    const flash = ruleBody(style, '.mj-hub__flash');
+    expect(flash).toContain('position: absolute');
+    expect(flash).toContain('inset: 0');
+    expect(flash).toContain('border-radius: 50%');
+    expect(flash).toContain('pointer-events: none');
+    expect(flash).toContain('radial-gradient');
+    expect(flash).toContain('rgba($ftl-color-mj-gold');
+    // 模板接线：类 + animationend。
+    expect(src).toContain('anim-mj-hub-flash');
+    expect(src).toContain('@animationend="onFlashEnd"');
+    expect(src).toContain("startsWith('ftl-mj-hub-flash')");
+  });
+
   it('无分数、无中央 claim 牌、无 MahjongTile 图片', () => {
     const w = mount(MahjongHub, { props: base });
     expect(w.find('.mj-hub__score').exists()).toBe(false);
@@ -216,9 +389,7 @@ describe('MahjongHub（血战盘）', () => {
     expect(w.text()).not.toMatch(/分数|底分|积分/);
   });
 
-  it('源码闸：本组件不定义 animation / infinite（Task 10 起动效类由 animations.scss 提供）', () => {
-    const src = readFileSync('src/components/table/mahjong/MahjongHub.vue', 'utf8');
-    const style = src.slice(src.indexOf('<style'));
+  it('源码闸：本组件不定义 animation / infinite（动效类由 animations.scss 提供）', () => {
     // 组件自己不写 animation 声明（类与 keyframes 全在 animations.scss；scoped 需 import）。
     expect(style).not.toMatch(/animation\s*:/);
     expect(src).not.toMatch(/infinite/);
@@ -227,9 +398,7 @@ describe('MahjongHub（血战盘）', () => {
     expect(style).toMatch(/@import\s+['"][^'"]*styles\/animations\.scss['"]/);
   });
 
-  it('源码闸：金环 inline border 走 2px（与 $ftl-hairline 等价；1px 缩放后不可见）', () => {
-    const src = readFileSync('src/components/table/mahjong/MahjongHub.vue', 'utf8');
-    expect(src).not.toMatch(/border:\s*'1px/);
-    expect(src).toMatch(/border:\s*'2px solid/);
+  it('源码闸：组件样式无裸 1px（发丝线走 $ftl-hairline）', () => {
+    expect(style).not.toMatch(/(?:^|[^\d])1px\b/);
   });
 });

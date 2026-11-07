@@ -356,6 +356,23 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   animation: ftl-mj-urgent .8s ease-in-out 3;
 }
 
+// —— 川麻红金皮肤：血战盘胡牌金光（Task 2，2026-11-08）——
+
+/**
+ * 盘金光：一次性 0.8s，金色内晕从 0 涨到最大再淡出（`opacity` 收尾，`forwards` 保持透明
+ * 直到 Board 收到 `animationend` 把 `flashKey` 清零）。
+ * ⚠️ 独立规则（不与其它 `.anim-*` 分组）：动画闸的 `parseAnimRules` 只捕获分组里最后一个选择器。
+ * ⚠️ 0% 可见（opacity: 1）—— 起始态不得依赖动画才出现（同全文件纪律）。
+ */
+@keyframes ftl-mj-hub-flash {
+  0%   { opacity: 1; box-shadow: inset 0 0 0 0 rgba($ftl-color-mj-gold, 0); }
+  35%  { opacity: 1; box-shadow: inset 0 0 48px 6px rgba($ftl-color-mj-gold, .55); }
+  100% { opacity: 0; box-shadow: inset 0 0 48px 6px rgba($ftl-color-mj-gold, 0); }
+}
+.anim-mj-hub-flash {
+  animation: ftl-mj-hub-flash .8s $ftl-ease forwards;
+}
+
 /**
  * spec §8 的「**必须**」：`prefers-reduced-motion` 降级。
  * 形态照参考实现（`transition: none` + `animation: none !important`）。
@@ -369,6 +386,7 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
   .anim-deal-in-side,
   .anim-discard-land,
   .anim-mj-urgent,
+  .anim-mj-hub-flash,
   .anim-redeal-in,
   .anim-redeal-banner,
   .anim-played-in,
