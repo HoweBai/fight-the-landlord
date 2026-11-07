@@ -25,7 +25,7 @@ const T = {
   hubMin: 160, hubMax: 200, displayCap: 24,
 };
 const HAND_ROW_W = T.handCount * T.handH * T.tileRatio + (T.handCount - 1) * T.tileGap + T.drawnGap;
-const CANVASES = [[1334, 750], [1500, 750], [1623, 750], [1778, 750], [1334, 833], [1334, 1000], [1334, 1334]];
+const CANVASES = [[1334, 750], [1500, 750], [1623, 750], [1778, 750], [1334, 833], [1334, 1000], [1334, 1334], [2668, 1500]];
 
 const rect = (left, top, width, height) => ({ left, top, width, height });
 const right = (r) => r.left + r.width;
@@ -35,7 +35,7 @@ const hit = (a, b) => a.left < right(b) - 0.01 && b.left < right(a) - 0.01 && a.
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 function layoutBase(W, H, state) {
-  const s = Math.max(1, Math.min(H / 750, (0.86 * W) / HAND_ROW_W));
+  const s = 1; // B：base 固定 1334×750；不再有 per-canvas s/0.86W
   const sc = (v) => v * s;
   const gap = sc(T.gap), gapT = sc(T.tileGap), outer = sc(T.outer), bar = sc(T.bar);
   const handH = sc(T.handH), handW = HAND_ROW_W * s, handLeft = (W - handW) / 2;
@@ -229,6 +229,7 @@ function layoutBase(W, H, state) {
   }
 
   const rects = {
+    bar: rect(0, 0, 1334, 64),
     hand, actions, hub, topPlate, leftPlate, rightPlate, selfPlate,
     topBacks, topRiver: topRiverBox.rect, ownRiver: ownRiverBox.rect,
     leftBacks: leftR.backs, leftRiver: leftR.river, leftMelds: leftR.melds,
@@ -286,7 +287,7 @@ function layoutBase(W, H, state) {
   if (topMeldContentW > 0 && topBacksW - topMeldContentW * topMeldScale < sc(4) - 0.01) checks.push(`对家副露余量 <4s`);
 
   return {
-    s, hubD, checks, overlays,
+    s, hubD, hub, checks, overlays,
     key: {
       hub: `${hubD.toFixed(1)}${hub.compact ? 'c' : ''}`,
       side: `${leftZ.rows}/${rightZ.rows}r ${leftZ.cols}/${rightZ.cols}c cap=${leftZ.rows * leftZ.cols}/${rightZ.rows * rightZ.cols}`,
@@ -309,7 +310,14 @@ function layout(W, H, state) {
   const ox = (W - BW * u) / 2;
   const oy = (H - BH * u) / 2;
   const base = layoutBase(BW, BH, state);
-  return { ...base, s: u, offsetX: ox, offsetY: oy };
+  const tr = (r) => ({ ...r, left: ox + r.left * u, top: oy + r.top * u, width: r.width * u, height: r.height * u });
+  const rects = Object.fromEntries(Object.entries(base.rects).map(([k, v]) => [k, tr(v)]));
+  const hub = { ...base.hub, ...tr(base.hub), cx: ox + base.hub.cx * u, cy: oy + base.hub.cy * u, r: base.hub.r * u };
+  const checks = [...base.checks];
+  for (const [name, r] of Object.entries(rects)) {
+    if (r.width > 0 && r.height > 0 && !inside(r, W, H)) checks.push(`${name} 画布越界`);
+  }
+  return { ...base, rects, hub, s: u, offsetX: ox, offsetY: oy, checks };
 }
 
 const base = () => ({ discards: 0, melds: 0, revealed: 0 });

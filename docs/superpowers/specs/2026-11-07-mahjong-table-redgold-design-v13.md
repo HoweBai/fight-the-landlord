@@ -131,6 +131,35 @@ const oy = (H - H0 * u) / 2;
 1. 宽屏/4:3 会留边（B 的取舍）；用户已选 B。
 2. 服务端一炮多响删多张真弃牌；接受并另立片。
 3. claim 后同 type 再打的 latest-first 边界；记录。
-4. 动作浮层 78.4×125.6（base）；路线 A 接受。
+4. 动作浮层 base 覆盖 9.8×114.0（v12 的 78.4×125.6 是旧 s 值，B 下不适用）。
 5. Hub compact ≤8 字；108 张；136 张另立。
 6. 暗杠 cover 45.8%，outline 金边。
+
+## 10. v13 复审补遗（Important）
+
+### 10.1 last-discard 的 latest/pulse 映射
+
+- Board 存 `lastDiscardAbs`：serverDiscards 的绝对索引，只在该座 serverDiscards 增长时更新。
+- 渲染映射：`visibleIdx = lastDiscardAbs − hiddenBefore(abs) − windowStart`；若该绝对牌被 claimed 隐藏或不在窗口，清空 pulse/latest，不亮旧牌。
+- 音效 diff 仍用 serverDiscards 增长；与 visible 解耦。
+- 测试：A 打 5 → B 碰 → 断言不亮旧牌；A 再打 → 声/高亮在新牌。
+
+### 10.2 rob 的 claimSource
+
+- `claimSourceIndex` 只由 `claim:` 来源座产生；`rob:` 恒 **null**。
+- `claimSourceMeldKey` 只由 `currentPlayer` 的同 type **最新 peng** 派生；找不到则 null。
+- rob 窗口不描边任何河牌；胡按钮显示待响应牌。
+- 测试：rob 窗口 `claimSourceIndex===null`、无河牌描边、胡按钮在。
+
+### 10.3 HuBanner 锚点
+
+- HuBanner 不再用画布百分比；layout 输出 `bannerAnchors: { top, left, right, self }`（base 座位/手牌中心 + offset，乘 u）。
+- Board 把 anchor 传给 HuBanner。
+- 测试：1334×1000 时 self banner 在 base 带内、不与手牌相交；1334×1334 时不落留边区。
+
+### 10.4 其余
+
+- 坐标契约引用 v11 §2（layout 全画布坐标，Board 在 River 边界减一次）；v12 §2 是 claim 交互，不是坐标。
+- `bar` 的 base rect = (0,0,1334,64)，随构图变换；`topPlate` 跟随 bar；不混用全画布 bar。
+- 原型 `layoutBase` 固定 1334×750（删除 s/0.86W）；`layout()` 应用 `base×u+offset`；`bar` 纳入 rects；2668×1500 u=2 用例。
+- 侧河 +N 行锚点：badge 参与 grid 流并整体居中；若 overlay，则网格顶对齐；二者不混用。
