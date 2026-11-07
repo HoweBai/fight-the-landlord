@@ -60,10 +60,11 @@ pnpm -C apps/client build  → DONE Build complete（exit 0）
 
 - 整片：`git revert --no-commit c880c37c..0f63eeec && git commit`（或按单个 Task 提交 revert）。
 - 皮肤只改客户端展示层；前序几何/交互片仍在，回滚皮肤会回到旧绿桌但功能不丢。
-- 测试服当前仍是 `dev-6e4d634`（本片**未推送、未部署、未重打 APK**）。
+- **已部署测试服 `dev-362b9f9`**（2026-11-08；健康检查 200、admin/app.js 与 tag 逐字节一致）；上一版回滚面 = `dev-6e4d634`。
+- APK **0.1.11 / versionCode 111**（20,398,169 B，sha256 `83f655a3fa56…`）已发布 Release `apk-latest`，edge `/download/ubigame.apk` 与资产 digest 一致。
 
 ## 6. 下一步（需要用户）
 
 1. 真浏览器七档截图 + 真机走查（§4.1）。
-2. 决定是否 reword 两条署名提交（§4.8）。
-3. 决定推送 `dev` / 部署测试服 / 重打 APK。
+2. 决定 per-seat reveal nonce / 对家亮牌翻转是否补。
+3. 观察线上新皮肤后再决定是否合 master / 打 tag。
