@@ -50,6 +50,16 @@ node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → AL
 5. **双击出牌可能连续触发 MjSort**（选牌 + 服务端确认出牌同 cue）；`playCue` 为 latest-wins，不叠加。
 6. **服务端一炮多响删多张真弃牌**：客户端按新 view 全量重算，无法恢复；已登记为已知边界（另立片）。
 7. 其余 Minor 清单见 §5，均不阻塞。
+8. **分数省略口径（v6 §3.4 覆盖 v3/v4/v5 的「万」压缩）**：座位/结算分数一律省略号截断，不做 `N万` 格式化。
+9. **座角徽标优先级（v6 重裁槽位；v4 排名不再沿引）**：胡 > 听 > 托 > 庄（右下角另挂「缺X」不受此序影响）。
+10. **终审修复记录**：
+    - **侧河 `+N` 徽标对齐**：布局 `badgeRect` 按容量行数**顶对齐**推算，而网格默认居中且只铺已用行；
+      侧河 raw>24（容量 9–10 行、实际 8 行）时 +N 会压到最后一行牌上（v13 §10.4 禁止徽标与居中网格混用）。
+      修法：有徽标时网格加 `mj-river__grid--badged`（`align-self: flex-start` + `align-content: start`），
+      徽标仍在 `badgeRect` 绝对定位，不进入网格流。
+    - **胡 banner 锚点居中**：`ftl-hu-banner` 的 30%/70% 帧原写 `transform: none`，动画期整体覆盖
+      组件基类的 `translate(-50%, -100%)`，可见停留期 banner 左上角落在锚点。修法：四帧全部烘焙
+      `translate(-50%, -100%)`；组件基类居中 transform 保留为 reduced-motion 兜底。
 
 ## 5. 终审待分诊 Minor 清单（来自各 Task 审查）
 

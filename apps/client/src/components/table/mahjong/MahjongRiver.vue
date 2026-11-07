@@ -201,7 +201,12 @@ function onDiscardClick(t: Tile, index: number): void {
       />
     </view>
     <template v-else>
-      <view v-if="windowDiscards.length > 0" class="mj-river__grid" :style="gridStyle">
+      <view
+        v-if="windowDiscards.length > 0"
+        class="mj-river__grid"
+        :class="{ 'mj-river__grid--badged': badgeCount > 0 }"
+        :style="gridStyle"
+      >
         <MahjongTile
           v-for="(t, i) in windowDiscards"
           :key="`discard-${windowStart + i}`"
@@ -243,6 +248,13 @@ function onDiscardClick(t: Tile, index: number): void {
 .mj-river__grid {
   align-content: center;
   justify-content: center;
+}
+// v13 §10.4：徽标与网格不得一顶一居中混用。布局的 `badgeRect` 按**容量行数顶对齐**推算，
+// 而有徽标时网格只铺已用行（少于容量）—— 居中会把网格整体下移，+N 就压到最后一行牌上。
+// 因此有徽标时网格改为顶对齐，与徽标的顶对齐数学同口径。
+.mj-river__grid--badged {
+  align-self: flex-start;
+  align-content: start;
 }
 .mj-river__melds {
   z-index: 1;

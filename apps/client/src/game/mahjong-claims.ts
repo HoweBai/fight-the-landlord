@@ -132,6 +132,9 @@ export interface RiverWindow {
  * 牌河窗口字段（v13 §2）。与布局 v1 的 `riverTopSelf` 口径一致：
  * raw ≤ cap 全显示；溢出时窗口收窄到 `cap - 1` 张并让出 1 格给 `+N` 徽标
  * （默认 cap 24 ⇒ 23 张；cap 更大时仍封顶 23；cap 0 ⇒ 空窗口，徽标显示全部 raw）。
+ *
+ * 注：生产布局 v2（`mahjong-layout-v2.ts`）自带一份重复的窗口数学（侧河按容量
+ * `rows×cols` 分支取 24/23），本函数只作**契约参照**，布局并不调用它。
  */
 export function riverWindow(rawCount: number, visibleCap = 24): RiverWindow {
   const raw = Math.max(0, Math.floor(Number(rawCount) || 0));

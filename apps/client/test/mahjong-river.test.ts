@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils';
 import { tileType, type MahjongMeldView, type Tile } from '@fight-the-landlord/protocol';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
 import MahjongMeld from '../src/components/table/mahjong/MahjongMeld.vue';
+import { collectSourceFiles, stripComments } from './helpers/source-scan';
 
 const wan1: Tile = { s: 0, r: 1 };
 const wan2: Tile = { s: 0, r: 2 };
@@ -310,5 +311,71 @@ describe('MahjongRiver', () => {
     expect(w.text()).toContain('已胡');
     await tiles[0]!.trigger('click');
     expect(w.emitted('discard-click')).toBeUndefined();
+  });
+});
+
+/**
+ * 终审 Important 1：侧河 `+N` 徽标与网格对齐（v13 §10.4）。
+ *
+ * 布局的 `badgeRect` 按**容量行数**顶对齐推算，而网格实际只铺已用行且默认居中。
+ * 侧河 raw>24 时（容量 10 行、只铺 8 行）居中会把网格下移 24–48px，+N 就压到牌上。
+ * 修法：有徽标时网格改顶对齐（`mj-river__grid--badged`），徽标仍在 `badgeRect` 绝对定位。
+ */
+describe('MahjongRiver：+N 徽标与网格对齐', () => {
+  /** 侧河 25 张：窗口 24 张（3 列 × 8 行），容量 10 行 ⇒ 徽标 1 张。 */
+  const sideBadgeProps = (over: Record<string, unknown> = {}) =>
+    props({
+      discards: makeDiscards(25),
+      direction: 'right',
+      windowStart: 1,
+      windowCount: 24,
+      latestIndex: 23,
+      cols: 3,
+      rows: 10,
+      tileW: 56,
+      tileH: 45.714,
+      gap: 2,
+      ...over,
+    });
+  const badgeRect = { left: 100, top: 4, width: 56, height: 45.714 };
+
+  it('badgeCount > 0：网格加 mj-river__grid--badged（顶对齐），徽标不进网格流', () => {
+    const w = mount(MahjongRiver, {
+      props: sideBadgeProps({ badgeCount: 1, badgeRect }),
+    });
+    const grid = w.find('.mj-river__grid');
+    expect(grid.exists()).toBe(true);
+    expect(grid.classes()).toContain('mj-river__grid--badged');
+    expect(w.findAll('.mj-tile')).toHaveLength(24);
+    // 徽标仍以 badgeRect 绝对定位（v13 §10.4 要求），不在网格内。
+    const badge = w.find('.mj-river__badge');
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toBe('+1');
+    expect(w.findAll('.mj-river__grid .mj-river__badge')).toHaveLength(0);
+    expect(stylePx(badge.attributes('style') ?? '', 'top')).toBe(4);
+  });
+
+  it('badgeCount = 0：网格不加 mj-river__grid--badged（保持居中）', () => {
+    const w = mount(MahjongRiver, {
+      props: sideBadgeProps({ windowStart: 0, windowCount: 25, latestIndex: 24 }),
+    });
+    const grid = w.find('.mj-river__grid');
+    expect(grid.classes()).not.toContain('mj-river__grid--badged');
+    expect(w.find('.mj-river__badge').exists()).toBe(false);
+  });
+
+  it('源码闸：--badged 规则必须是 align-self: flex-start（顶对齐）', () => {
+    const river = collectSourceFiles().find(
+      (f) => f.path === 'src/components/table/mahjong/MahjongRiver.vue',
+    );
+    expect(river, 'MahjongRiver.vue 必须在源码扫描集合里').toBeDefined();
+    const rule = /\.mj-river__grid--badged\s*\{([^}]*)\}/.exec(stripComments(river!.content));
+    expect(rule, '.mj-river__grid--badged 规则必须存在').not.toBeNull();
+    expect(rule![1], '有徽标时网格必须顶对齐，才能与 badgeRect 的顶对齐数学同口径').toContain(
+      'align-self: flex-start',
+    );
+    // 判别力：只有居中网格的合成样本不得命中。
+    const bad = '.mj-river__grid { align-content: center; justify-content: center; }';
+    expect(/\.mj-river__grid--badged\s*\{([^}]*)\}/.exec(bad)).toBeNull();
   });
 });

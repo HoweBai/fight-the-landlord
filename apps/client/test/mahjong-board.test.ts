@@ -390,11 +390,11 @@ describe('MahjongBoard：牌河契约（claimed / claimSource / lastDiscard）',
     expect(wrapper.emitted('mahjong')?.[0]).toEqual([{ type: 'claim', claim: 'peng' }, 'claim:0']);
   });
 
-  it('rob 窗口：无河牌可点（点击不上抛），胡按钮显示待响应牌、无过', async () => {
+  it('rob 窗口（生产形态 state=claim + windowId=rob:N）：无河牌可点，胡按钮显示待响应牌、无过', async () => {
     const wrapper = mount(MahjongBoard, {
       props: props({
         view: view({
-          state: 'rob',
+          state: 'claim',
           currentPlayer: 1,
           activeSeats: [0],
           windowId: 'rob:1',
@@ -586,6 +586,58 @@ describe('MahjongBoard：胡牌 banner（bannerSeq + reduced-motion）', () => {
         value: original,
       });
     }
+  });
+
+  it('reduced-motion：无 animationend ⇒ 下一版 view 出队当前 banner（同版本重复下发不出队）', async () => {
+    const original = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => ({ matches: true })),
+    });
+    try {
+      const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [] }) }) });
+      await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0), hu(2)] }) });
+      await nextTick();
+      const firstEl = wrapper.find('.mj-hu-banner').element;
+
+      // 同一 version 的重复下发（resync）不得出队 —— 出队只认**之后**的版本变化。
+      await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(0), hu(2)] }) });
+      await nextTick();
+      expect(wrapper.find('.mj-hu-banner').element).toBe(firstEl);
+
+      // 下一版（v3）⇒ 第一条出队、第二条顶上（新节点，bannerSeq 递增）。
+      await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(0), hu(2)] }) });
+      await nextTick();
+      expect(wrapper.find('.mj-hu-banner').exists()).toBe(true);
+      expect(wrapper.find('.mj-hu-banner').element).not.toBe(firstEl);
+
+      // 再下一版（v4）⇒ 第二条也出队，队列空 ⇒ DOM 无残留。
+      await wrapper.setProps({ view: view({ version: 4, huInfos: [hu(0), hu(2)] }) });
+      await nextTick();
+      expect(wrapper.find('.mj-hu-banner').exists()).toBe(false);
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
+
+  it('挂载时已有 huInfos：seed 后无新增胡的版本更新不补播 banner', async () => {
+    const wrapper = mount(MahjongBoard, { props: props({ view: view({ huInfos: [hu(1)] }) }) });
+    expect(wrapper.find('.mj-hu-banner').exists(), '挂载即已有的胡不重播').toBe(false);
+
+    // 同内容的新版本包（别人动作/resync）：仍无新胡 ⇒ 不播。
+    await wrapper.setProps({ view: view({ version: 2, huInfos: [hu(1)] }) });
+    await nextTick();
+    expect(wrapper.find('.mj-hu-banner').exists()).toBe(false);
+
+    // 真正新增胡（seat 2）⇒ 照常播（seed 不得把后续新胡也吞掉）。
+    await wrapper.setProps({ view: view({ version: 3, huInfos: [hu(1), hu(2)] }) });
+    await nextTick();
+    expect(wrapper.find('.mj-hu-banner').exists()).toBe(true);
   });
 
   afterEach(() => {

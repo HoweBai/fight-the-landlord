@@ -452,4 +452,44 @@ describe('Task 10：麻将动效 + 无限闸', () => {
     expect(has('MahjongHub.vue', 'anim-mj-urgent'), 'Hub 紧迫钟必须有限脉动').toBe(true);
     expect(has('MahjongActionBar.vue', 'anim-claim-pulse'), 'ActionBar claim 必须呼吸').toBe(true);
   });
+
+  /**
+   * 终审 Important 2：HuBanner 锚点居中。
+   *
+   * 组件基类用 `transform: translate(-50%, -100%)` 把 banner 的**底边中点**钉在画布锚点上；
+   * 但 CSS 动画期间 keyframe 的 transform **整体覆盖**基类 —— 旧关键帧在 30%/70% 写
+   * `transform: none`，可见停留期 banner 的左上角落在锚点上。修法：四帧都烘焙居中平移。
+   */
+  it('⑨ ftl-hu-banner 每一帧都带 translate(-50%, -100%)（动画不得覆盖锚点居中）', () => {
+    const code = stripComments(anim!.content);
+    const at = code.search(/@keyframes\s+ftl-hu-banner/);
+    expect(at, '@keyframes ftl-hu-banner 必须存在').toBeGreaterThanOrEqual(0);
+    const body = braceBlock(code, at);
+    expect(body).not.toBeNull();
+    const frames = [...body!.matchAll(/(?:0%|30%|70%|100%)\s*\{([^}]*)\}/g)];
+    expect(frames, '0%/30%/70%/100% 四帧都必须存在').toHaveLength(4);
+    for (const [, inner] of frames) {
+      expect(
+        inner,
+        '动画期 keyframe 的 transform 会整体覆盖基类居中 —— 每一帧都必须自带 translate(-50%, -100%)',
+      ).toContain('translate(-50%, -100%)');
+    }
+
+    // 组件基类保留居中 transform（reduced-motion / 动画不执行时的兜底）。
+    const banner = sources.find(
+      (f) => f.path === `${MAHJONG_DIR}MahjongHuBanner.vue`,
+    );
+    expect(banner, 'MahjongHuBanner.vue 必须在源码扫描集合里').toBeDefined();
+    expect(stripComments(banner!.content)).toContain('transform: translate(-50%, -100%)');
+
+    // 判别力：任一帧退回 `transform: none`（覆盖基类居中）必须被判负。
+    const bad =
+      '@keyframes ftl-hu-banner { 0% { transform: translate(-50%, -100%) scale(1.4); } 30% { transform: none; } 70% { transform: translate(-50%, -100%); } 100% { transform: translate(-50%, -100%); } }';
+    const badBody = braceBlock(bad, bad.search(/@keyframes\s+ftl-hu-banner/))!;
+    const badFrames = [...badBody.matchAll(/(?:0%|30%|70%|100%)\s*\{([^}]*)\}/g)];
+    expect(
+      badFrames.some(([, inner]) => !inner!.includes('translate(-50%, -100%)')),
+      '合成负样本必须被判负',
+    ).toBe(true);
+  });
 });

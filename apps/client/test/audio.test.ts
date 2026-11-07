@@ -1132,6 +1132,13 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
     expect(countCue(before, CUES.MjShuffle)).toBe(1);
   });
 
+  it('局首：首版视图是 v1 lack ⇒ 播 MjShuffle（SBR seed 路径同口径）', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const before = audioContexts.length;
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'lack' }));
+    expect(countCue(before, CUES.MjShuffle)).toBe(1);
+  });
+
   it('中途挂载：首版视图是 v5 exchange ⇒ 不洗牌；进入 play 也不补发牌声', async () => {
     const { wrapper, socket } = mountTable(0);
     const before = audioContexts.length;

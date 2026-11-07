@@ -48,16 +48,8 @@ import MahjongRiver from './MahjongRiver.vue';
 import MahjongHub from './MahjongHub.vue';
 import MahjongTile from './MahjongTile.vue';
 import MahjongHuBanner from './MahjongHuBanner.vue';
-import MahjongActionBar from './MahjongActionBar.vue';
+import MahjongActionBar, { type ActionBarAction } from './MahjongActionBar.vue';
 import { haptic } from '../../../feedback/haptics';
-
-/** ActionBar 的 action 载荷（与 MahjongActionBar.vue 的 `ActionBarAction` 同构）。 */
-type ActionBarEvent =
-  | { kind: 'claim'; option: MahjongClaimOption }
-  | { kind: 'pass' }
-  | { kind: 'discard' }
-  | { kind: 'exchange' }
-  | { kind: 'lack'; suit: MahjongSuit };
 
 const props = defineProps<{
   view: MahjongPlayerView | null;
@@ -282,7 +274,10 @@ const dealEpoch = ref<number | null>(
 watch(
   () => props.view?.state,
   (to, from) => {
-    if (to === 'exchange' && from !== 'exchange') {
+    // 与挂载谓词（dealEpoch 初值）同口径：新局只可能是 v1（服务端每局重置 version）；
+    // v>1 进入 exchange 只可能是中途挂载/重连，不重播发牌。当前不可达（同局 v>1 不会回 exchange），
+    // 但缺这道闸时重连/回放类变化会误播整手发牌动画。
+    if (to === 'exchange' && from !== 'exchange' && props.view?.version === 1) {
       dealEpoch.value = props.view?.version ?? null;
     }
   },
@@ -482,7 +477,7 @@ function onClaimOption(opt: MahjongClaimOption): void {
 }
 
 /** ActionBar 唯一出口：翻译成协议动作。 */
-function onActionBarAction(action: ActionBarEvent): void {
+function onActionBarAction(action: ActionBarAction): void {
   switch (action.kind) {
     case 'discard':
       onDiscard();

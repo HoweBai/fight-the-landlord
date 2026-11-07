@@ -139,11 +139,14 @@ $ftl-ease: cubic-bezier(.22, 1, .36, 1);
 }
 
 /// 胡牌 banner 飞出：起始态可见 transform-only；停留 0.4s 后 100% 才淡出。
+/// ⚠️ 图钉居中 `translate(-50%, -100%)` 必须烘焙进**每一帧**：动画期间 keyframe 的
+/// transform 会整体覆盖组件基类的居中 transform，写成 `transform: none` 会让 banner
+/// 在可见停留期以左上角对齐锚点（而非底边中点）。
 @keyframes ftl-hu-banner {
-  0%   { transform: scale(1.4) translateY(-10px); opacity: 1; }
-  30%  { transform: none; opacity: 1; }
-  70%  { transform: none; opacity: 1; }
-  100% { transform: scale(0.9) translateY(-20px); opacity: 0; }
+  0%   { transform: translate(-50%, -100%) scale(1.4) translateY(-10px); opacity: 1; }
+  30%  { transform: translate(-50%, -100%); opacity: 1; }
+  70%  { transform: translate(-50%, -100%); opacity: 1; }
+  100% { transform: translate(-50%, -100%) scale(0.9) translateY(-20px); opacity: 0; }
 }
 
 // —— 麻将 Batch 3 动画（2026-10-28）——
