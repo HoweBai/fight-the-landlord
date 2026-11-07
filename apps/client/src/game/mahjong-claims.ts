@@ -29,23 +29,14 @@ export interface VisibleDiscardsOpts {
 }
 
 /**
- * 返回某条牌河的可见弃牌（claimed 过滤后的数组）。
- *
- * 算法（v12 §1）：
- *  1. `counts[type]` = 该座（`fromSeat === seat`；`seat` 省略时全量）每张副露的计数，
- *     副露以 `tiles[0]` 的 type 归类；
- *  2. claim 窗口（`claim:` 且来源座匹配）保护 `raw.length - 1`（当前 claim 牌）；
- *  3. 对每个 type，从后往前收集候选（排除受保护位），隐藏前 `count` 张；
- *  4. 按原始顺序返回剩余牌，不修改 `raw` / `melds`。
- *
- * 已知边界（v12 §1）：claim 之后同座又打同 type 时，latest-first 可能藏掉后打的真牌；
- * view 无 claim 顺序字段，记录为已知限制。
+ * claimed 过滤的唯一实现：返回应当隐藏的绝对下标集合。
+ * `visibleDiscards` 与 `visibleIndexMap` 共用它，禁止各写一份算法。
  */
-export function visibleDiscards(
+function hiddenIndices(
   raw: readonly Tile[],
   melds: readonly (readonly MahjongMeldView[])[],
   opts: VisibleDiscardsOpts,
-): Tile[] {
+): Set<number> {
   const seat = opts.seat ?? null;
 
   const counts = new Map<number, number>();
@@ -81,7 +72,45 @@ export function visibleDiscards(
     for (const index of candidates.slice(0, count)) hidden.add(index);
   }
 
+  return hidden;
+}
+
+/**
+ * 返回某条牌河的可见弃牌（claimed 过滤后的数组）。
+ *
+ * 算法（v12 §1）：
+ *  1. `counts[type]` = 该座（`fromSeat === seat`；`seat` 省略时全量）每张副露的计数，
+ *     副露以 `tiles[0]` 的 type 归类；
+ *  2. claim 窗口（`claim:` 且来源座匹配）保护 `raw.length - 1`（当前 claim 牌）；
+ *  3. 对每个 type，从后往前收集候选（排除受保护位），隐藏前 `count` 张；
+ *  4. 按原始顺序返回剩余牌，不修改 `raw` / `melds`。
+ *
+ * 已知边界（v12 §1）：claim 之后同座又打同 type 时，latest-first 可能藏掉后打的真牌；
+ * view 无 claim 顺序字段，记录为已知限制。
+ */
+export function visibleDiscards(
+  raw: readonly Tile[],
+  melds: readonly (readonly MahjongMeldView[])[],
+  opts: VisibleDiscardsOpts,
+): Tile[] {
+  const hidden = hiddenIndices(raw, melds, opts);
   return raw.filter((_, index) => !hidden.has(index));
+}
+
+/**
+ * 绝对索引 → 可见索引（`visibleDiscards` 结果里的下标）。
+ *
+ * 被 claimed 隐藏或越界（含 `-1` 哨兵）一律映射为 `-1`；其余按可见数组顺序
+ * 递增编号。与 `visibleDiscards` 共享同一套隐藏判定，保证两者永不失配。
+ */
+export function visibleIndexMap(
+  raw: readonly Tile[],
+  melds: readonly (readonly MahjongMeldView[])[],
+  opts: VisibleDiscardsOpts,
+): number[] {
+  const hidden = hiddenIndices(raw, melds, opts);
+  let next = 0;
+  return raw.map((_, index) => (hidden.has(index) ? -1 : next++));
 }
 
 export interface RiverWindow {

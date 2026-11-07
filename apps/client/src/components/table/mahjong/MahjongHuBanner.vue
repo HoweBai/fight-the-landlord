@@ -3,6 +3,8 @@
  * 胡牌 banner（浮动 view，position: absolute; z-index: 10）。
  * 动画结束后 emit('done') 让父组件 FIFO 队列下一条。
  *
+ * v13 §10.3：定位改用布局输出的画布锚点 `{ x, y }`（px），不再用画布百分比。
+ *
  * Batch 2 闸纪律：
  *   - 起始态全可见（动画起始 opacity:1，闸纪律要求）
  *   - 0.8s 内 transform 缩放 → 停留 → 淡出（100% 才 opacity:0）
@@ -10,25 +12,30 @@
  */
 import { computed } from 'vue';
 
+interface HuBannerAnchor {
+  x: number;
+  y: number;
+}
+
 const props = withDefaults(defineProps<{
   seat: number;
   fan: number;
   /** 自摸还是点炮胡（protocol 字段名 selfDraw，不是 isZimo）。 */
   selfDraw: boolean;
-  /** 座位位置（百分比），由 Board.vue directionOf 算出。 */
-  leftPct: number;
-  topPct: number;
-}>(), { fan: 0, selfDraw: false, leftPct: 50, topPct: 50 });
+  /** 画布锚点（px）；由 Board 从 `layout.bannerAnchors[slot]` 传入。 */
+  anchor: HuBannerAnchor;
+}>(), { fan: 0, selfDraw: false, anchor: () => ({ x: 0, y: 0 }) });
 
 const emit = defineEmits<{ (e: 'done'): void }>();
 
 const bannerStyle = computed(() => ({
-  left: `${props.leftPct}%`,
-  top: `${props.topPct}%`,
+  left: `${props.anchor.x}px`,
+  top: `${props.anchor.y}px`,
 }));
 
 function onAnimEnd(e: AnimationEvent): void {
-  if (e.animationName === 'ftl-hu-banner') emit('done');
+  // `startsWith`：未来若加 reduced-motion 变体（ftl-hu-banner-*）也能出队。
+  if (e.animationName.startsWith('ftl-hu-banner')) emit('done');
 }
 </script>
 

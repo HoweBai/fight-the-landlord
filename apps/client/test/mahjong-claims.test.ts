@@ -7,7 +7,7 @@ import {
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
-import { claimSource, riverWindow, visibleDiscards } from '../src/game/mahjong-claims';
+import { claimSource, riverWindow, visibleDiscards, visibleIndexMap } from '../src/game/mahjong-claims';
 
 /**
  * T2：claimed 过滤 / 牌河窗口 / claimSource 纯函数。
@@ -167,6 +167,41 @@ describe('visibleDiscards', () => {
     expect(visible).not.toBe(raw);
     expect(raw).toEqual(rawSnapshot);
     expect(melds).toEqual(meldsSnapshot);
+  });
+});
+
+describe('visibleIndexMap', () => {
+  it('claim 窗口 [5,3,5] + 碰走旧 5 → [-1,0,1]（与 visibleDiscards 同源）', () => {
+    const raw = [t(0, 5), t(0, 3), t(0, 5)];
+    const opts = {
+      phase: 'claim' as const,
+      windowId: 'claim:3',
+      sourceSeat: 0,
+      seat: 0,
+    };
+    expect(visibleIndexMap(raw, meldsFromSeat0(), opts)).toEqual([-1, 0, 1]);
+    // 两张数组同源：可见数组逐张等于「映射值递增对应的绝对张」。
+    const visible = visibleDiscards(raw, meldsFromSeat0(), opts);
+    expect(visible).toEqual([raw[1], raw[2]]);
+  });
+
+  it('play 两张 5 万副露 → [-1,0,-1]', () => {
+    const raw = [t(0, 5), t(0, 3), t(0, 5)];
+    const melds = meldsAt([
+      [1, { kind: 'peng', tiles: threeOf(0, 5), fromSeat: 0 }],
+      [1, { kind: 'gang', tiles: fourOf(0, 5), fromSeat: 0 }],
+    ]);
+    expect(visibleIndexMap(raw, melds, { phase: 'play', seat: 0 })).toEqual([-1, 0, -1]);
+    expect(visibleDiscards(raw, melds, { phase: 'play', seat: 0 })).toEqual([raw[1]]);
+  });
+
+  it('空 raw → []', () => {
+    expect(visibleIndexMap([], meldsFromSeat0(), { phase: 'play', seat: 0 })).toEqual([]);
+  });
+
+  it('无副露 → 恒等映射 0..n-1', () => {
+    const raw = [t(0, 1), t(1, 2), t(2, 3)];
+    expect(visibleIndexMap(raw, [[], [], [], []], { phase: 'play', seat: 0 })).toEqual([0, 1, 2]);
   });
 });
 

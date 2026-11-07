@@ -2,6 +2,10 @@
 /**
  * 对手手牌区（哑组件）：牌背横排/竖排；已胡者用亮牌替换牌背。
  * 只渲染 props，不判规则、不取数。
+ *
+ * 发牌契约（v6 §4 / Task 8）：
+ *  - `dealNonce` 非空时牌背挂 `anim-deal-in`；key 为 `${dealNonce ?? 'seed'}-${i}`；
+ *  - `tail` 为真时最后一张是「摸牌尾部」：独立 key、不挂发牌类（13→14 不重播发牌）。
  */
 import { computed } from 'vue';
 import type { Tile } from '@fight-the-landlord/protocol';
@@ -21,8 +25,12 @@ const props = withDefaults(
     pitch?: number;
     /** 已胡者亮牌；非空时完全替换牌背。 */
     revealed?: { tiles: Tile[]; huTile: Tile } | null;
+    /** 发牌 epoch 哨兵：非空 ⇒ 牌背播发牌动画。 */
+    dealNonce?: number | null;
+    /** 最后一张是摸牌尾部：独立 key、不播发牌动画。 */
+    tail?: boolean;
   }>(),
-  { gap: 0, pitch: 0, revealed: null },
+  { gap: 0, pitch: 0, revealed: null, dealNonce: null, tail: false },
 );
 
 const shown = computed(() => Math.max(0, Math.min(14, Math.floor(props.count))));
@@ -30,6 +38,19 @@ const vertical = computed(() => props.direction === 'left' || props.direction ==
 const overlapTop = computed(() =>
   vertical.value && props.pitch > 0 ? props.pitch - props.tileH : 0,
 );
+
+/** 第 `i` 张（1-based）是否摸牌尾部。 */
+function isTail(i: number): boolean {
+  return props.tail && i === shown.value;
+}
+
+function backKey(i: number): string {
+  return isTail(i) ? `tail-${i}` : `${props.dealNonce ?? 'seed'}-${i}`;
+}
+
+function backAnimated(i: number): boolean {
+  return props.dealNonce != null && !isTail(i);
+}
 </script>
 
 <template>
@@ -53,11 +74,12 @@ const overlapTop = computed(() =>
     <template v-else>
       <MahjongTile
         v-for="i in shown"
-        :key="`back-${i}`"
+        :key="backKey(i)"
         back
         :direction="direction"
         :w="tileW"
         :h="tileH"
+        :class="{ 'anim-deal-in': backAnimated(i) }"
         :style="i > 1 && overlapTop !== 0 ? { marginTop: `${overlapTop}px` } : undefined"
       />
     </template>

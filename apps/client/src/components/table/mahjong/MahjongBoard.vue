@@ -1,15 +1,19 @@
 <script setup lang="ts">
 /**
- * 四川麻将·血战到底牌桌（T11）。
+ * 四川麻将·血战到底牌桌（红金牌桌 v2 装配）。
  *
  * 与 DdzBoard/PdkBoard 同一套边界：只收 props、只 emit（不读 store）；
  * 所有合法性/番数/可响应动作都来自 `MahjongPlayerView`（`claimsForMe`/`activeSeats`/
  * `tingTiles` 等），客户端只做**展示性**选择与按钮禁用。
  *
- * 多行动者窗口：`activeSeats` 含我 ⇒ 本窗口轮到我；动作原样回传 `view.windowId`
- *（服务端用它接受窗口内的过期 baseVersion）。
+ * 装配契约：
+ *  - 布局：`mahjongTableLayoutV2`（固定 1334×750 base，u/offset 缩放居中）；
+ *  - 牌河：claimed 过滤（`visibleDiscards`）后的可见数组 + 布局窗口字段；
+ *  - claim：来源座最后一枚弃牌由 `claimSourceIndex` 描边/可点，rob 无弃牌点击；
+ *  - last-discard：`lastDiscardAbs` 记 serverDiscards 绝对下标，再映射到可见窗口；
+ *  - 发牌：`dealEpoch`/`dealNonce`（挂载即 v1 exchange/lack 播，v>1 seed）。
  */
-import { computed, inject, ref, watch, onMounted } from 'vue';
+import { computed, inject, ref, watch } from 'vue';
 import {
   MAHJONG_SUIT_NAMES,
   sortTiles,
@@ -17,20 +21,43 @@ import {
   type MahjongAction,
   type MahjongClaimOption,
   type MahjongMeldView,
+  type MahjongPhase,
   type MahjongPlayerView,
   type MahjongSuit,
   type Tile,
 } from '@fight-the-landlord/protocol';
 import { CANVAS_METRICS_KEY } from '../../../composables/useLandscapeCanvas';
-import { mahjongTableLayout, type Rect } from '../../../game/mahjong-layout';
+import {
+  mahjongTableLayoutV2,
+  type Rect,
+  type RiverLayoutV2,
+  type SeatLoadV2,
+  type TableInputV2,
+} from '../../../game/mahjong-layout-v2';
+import {
+  claimSource,
+  visibleDiscards,
+  visibleIndexMap,
+  type ClaimSourceInfo,
+  type VisibleDiscardsOpts,
+} from '../../../game/mahjong-claims';
+import { meldKey } from '../../../game/mahjong-keys';
 import MahjongSeatChip from './MahjongSeatChip.vue';
 import MahjongHandBacks from './MahjongHandBacks.vue';
 import MahjongRiver from './MahjongRiver.vue';
-import MahjongCenter from './MahjongCenter.vue';
+import MahjongHub from './MahjongHub.vue';
 import MahjongTile from './MahjongTile.vue';
 import MahjongHuBanner from './MahjongHuBanner.vue';
-import ClaimTile from './ClaimTile.vue';
+import MahjongActionBar from './MahjongActionBar.vue';
 import { haptic } from '../../../feedback/haptics';
+
+/** ActionBar 的 action 载荷（与 MahjongActionBar.vue 的 `ActionBarAction` 同构）。 */
+type ActionBarEvent =
+  | { kind: 'claim'; option: MahjongClaimOption }
+  | { kind: 'pass' }
+  | { kind: 'discard' }
+  | { kind: 'exchange' }
+  | { kind: 'lack'; suit: MahjongSuit };
 
 const props = defineProps<{
   view: MahjongPlayerView | null;
@@ -64,28 +91,77 @@ const sortedRevealedHands = computed(() =>
   props.view?.revealedHands.map((r) => ({ ...r, tiles: sortTiles(r.tiles) })) ?? [],
 );
 
-// —— 比例布局（Task 8）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
+// —— 布局（v2）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
 const stageMetrics = inject(CANVAS_METRICS_KEY, null);
 const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
 const canvasH = computed(() =>
   Number.isFinite(canvas.value.height) && canvas.value.height > 0 ? canvas.value.height : 750,
 );
 
-function seatLoad(seat: number) {
+const view = computed(() => props.view);
+const phase = computed(() => props.view?.state ?? null);
+const hubPhase = computed<MahjongPhase>(() => phase.value ?? 'draw');
+const currentPlayer = computed(() => props.view?.currentPlayer ?? 0);
+const hand = computed<readonly Tile[]>(() => sortTiles(props.view?.hand ?? []));
+const myRevealed = computed(
+  () => sortedRevealedHands.value.find((r) => r.seat === me.value) ?? null,
+);
+const wallCount = computed(() => props.view?.wallCount ?? 0);
+const dealerSeat = computed(() => props.view?.dealerSeat ?? 0);
+const activeSeats = computed<number[]>(() => [...(props.view?.activeSeats ?? [])]);
+const amActive = computed(() => activeSeats.value.includes(me.value));
+const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsForMe ?? [])]);
+const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
+const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
+const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
+
+/** claim/rob 窗口的「来源」：来源座最后一枚弃牌 / rob 的碰来源 key。 */
+const claimSrc = computed<ClaimSourceInfo>(() =>
+  props.view
+    ? claimSource(props.view, me.value)
+    : { tile: null, sourceSeat: null, canClick: false, claimSourceMeldKey: null },
+);
+
+const meldsBySeat = computed<MahjongMeldView[][]>(() => props.view?.melds ?? [[], [], [], []]);
+const serverDiscards = computed<Tile[][]>(() => props.view?.discards ?? [[], [], [], []]);
+
+/** 每座 claimed 过滤后的可见弃牌（渲染/窗口/计数的唯一口径）。 */
+function visibleOptsFor(seat: number): VisibleDiscardsOpts {
   return {
-    discards: (props.view?.discards[seat] ?? []).length,
-    melds: (props.view?.melds[seat] ?? []).length,
+    phase: phase.value ?? 'play',
+    windowId: props.view?.windowId ?? null,
+    seat,
+    sourceSeat: claimSrc.value.sourceSeat === seat ? seat : null,
   };
 }
-const loads = computed(() => ({
-  top: seatLoad(topSeat.value),
-  left: seatLoad(leftSeat.value),
-  right: seatLoad(rightSeat.value),
-  self: seatLoad(me.value),
-}));
+const visibleBySeat = computed<Tile[][]>(() => {
+  if (!props.view) return [[], [], [], []];
+  return [0, 1, 2, 3].map((seat) =>
+    visibleDiscards(serverDiscards.value[seat] ?? [], meldsBySeat.value, visibleOptsFor(seat)),
+  );
+});
+
+const loads = computed<TableInputV2>(() => {
+  const seatLoad = (seat: number): SeatLoadV2 => ({
+    discards: visibleBySeat.value[seat]?.length ?? 0,
+    melds: (props.view?.melds[seat] ?? []).map((m) => m.tiles.length),
+    revealedCount: sortedRevealedHands.value.find((r) => r.seat === seat)?.tiles.length ?? 0,
+  });
+  return {
+    bySlot: {
+      self: seatLoad(me.value),
+      top: seatLoad(topSeat.value),
+      left: seatLoad(leftSeat.value),
+      right: seatLoad(rightSeat.value),
+    },
+    phase: phase.value ?? 'play',
+    tingCount: tingTiles.value.length,
+  };
+});
 const layout = computed(() =>
-  mahjongTableLayout(canvas.value.width, canvas.value.height, loads.value),
+  mahjongTableLayoutV2(canvas.value.width, canvas.value.height, loads.value),
 );
+
 function rectStyle(r: Rect) {
   return {
     position: 'absolute' as const,
@@ -98,34 +174,71 @@ function rectStyle(r: Rect) {
 const handStyle = computed(() => ({
   ...rectStyle(layout.value.hand.rect),
   gap: `${layout.value.hand.gap}px`,
-  '--mj-tile-lift': `${10 * layout.value.s}px`,
+  '--mj-tile-lift': `${10 * layout.value.u}px`,
 }));
-const actionsStyle = computed(() => ({
-  position: 'absolute' as const,
-  right: `${layout.value.actions.rightOffset}px`,
-  bottom: `${layout.value.actions.bottomOffset}px`,
-  maxWidth: `${layout.value.actions.maxWidth}px`,
-  minHeight: `${layout.value.actions.minHeight}px`,
-  zIndex: 3,
+const tingStyle = computed(() => ({
+  ...rectStyle(layout.value.ting),
+  gap: `${2 * layout.value.u}px`,
 }));
+/** 动作区在河/副露之上（河内副露条带 z-index: 1）。 */
+const actionsStyle = computed(() => ({ ...rectStyle(layout.value.actions), zIndex: 3 }));
 const trusteeMaskStyle = computed(() => ({
-  bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.s)}px`,
+  bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.u)}px`,
 }));
 
-const view = computed(() => props.view);
-const phase = computed(() => props.view?.state ?? null);
-const hand = computed<readonly Tile[]>(() => sortTiles(props.view?.hand ?? []));
-const myRevealed = computed(
-  () => sortedRevealedHands.value.find((r) => r.seat === me.value) ?? null,
+// —— last-discard：serverDiscards 绝对下标 → 可见窗口 latest ——
+const initialDiscards = props.view?.discards ?? [];
+function seededLastAbs(seat: number): number | null {
+  const len = initialDiscards[seat]?.length ?? 0;
+  return len > 0 ? len - 1 : null;
+}
+const lastDiscardAbs = ref<Array<number | null>>([0, 1, 2, 3].map(seededLastAbs));
+const prevDiscardLens = ref<number[]>([0, 1, 2, 3].map((seat) => initialDiscards[seat]?.length ?? 0));
+
+watch(
+  () => (props.view?.discards ?? []).map((d) => d.length),
+  (lens) => {
+    for (let seat = 0; seat < 4; seat += 1) {
+      const len = lens[seat] ?? 0;
+      const prev = prevDiscardLens.value[seat] ?? 0;
+      if (len > prev) lastDiscardAbs.value[seat] = len - 1;
+      else if (len < prev) lastDiscardAbs.value[seat] = null;
+      prevDiscardLens.value[seat] = len;
+    }
+  },
 );
-const wallCount = computed(() => props.view?.wallCount ?? 0);
-const dealerSeat = computed(() => props.view?.dealerSeat ?? 0);
-const activeSeats = computed<readonly number[]>(() => props.view?.activeSeats ?? []);
-const amActive = computed(() => activeSeats.value.includes(me.value));
-const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsForMe ?? [])]);
-const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
-const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
-const tingTiles = computed<readonly Tile[]>(() => props.view?.tingTiles ?? []);
+
+/** 该座最后一张弃牌在当前窗口里的下标；被 claimed 隐藏/不在窗口 ⇒ null（不亮旧牌）。 */
+function latestIndexFor(seat: number, river: RiverLayoutV2): number | null {
+  const abs = lastDiscardAbs.value[seat];
+  if (abs == null) return null;
+  const map = visibleIndexMap(
+    serverDiscards.value[seat] ?? [],
+    meldsBySeat.value,
+    visibleOptsFor(seat),
+  );
+  const vis = map[abs];
+  if (vis == null || vis < 0) return null;
+  if (vis < river.windowStart || vis >= river.windowStart + river.windowCount) return null;
+  return vis - river.windowStart;
+}
+
+// —— 发牌：dealEpoch / dealNonce（挂载即 v1 exchange/lack 播；v>1 / 中途进房 seed） ——
+const dealEpoch = ref<number | null>(
+  props.view &&
+    props.view.version === 1 &&
+    (props.view.state === 'exchange' || props.view.state === 'lack')
+    ? 1
+    : null,
+);
+watch(
+  () => props.view?.state,
+  (to, from) => {
+    if (to === 'exchange' && from !== 'exchange') {
+      dealEpoch.value = props.view?.version ?? null;
+    }
+  },
+);
 
 /** 手牌可选的条件：交互开启 + 未结算 + （换三张窗口 | 出牌窗口）。 */
 const handSelectable = computed(() => {
@@ -140,20 +253,18 @@ const selected = ref<number[]>([]);
 // 双击出牌需要的追踪状态（T4 Batch 1）
 const lastClickIndex = ref<number>(-1);
 const lastClickTime = ref<number>(0);
-// T6 Batch 2：出牌 fly-out 追踪（B2 阻断修法：watch hand 变化时 reset）
-const flyingOutIndex = ref(-1);
 // T4 Batch 2：胡牌 banner 增量判定 + FIFO queue（H3 修法 + B2 跨局 reset）
 const seenHuSeats = new Set<number>();
 const bannerQueue = ref<Array<{ seat: number; fan: number; selfDraw: boolean }>>([]);
 const currentBanner = ref<typeof bannerQueue.value[0] | null>(null);
+const bannerSeq = ref(0);
+/** 当前 banner 是在哪一版 view 上展示的（reduced-motion 只认**之后**的版本变化）。 */
+const bannerAtVersion = ref<number | null>(null);
 // T7 Batch 2：副露 pop 增量判定防中途进入爆炸（B3 阻断修法）
 const initialBootDone = ref(false);
 const seenMeldKeys = new Set<string>();
 const newMeldKeySet = ref<Set<string>>(new Set());
 
-function meldKey(seat: number, m: MahjongMeldView): string {
-  return `${seat}:${m.kind}:${m.tiles.map(tileType).join('_')}`;
-}
 // 只在**手牌内容**变化时清空选择：换三张阶段别人提交也会 bump version，
 // 若把 version 纳入 watch 源，我正在选的第 2/3 张会被别人的动作清掉。
 watch(
@@ -161,8 +272,6 @@ watch(
   () => {
     selected.value = [];
     lastClickIndex.value = -1;
-    // T6 Batch 2：fly-out 追踪在手牌变化时 reset（B2 阻断修法）
-    flyingOutIndex.value = -1;
   },
 );
 
@@ -212,14 +321,17 @@ watch(
   },
 );
 
-/** display 顺序：sorted 13 + 摸牌单独移到行尾；找不到幽灵牌就退回原文。 */
-const displayTiles = computed<Array<{ tile: Tile; drawn: boolean }>>(() => {
-  const entries = hand.value.map((tile) => ({ tile, drawn: false }));
+/** display 顺序：sorted 13 + 摸牌单独移到行尾；找不到幽灵牌就退回原文。
+ *  每张 entry 带 `dealNonce` 哨兵：非摸牌 = dealEpoch，摸牌 = null（不重播发牌）。 */
+const displayTiles = computed<
+  Array<{ tile: Tile; drawn: boolean; dealNonce: number | null }>
+>(() => {
+  const entries = hand.value.map((tile) => ({ tile, drawn: false, dealNonce: dealEpoch.value }));
   if (drawnType.value === null) return entries;
   const idx = entries.findIndex((e) => tileType(e.tile) === drawnType.value);
   if (idx < 0) return entries;
   const [entry] = entries.splice(idx, 1);
-  return [...entries, { tile: entry!.tile, drawn: true }];
+  return [...entries, { tile: entry!.tile, drawn: true, dealNonce: null }];
 });
 
 function onTileClick(index: number): void {
@@ -243,8 +355,6 @@ function onTileClick(index: number): void {
   if (isDoubleClick) {
     const entry = displayTiles.value[index];
     if (entry && !props.busy) {
-      // T6 Batch 2：fly-out 追踪在 submit 前赋值（B2+H4 修法）
-      flyingOutIndex.value = index;
       submit({ type: 'discard', tile: entry.tile });
       selected.value = [];
       lastClickIndex.value = -1;
@@ -298,32 +408,11 @@ function selfGangAction(tile: Tile): MahjongAction {
     ? { type: 'concealedGang', tile }
     : { type: 'addedGang', tile };
 }
-function claimLabel(opt: MahjongClaimOption): string {
-  if (opt.claim === 'hu') {
-    const fanPart = opt.fan ? `${opt.fan} 番` : '';
-    return `${fanPart}${phase.value === 'play' ? '自摸胡' : '胡'}`;
-  }
-  if (opt.claim === 'gang') {
-    if (phase.value === 'play' && opt.tile) {
-      return selfGangAction(opt.tile).type === 'concealedGang' ? '暗杠' : '补杠';
-    }
-    return '杠';
-  }
-  if (opt.claim === 'peng') return '碰';
-  return '过';
-}
 
-// —— Batch 3 新增：ClaimTile 组件用的 submit 函数（阻断 B1 修法）——
-function submitClaim(opt: MahjongClaimOption) {
-  submit({ type: 'claim', claim: opt.claim });
-}
-function submitPass() {
+function submitPass(): void {
   // pass 是 MahjongClaim 四值之一（不是 MahjongAction type）
   submit({ type: 'claim', claim: 'pass' });
 }
-const canPass = computed(() =>
-  (phase.value === 'claim' || phase.value === 'play') && myClaims.value.length > 0,
-);
 function onClaimOption(opt: MahjongClaimOption): void {
   if (props.busy) return;
   if (phase.value === 'play') {
@@ -333,14 +422,27 @@ function onClaimOption(opt: MahjongClaimOption): void {
   }
   submit({ type: 'claim', claim: opt.claim });
 }
-function claimKey(opt: MahjongClaimOption, index: number): string {
-  return `${opt.claim}:${opt.tile ? tileType(opt.tile) : 'x'}:${index}`;
-}
 
-/** 当前窗口里第一个可响应的牌（用于中央提示）。 */
-const claimTile = computed<Tile | null>(
-  () => myClaims.value.find((o) => o.tile !== undefined)?.tile ?? null,
-);
+/** ActionBar 唯一出口：翻译成协议动作。 */
+function onActionBarAction(action: ActionBarEvent): void {
+  switch (action.kind) {
+    case 'discard':
+      onDiscard();
+      break;
+    case 'exchange':
+      onExchange();
+      break;
+    case 'lack':
+      onLack(action.suit);
+      break;
+    case 'pass':
+      submitPass();
+      break;
+    case 'claim':
+      onClaimOption(action.option);
+      break;
+  }
+}
 
 function nameOf(seat: number): string {
   if (seat === me.value) return '我';
@@ -365,48 +467,35 @@ function directionOf(seat: number): Direction {
   return 'my'; // 兜底
 }
 
-// —— Batch 4 D 组：claim 窗口多家 active 差异化发光 ——
-/** claim 窗口最早 active = strong，其余 weak；其他窗口统一 strong。 */
-function seatActiveLevel(seat: number): 'strong' | 'weak' | null {
-  const idx = activeSeats.value.indexOf(seat);
-  if (idx === -1) return null;
-  if (phase.value === 'claim') {
-    return idx === 0 ? 'strong' : 'weak';
-  }
-  return 'strong';
+/** 座位 → banner 锚点槽位（v13 §10.3：布局输出画布 px）。 */
+function slotOf(seat: number): 'top' | 'left' | 'right' | 'self' {
+  if (seat === me.value) return 'self';
+  if (seat === topSeat.value) return 'top';
+  if (seat === leftSeat.value) return 'left';
+  return 'right';
 }
 
-// —— Batch 4 A 组：弃牌点击过滤 ——
-const discardClickTarget = ref<Tile | null>(null);
-
-/** 弃牌点击 handler：只在 claim 窗口 + 我 active + 该座是本次 claim 来源座时响应。 */
-function onSeatDiscardClick(seat: number, payload: { tile: Tile; index: number }) {
-  // Task 8 会消费 payload.index / River 的 claimSourceIndex（窗口相对来源描边）。
-  const tile = payload.tile;
-  if (phase.value !== 'claim' || !amActive.value) return;
-  if (props.settlementArrived) return;
-  // claim 窗口的 currentPlayer 就是弃牌/杠牌者（本次待响应来源）
-  if (seat !== (props.view?.currentPlayer ?? -1)) return;
-  // 再次点击同一张 → 取消过滤
-  if (discardClickTarget.value && tileType(discardClickTarget.value) === tileType(tile)) {
-    discardClickTarget.value = null;
-    return;
+// —— v5 §2.7：四相位静态金边 ——
+/** claim/rob：我可响应 strong、来源/杠家 line；play：currentPlayer strong；
+ *  exchange/lack：只看我；ended：无（赢家由 winner 单独标记）。 */
+function seatActiveLevel(seat: number): 'strong' | 'line' | null {
+  switch (phase.value) {
+    case 'claim':
+    case 'rob':
+      if (seat === me.value && amActive.value) return 'strong';
+      if (seat === props.view?.currentPlayer) return 'line';
+      return null;
+    case 'play':
+      return seat === props.view?.currentPlayer ? 'strong' : null;
+    case 'exchange':
+    case 'lack':
+      return seat === me.value && amActive.value ? 'strong' : null;
+    case 'ended':
+      return null;
+    default:
+      return null;
   }
-  discardClickTarget.value = tile;
 }
-
-/** 过滤 claimsForMe：只保留 tileType 匹配的选项。
- *  阻断 B2 修法：game-service 任何 hu 都填 tile（自摸胡=lastDraw，点炮胡=弃牌），
- *  所以不写 opt.tile === undefined —— claim 窗口的 hu 就是点炮胡（tile=弃牌）。 */
-const filteredClaimsForDiscard = computed<MahjongClaimOption[]>(() => {
-  if (!discardClickTarget.value) return myClaims.value; // 未选中 → 全量
-  const tt = tileType(discardClickTarget.value);
-  return myClaims.value.filter(opt => !!opt.tile && tileType(opt.tile) === tt);
-});
-
-// 高项 H1：discardClickTarget reset 时机
-watch(phase, (to) => { if (to !== 'claim') discardClickTarget.value = null; });
-watch(myClaims, () => { discardClickTarget.value = null; }, { deep: true });
 
 // —— Batch 4 B 组：长按手牌看牌型 ——
 const handHintIndex = ref<number | null>(null);
@@ -434,26 +523,60 @@ const handHintAffected = computed(() => {
   return { tile: hintEntry.tile, stillSafe: !stillHas };
 });
 
-/** 中央提示文案（纯展示映射，不判规则）。 */
-const phaseText = computed(() => {
-  switch (phase.value) {
-    case 'exchange':
-      return amActive.value ? '换三张：选 3 张同花色' : '等待其他玩家换三张…';
-    case 'lack':
-      return amActive.value ? '定缺：选择要打空的花色' : '等待其他玩家定缺…';
-    case 'claim':
-      return amActive.value ? '请响应' : '等待其他玩家响应…';
-    case 'play':
-      return amActive.value ? '请出牌' : `等待 ${nameOf(activeSeats.value[0] ?? 0)} 出牌…`;
-    case 'ended':
-      return '本局结束';
-    default:
-      return '等待发牌…';
-  }
-});
 const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
 
-// —— Task 8：四家分区的组件 props 组装 ——
+/** 血战盘状态行（v6 §3.4）：全部以我是否 pending 分「请… / 等待…」两态。 */
+const statusText = computed(() => {
+  if (phase.value === 'ended') {
+    return endReason.value > 0 ? `已胡 ${endReason.value} 家` : '本局结束';
+  }
+  switch (phase.value) {
+    case 'exchange':
+      return amActive.value ? '选同花色3张' : '等待换三张';
+    case 'lack':
+      return amActive.value ? '请定缺' : '等待定缺';
+    case 'play':
+      return amActive.value ? '请出牌' : '等待出牌';
+    case 'claim':
+    case 'rob':
+      return amActive.value ? '请响应' : '等待响应';
+    default:
+      return '';
+  }
+});
+
+/** 血战盘四家徽标：每座最多一个，优先级 胡 > 听 > 缺 > 托管。 */
+interface HubSeatEntry {
+  seat: number;
+  dir: 'top' | 'left' | 'right' | 'self';
+  badge: 'hu' | 'ting' | 'lack' | 'trustee' | null;
+  badgeText: string;
+}
+const hubSeats = computed<HubSeatEntry[]>(() => {
+  const v = props.view;
+  if (!v) return [];
+  const entries: Array<{ seat: number; dir: HubSeatEntry['dir'] }> = [
+    { seat: topSeat.value, dir: 'top' },
+    { seat: leftSeat.value, dir: 'left' },
+    { seat: rightSeat.value, dir: 'right' },
+    { seat: me.value, dir: 'self' },
+  ];
+  return entries.map(({ seat, dir }) => {
+    const hu = v.huInfos.find((h) => h.seat === seat);
+    if (hu) {
+      return { seat, dir, badge: 'hu', badgeText: hu.fan > 0 ? `胡 ${hu.fan}` : '胡' };
+    }
+    if (v.tingSeats.includes(seat)) return { seat, dir, badge: 'ting', badgeText: '听' };
+    const lack = v.lackSuits[seat] ?? null;
+    if (lack !== null) {
+      return { seat, dir, badge: 'lack', badgeText: `缺${MAHJONG_SUIT_NAMES[lack]}` };
+    }
+    if (v.trustees[seat]) return { seat, dir, badge: 'trustee', badgeText: '托管' };
+    return { seat, dir, badge: null, badgeText: '' };
+  });
+});
+
+// —— 四家分区的组件 props 组装 ——
 function seatView(seat: number) {
   return {
     cardCount: props.view?.cardCounts[seat] ?? 0,
@@ -465,7 +588,7 @@ function seatView(seat: number) {
     revealed: sortedRevealedHands.value.find((r) => r.seat === seat) ?? null,
   };
 }
-function chipProps(seat: number, variant: 'self' | 'side' | 'bar') {
+function chipProps(seat: number, variant: 'corner-tl' | 'corner-tr' | 'corner-top' | 'self') {
   const v = seatView(seat);
   return {
     name: nameOf(seat),
@@ -478,33 +601,34 @@ function chipProps(seat: number, variant: 'self' | 'side' | 'bar') {
     trustee: v.trustee,
     ting: v.ting,
     activeLevel: seatActiveLevel(seat),
+    winner: phase.value === 'ended' && v.isOut,
     balance: seatBalance(seat),
     pendingDelta: pendingDelta(seat),
-    avatar: variant === 'bar' ? layout.value.barChip.w : layout.value.selfChip.width,
+    avatar: variant === 'self' ? 44 : 56,
     variant,
   };
 }
 function backsProps(seat: number) {
   const v = seatView(seat);
   const isTop = seat === topSeat.value;
+  const isLeft = seat === leftSeat.value;
   const backs = isTop
-    ? layout.value.topBacks
-    : seat === leftSeat.value
-      ? layout.value.leftBacks
-      : layout.value.rightBacks;
+    ? layout.value.backs.top
+    : isLeft
+      ? layout.value.backs.left
+      : layout.value.backs.right;
   const revealed = isTop ? v.revealed : null;
   const sideRevealed = !isTop && v.revealed !== null;
   return {
     count: revealed || sideRevealed ? 0 : v.cardCount,
-    direction: (isTop ? 'top' : seat === leftSeat.value ? 'left' : 'right') as
-      | 'top'
-      | 'left'
-      | 'right',
+    direction: (isTop ? 'top' : isLeft ? 'left' : 'right') as 'top' | 'left' | 'right',
     tileW: backs.tile.w,
     tileH: backs.tile.h,
-    gap: isTop ? layout.value.topBacks.gap : 0,
-    pitch: isTop ? 0 : layout.value.leftBacks.pitch,
+    gap: isTop ? layout.value.backs.top.gap : 0,
+    pitch: isTop ? 0 : isLeft ? layout.value.backs.left.pitch : layout.value.backs.right.pitch,
     revealed,
+    dealNonce: dealEpoch.value,
+    tail: v.cardCount >= 14,
   };
 }
 function riverMelds(seat: number) {
@@ -513,20 +637,25 @@ function riverMelds(seat: number) {
     return { key, meld: m, pop: newMeldKeySet.value.has(key) };
   });
 }
+function riverOf(seat: number): RiverLayoutV2 {
+  if (seat === topSeat.value) return layout.value.rivers.top;
+  if (seat === leftSeat.value) return layout.value.rivers.left;
+  if (seat === rightSeat.value) return layout.value.rivers.right;
+  return layout.value.rivers.self;
+}
+/** 布局输出的是画布坐标；River 内收到的 badge/meld 矩形必须是**河内局部坐标**（v11 §2）。 */
+function localRect(r: Rect | null, origin: Rect): Rect | null {
+  return r
+    ? { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height }
+    : null;
+}
 function riverProps(seat: number) {
-  const l = layout.value;
-  const isTop = seat === topSeat.value;
+  const river = riverOf(seat);
   const isLeft = seat === leftSeat.value;
-  const river = isTop
-    ? l.topRiver
-    : isLeft
-      ? l.leftRiver
-      : seat === rightSeat.value
-        ? l.rightRiver
-        : l.ownRiver;
-  const v = seatView(seat);
+  const isRight = seat === rightSeat.value;
+  const isSource = claimSrc.value.canClick && claimSrc.value.sourceSeat === seat;
   return {
-    discards: props.view?.discards[seat] ?? [],
+    discards: visibleBySeat.value[seat] ?? [],
     melds: riverMelds(seat),
     direction: directionOf(seat),
     tileW: river.tile.w,
@@ -534,57 +663,63 @@ function riverProps(seat: number) {
     gap: river.gap,
     cols: river.cols,
     rows: river.rows,
-    meldTileW: river.meld.tile.w,
-    meldTileH: river.meld.tile.h,
+    meldTileW: river.meld.tileW,
+    meldTileH: river.meld.tileH,
     meldOverlap: river.meld.overlap,
-    meldPlacement: river.meld.placement,
-    meldGap: river.meld.gap,
     meldGroupGap: river.meld.groupGap,
-    meldHeight: river.meld.height,
-    filterTileType: discardClickTarget.value ? tileType(discardClickTarget.value) : null,
-    interactive:
-      phase.value === 'claim' &&
-      amActive.value &&
-      seat === (props.view?.currentPlayer ?? -1),
-    revealed: isLeft || seat === rightSeat.value ? v.revealed : null,
+    // River 的 legacy 必填 prop（meldRect 恒传，走局部坐标分支，不再使用它们）。
+    meldPlacement: 'above' as const,
+    meldGap: 0,
+    meldHeight: 0,
+    interactive: isSource,
+    claimSourceIndex: isSource && river.latestIndex >= 0 ? river.latestIndex : null,
+    revealed: isLeft || isRight
+      ? (sortedRevealedHands.value.find((r) => r.seat === seat) ?? null)
+      : null,
+    windowStart: river.windowStart,
+    windowCount: river.windowCount,
+    latestIndex: latestIndexFor(seat, river),
+    badgeCount: river.badgeCount,
+    badgeRect: localRect(river.badgeRect, river.rect),
+    meldRect: localRect(river.meldRect, river.rect),
+    laneWidth: river.laneWidth,
   };
 }
+
+const actionMode = computed<'play' | 'claim' | 'exchange' | 'lack'>(() => {
+  if (phase.value === 'rob') return 'claim';
+  if (
+    phase.value === 'play' ||
+    phase.value === 'claim' ||
+    phase.value === 'exchange' ||
+    phase.value === 'lack'
+  ) {
+    return phase.value;
+  }
+  return 'play';
+});
+const showPass = computed(() => myClaims.value.some((o) => o.claim === 'pass'));
 const hasActions = computed(() => {
   if (props.settlementArrived || props.settlementRevealed) return false;
   if (!props.interactive || !amActive.value) return false;
-  return (
-    phase.value === 'exchange' ||
-    phase.value === 'lack' ||
-    phase.value === 'play' ||
-    phase.value === 'claim'
-  );
+  switch (phase.value) {
+    case 'exchange':
+    case 'lack':
+    case 'play':
+      return true;
+    case 'claim':
+    case 'rob':
+      return myClaims.value.length > 0;
+    default:
+      return false;
+  }
 });
-const centerProps = computed(() => ({
-  wallCount: wallCount.value,
-  phaseText: phaseText.value,
-  claimTile: claimTile.value,
-  claimW: layout.value.centerTiles.claim.w,
-  claimH: layout.value.centerTiles.claim.h,
-  tingTiles: tingTiles.value,
-  tingW: layout.value.centerTiles.ting.w,
-  tingH: layout.value.centerTiles.ting.h,
-  maxFan: props.view?.maxFanForMe ?? null,
-  seconds: props.seconds,
-  active: amActive.value && !props.settlementRevealed,
-  compact: layout.value.centerCompact,
-  endedText:
-    phase.value === 'ended'
-      ? ''
-      : endReason.value > 0
-        ? `已胡 ${endReason.value} 家`
-        : '',
-}));
 
 // —— Batch 2 新增逻辑 ——
 
 /**
  * T5 Batch 2：定缺推荐。
- * 找出手牌里唯一最少花色，给对应按钮加呼吸高亮。
+ * 找出手牌里唯一最少花色，给对应按钮加静态金边高亮。
  * hand.length < 10（加载中）、counts 全相等（没有最少）、某花色=0（绝张）都不推荐。
  */
 const lackRecommendation = computed<MahjongSuit | null>(() => {
@@ -603,35 +738,18 @@ const lackRecommendation = computed<MahjongSuit | null>(() => {
   return minIdx as MahjongSuit;
 });
 
-/** T4 Batch 2：座位位置百分比（Hu banner 定位用）。 */
-function bannerPosition(seat: number): { leftPct: number; topPct: number } {
-  if (seat === me.value) return { leftPct: 50, topPct: 82 };
-  if (seat === topSeat.value) return { leftPct: 50, topPct: 20 };
-  if (seat === leftSeat.value) return { leftPct: 14, topPct: 48 };
-  return { leftPct: 86, topPct: 48 };
+// —— 胡牌 banner：bannerSeq key + FIFO；reduced-motion 由下一版/揭示出队 ——
+
+/** 复用 Hand.vue 的判据：系统开启「减少动态效果」时 animationend 不触发。 */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
-/** T4 Batch 2 + T7 Batch 2：新局开始时 reset 所有跨局 Set（B2 阻断修法）。 */
-watch(
-  () => props.view?.state,
-  (to, from) => {
-    const newRound =
-      (from === 'ended' && to === 'exchange') ||
-      (from === null && to === 'exchange') ||
-      (!!from && from !== 'exchange' && to === 'exchange');
-    if (newRound) {
-      seenHuSeats.clear();
-      bannerQueue.value = [];
-      currentBanner.value = null;
-      seenMeldKeys.clear();
-      newMeldKeySet.value.clear();
-      initialBootDone.value = false;
-      // onMounted 已跑过，手动标记初始为 true（已由上面 clear 重置）
-      // 新局第一次服务端推 melds 时会触发 watch，从空数组开始算增量
-      initialBootDone.value = true;
-    }
-  },
-);
+function showNextBanner(): void {
+  bannerSeq.value += 1;
+  currentBanner.value = bannerQueue.value.shift() ?? null;
+  bannerAtVersion.value = props.view?.version ?? null;
+}
 
 /** T4 Batch 2：胡牌 banner FIFO —— diff Set 找新增 seat（H3 修法）。 */
 watch(
@@ -652,20 +770,39 @@ watch(
   { deep: true },
 );
 
-function showNextBanner() {
-  currentBanner.value = bannerQueue.value.shift() ?? null;
-}
+/** reduced-motion：无 animationend ⇒ 下一版 view 变化时出队当前 banner。 */
+watch(
+  () => props.view?.version,
+  (v) => {
+    if (!currentBanner.value) return;
+    if (!prefersReducedMotion()) return;
+    if (bannerAtVersion.value === (v ?? null)) return;
+    showNextBanner();
+  },
+);
 
-/** T7 Batch 2：防中途进入 mount 爆炸（B3 阻断修法）。 */
-onMounted(() => {
-  // 记录所有玩家的所有已有副露 key —— 中途进入房/重连时已有副露不播 pop
+/** 结算揭示：清空整队（不只弹一条）。settlementArrived 不截断正常动画。 */
+watch(
+  () => props.settlementRevealed,
+  (on) => {
+    if (on) {
+      bannerQueue.value = [];
+      currentBanner.value = null;
+    }
+  },
+);
+
+/** T7 Batch 2 + 胡 banner：挂载时 seed 已有副露/胡牌，重连/中途进房不重播。 */
+function bootstrapSeen(): void {
+  for (const info of props.view?.huInfos ?? []) seenHuSeats.add(info.seat);
   (props.view?.melds ?? []).forEach((seatMelds, seat) => {
     for (const m of seatMelds) seenMeldKeys.add(meldKey(seat, m));
   });
   initialBootDone.value = true;
-});
+}
+bootstrapSeen();
 
-/** T7 Batch 2：watch melds 变化，标记增量（新局 started 时已由 cross-round reset 清空）。 */
+/** T7 Batch 2：watch melds 变化，标记增量。 */
 watch(
   () => props.view?.melds ?? [],
   (allMelds) => {
@@ -690,8 +827,8 @@ function onMeldPopDone(key: string) {
 </script>
 
 <template>
-  <view class="mj" :style="{ '--mj-s': `${layout.s}` }">
-    <view class="mj__bar" :style="rectStyle(layout.bar)">
+  <view class="mj" :style="{ '--mj-u': `${layout.u}` }">
+    <view class="mj__bar" :style="rectStyle(layout.rects.bar)">
       <view class="mj__bar-left">
         <button
           type="button"
@@ -701,17 +838,11 @@ function onMeldPopDone(key: string) {
         >
           <image class="mj__back-icon" src="/static/ui/back_arrow.png" mode="aspectFit" />
         </button>
-      </view>
-      <view class="mj__bar-center">
+        <text v-if="roomCode" class="mj__bar-text mj__room">房间 {{ roomCode }}</text>
         <text v-if="levelName" class="mj__bar-text">{{ levelName }}</text>
         <text v-if="sceneBase !== null" class="mj__bar-text">底分 {{ sceneBase }}</text>
       </view>
       <view class="mj__bar-right">
-        <MahjongSeatChip
-          v-if="view"
-          v-bind="chipProps(topSeat, 'bar')"
-          :style="{ height: `${layout.barChip.h}px` }"
-        />
         <button
           v-if="!settlementRevealed && phase !== 'ended'"
           type="button"
@@ -735,56 +866,92 @@ function onMeldPopDone(key: string) {
 
     <view v-if="waitingForDeal" class="mj__waiting">已进房，等待服务端发牌…</view>
     <template v-else>
+      <MahjongSeatChip
+        v-if="view"
+        v-bind="chipProps(topSeat, 'corner-top')"
+        :style="rectStyle(layout.seatPlates.top)"
+      />
+
       <MahjongHandBacks
         class="mj-backs-slot mj-backs-slot--top"
         v-bind="backsProps(topSeat)"
-        :style="rectStyle(layout.topBacks.rect)"
+        :style="rectStyle(layout.backs.top.rect)"
       />
       <MahjongHandBacks
         class="mj-backs-slot mj-backs-slot--left"
         v-bind="backsProps(leftSeat)"
-        :style="rectStyle(layout.leftBacks.rect)"
+        :style="rectStyle(layout.backs.left.rect)"
       />
       <MahjongHandBacks
         class="mj-backs-slot mj-backs-slot--right"
         v-bind="backsProps(rightSeat)"
-        :style="rectStyle(layout.rightBacks.rect)"
+        :style="rectStyle(layout.backs.right.rect)"
       />
 
-      <MahjongSeatChip v-bind="chipProps(leftSeat, 'side')" :style="rectStyle(layout.leftChip)" />
-      <MahjongSeatChip v-bind="chipProps(rightSeat, 'side')" :style="rectStyle(layout.rightChip)" />
-      <MahjongSeatChip v-bind="chipProps(me, 'self')" :style="rectStyle(layout.selfChip)" />
+      <MahjongSeatChip
+        v-bind="chipProps(leftSeat, 'corner-tl')"
+        :style="rectStyle(layout.seatPlates.left)"
+      />
+      <MahjongSeatChip
+        v-bind="chipProps(rightSeat, 'corner-tr')"
+        :style="rectStyle(layout.seatPlates.right)"
+      />
+      <MahjongSeatChip
+        v-bind="chipProps(me, 'self')"
+        :style="rectStyle(layout.seatPlates.self)"
+      />
 
       <MahjongRiver
         class="mj-river-slot mj-river-slot--top"
         v-bind="riverProps(topSeat)"
-        :style="rectStyle(layout.topRiver.rect)"
-        @discard-click="onSeatDiscardClick(topSeat, $event)"
+        :style="rectStyle(layout.rivers.top.rect)"
         @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--left"
         v-bind="riverProps(leftSeat)"
-        :style="rectStyle(layout.leftRiver.rect)"
-        @discard-click="onSeatDiscardClick(leftSeat, $event)"
+        :style="rectStyle(layout.rivers.left.rect)"
         @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--right"
         v-bind="riverProps(rightSeat)"
-        :style="rectStyle(layout.rightRiver.rect)"
-        @discard-click="onSeatDiscardClick(rightSeat, $event)"
+        :style="rectStyle(layout.rivers.right.rect)"
         @meld-pop-done="onMeldPopDone"
       />
       <MahjongRiver
         class="mj-river-slot mj-river-slot--self"
         v-bind="riverProps(me)"
-        :style="rectStyle(layout.ownRiver.rect)"
-        @discard-click="onSeatDiscardClick(me, $event)"
+        :style="rectStyle(layout.rivers.self.rect)"
         @meld-pop-done="onMeldPopDone"
       />
 
-      <MahjongCenter v-bind="centerProps" :style="rectStyle(layout.centerCard)" />
+      <MahjongHub
+        v-if="view"
+        :hub="layout.hub"
+        :wall-count="wallCount"
+        :seconds="seconds"
+        :phase="hubPhase"
+        :current-player="currentPlayer"
+        :active-seats="activeSeats"
+        :seats="hubSeats"
+        :ting-count="tingTiles.length"
+        :compact="layout.hub.compact"
+        :status-text="statusText"
+        ended-text=""
+        :style="rectStyle(layout.hub.rect)"
+      />
+
+      <view v-if="tingTiles.length > 0" class="mj__ting" :style="tingStyle">
+        <MahjongTile
+          v-for="(t, i) in tingTiles.slice(0, 9)"
+          :key="`ting-${i}`"
+          :tile="t"
+          direction="my"
+          :w="20 * layout.u"
+          :h="30 * layout.u"
+        />
+      </view>
 
       <view class="mj__hand" :class="{ 'mj__hand--selectable': handSelectable }" :style="handStyle">
         <template v-if="myRevealed">
@@ -801,7 +968,7 @@ function onMeldPopDone(key: string) {
         <template v-else>
           <MahjongTile
             v-for="(entry, i) in displayTiles"
-            :key="`hand-${phase}-${i}`"
+            :key="`hand-${entry.dealNonce ?? 'seed'}-${i}`"
             :tile="entry.tile"
             direction="my"
             :w="layout.hand.tile.w"
@@ -809,8 +976,7 @@ function onMeldPopDone(key: string) {
             :selected="selected.includes(i)"
             :disabled="!handSelectable"
             :class="{
-              'anim-fly-out': flyingOutIndex === i,
-              'anim-deal-in': phase === 'play',
+              'anim-deal-in': entry.dealNonce != null && entry.dealNonce === dealEpoch && !entry.drawn,
               'mj__hand-tile--drawn': entry.drawn,
             }"
             :style="{
@@ -831,75 +997,19 @@ function onMeldPopDone(key: string) {
         </view>
       </view>
 
-      <view v-if="hasActions" class="mj__actions" :style="actionsStyle">
-        <template v-if="phase === 'exchange'">
-          <text class="mj__hint">已选 {{ selected.length }}/3</text>
-          <button
-            type="button"
-            class="btn btn--primary mj__confirm"
-            :disabled="busy || !exchangeReady"
-            @click="onExchange"
-          >
-            换三张
-          </button>
-          <text v-if="selected.length === 3 && !exchangeReady" class="mj__warn">
-            必须同花色
-          </text>
-        </template>
+      <MahjongActionBar
+        v-if="hasActions"
+        :mode="actionMode"
+        :options="myClaims"
+        :show-pass="showPass"
+        :busy="busy || (phase === 'exchange' && !exchangeReady)"
+        :selected-count="selected.length"
+        :recommended-suit="lackRecommendation"
+        :style="actionsStyle"
+        @action="onActionBarAction"
+      />
 
-        <template v-else-if="phase === 'lack'">
-          <button
-            v-for="suit in ([0, 1, 2] as const)"
-            :key="`lack-${suit}`"
-            type="button"
-            class="btn mj__lack"
-            :class="{
-              'anim-lack-pulse': lackRecommendation === suit,
-              'mj__lack--recommend': lackRecommendation === suit,
-            }"
-            :disabled="busy"
-            @click="onLack(suit)"
-          >
-            缺{{ MAHJONG_SUIT_NAMES[suit] }}
-            <text v-if="lackRecommendation === suit" class="mj__lack--hint">推荐</text>
-          </button>
-        </template>
-
-        <template v-else-if="phase === 'play'">
-          <button
-            v-for="(opt, i) in myClaims"
-            :key="claimKey(opt, i)"
-            type="button"
-            class="btn mj__claim"
-            :class="{ 'btn--primary': opt.claim === 'hu' }"
-            :disabled="busy"
-            @click="onClaimOption(opt)"
-          >
-            {{ claimLabel(opt) }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--primary mj__discard"
-            :disabled="busy || selectedTiles.length !== 1"
-            @click="onDiscard"
-          >
-            出牌
-          </button>
-        </template>
-
-        <ClaimTile
-          v-else-if="phase === 'claim'"
-          :options="myClaims"
-          :filtered-options="discardClickTarget ? filteredClaimsForDiscard : undefined"
-          :busy="busy"
-          :show-pass="canPass"
-          @claim="submitClaim"
-          @pass="submitPass"
-        />
-      </view>
-
-      <!-- 自己胡了（myRevealed 不为空）时，手牌已在 .mj__my-revealed 展示，
-           隐藏 .mj__hand 避免重复渲染。settlementRevealed 同理。 -->
+      <!-- 自己胡了（myRevealed 不为空）时，手牌已在 .mj__hand 展示亮牌。 -->
       <view
         v-if="myTrustee && !settlementRevealed && phase !== 'ended'"
         class="mj__trustee-mask"
@@ -919,14 +1029,14 @@ function onMeldPopDone(key: string) {
       </view>
     </template>
 
-    <!-- T4 Batch 2：胡牌 banner 浮动 view（position: absolute 相对于 .mj 根元素） -->
+    <!-- 胡牌 banner 浮动 view（position: absolute 相对于 .mj 根元素） -->
     <MahjongHuBanner
       v-if="currentBanner"
+      :key="bannerSeq"
       :seat="currentBanner.seat"
       :fan="currentBanner.fan"
       :self-draw="currentBanner.selfDraw"
-      :left-pct="bannerPosition(currentBanner.seat).leftPct"
-      :top-pct="bannerPosition(currentBanner.seat).topPct"
+      :anchor="layout.bannerAnchors[slotOf(currentBanner.seat)]"
       @done="showNextBanner"
     />
 
@@ -1020,16 +1130,6 @@ function onMeldPopDone(key: string) {
   align-items: center;
   gap: $ftl-space-3;
 }
-.mj__bar-center {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: $ftl-space-4;
-  z-index: 1;
-}
 .mj__bar-text {
   font-size: $ftl-font-sm;
   color: rgba($ftl-color-on-primary, 0.9);
@@ -1053,20 +1153,13 @@ function onMeldPopDone(key: string) {
   font-size: $ftl-font-md;
 }
 
-/* —— 动作栏 —— */
-.mj__hint,
-.mj__warn {
-  font-size: $ftl-font-sm;
-  color: $ftl-color-text-muted;
-}
-.mj__warn {
-  color: $ftl-color-danger;
-}
-.mj__lack,
-.mj__claim,
-.mj__confirm,
-.mj__discard {
-  min-width: 72px;
+/* —— 听牌行（自己听牌时的 20×30 小牌） —— */
+.mj__ting {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
 }
 
 /* —— 手牌 —— */
@@ -1098,15 +1191,6 @@ function onMeldPopDone(key: string) {
   opacity: 0.9;
   pointer-events: none;
   white-space: nowrap;
-}
-
-/* —— 动作浮层 —— */
-.mj__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: $ftl-space-3;
 }
 
 // Batch 4 B 组：长按手牌弹层
@@ -1231,19 +1315,5 @@ function onMeldPopDone(key: string) {
   min-width: 40px;
   width: 40px;
   padding: 0;
-}
-
-/* —— Batch 2：定缺推荐高亮 —— */
-.mj__lack--recommend {
-  border-color: $ftl-color-gold-deep !important;
-  background: linear-gradient(180deg, rgba(255, 200, 80, 0.45), rgba(200, 130, 30, 0.5)) !important;
-  color: $ftl-color-on-primary !important;
-  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.5) !important;
-}
-.mj__lack--hint {
-  margin-left: 4px;
-  font-size: 10px;
-  color: $ftl-color-gold-light;
-  font-weight: 700;
 }
 </style>
