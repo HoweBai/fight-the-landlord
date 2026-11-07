@@ -20,7 +20,7 @@ import {
 import { meldKey } from './mahjong-keys';
 
 export interface VisibleDiscardsOpts {
-  phase: MahjongPhase | string;
+  phase: MahjongPhase;
   windowId?: string | null;
   /** 正在渲染的河流所属座位；Board 必传；单测省略时按“全量副露”计数。 */
   seat?: number | null;
@@ -91,7 +91,7 @@ export interface RiverWindow {
   overflow: number;
   /** 窗口在绝对（未过滤）数组中的起点。 */
   windowStart: number;
-  /** 窗口内的实际牌数（溢出时 23 张 + 1 个 +N 徽标格）。 */
+  /** 窗口内的实际牌数（溢出时 `cap - 1` 张 + 1 个 +N 徽标格，且封顶 23）。 */
   windowCount: number;
   /** 徽标上显示的隐藏张数（= raw − windowCount）。 */
   badgeCount: number;
@@ -101,14 +101,15 @@ export interface RiverWindow {
 
 /**
  * 牌河窗口字段（v13 §2）。与布局 v1 的 `riverTopSelf` 口径一致：
- * raw ≤ cap 全显示；溢出时窗口收窄到 23 张并让出 1 格给 `+N` 徽标。
+ * raw ≤ cap 全显示；溢出时窗口收窄到 `cap - 1` 张并让出 1 格给 `+N` 徽标
+ * （默认 cap 24 ⇒ 23 张；cap 更大时仍封顶 23；cap 0 ⇒ 空窗口，徽标显示全部 raw）。
  */
 export function riverWindow(rawCount: number, visibleCap = 24): RiverWindow {
   const raw = Math.max(0, Math.floor(Number(rawCount) || 0));
   const cap = Math.max(0, Math.floor(Number(visibleCap) || 0));
   const visible = Math.min(raw, cap);
   const overflow = raw - visible;
-  const windowCount = overflow > 0 ? 23 : visible;
+  const windowCount = overflow > 0 ? Math.max(0, Math.min(23, cap - 1)) : visible;
   return {
     visible,
     overflow,

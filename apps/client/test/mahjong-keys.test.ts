@@ -68,8 +68,17 @@ describe('parseMeldKey', () => {
     }
   });
 
-  it('防御值 -1 可解析', () => {
+  it('防御值 -1 可解析（空 tiles 哨兵）', () => {
     expect(parseMeldKey('0:angang:-1')).toEqual({ seat: 0, kind: 'angang', tileType: -1 });
+  });
+
+  it('tileType 协议范围 0..26 + -1 哨兵：边界合法、越界拒绝', () => {
+    expect(parseMeldKey('0:peng:0')).toEqual({ seat: 0, kind: 'peng', tileType: 0 });
+    expect(parseMeldKey('0:peng:26')).toEqual({ seat: 0, kind: 'peng', tileType: 26 });
+    expect(parseMeldKey('0:peng:-1')).toEqual({ seat: 0, kind: 'peng', tileType: -1 });
+    expect(parseMeldKey('0:peng:27')).toBeNull();
+    expect(parseMeldKey('0:peng:99')).toBeNull();
+    expect(parseMeldKey('0:peng:-2')).toBeNull();
   });
 
   it('非法 key ⇒ null', () => {
@@ -87,6 +96,9 @@ describe('parseMeldKey', () => {
       '0:peng:x',
       '0:peng: 1',
       '0:peng:',
+      '0:peng:27',
+      '0:peng:99',
+      '0:peng:-2',
     ];
     for (const key of malformed) {
       expect(parseMeldKey(key)).toBeNull();

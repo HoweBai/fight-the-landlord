@@ -22,7 +22,7 @@ export interface ParsedMeldKey {
  * 副露 key：`${seat}:${kind}:${首张 type}`。
  *
  * 空 `tiles`（服务端不应出站）时回退为 `-1`，保证 key 仍是三段可解析字符串；
- * 解析端把 `-1` 当作普通整数保留，不额外抛错。
+ * 解析端把 `-1` 当作“空 tiles 哨兵”保留，不额外抛错。
  */
 export function meldKey(seat: number, meld: MahjongMeldView): string {
   const first = meld.tiles[0];
@@ -35,7 +35,7 @@ export function meldKey(seat: number, meld: MahjongMeldView): string {
  * - 段数不是 3；
  * - seat 不是非负整数；
  * - kind 不是 `peng` / `gang` / `angang`；
- * - tileType 不是整数。
+ * - tileType 不是整数，或不在协议范围 `0..26`（外加空 tiles 的 `-1` 哨兵）。
  */
 export function parseMeldKey(key: string): ParsedMeldKey | null {
   if (typeof key !== 'string') return null;
@@ -48,5 +48,6 @@ export function parseMeldKey(key: string): ParsedMeldKey | null {
   const seat = Number(seatRaw);
   const type = Number(typeRaw);
   if (!Number.isSafeInteger(seat) || !Number.isSafeInteger(type)) return null;
+  if (type !== -1 && (type < 0 || type > 26)) return null;
   return { seat, kind: kindRaw, tileType: type };
 }
