@@ -97,7 +97,7 @@ function layoutBase(W, H, state) {
     const sideBottom = handTop - sc(T.handClearance);
     const avail = sideBottom - sideTop;
     const rows = clamp(Math.floor((avail + gapT) / (sc(T.sideTileH) + gapT)), 3, 10);
-    const cols = clamp(Math.ceil(visible / rows), 2, 6);
+    const cols = clamp(Math.ceil(visible / rows), 1, 6);
     const riverW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
     const riverH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
     const backW = sc(T.sideTileH * T.tileRatio); // 83×125
@@ -163,7 +163,7 @@ function layoutBase(W, H, state) {
   const available = Math.max(0, centerBottom - centerTop);
   const hubD = Math.min(clamp(available, sc(T.hubMin), sc(T.hubMax)), Math.max(0, centerW - 2 * gap));
   const hubRect = rect(centerCx - hubD / 2, centerTop + (available - hubD) / 2, hubD, hubD);
-  const hub = { ...hubRect, cx: centerCx, cy: hubRect.top + hubD / 2, r: hubD / 2, compact: hubD / s < 180 };
+  const hub = { rect: hubRect, ...hubRect, cx: centerCx, cy: hubRect.top + hubD / 2, r: hubD / 2, compact: hubD / s < 180 };
 
   // —— 动作区 ——
   const actions = rect(
@@ -312,7 +312,7 @@ function layout(W, H, state) {
   const base = layoutBase(BW, BH, state);
   const tr = (r) => ({ ...r, left: ox + r.left * u, top: oy + r.top * u, width: r.width * u, height: r.height * u });
   const rects = Object.fromEntries(Object.entries(base.rects).map(([k, v]) => [k, tr(v)]));
-  const hub = { ...base.hub, ...tr(base.hub), cx: ox + base.hub.cx * u, cy: oy + base.hub.cy * u, r: base.hub.r * u };
+  const hub = { ...base.hub, ...tr(base.hub), rect: tr(base.hub.rect), cx: ox + base.hub.cx * u, cy: oy + base.hub.cy * u, r: base.hub.r * u };
   const checks = [...base.checks];
   for (const [name, r] of Object.entries(rects)) {
     if (r.width > 0 && r.height > 0 && !inside(r, W, H)) checks.push(`${name} 画布越界`);
@@ -339,7 +339,10 @@ const states = {
   revealedGang: { top: base(), left: { discards: 5, melds: 4, meldSizes: [4, 4, 4, 4], revealed: 2 }, right: base(), self: base(), ting: 9 },
 };
 
-let failures = 0;
+export { layout, layoutBase, states };
+
+if (typeof window === 'undefined' && typeof process !== 'undefined') {
+  let failures = 0;
 for (const [W, H] of CANVASES) {
   for (const [name, state] of Object.entries(states)) {
     const r = layout(W, H, state);
@@ -350,4 +353,5 @@ for (const [W, H] of CANVASES) {
   }
 }
 console.log(`\n${failures === 0 ? 'ALL GREEN' : failures + ' FAILURES'}`);
-process.exit(failures === 0 ? 0 : 1);
+  process.exit(failures === 0 ? 0 : 1);
+}
