@@ -20,12 +20,17 @@
  * ⚠️ 该顺序只在**同一 setup、默认 pre flush** 下成立，不得跨消息依赖。
  */
 import { watch } from 'vue';
-import { isMahjongSettlementResult, isPdkSettlementResult, tileType } from '@fight-the-landlord/protocol';
+import {
+  isMahjongSettlementResult,
+  isPdkSettlementResult,
+  type MahjongPlayerView,
+} from '@fight-the-landlord/protocol';
 import { useGameStore } from '../stores/game';
 import { playCue, cueForBid, cueForPass } from '../audio';
 import { cueForPlay } from '../audio/play-cues';
 import { cueForPdkPlay } from '../audio/pdk-play-cues';
 import { haptic } from '../feedback/haptics';
+import { meldKey, parseMeldKey } from '../game/mahjong-keys';
 
 export function useTableSound(): void {
   const store = useGameStore();
@@ -120,53 +125,123 @@ export function useTableSound(): void {
     { immediate: true },
   );
 
-  // ── 麻将（T11）：副露 / 已胡人数 / 阶段切换 ────────────────────────────
+  // ── 麻将（T9）：局首洗牌 / 首次发牌 / 副露 / 胡 / 回合 / 出牌 ──────────────
   /**
-   * 只比较服务端视图的**增量事实**：新增的碰/明杠/暗杠、已胡人数上涨、阶段推进。
+   * 只比较服务端视图的**增量事实**：新增的碰/明杠/暗杠、已胡人数上涨、手牌/弃牌增长。
    * 挂载后第一版只登记、不补播（与 bootstrap 同一条纪律）。
+   *
+   * 副露 key 带**座位**（`meldKey` = `${seat}:${kind}:${首张 type}`）：同一座位、同一牌型
+   * 才算同一条副露 ⇒ 「碰→杠」可判为补杠（MjGang），跨座的同牌直杠仍是刮风（MjGuafeng）。
    */
-  /** 副露的稳定键集合（kind + 牌型）：用于区分「直杠」与「碰→补杠」。 */
-  const mahjongMeldKeys = (): string[] =>
-    (store.mahjongView?.melds.flat() ?? []).map(
-      (m) => `${m.kind}:${m.tiles[0] === undefined ? 'x' : tileType(m.tiles[0])}`,
-    );
-  let lastMjMelds = mahjongMeldKeys();
+  const mahjongMeldKeys = (v: MahjongPlayerView | null): string[] =>
+    (v?.melds ?? []).flatMap((melds, seat) => melds.map((m) => meldKey(seat, m)));
+
+  /**
+   * 局首谓词（与 Board 的 `dealEpoch` 同一口径）：本局第一版（version === 1）
+   * 且仍处于换三张 / 定缺。v>1 只可能是中途挂载 / 重连 ⇒ 不补洗牌。
+   */
+  const isMahjongGameStart = (v: MahjongPlayerView): boolean =>
+    v.version === 1 && (v.state === 'exchange' || v.state === 'lack');
+
+  let lastMjMelds = new Set(mahjongMeldKeys(store.mahjongView));
   let lastMjHu = store.mahjongView?.huInfos.length ?? 0;
+  let lastMjHandLen = store.mahjongView?.hand.length ?? 0;
+  let lastMjDiscards = (store.mahjongView?.discards ?? []).map((d) => d.length);
+  let lastMjClaims = store.mahjongView?.claimsForMe.length ?? 0;
+  let lastMjCurrent = store.mahjongView?.currentPlayer ?? null;
   let lastMjPhase = store.mahjongView?.state ?? null;
+  /**
+   * 「首次 play ⇒ MjDeal」的每局 latch：同一局只响一次；中途挂载（v>1）直接置位
+   * （重连不补发牌声），新局（v1 exchange/lack）或 null→view 时重置。
+   */
+  let mjDealPlayed = false;
+
+  /** 首版 / null→view：只登记游标；局首（v1 exchange|lack）补一声洗牌。 */
+  function seedMahjong(v: MahjongPlayerView): void {
+    lastMjMelds = new Set(mahjongMeldKeys(v));
+    lastMjHu = v.huInfos.length;
+    lastMjHandLen = v.hand.length;
+    lastMjDiscards = v.discards.map((d) => d.length);
+    lastMjClaims = v.claimsForMe.length;
+    lastMjCurrent = v.currentPlayer;
+    lastMjPhase = v.state;
+    mjDealPlayed = !isMahjongGameStart(v);
+    // 局首（v1 exchange/lack）补一声洗牌；v>1 的中途挂载/重连不补。
+    if (isMahjongGameStart(v)) playCue('MjShuffle');
+  }
+
   let mjBootstrapped = store.mahjongView !== null;
+  // setup 时已有局首视图（页面重挂载）⇒ 立刻洗牌；已有 v>1 视图 ⇒ seed（不补播）。
+  if (store.mahjongView) seedMahjong(store.mahjongView);
+
   watch(
     () => store.mahjongView,
     (v) => {
-      if (!v) return;
-      if (!mjBootstrapped) {
-        mjBootstrapped = true;
-        lastMjMelds = mahjongMeldKeys();
-        lastMjHu = v.huInfos.length;
-        lastMjPhase = v.state;
-        // 新开局（换三张第一版）补一条洗牌声；重连/中途挂载不补。
-        if (v.state === 'exchange' && v.version === 1) playCue('MjShuffle');
+      if (!v) {
+        // 视图清空（换局 / 离桌）⇒ 下一版按首次挂载处理（null→view 的局首照常播）。
+        mjBootstrapped = false;
         return;
       }
-      if (store.settlement) return;
-      const prev = new Set(lastMjMelds);
-      const melds = mahjongMeldKeys();
+      if (!mjBootstrapped) {
+        mjBootstrapped = true;
+        seedMahjong(v);
+        return;
+      }
+      if (store.settlement) return; // 结算锁：终局后不再播副露 / 胡 / 出牌
+      const prev = lastMjMelds;
+      const melds = mahjongMeldKeys(v);
       for (const key of melds) {
         if (prev.has(key)) continue;
-        const kind = key.split(':')[0];
-        const tile = key.slice(key.indexOf(':') + 1);
-        if (kind === 'peng') playCue('MjPeng');
-        else if (kind === 'angang') playCue('MjRain');
-        else if (kind === 'gang') {
-          // 碰升级为补杠 ⇒ 通用杠声；新形成的直杠 ⇒ 刮风。
-          playCue(prev.has(`peng:${tile}`) ? 'MjGang' : 'MjGuafeng');
+        const parsed = parseMeldKey(key);
+        if (!parsed) continue;
+        if (parsed.kind === 'peng') playCue('MjPeng');
+        else if (parsed.kind === 'angang') playCue('MjRain');
+        else {
+          // 同座同牌的碰升级为补杠 ⇒ 通用杠声；其余新杠 ⇒ 刮风。
+          playCue(
+            prev.has(`${parsed.seat}:peng:${parsed.tileType}`) ? 'MjGang' : 'MjGuafeng',
+          );
         }
+        haptic('light');
       }
-      if (v.huInfos.length > lastMjHu) playCue('MjHu');
-      // 换三张完成 → 理牌；定缺完成/庄家摸牌 → 发牌。
-      if (lastMjPhase === 'exchange' && v.state === 'lack') playCue('MjSort');
-      else if (lastMjPhase === 'lack' && v.state === 'play') playCue('MjDeal');
-      lastMjMelds = melds;
+      if (v.huInfos.length > lastMjHu) {
+        playCue('MjHu');
+        haptic('heavy');
+      }
+      // 新局（v1 换三张/定缺）⇒ 重置本局的首次 play 发牌 latch。
+      if (isMahjongGameStart(v)) mjDealPlayed = false;
+      const firstPlay = v.state === 'play' && !mjDealPlayed;
+      if (firstPlay) {
+        mjDealPlayed = true;
+        playCue('MjDeal');
+      }
+      // 摸牌：手牌增长且**不是**首次 play 的发牌视野 ⇒ 理牌声。
+      if (v.hand.length > lastMjHandLen && !firstPlay) playCue('MjSort');
+      // 碰/杠/胡提示：claimsForMe 从无到有（服务端算好的候选）⇒ 理牌声。
+      if (lastMjClaims === 0 && v.claimsForMe.length > 0) playCue('MjSort');
+      const mySeat = store.mySeat ?? v.seat;
+      // 自己出牌：**我的**弃牌数组增长才响（服务端确认后的视图 diff，不在 emit 路径补回声）。
+      // 不按相位过滤：出牌后若有人可碰/杠/胡，同一版视图的 state 已是 `claim`，弃牌仍是我出的。
+      if (
+        (v.discards[mySeat]?.length ?? 0) > (lastMjDiscards[mySeat] ?? 0)
+      ) {
+        playCue('MjDeal');
+        haptic('light');
+      }
+      // 回合切换：轮到我（play）⇒ 轻震一次（进入 play 那一版也算）。
+      if (
+        v.state === 'play' &&
+        v.currentPlayer === mySeat &&
+        (lastMjPhase !== 'play' || lastMjCurrent !== mySeat)
+      ) {
+        haptic('light');
+      }
+      lastMjMelds = new Set(melds);
       lastMjHu = v.huInfos.length;
+      lastMjHandLen = v.hand.length;
+      lastMjDiscards = v.discards.map((d) => d.length);
+      lastMjClaims = v.claimsForMe.length;
+      lastMjCurrent = v.currentPlayer;
       lastMjPhase = v.state;
     },
   );

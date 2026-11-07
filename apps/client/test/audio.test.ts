@@ -12,7 +12,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import type { PlayerView } from '@fight-the-landlord/protocol';
+import {
+  DEFAULT_CHENGDU_RULES,
+  type MahjongMeldView,
+  type MahjongPlayerView,
+  type PlayerView,
+  type Tile,
+} from '@fight-the-landlord/protocol';
 import { bidPhase } from './helpers/bid-phase';
 import { audioContexts, installUniStub } from './helpers/uni-stub';
 import { FakeSocket, playerViewFixture, serverMessage, makeCards } from './helpers/fake-socket';
@@ -1011,6 +1017,356 @@ describe('牌桌接线（useTableSound）', () => {
     expect(srcs().slice(before), '不得补播挂载前已有的那条（游标写 0 的旧形态会先播 Woman_Rob1）').toEqual([
       '/pages/table/static/audio/Woman_Rob2.mp3',
     ]);
+  });
+});
+
+/**
+ * 麻将音效（Task 9 / v4 §6.2·§6.5 / v6 §4）。
+ *
+ * 判据与上面的接线 describe 同形：挂真页面 + 推真服务端视图，只看 `audioContexts[].src`
+ *（jsdom 里没有声音）。麻将专属性质：
+ *  · **局首**（v1 且 exchange|lack）才洗牌；v>1 的中途挂载/重连不补；
+ *  · **首次 play** 才发牌（每局 latch 一次），自己出牌另走「我的弃牌数组增长」；
+ *  · 副露 key 带座位（`meldKey`）⇒ 同座同牌的 碰→杠 是补杠（MjGang），否则直杠（MjGuafeng）。
+ */
+describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
+  let pinia: ReturnType<typeof createPinia>;
+  let stub: ReturnType<typeof installUniStub>;
+  const mounted: VueWrapper[] = [];
+
+  beforeEach(() => {
+    pinia = createPinia();
+    setActivePinia(pinia);
+    localStorage.clear();
+    // 重装替身 ⇒ 每个用例的震动计数从零开始（不动存储后端，见 uni-stub 注释）。
+    stub = installUniStub();
+  });
+
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount();
+    stopGameSession();
+  });
+
+  function mountTable(mySeat = 0) {
+    const socket = new FakeSocket();
+    startGameSession(() => socket);
+    const store = useGameStore();
+    store.setRoom('ROOM1', mySeat);
+    const wrapper = mount(TablePage, { global: { plugins: [pinia] } });
+    mounted.push(wrapper);
+    return { wrapper, socket, store };
+  }
+
+  function tile(s: 0 | 1 | 2, r: number): Tile {
+    return { s, r };
+  }
+
+  /** 麻将视图夹具（形状抄自 `mahjong-board.test.ts`；字段值不承载任何规则含义）。 */
+  function mahjongView(over: Partial<MahjongPlayerView> = {}): MahjongPlayerView {
+    return {
+      roomCode: 'MJ1',
+      gameType: 'mahjong',
+      playerCount: 4,
+      version: 1,
+      state: 'play',
+      baseScore: 1,
+      seat: 0,
+      hand: [
+        tile(0, 1), tile(0, 1), tile(0, 1), tile(0, 1), tile(0, 2), tile(0, 3),
+        tile(0, 4), tile(1, 5), tile(1, 5), tile(1, 6), tile(1, 7), tile(2, 8),
+        tile(2, 9),
+      ],
+      cardCounts: [13, 13, 13, 13],
+      trustees: [false, false, false, false],
+      currentPlayer: 0,
+      recentActions: [],
+      turnDeadlineAt: 1_700_000_030_000,
+      activeSeats: [0],
+      tingSeats: [],
+      dealerSeat: 0,
+      wallCount: 40,
+      lackSuits: [0, 1, 2, null],
+      melds: [[], [], [], []],
+      discards: [[], [], [], []],
+      isOut: [false, false, false, false],
+      huInfos: [],
+      claimsForMe: [],
+      mahjongRules: DEFAULT_CHENGDU_RULES,
+      revealedHands: [],
+      windowId: 'turn:1',
+      ...over,
+    };
+  }
+
+  /** 推一版服务端视图并等页面渲染完。 */
+  async function pushView(
+    wrapper: VueWrapper,
+    socket: FakeSocket,
+    type: 'game.deal' | 'game.state_update',
+    view: MahjongPlayerView,
+  ): Promise<void> {
+    socket.push(serverMessage(type, view, view.version));
+    await wrapper.vm.$nextTick();
+  }
+
+  /** 基准之后新增的 cue src（过滤掉 BGM 切换等非 cue 上下文不会发生——全部 context 都有 src）。 */
+  const cuesSince = (mark: number): string[] =>
+    srcs().slice(mark).filter((s): s is string => typeof s === 'string');
+  const countCue = (mark: number, src: string): number =>
+    cuesSince(mark).filter((s) => s === src).length;
+
+  const hu = (seat: number) => ({
+    seat,
+    fromSeat: null,
+    tile: tile(0, 5),
+    fan: 1,
+    multiplier: 1,
+    items: ['平胡'],
+    selfDraw: true,
+  });
+
+  it('局首：首版视图是 v1 exchange ⇒ 播 MjShuffle', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const before = audioContexts.length;
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    expect(countCue(before, CUES.MjShuffle)).toBe(1);
+  });
+
+  it('中途挂载：首版视图是 v5 exchange ⇒ 不洗牌；进入 play 也不补发牌声', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const before = audioContexts.length;
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 5, state: 'exchange' }));
+    expect(countCue(before, CUES.MjShuffle), 'v>1 是重连/中途挂载，不补洗牌').toBe(0);
+
+    const afterSeed = audioContexts.length;
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 6, state: 'play' }));
+    expect(countCue(afterSeed, CUES.MjDeal), 'mid-game mount seeds the deal latch').toBe(0);
+  });
+
+  it('挂载时已有 v1 exchange 视图 ⇒ setup 即播 MjShuffle（v6 §4）', async () => {
+    const socket = new FakeSocket();
+    startGameSession(() => socket);
+    const store = useGameStore();
+    store.setRoom('ROOM1', 0);
+    // 挂载**之前** store 里已经有一版局首视图（页面重挂载的真实形态）
+    store.applySnapshot(mahjongView({ version: 1, state: 'exchange' }));
+    const wrapper = mount(TablePage, { global: { plugins: [pinia] } });
+    mounted.push(wrapper);
+    await wrapper.vm.$nextTick();
+    expect(srcs(), 'setup 时已有的 v1 局首视图也要洗牌').toContain(CUES.MjShuffle);
+  });
+
+  it('首次 play：exchange → lack → play 只响一次 MjDeal；后续 play 不重播', async () => {
+    const { wrapper, socket } = mountTable(0);
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 2, state: 'lack' }));
+    const before = audioContexts.length;
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 3, state: 'play' }));
+    expect(countCue(before, CUES.MjDeal), '首次进入 play ⇒ 发牌声').toBe(1);
+
+    const afterFirstPlay = audioContexts.length;
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 4, state: 'play' }));
+    expect(countCue(afterFirstPlay, CUES.MjDeal), '同一局只响一次').toBe(0);
+  });
+
+  it('副露：碰 → MjPeng；同座同牌 碰→杠 MjGang；直杠 MjGuafeng；暗杠 MjRain', async () => {
+    const { wrapper, socket } = mountTable(0);
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+
+    const peng5: MahjongMeldView = {
+      kind: 'peng',
+      tiles: [tile(0, 5), tile(0, 5), tile(0, 5)],
+      fromSeat: 0,
+    };
+    const beforePeng = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 2, state: 'play', melds: [[], [peng5], [], []] }),
+    );
+    expect(cuesSince(beforePeng), '座位 1 碰 5 万 ⇒ MjPeng').toContain(CUES.MjPeng);
+
+    // 同一座位、同一牌型：碰升级为补杠 ⇒ MjGang（不是刮风）
+    const gang5: MahjongMeldView = {
+      kind: 'gang',
+      tiles: [tile(0, 5), tile(0, 5), tile(0, 5), tile(0, 5)],
+      fromSeat: 0,
+    };
+    const beforeGang = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 3, state: 'play', melds: [[], [gang5], [], []] }),
+    );
+    expect(cuesSince(beforeGang), '同座同牌 碰→杠 ⇒ 补杠声').toContain(CUES.MjGang);
+    expect(cuesSince(beforeGang), '补杠不得当成刮风').not.toContain(CUES.MjGuafeng);
+
+    // 反例的**前件**：座位 1 有一副 7 万的碰（座位 2 的直杠不得借它判成补杠）
+    const peng7: MahjongMeldView = {
+      kind: 'peng',
+      tiles: [tile(1, 7), tile(1, 7), tile(1, 7)],
+      fromSeat: 0,
+    };
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 4, state: 'play', melds: [[], [gang5, peng7], [], []] }),
+    );
+
+    // 直杠：**座位 2** 杠 7 万；座位 1 的 `peng:7万` 不是同一条副露 ⇒ 刮风
+    const directGang: MahjongMeldView = {
+      kind: 'gang',
+      tiles: [tile(1, 7), tile(1, 7), tile(1, 7), tile(1, 7)],
+      fromSeat: 1,
+    };
+    const beforeDirect = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 5,
+        state: 'play',
+        melds: [[], [gang5, peng7], [directGang], []],
+      }),
+    );
+    expect(cuesSince(beforeDirect), '另一座的碰不得把直杠判成补杠（seat key）').toContain(CUES.MjGuafeng);
+    expect(cuesSince(beforeDirect), '跨座误判成补杠即红').not.toContain(CUES.MjGang);
+
+    const anGang: MahjongMeldView = {
+      kind: 'angang',
+      tiles: [tile(2, 9), tile(2, 9), tile(2, 9), tile(2, 9)],
+    };
+    const beforeAnGang = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 6,
+        state: 'play',
+        melds: [[], [gang5, peng7], [directGang], [anGang]],
+      }),
+    );
+    expect(cuesSince(beforeAnGang), '暗杠 ⇒ 下雨').toContain(CUES.MjRain);
+  });
+
+  it('claimsForMe 从无到有（碰/杠/胡提示）⇒ MjSort', async () => {
+    const { wrapper, socket } = mountTable(0);
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 2, state: 'play' }));
+    const before = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 3,
+        state: 'claim',
+        currentPlayer: 1,
+        claimsForMe: [{ claim: 'peng', tile: tile(0, 5) }],
+      }),
+    );
+    expect(cuesSince(before), '可响应提示从无到有 ⇒ 理牌声').toContain(CUES.MjSort);
+  });
+
+  it('胡牌：huInfos 增长 ⇒ MjHu + 重震；首版已有胡只登记不补播', async () => {
+    const { wrapper, socket } = mountTable(0);
+    const beforeSeed = audioContexts.length;
+    // 首版就带一条胡 ⇒ seed（重连形态，不补播）
+    await pushView(
+      wrapper,
+      socket,
+      'game.deal',
+      mahjongView({ version: 1, state: 'exchange', huInfos: [hu(1)] }),
+    );
+    expect(countCue(beforeSeed, CUES.MjHu), '首版 seed 不补播胡').toBe(0);
+
+    const beforeHu = audioContexts.length;
+    const longBefore = stub.calls.vibrateLong;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 2, state: 'play', huInfos: [hu(1), hu(2)] }),
+    );
+    expect(countCue(beforeHu, CUES.MjHu), '新增胡 ⇒ MjHu').toBe(1);
+    expect(stub.calls.vibrateLong, '胡牌重震').toBe(longBefore + 1);
+  });
+
+  it('自己出牌：我的弃牌数组增长 ⇒ MjDeal + 轻震；别人出牌不响', async () => {
+    const { wrapper, socket } = mountTable(0);
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 2, state: 'play' }));
+
+    const beforeMine = audioContexts.length;
+    const shortBefore = stub.calls.vibrateShort;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 3,
+        state: 'play',
+        currentPlayer: 1,
+        discards: [[tile(1, 1)], [], [], []],
+      }),
+    );
+    expect(countCue(beforeMine, CUES.MjDeal), '我出牌 ⇒ MjDeal（服务端确认后）').toBe(1);
+    expect(stub.calls.vibrateShort, '我出牌轻震').toBe(shortBefore + 1);
+
+    const beforeOther = audioContexts.length;
+    const shortAfterMine = stub.calls.vibrateShort;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 4,
+        state: 'play',
+        currentPlayer: 2,
+        discards: [[tile(1, 1)], [tile(2, 2)], [], []],
+      }),
+    );
+    expect(countCue(beforeOther, CUES.MjDeal), '别人的出牌不播发牌声').toBe(0);
+    expect(stub.calls.vibrateShort, '别人的出牌不震').toBe(shortAfterMine);
+
+    // 出牌后**立刻**进入 claim 窗口（有人可碰/杠/胡）：弃牌仍是我出的，声音不能丢
+    const beforeClaimView = audioContexts.length;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({
+        version: 5,
+        state: 'claim',
+        currentPlayer: 0,
+        discards: [[tile(1, 1), tile(2, 3)], [tile(2, 2)], [], []],
+      }),
+    );
+    expect(countCue(beforeClaimView, CUES.MjDeal), '出牌直接开 claim 窗口也要响').toBe(1);
+  });
+
+  it('回合切换：currentPlayer 变成我 ⇒ 轻震（只在 play 相位）', async () => {
+    const { wrapper, socket } = mountTable(0);
+    await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 2, state: 'play', currentPlayer: 1 }),
+    );
+    const before = stub.calls.vibrateShort;
+    await pushView(
+      wrapper,
+      socket,
+      'game.state_update',
+      mahjongView({ version: 3, state: 'play', currentPlayer: 0 }),
+    );
+    expect(stub.calls.vibrateShort, '轮到我 ⇒ 轻震').toBe(before + 1);
   });
 });
 
