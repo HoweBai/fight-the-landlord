@@ -1,6 +1,6 @@
 # 川麻红金牌桌重做 —— 实现交接（2026-11-07）
 
-分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..53213cea`（16 提交，含交接与终审修复）
+分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..e5a003df`（18 提交，含交接与终审修复）
 计划：`docs/superpowers/plans/2026-11-07-mahjong-table-redgold.md`
 设计：`docs/superpowers/specs/2026-11-07-mahjong-table-redgold-design-v13.md`（v12 及更早为继承）
 
@@ -23,9 +23,9 @@
 ## 2. 验证证据（本机，2026-11-07）
 
 ```text
-pnpm -C apps/client test   → 130 passed | 2 skipped（文件）；1853 passed | 2 skipped（用例）
+pnpm -C apps/client test   → 130 passed | 2 skipped（文件）；1854 passed | 2 skipped（用例）
 pnpm -C apps/client lint   → vue-tsc --noEmit exit 0
-pnpm -C apps/client build  → DONE Build complete（exit 0，版本串 0.1.0-53213cea）
+pnpm -C apps/client build  → DONE Build complete（exit 0，版本串 0.1.0-e5a003df）
 node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → ALL GREEN
 ```
 
@@ -61,11 +61,13 @@ node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → AL
     - **胡 banner 锚点居中**：`ftl-hu-banner` 的 30%/70% 帧原写 `transform: none`，动画期整体覆盖
       组件基类的 `translate(-50%, -100%)`，可见停留期 banner 左上角落在锚点。修法：四帧全部烘焙
       `translate(-50%, -100%)`；组件基类居中 transform 保留为 reduced-motion 兜底。
+    - **reduced-motion 下的胡 banner**（`e5a003df`）：整组降级规则的 `transform: none !important`
+      会压掉基类居中；`.anim-hu-banner` 单列，只关 `animation/transition`，不动 `transform`。
 
 ## 5. 终审待分诊 Minor 清单（来自各 Task 审查）
 
 - Task 1：`const s=1` 保真痕迹；`normalizeSeat` 对非法组项回退 3 张；INF 计数未防；`rects` 无键类型安全。
-- Task 2：rob 测试的 `phase` 用 `'rob'`（服务端 rob 窗口 state 仍为 `'claim'`）；协议注释「补杠 fromSeat undefined」与 v12 §4 不符（客户端未改协议）。
+- Task 2：协议注释「补杠 fromSeat undefined」与 v12 §4 不符（客户端未改协议，服务端实际保留 fromSeat）。rob 测试形态已在 `53213cea` 改为 `state:'claim'+windowId:'rob:N'`。
 - Task 3：Meld 非暗杠显式传 `aspectFit`；纵向高度依赖调用方传全 tileW/H/overlap。
 - Task 4：缺 `windowStart>0` 时 claimSourceIndex 仍为窗口相对下标的测试；`--clickable` 光标范围；空/负窗口分支未测。
 - Task 5：wall 重复内联字号；金环 inset 未断言；urgent 边界 5s 未测；源扫描 cwd 相对路径。
@@ -80,7 +82,7 @@ node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → AL
 ## 6. 回滚
 
 - 本片只改客户端展示层：新增 layout v2 / claims / keys / Hub / ActionBar 与测试；修改 Board、River、SeatChip、Meld、Tile、HandBacks、HuBanner、table.vue、useTableSound、animations.scss、uni.scss；删除 Center/ClaimTile 及其测试。
-- 回滚整片：`git revert --no-commit 3f0dc4c7..53213cea && git commit`（或按单个 Task 提交 revert）。
+- 回滚整片：`git revert --no-commit 3f0dc4c7..e5a003df && git commit`（或按单个 Task 提交 revert）。
 - 旧 `mahjong-layout.ts` 与其测试仍在，未被引用但可直接恢复。
 
 ## 7. 下一步（需要用户）
