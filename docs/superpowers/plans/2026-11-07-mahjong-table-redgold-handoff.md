@@ -1,6 +1,6 @@
 # 川麻红金牌桌重做 —— 实现交接（2026-11-07）
 
-分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..59c1c620`（14 提交）
+分支：`dev`　基线：`3f0dc4c7`　实现区间：`3f0dc4c7..53213cea`（16 提交，含交接与终审修复）
 计划：`docs/superpowers/plans/2026-11-07-mahjong-table-redgold.md`
 设计：`docs/superpowers/specs/2026-11-07-mahjong-table-redgold-design-v13.md`（v12 及更早为继承）
 
@@ -23,14 +23,15 @@
 ## 2. 验证证据（本机，2026-11-07）
 
 ```text
-pnpm -C apps/client test   → 130 passed | 2 skipped（文件）；1846 passed | 2 skipped（用例）
+pnpm -C apps/client test   → 130 passed | 2 skipped（文件）；1853 passed | 2 skipped（用例）
 pnpm -C apps/client lint   → vue-tsc --noEmit exit 0
-pnpm -C apps/client build  → DONE Build complete（exit 0）
+pnpm -C apps/client build  → DONE Build complete（exit 0，版本串 0.1.0-53213cea）
 node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → ALL GREEN
 ```
 
 - 冻结文件 `apps/client/src/game/mahjong-layout.ts` 与其测试**未改动**。
-- 每个 Task 均经独立子 agent 审查（spec 合规 + 代码质量）；Critical/Important 已修复并复审通过。终审清单见 §5。
+- 每个 Task 均经独立子 agent 审查（spec 合规 + 代码质量）；Critical/Important 已修复并复审通过。
+- **全片终审（opus）**：无 Critical；2 条 Important（侧河 +N 徽标对齐、胡 banner 锚点居中）已在 `53213cea` 修复并补测试；终审结论「With fixes」→ 修复后关闸。其余 Minor 分诊见 §5。
 
 ## 3. 控制器决议（与计划文本的偏差，均已记录）
 
@@ -74,10 +75,12 @@ node docs/superpowers/specs/2026-11-05-mahjong-table-redgold-geometry.mjs → AL
 - Task 9：shuffle/draw 无轻震；同视图副露+回合双震动；同视图胡/出牌 cue 可能互相打断；无 v1 lack/SBR 与第二局重挂用例。
 - Task 10：`parseAnimRules` 分组选择器只捕获最后一个；接线闸用 `includes`；死类闸只扫 animations.scss；内联 style 的 infinite 不在射程。
 
+**终审分诊**：上列全部可发，不阻塞。终审推荐的 4 项回归已在 `53213cea` 补齐（reduced-motion 下一版出队、`seenHuSeats` mount seed、rob fixture 改为 `state:'claim'+windowId:'rob:N'`、v1 lack 音效）。剩余终审 Minor（可发）：`RiverMeldV2.scale` 未被 River 消费（最坏 k≈0.99487，无可见影响）；play 模式若 `claimsForMe` 同时给出 hu+2 杠，ActionBar 3 行会超出 176px（罕见，走查确认）；`mahjong-layout-v2.test.ts` 的「互不相交」只断言边界；Hub/SeatChip/River 字号为固定 px（B 方案 u=1，成立）。
+
 ## 6. 回滚
 
 - 本片只改客户端展示层：新增 layout v2 / claims / keys / Hub / ActionBar 与测试；修改 Board、River、SeatChip、Meld、Tile、HandBacks、HuBanner、table.vue、useTableSound、animations.scss、uni.scss；删除 Center/ClaimTile 及其测试。
-- 回滚整片：`git revert --no-commit 3f0dc4c7..59c1c620 && git commit`（或按单个 Task 提交 revert）。
+- 回滚整片：`git revert --no-commit 3f0dc4c7..53213cea && git commit`（或按单个 Task 提交 revert）。
 - 旧 `mahjong-layout.ts` 与其测试仍在，未被引用但可直接恢复。
 
 ## 7. 下一步（需要用户）
