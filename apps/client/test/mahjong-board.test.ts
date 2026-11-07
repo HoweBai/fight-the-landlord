@@ -179,6 +179,29 @@ describe('MahjongBoard：装配与动作上抛', () => {
     expect(wrapper.emitted('mahjong')?.[0]?.[1]).toBe('turn:1');
   });
 
+  it('手牌点选：可选时 emit select（换三张多选 / 出牌单击与双击）；不可选时不 emit', async () => {
+    // 出牌窗口：单击 / 双击（400ms 内同一张）都先 emit select（选牌音效由页面接线）
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const first = wrapper.findAll('.mj__hand .mj-tile')[0]!;
+    await first.trigger('click');
+    expect(wrapper.emitted('select')).toHaveLength(1);
+    await first.trigger('click'); // 双击 ⇒ 出牌路径，select 仍要 emit
+    expect(wrapper.emitted('select')).toHaveLength(2);
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({ type: 'discard', tile: tile(0, 1) });
+
+    // 换三张：多选路径同样 emit select
+    const exchange = mount(MahjongBoard, {
+      props: props({ view: view({ state: 'exchange', activeSeats: [0], windowId: 'exchange' }) }),
+    });
+    await exchange.findAll('.mj__hand .mj-tile')[0]!.trigger('click');
+    expect(exchange.emitted('select')).toHaveLength(1);
+
+    // 不可选（interactive=false）⇒ 一次都不 emit
+    const locked = mount(MahjongBoard, { props: props({ interactive: false }) });
+    await locked.findAll('.mj__hand .mj-tile')[0]!.trigger('click');
+    expect(locked.emitted('select')).toBeUndefined();
+  });
+
   it('响应窗口：碰/过按钮来自 claimsForMe，emit claim（窗口 id 原样回传）', async () => {
     const claims: MahjongClaimOption[] = [{ claim: 'peng', tile: tile(0, 1) }, { claim: 'pass' }];
     const wrapper = mount(MahjongBoard, {

@@ -76,6 +76,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'mahjong', action: MahjongAction, windowId?: string): void;
+  /** 手牌被点选（换三张多选 / 出牌选中；选牌音效由页面接线，Board 不碰音频）。 */
+  (e: 'select'): void;
   (e: 'trustee', on: boolean): void;
   (e: 'more'): void;
   (e: 'leave'): void;
@@ -382,6 +384,7 @@ const displayTiles = computed<
 
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
+  emit('select');
   haptic('light');
 
   if (phase.value === 'exchange') {

@@ -1297,7 +1297,7 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
     expect(stub.calls.vibrateLong, '胡牌重震').toBe(longBefore + 1);
   });
 
-  it('自己出牌：我的弃牌数组增长 ⇒ MjDeal + 轻震；别人出牌不响', async () => {
+  it('自己出牌：我的弃牌数组增长 ⇒ MjSort + 轻震；别人出牌不响', async () => {
     const { wrapper, socket } = mountTable(0);
     await pushView(wrapper, socket, 'game.deal', mahjongView({ version: 1, state: 'exchange' }));
     await pushView(wrapper, socket, 'game.state_update', mahjongView({ version: 2, state: 'play' }));
@@ -1315,7 +1315,7 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
         discards: [[tile(1, 1)], [], [], []],
       }),
     );
-    expect(countCue(beforeMine, CUES.MjDeal), '我出牌 ⇒ MjDeal（服务端确认后）').toBe(1);
+    expect(countCue(beforeMine, CUES.MjSort), '我出牌 ⇒ MjSort（服务端确认后）').toBe(1);
     expect(stub.calls.vibrateShort, '我出牌轻震').toBe(shortBefore + 1);
 
     const beforeOther = audioContexts.length;
@@ -1331,7 +1331,7 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
         discards: [[tile(1, 1)], [tile(2, 2)], [], []],
       }),
     );
-    expect(countCue(beforeOther, CUES.MjDeal), '别人的出牌不播发牌声').toBe(0);
+    expect(countCue(beforeOther, CUES.MjSort), '别人的出牌不播理牌声').toBe(0);
     expect(stub.calls.vibrateShort, '别人的出牌不震').toBe(shortAfterMine);
 
     // 出牌后**立刻**进入 claim 窗口（有人可碰/杠/胡）：弃牌仍是我出的，声音不能丢
@@ -1347,7 +1347,7 @@ describe('麻将音效（Task 9）：局首 / 发牌 / 副露 / 提示', () => {
         discards: [[tile(1, 1), tile(2, 3)], [tile(2, 2)], [], []],
       }),
     );
-    expect(countCue(beforeClaimView, CUES.MjDeal), '出牌直接开 claim 窗口也要响').toBe(1);
+    expect(countCue(beforeClaimView, CUES.MjSort), '出牌直接开 claim 窗口也要响').toBe(1);
   });
 
   it('回合切换：currentPlayer 变成我 ⇒ 轻震（只在 play 相位）', async () => {

@@ -30,7 +30,7 @@ import { playCue, cueForBid, cueForPass } from '../audio';
 import { cueForPlay } from '../audio/play-cues';
 import { cueForPdkPlay } from '../audio/pdk-play-cues';
 import { haptic } from '../feedback/haptics';
-import { meldKey, parseMeldKey } from '../game/mahjong-keys';
+import { meldKey, parseMeldKey, type ParsedMeldKey } from '../game/mahjong-keys';
 
 export function useTableSound(): void {
   const store = useGameStore();
@@ -144,10 +144,10 @@ export function useTableSound(): void {
     v.version === 1 && (v.state === 'exchange' || v.state === 'lack');
 
   let lastMjMelds = new Set(mahjongMeldKeys(store.mahjongView));
-  let lastMjHu = store.mahjongView?.huInfos.length ?? 0;
-  let lastMjHandLen = store.mahjongView?.hand.length ?? 0;
+  let lastMjHu = (store.mahjongView?.huInfos ?? []).length;
+  let lastMjHandLen = (store.mahjongView?.hand ?? []).length;
   let lastMjDiscards = (store.mahjongView?.discards ?? []).map((d) => d.length);
-  let lastMjClaims = store.mahjongView?.claimsForMe.length ?? 0;
+  let lastMjClaims = (store.mahjongView?.claimsForMe ?? []).length;
   let lastMjCurrent = store.mahjongView?.currentPlayer ?? null;
   let lastMjPhase = store.mahjongView?.state ?? null;
   /**
@@ -159,10 +159,10 @@ export function useTableSound(): void {
   /** 首版 / null→view：只登记游标；局首（v1 exchange|lack）补一声洗牌。 */
   function seedMahjong(v: MahjongPlayerView): void {
     lastMjMelds = new Set(mahjongMeldKeys(v));
-    lastMjHu = v.huInfos.length;
-    lastMjHandLen = v.hand.length;
-    lastMjDiscards = v.discards.map((d) => d.length);
-    lastMjClaims = v.claimsForMe.length;
+    lastMjHu = (v.huInfos ?? []).length;
+    lastMjHandLen = (v.hand ?? []).length;
+    lastMjDiscards = (v.discards ?? []).map((d) => d.length);
+    lastMjClaims = (v.claimsForMe ?? []).length;
     lastMjCurrent = v.currentPlayer;
     lastMjPhase = v.state;
     mjDealPlayed = !isMahjongGameStart(v);
@@ -190,6 +190,16 @@ export function useTableSound(): void {
       if (store.settlement) return; // 结算锁：终局后不再播副露 / 胡 / 出牌
       const prev = lastMjMelds;
       const melds = mahjongMeldKeys(v);
+      /**
+       * 上一版的「碰」集合：从**解析后**的 key 构造（`seat:tileType`），
+       * 不按 `${seat}:peng:${type}` 的字符串格式反拼 —— 格式只由 `meldKey` 决定。
+       */
+      const prevPongs = new Set(
+        [...prev]
+          .map((key) => parseMeldKey(key))
+          .filter((k): k is ParsedMeldKey => k?.kind === 'peng')
+          .map((k) => `${k.seat}:${k.tileType}`),
+      );
       for (const key of melds) {
         if (prev.has(key)) continue;
         const parsed = parseMeldKey(key);
@@ -199,12 +209,12 @@ export function useTableSound(): void {
         else {
           // 同座同牌的碰升级为补杠 ⇒ 通用杠声；其余新杠 ⇒ 刮风。
           playCue(
-            prev.has(`${parsed.seat}:peng:${parsed.tileType}`) ? 'MjGang' : 'MjGuafeng',
+            prevPongs.has(`${parsed.seat}:${parsed.tileType}`) ? 'MjGang' : 'MjGuafeng',
           );
         }
         haptic('light');
       }
-      if (v.huInfos.length > lastMjHu) {
+      if ((v.huInfos ?? []).length > lastMjHu) {
         playCue('MjHu');
         haptic('heavy');
       }
@@ -216,16 +226,17 @@ export function useTableSound(): void {
         playCue('MjDeal');
       }
       // 摸牌：手牌增长且**不是**首次 play 的发牌视野 ⇒ 理牌声。
-      if (v.hand.length > lastMjHandLen && !firstPlay) playCue('MjSort');
+      if ((v.hand ?? []).length > lastMjHandLen && !firstPlay) playCue('MjSort');
       // 碰/杠/胡提示：claimsForMe 从无到有（服务端算好的候选）⇒ 理牌声。
-      if (lastMjClaims === 0 && v.claimsForMe.length > 0) playCue('MjSort');
+      if (lastMjClaims === 0 && (v.claimsForMe ?? []).length > 0) playCue('MjSort');
       const mySeat = store.mySeat ?? v.seat;
       // 自己出牌：**我的**弃牌数组增长才响（服务端确认后的视图 diff，不在 emit 路径补回声）。
+      // 出牌是轻响的 MjSort（v5 §2.3 / v6 §4 裁定，不播 MjDeal）。
       // 不按相位过滤：出牌后若有人可碰/杠/胡，同一版视图的 state 已是 `claim`，弃牌仍是我出的。
       if (
-        (v.discards[mySeat]?.length ?? 0) > (lastMjDiscards[mySeat] ?? 0)
+        ((v.discards ?? [])[mySeat]?.length ?? 0) > (lastMjDiscards[mySeat] ?? 0)
       ) {
-        playCue('MjDeal');
+        playCue('MjSort');
         haptic('light');
       }
       // 回合切换：轮到我（play）⇒ 轻震一次（进入 play 那一版也算）。
@@ -237,10 +248,10 @@ export function useTableSound(): void {
         haptic('light');
       }
       lastMjMelds = new Set(melds);
-      lastMjHu = v.huInfos.length;
-      lastMjHandLen = v.hand.length;
-      lastMjDiscards = v.discards.map((d) => d.length);
-      lastMjClaims = v.claimsForMe.length;
+      lastMjHu = (v.huInfos ?? []).length;
+      lastMjHandLen = (v.hand ?? []).length;
+      lastMjDiscards = (v.discards ?? []).map((d) => d.length);
+      lastMjClaims = (v.claimsForMe ?? []).length;
       lastMjCurrent = v.currentPlayer;
       lastMjPhase = v.state;
     },

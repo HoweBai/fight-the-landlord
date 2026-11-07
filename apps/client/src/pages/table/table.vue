@@ -585,6 +585,7 @@ onMounted(() => {
       :balances="balances"
       :level-name="store.viewLevelName"
       @mahjong="onMahjong"
+      @select="playCue('MjSort')"
       @trustee="onTrustee"
       @more="moreOpen = true"
       @leave="onBackToLobby"
