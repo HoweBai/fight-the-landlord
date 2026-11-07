@@ -96,10 +96,20 @@ function layoutBase(W, H, state) {
     const sideTop = Math.max(topRiverTop, bottom(plate) + gap) + (revealed > 0 ? sc(16) : 0);
     const sideBottom = handTop - sc(T.handClearance);
     const avail = sideBottom - sideTop;
-    const rows = clamp(Math.floor((avail + gapT) / (sc(T.sideTileH) + gapT)), 3, 10);
-    const cols = clamp(Math.ceil(visible / rows), 1, 6);
-    const riverW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
-    const riverH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
+    const baseTileW = sc(T.sideTileW), baseTileH = sc(T.sideTileH);
+    let rows, cols, tileW, tileH;
+    if (visible <= 12) {
+      rows = Math.max(1, visible);
+      cols = 1;
+      tileH = Math.min(baseTileH, (avail - (rows - 1) * gapT) / rows);
+      tileW = tileH * 49 / 40;
+    } else {
+      rows = clamp(Math.floor((avail + gapT) / (baseTileH + gapT)), 3, 10);
+      cols = clamp(Math.ceil(visible / rows), 2, 6);
+      tileH = baseTileH; tileW = baseTileW;
+    }
+    const riverW = cols * tileW + (cols - 1) * gapT;
+    const riverH = rows * tileH + (rows - 1) * gapT;
     const backW = sc(T.sideTileH * T.tileRatio); // 83×125
     const pitch = clamp((avail - sc(T.sideTileH)) / 13, sc(8), sc(22));
     const backH = 13 * pitch + sc(T.sideTileH);
@@ -111,9 +121,9 @@ function layoutBase(W, H, state) {
     const windowStart = raw - windowCount;
     const latestIndex = windowCount - 1;
     const badgeCell = windowCount;
-    const gridW = cols * sc(T.sideTileW) + (cols - 1) * gapT;
-    const gridH = rows * sc(T.sideTileH) + (rows - 1) * gapT;
-    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed, windowCount, badgeCount, windowStart, latestIndex, badgeCell };
+    const gridW = cols * tileW + (cols - 1) * gapT;
+    const gridH = rows * tileH + (rows - 1) * gapT;
+    return { sideTop, sideBottom, avail, rows, cols, riverW, riverH, backW, pitch, backH, meld: mf, zoneW, visible, overflow, raw, revealed, windowCount, badgeCount, windowStart, latestIndex, badgeCell, tileW, tileH };
   }
   const leftZ = sideZone('left', leftPlate);
   const rightZ = sideZone('right', rightPlate);
@@ -189,14 +199,14 @@ function layoutBase(W, H, state) {
       melds: z.meld.w ? rect(meldX, z.sideTop + Math.max(0, (z.avail - z.meld.h) / 2), z.meld.w, z.meld.h) : rect(0, 0, 0, 0),
       badge: (() => {
         if (!(z.overflow > 0)) return null;
-        const gridW = z.cols * sc(T.sideTileW) + (z.cols - 1) * gapT;
-        const gridH = z.rows * sc(T.sideTileH) + (z.rows - 1) * gapT;
+        const gridW = z.cols * z.tileW + (z.cols - 1) * gapT;
+        const gridH = z.rows * z.tileH + (z.rows - 1) * gapT;
         const row = Math.floor(z.badgeCell / z.cols);
         const col = z.badgeCell % z.cols;
         return rect(
-          riverX + (z.riverW - gridW) / 2 + col * (sc(T.sideTileW) + gapT),
-          z.sideTop + (z.riverH - gridH) / 2 + row * (sc(T.sideTileH) + gapT),
-          sc(T.sideTileW), sc(T.sideTileH),
+          riverX + (z.riverW - gridW) / 2 + col * (z.tileW + gapT),
+          z.sideTop + (z.riverH - gridH) / 2 + row * (z.tileH + gapT),
+          z.tileW, z.tileH,
         );
       })(),
     };
