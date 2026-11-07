@@ -312,6 +312,11 @@ watch(
     // 但缺这道闸时重连/回放类变化会误播整手发牌动画。
     if (to === 'exchange' && from !== 'exchange' && props.view?.version === 1) {
       dealEpoch.value = props.view?.version ?? null;
+      // 同一挂载内的新局（review M2）：清空亮牌水位与 nonce，否则旧局「已见」座位会把
+      // 新局同座位的亮牌压成 seed —— 翻转动效永远不播。（seenRevealedSeats / revealNonce
+      // 在下方声明：watch 回调只在后续 flush 执行，不存在 TDZ。）
+      seenRevealedSeats.clear();
+      revealNonce.value = 0;
     }
   },
 );
@@ -913,10 +918,20 @@ function showNextBanner(): void {
   bannerAtVersion.value = props.view?.version ?? null;
 }
 
-/** T4 Batch 2：胡牌 banner FIFO —— diff Set 找新增 seat（H3 修法）。 */
+/**
+ * T4 Batch 2：胡牌 banner FIFO —— diff Set 找新增 seat（H3 修法）。
+ * 首个非空 view（挂载时 view 为空，见 `bootstrapSeen`）只 seed、不补播：
+ * 中途进房/重连时对手早胡的不能整批弹一遍。
+ * ⚠️ source 不写 `?? []`：挂载即空 view 时初值必须保持 `undefined`，首调才能识别「首个快照」。
+ */
 watch(
-  () => props.view?.huInfos ?? [],
-  (infos) => {
+  () => props.view?.huInfos,
+  (infos, prev) => {
+    if (!infos) return;
+    if (prev === undefined) {
+      for (const info of infos) seenHuSeats.add(info.seat);
+      return;
+    }
     const newlyAdded: typeof bannerQueue.value = [];
     for (const info of infos) {
       if (!seenHuSeats.has(info.seat)) {

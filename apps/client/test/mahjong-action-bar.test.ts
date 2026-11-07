@@ -105,6 +105,29 @@ describe('MahjongActionBar', () => {
     }
   });
 
+  it('网格显式 2 行 × 84px（176×176 正好铺满）：play 只有出牌时仍钉右下 (2,2)', () => {
+    // 终审 Important 2：只给列轨时，play 单格会让隐式行 1 在 align-content: normal 下
+    // 拉成 ≈88px ⇒ 出牌上浮 ≈42px（不贴底）。行轨道必须也固定。
+    const w = mountBar({ mode: 'play', selectedCount: 1 });
+    const gridStyle = w.find('.mj-action-bar__grid').attributes('style') ?? '';
+    expect(gridStyle).toContain('grid-template-columns: repeat(2, 84px)');
+    expect(gridStyle).toContain('grid-template-rows: repeat(2, 84px)');
+
+    const buttons = w.findAll('.mj-action-bar__btn');
+    expect(buttons).toHaveLength(1);
+    const discardStyle = buttons[0]!.attributes('style') ?? '';
+    expect(discardStyle).toContain('grid-column: 2');
+    expect(discardStyle).toContain('grid-row: 2');
+  });
+
+  it('claim 过按钮不挂主按钮类（--primary 只给胡）', () => {
+    const w = mountBar({ mode: 'claim', options: [peng, gang3, hu5, pass], showPass: true });
+    const byText = (t: string) => w.findAll('.mj-action-bar__btn').find((b) => b.text() === t)!;
+    expect(byText('过').classes()).toContain('mj-action-bar__btn--pass');
+    expect(byText('过').classes()).not.toContain('mj-action-bar__btn--primary');
+    expect(byText('胡 5万').classes()).toContain('mj-action-bar__btn--primary');
+  });
+
   it('claim：非过选项自动排布；过固定在右下 (2,2)', () => {
     const w = mountBar({ mode: 'claim', options: [peng, gang3, hu5, pass], showPass: true });
     const btns = w.findAll('.mj-action-bar__btn');
@@ -286,6 +309,12 @@ describe('MahjongActionBar：红金皮肤（Task 3）', () => {
   it('推荐缺：金色描边（recommended 保留）', () => {
     const body = barRule('.mj-action-bar__btn--recommended');
     expect(body).toContain('$ftl-color-mj-gold');
+  });
+
+  it('推荐缺：金环与 3D 底边合并（不丢 `0 4px 0` 的立体感）', () => {
+    const body = barRule('.mj-action-bar__btn--recommended');
+    expect(body).toContain('rgba($ftl-color-mj-gold, .5)');
+    expect(body).toContain('0 4px 0 $ftl-color-mj-border');
   });
 
   it('根挂 anim-action-slide-in（入场滑入）', () => {

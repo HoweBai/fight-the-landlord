@@ -160,6 +160,15 @@ function isLatest(i: number): boolean {
 }
 
 /**
+ * 最新牌金光（2026-11-08 红金皮肤 Task 3 收口）：必须是**内联** filter 才能压过
+ * MahjongTile 自带的 `.mj-tile:not(.mj-tile--back)` 落影 —— 两条类规则落在同一元素上，
+ * Tile 的权重 (0,3,0) 恒高于本组件 `.mj-river__tile--latest` 的 (0,2,0)；内联样式确定性地赢。
+ * 与 mockup `.tile.latest` 同行为：金光**替代**底影（filter 非叠加属性），不是叠加。
+ * 色值 = `$ftl-color-mj-highlight` (#ffd873) —— 内联样式读不到 SCSS 变量，改令牌时两处一起改。
+ */
+const latestFilterStyle = { filter: 'drop-shadow(0 0 6px rgba(255, 216, 115, 0.8))' };
+
+/**
  * claimed 来源描边：`claimSourceIndex` 非空时**只**描边该窗口下标（同型其他张不描边）；
  * 否则回退到 legacy `filterTileType` 同型过滤。
  */
@@ -225,6 +234,7 @@ function onDiscardClick(t: Tile, index: number): void {
             'mj-river__tile--filtered': isFiltered(i, t),
             'mj-river__tile--clickable': interactive,
           }"
+          :style="isLatest(i) ? latestFilterStyle : undefined"
           @click="onDiscardClick(t, i)"
         />
       </view>
@@ -270,7 +280,9 @@ function onDiscardClick(t: Tile, index: number): void {
   align-items: center;
   justify-content: center;
 }
-/* 最新弃牌（红金皮肤）：发丝线高亮描边 + 金色光晕（旧 box-shadow 会被牌图遮住一半）。 */
+/* 最新弃牌（红金皮肤）：发丝线高亮描边 + 金色光晕（旧 box-shadow 会被牌图遮住一半）。
+   光晕的生效口径是模板里的**内联** `latestFilterStyle`（压过 Tile 自带落影，权重差见其注释）；
+   这里的 filter 只是兜底（内联缺席时不得退回无高亮）。 */
 .mj-river__tile--latest {
   outline: $ftl-hairline solid $ftl-color-mj-highlight;
   outline-offset: 0;

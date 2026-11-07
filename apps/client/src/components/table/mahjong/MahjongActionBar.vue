@@ -23,14 +23,17 @@ export type ActionBarAction =
  * 麻将动作区（哑组件）：只渲染 props、只 emit `action`，不判规则、不取数。
  *
  * 设计：docs/superpowers/specs/2026-11-05-mahjong-table-redgold-design-v4.md §4.6
- *   - play：出牌（宽 176）+ 胡 + 杠；多杠合并为「杠 N」选择器。
+ *   - play：严格 2×2 网格（84px 格）：胡 (1,1) / 杠 (2,1) / 过 (1,2) / 出牌 (2,2)；
+ *     多杠合并为「杠 N」选择器。
  *   - claim：碰/杠/胡/过；options 过滤 pass，`showPass` 只认 claimsForMe 里的 pass
  *     （强制胡无“过”，v12 §2）。
  *   - exchange：换三张（宽 176）+ 已选 x/3。
  *   - lack：万/筒/条三个 84 + 推荐标记。
  *   - rob 的胡按钮显示待响应牌「胡 5万」（v13 §10.2）。
  *
- * 尺寸：2 列 × 84 按钮、gap 8（内联样式由测试钉死）；主按钮金实心、次按钮描金。
+ * 尺寸：2 列 × 2 行、每格 84、gap 8（内联样式由测试钉死；行也必须显式固定 ——
+ * 否则 play 只出牌一格时隐式行会在 `align-content: normal` 下被拉伸、出牌离右下角 42px）。
+ * 主按钮 `status→gold` 渐变实心、次按钮描金。
  * 动效（Task 10）：claim 窗口给按钮挂 `anim-claim-pulse` —— 它是**麻将唯一允许的
  * infinite 类**（定义在 animations.scss；本组件不写 @keyframes）。
  */
@@ -73,6 +76,10 @@ watch(() => props.options, () => {
 const gridStyle = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, 84px)',
+  // 行也必须显式：动作区矩形是 176×176，2×84+8 正好铺满。
+  // 只给隐式行时 play 单格（出牌）会让空行 1 在 align-content: normal 下被拉伸 ≈42px，
+  // 出牌被顶到右上一格 —— 固定行轨道才能把它钉死在右下角。
+  gridTemplateRows: 'repeat(2, 84px)',
   gap: '8px',
   justifyContent: 'end',
 } as const;
@@ -329,10 +336,10 @@ function pickGang(opt: MahjongClaimOption): void {
   color: $ftl-color-mj-muted;
 }
 
-// 推荐缺：金色描边 + 小标记
+// 推荐缺：金色描边 + 小标记（必须**合并** 3D 底边，单写 ring 会丢掉 `0 4px 0` 的立体感）
 .mj-action-bar__btn--recommended {
   border-color: $ftl-color-mj-gold;
-  box-shadow: 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, .5);
+  box-shadow: 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, .5), 0 4px 0 $ftl-color-mj-border;
 }
 
 .mj-action-bar__rec {

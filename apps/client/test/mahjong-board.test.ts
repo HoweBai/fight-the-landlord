@@ -1215,5 +1215,78 @@ describe('MahjongBoard：红金皮肤（Task 3：亮牌翻转 revealNonce）', (
     expect(riverOfDir(wrapper, 'top').props('revealNonce')).toBe(0);
     expect(riverOfDir(wrapper, 'my').props('revealNonce')).toBe(0);
   });
+
+  it('挂载时 view 为空、首个非空 view 已带胡/亮牌：只 seed（不闪、不重播翻转）', async () => {
+    // 中途进房/重连：页面先挂 Board（view=null），之后才拿到服务端快照。
+    const wrapper = mount(MahjongBoard, { props: props({ view: null }) });
+    expect(wrapper.findComponent(MahjongHub).exists()).toBe(false);
+
+    await wrapper.setProps({
+      view: view({ version: 3, huInfos: [hu(1)], revealedHands: [revealedSeat(3)] }),
+    });
+    await nextTick();
+
+    // 胡：首调只记水位，不闪血战盘金光、不补播 banner。
+    expect(wrapper.findComponent(MahjongHub).props('flashKey')).toBe(0);
+    expect(wrapper.find('.mj-hub__flash').exists()).toBe(false);
+    expect(wrapper.find('.mj-hu-banner').exists()).toBe(false);
+    // 亮牌：首调只 seed 座位，不播翻转；但亮牌本身必须接管左河。
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(0);
+    expect(wrapper.findAll('.mj-river--left .anim-reveal-in')).toHaveLength(0);
+    expect(wrapper.find('.mj-river--left .mj-river__revealed').exists()).toBe(true);
+  });
+
+  it('同一挂载跨局（新局 v1 exchange）：清空亮牌水位，新局同座位亮牌重新播翻转', async () => {
+    // 旧局：左家（seat 3）已亮（挂载 seed，nonce 0）。
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({ version: 5, state: 'play', revealedHands: [revealedSeat(3)] }),
+      }),
+    });
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(0);
+
+    // 新局：服务端每局重置 version ⇒ v1 exchange、亮牌清空。
+    await wrapper.setProps({
+      view: view({
+        version: 1,
+        state: 'exchange',
+        activeSeats: [0],
+        windowId: 'exchange',
+        revealedHands: [],
+      }),
+    });
+    await nextTick();
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(0);
+
+    // 新局里同一座位（seat 3）亮牌 ⇒ 旧局水位不得残留，必须重新播翻转。
+    await wrapper.setProps({
+      view: view({ version: 2, state: 'play', revealedHands: [revealedSeat(3)] }),
+    });
+    await nextTick();
+    expect(riverOfDir(wrapper, 'left').props('revealNonce')).toBe(1);
+    expect(wrapper.findAll('.mj-river--left .anim-reveal-in')).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤（2026-11-08 Task 3）—— 胡 banner 金渐变（源码闸）
+// ---------------------------------------------------------------------------
+
+describe('MahjongHuBanner：红金皮肤（Task 3 源码闸）', () => {
+  const bannerSfc = readFileSync('src/components/table/mahjong/MahjongHuBanner.vue', 'utf8');
+  const bannerStyle = [...bannerSfc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) => m[1]!)
+    .join('\n');
+
+  it('金渐变（status→gold）+ ink 字 + edge 描边', () => {
+    const banner = ruleBody(bannerStyle, '.mj-hu-banner');
+    expect(banner).toContain(
+      'linear-gradient(180deg, $ftl-color-mj-status, $ftl-color-mj-gold)',
+    );
+    expect(banner).toContain('border: $ftl-hairline solid $ftl-color-mj-edge');
+    for (const selector of ['.mj-hu-banner__text', '.mj-hu-banner__fan']) {
+      expect(ruleBody(bannerStyle, selector)).toContain('color: $ftl-color-mj-ink');
+    }
+  });
 });
 

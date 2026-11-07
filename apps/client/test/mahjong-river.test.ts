@@ -418,6 +418,30 @@ describe('MahjongRiver：红金皮肤（Task 3：描边 / 徽标 / 标签）', (
     expect(body).not.toContain('box-shadow');
   });
 
+  it('最新牌用内联 filter 金光（压过 Tile 自带落影），只限最新一张', () => {
+    // 终审 Important 1：River 的 scoped 类规则 (0,2,0) 恒输给 MahjongTile 的
+    // `.mj-tile:not(.mj-tile--back)` (0,3,0) ⇒ 光晕必须是内联样式，类规则只作兜底。
+    const w = mount(MahjongRiver, { props: props() });
+    const tiles = w.findAll('.mj-tile');
+    const latestStyle = tiles[2]!.attributes('style') ?? '';
+    expect(latestStyle).toContain('drop-shadow(0 0 6px');
+    expect(latestStyle).toContain('rgba(255, 216, 115, 0.8)');
+    // 替代底影（mockup `.tile.latest` 行为），不是叠加。
+    expect(latestStyle).not.toContain('rgba(0, 0, 0');
+    // 内联 filter 与 Tile 自己的宽高 style 是**合并**（fallthrough），不是覆盖。
+    expect(stylePx(latestStyle, 'width')).toBe(50);
+    expect(stylePx(latestStyle, 'height')).toBe(75);
+    for (const i of [0, 1]) {
+      expect(tiles[i]!.attributes('style') ?? '').not.toContain('drop-shadow');
+    }
+
+    // latestIndex=null（不高亮）⇒ 整组都没有内联 filter。
+    const none = mount(MahjongRiver, { props: props({ latestIndex: null }) });
+    for (const t of none.findAll('.mj-tile')) {
+      expect(t.attributes('style') ?? '').not.toContain('drop-shadow');
+    }
+  });
+
   it('claimed 来源描边用红金 $ftl-color-mj-gold（不再用 $ftl-color-primary 蓝）', () => {
     const body = riverRule('.mj-river__tile--filtered');
     expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-gold');
