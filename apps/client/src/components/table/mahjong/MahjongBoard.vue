@@ -1500,6 +1500,7 @@ function onMeldPopDone(key: string) {
   border-radius: 50%;
   background: $ftl-color-mj-gold;
   box-shadow: 0 0 calc(6px * var(--mj-u)) $ftl-color-mj-gold;
+  transition: transform .08s; // 与 MahjongTile 选中抬升同步
   pointer-events: none;
 }
 .mj__hand :deep(.mj-tile--selected) + .mj__hand-drawn-dot {

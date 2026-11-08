@@ -174,6 +174,8 @@ describe('MahjongHub（铜钱信息井）', () => {
     }
     expect(selfTurn({ seconds: 6 }).find('.mj-hub__slot--urgent').exists()).toBe(false);
     expect(selfTurn({ seconds: 0 }).find('.mj-hub__slot--urgent').exists()).toBe(false);
+    // 非我方出牌：他座亮也不得 urgent（v15 负例，重写时丢失）
+    expect(selfTurn({ currentPlayer: 2 }).find('.mj-hub__slot--urgent').exists()).toBe(false);
   });
 
   it('提示截断 5 字 + …；endedText 优先', () => {

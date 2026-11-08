@@ -19,6 +19,7 @@ import MahjongMeld from '../src/components/table/mahjong/MahjongMeld.vue';
 import MahjongTile from '../src/components/table/mahjong/MahjongTile.vue';
 import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
 import { mahjongTableLayoutV3 } from '../src/game/mahjong-layout-v3';
+import { stripComments } from './helpers/source-scan';
 
 /**
  * Task 8：MahjongBoard v3 装配与交互契约。
@@ -872,6 +873,8 @@ describe('MahjongBoard：摸牌分离与 display 下标', () => {
     expect(wrap.getAttribute('style')).toContain(
       `margin-left: ${layout.hand.drawnGap - layout.hand.gap}px`,
     );
+    expect(wrap.getAttribute('style')).toContain(`width: ${layout.hand.tile.w}px`);
+    expect(wrap.getAttribute('style')).toContain(`height: ${layout.hand.tile.h}px`);
     expect(wrap.querySelector('.mj__hand-drawn-dot')).not.toBeNull();
     expect(wrapper.findAll('.mj__hand-drawn')).toHaveLength(1);
   });
@@ -1540,9 +1543,11 @@ describe('MahjongBoard：红金皮肤（Task 4：对家副露压缩 k）', () =>
 });
 
 describe('MahjongBoard：v16 摸牌位金点', () => {
+  const cleanBoardStyle = stripComments(boardStyle);
+
   it('源码闸：旧摸牌位抬升/金边规则整体删除；金点 8u + pointer-events none', () => {
-    expect(boardStyle).not.toContain('.mj__hand-tile--drawn)');
-    const dot = /\.mj__hand-drawn-dot\s*\{([^}]*)\}/.exec(boardStyle);
+    expect(cleanBoardStyle).not.toContain('mj__hand-tile--drawn');
+    const dot = /\.mj__hand-drawn-dot\s*\{([^}]*)\}/.exec(cleanBoardStyle);
     expect(dot, '.mj__hand-drawn-dot 规则必须存在').not.toBeNull();
     const body = dot![1]!;
     expect(body).toContain('width: calc(8px * var(--mj-u))');
@@ -1554,13 +1559,20 @@ describe('MahjongBoard：v16 摸牌位金点', () => {
   it('源码闸：金点跟随选中抬升（兄弟选择器）+ 包裹层 z-index', () => {
     const follow =
       /\.mj__hand\s+:deep\(\.mj-tile--selected\)\s*\+\s*\.mj__hand-drawn-dot\s*\{([^}]*)\}/.exec(
-        boardStyle,
+        cleanBoardStyle,
       );
     expect(follow, '金点跟随选中抬升规则必须存在').not.toBeNull();
     expect(follow![1]).toContain('translateY(calc(-1 * var(--mj-tile-lift, 10px)))');
-    const z = /\.mj__hand-drawn--selected\s*\{([^}]*)\}/.exec(boardStyle);
+    const z = /\.mj__hand-drawn--selected\s*\{([^}]*)\}/.exec(cleanBoardStyle);
     expect(z, '包裹层选中 z-index 规则必须存在').not.toBeNull();
     expect(z![1]).toContain('z-index: 10');
+  });
+
+  it('源码闸：摸牌位包裹层自身无 transform/outline', () => {
+    const wrap = /\.mj__hand-drawn\s*\{([^}]*)\}/.exec(cleanBoardStyle);
+    expect(wrap, '.mj__hand-drawn 规则必须存在').not.toBeNull();
+    expect(wrap![1]).not.toContain('transform');
+    expect(wrap![1]).not.toContain('outline');
   });
 
   it('摸牌位可选中（包裹层挂 selected 类）并双击出牌', async () => {
