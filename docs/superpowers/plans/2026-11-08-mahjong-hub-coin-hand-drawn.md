@@ -13,7 +13,7 @@
 - 只改客户端展示层；不改协议/服务端/数据库/admin；不改 `mahjong-layout-v3.ts` 与牌面/牌背素材。
 - 信息井按 **160×160 设计 px** 渲染；Board `hubStyle` 必须含 `position:absolute`、`left = hub.cx - 80`、`top = hub.cy - 80`、`width/height: 160px`、`transform: scale(u)`、`transform-origin: center`。
 - 方孔 66×66（**`box-sizing: border-box`**）；内容宽 62px；牌墙 30px；提示 10px、最多 5 字 + 省略号、`max-width: 100%`。
-- 扇形：4 块 90°，`conic-gradient`（**单色标写法，兼容 Chrome 69**），待机 `opacity:.4`、亮 `opacity:1`；两条对角线用独立发丝层（`$ftl-hairline`）。
+- 扇形：4 块 90°，`conic-gradient`（**单色标写法；实际最低内核 Chrome 87+——`inset` 是仓库既有基线**），待机 `opacity:.4`、亮 `opacity:1`；两条对角线用独立发丝层（`$ftl-hairline`）。
 - 倒计时 18px；徽标胶囊 11px / `padding: 0 5px`；发丝线一律 `$ftl-hairline`（禁止裸 `1px`）。
 - 亮灭：`play/claim/rob → currentPlayer`；`exchange/lack → activeSeats`；其他不亮。lit 显示倒计时，否则显示该家徽标。
 - 保留 `anim-mj-urgent`（自家末 5 秒）；上/下槽无 transform，左/右槽才用 translate。
