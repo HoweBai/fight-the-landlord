@@ -599,6 +599,7 @@ function layoutBase(W: number, H: number, input: NormalizedInput): BaseLayout {
     const badgeCell = windowCount;
     const blockRows = windowed ? T.sideRowsMax : rows;
     const blockW = cols > 0 ? cols * sc(T.sideRiverTileW) + (cols - 1) * gapT : 0;
+    // 刻意留 0.02px 差：blockH 用未舍入的 37.168…，导出 tile.h 舍入为 37.17（计划 I9 接受；按 tile.h 排 10 行得 389.70 vs rect 389.68）
     const blockH =
       blockRows > 0 ? blockRows * sc(T.sideRiverTileH) + (blockRows - 1) * gapT : 0;
     const x =

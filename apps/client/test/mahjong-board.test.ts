@@ -21,7 +21,7 @@ import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
 import { mahjongTableLayoutV3 } from '../src/game/mahjong-layout-v3';
 
 /**
- * Task 8：MahjongBoard v2 装配与交互契约。
+ * Task 8：MahjongBoard v3 装配与交互契约。
  *
  * 判据：
  *  - 只靠 props 渲染（不读 store）：血战盘 / 四座位 / 四河 / 手牌 / 动作区；
@@ -782,8 +782,9 @@ describe('MahjongBoard：v3 布局接线（2 列侧河 / 30×45 听牌）', () =
     expect(left.props('cols')).toBe(0);
     expect(left.props('discards')).toHaveLength(0);
     expect(left.props('laneWidth')).toBeCloseTo(40.4, 2);
-    expect(left.props('meldRect').width).toBeCloseTo(40.4, 2);
-    expect(left.props('meldRect').left, '侧副露局部 x 必须在河块左侧（负）').toBeLessThan(0);
+    const meldRect = left.props('meldRect')!;
+    expect(meldRect.width).toBeCloseTo(40.4, 2);
+    expect(meldRect.left, '侧副露局部 x 必须在河块左侧（负）').toBeLessThan(0);
     expect(wrapper.find('.mj-river--left').attributes('style')).toContain('width: 0px');
     expect(wrapper.findAll('.mj-river--left .mj-meld')).toHaveLength(1);
   });

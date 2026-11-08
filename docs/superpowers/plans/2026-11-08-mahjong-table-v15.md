@@ -45,7 +45,7 @@
 
 **测试（v15 原型为参考）:**
 - 七档 `1334×750/1500×750/1623×750/1778×750/1334×833/1334×1000/1334×1334` + 2668×1500（u=2）；十五态（normal/mid/top29/twoSurvivors/revealed/heavy/fourMelds/selfFourGang/gangHeavy/overlay/overlayWorst/revealed29/oneSideRevealed/threeRevealed/revealedGang）全部 `checks.length===0`。
-- base normal：侧河 2 列、tile 56×37.168、ting 30×45/2×5、位置 `x≈90.7`、`y≈511`。
+- base normal：侧河 2 列、tile 56×37.168、ting 30×45/2×5（normal 无听牌 → 0×0；精确值见 C1）。
 - 侧 0/1/8/12/20/21/24/29 张：cols=2、rows、19+N、badgeCell/badgeRect。
 - 七档只改 offset（u=1）；2668×1500 u=2、rect 等比。
 - 不修改 v1/v2 文件。

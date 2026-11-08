@@ -29,9 +29,9 @@
   - 左：`x = min(topRiver.left, ownRiver.left) − 4 − blockW`
   - 右：`x = max(topRiver.right, ownRiver.right) + 4`
   - `y = sideTop + (avail − blockH)/2`
-- 窗口：`overflow = raw > 20`；`windowCount = overflow ? 19 : visible`；`badgeCount = raw − windowCount`；`windowStart = raw − windowCount`；`latestIndex = windowCount − 1`；`badgeCell = windowCount`。
+- 窗口：`overflow` 为数值 `raw − visible`（v2 契约）；`raw > 20` 仅是窗口/徽标条件（`windowCount = raw > 20 ? 19 : visible`）；`badgeCount = raw − windowCount`；`windowStart = raw − windowCount`；`latestIndex = windowCount − 1`；`badgeCell = windowCount`。
   - 29 张 → 19 张 + `+10`；20 张 → 20 张；≤20 无徽标。
-- `badgeRect`：2 列网格第 `windowCount` 格（`row=floor(windowCount/2)`，`col=windowCount%2`），画布局部坐标。
+- `badgeRect`：2 列网格第 `windowCount` 格（`row=floor(windowCount/2)`，`col=windowCount%2`），**画布坐标**（Board 在 River 边界减一次河块原点）。
 - 亮牌 `revealed`：`raw = revealedCount`；`visible = min(raw,24)`；无 overflow/徽标；行数同上。
 
 ### 1.3 听牌区
