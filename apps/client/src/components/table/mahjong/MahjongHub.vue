@@ -49,10 +49,6 @@ const emit = defineEmits<{
 
 const DIRS: readonly HubDir[] = ['top', 'left', 'right', 'self'];
 
-function seatOf(dir: HubDir): number | undefined {
-  return props.seats.find((s) => s.dir === dir)?.seat;
-}
-
 /** 方孔提示：最多 5 字 + 省略号（62px 内容宽）；endedText 优先。 */
 const statusShown = computed(() => {
   const chars = Array.from(props.endedText || props.statusText || '');
@@ -71,7 +67,8 @@ interface HubSector {
 
 const sectors = computed<HubSector[]>(() =>
   DIRS.map((dir) => {
-    const seat = seatOf(dir);
+    const seatInfo = props.seats.find((s) => s.dir === dir);
+    const seat = seatInfo?.seat;
     let lit = false;
     if (seat !== undefined) {
       if (props.phase === 'play' || props.phase === 'claim' || props.phase === 'rob') {
@@ -86,7 +83,6 @@ const sectors = computed<HubSector[]>(() =>
       const seconds = Math.max(0, Math.floor(Number(props.seconds) || 0));
       return { dir, lit, urgent, text: `${seconds}s`, kind: 'clock' };
     }
-    const seatInfo = props.seats.find((s) => s.dir === dir);
     const badgeText = seatInfo?.badge && seatInfo.badgeText ? seatInfo.badgeText : '';
     return { dir, lit, urgent: false, text: badgeText, kind: badgeText ? 'badge' : 'none' };
   }),
@@ -264,6 +260,9 @@ function onFlashEnd(e: AnimationEvent): void {
   color: $ftl-color-mj-urgent;
 }
 .mj-hub__slot--badge {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
   padding: 0 5px;
   border: $ftl-hairline solid $ftl-color-mj-border;
   border-radius: 8px;

@@ -158,7 +158,7 @@
 - `mahjong-hub.test.ts` 大量源码闸断言旧位置/小点/徽标，需同步重写；漏改会出现假绿（源码闸统一剥注释视图）。
 - 手牌包裹层改变 flex 子项结构：必须保持宽高/`flex: 0 0 auto` 与原一致，否则手牌间距漂移（测试钉住）；两分支绑定重复易漏 `selected`（补摸牌位选择/出牌行为测试）。
 - 扇形金色在深色绒面上的可读性依赖真机亮度；先用预览基线，真机走查兜底。
-- `conic-gradient` 依赖 WebView 内核：**接受最低 Chrome 69+ / Android 9+**；`clip-path` 的兼容面反而更窄，不作兜底；真失效时轮次仍有座位牌 active 态兜底。
+- `conic-gradient` 依赖 WebView 内核：**接受最低 Chrome 87+ / Android 9+**（`inset` / flex `gap` 已是仓库既有基线；单色标 conic 仍保留以兼容更老内核）；`clip-path` 的兼容面反而更窄，不作兜底；真失效时轮次仍有座位牌 active 态兜底。
 - `claim`/`rob` 阶段沿用现有 `currentPlayer`（弃牌者）亮块语义，与「响应者」可能不同；本版不改该语义（若产品要改为响应者，需协议侧提供明确字段）。
 - lit 时徽标暂时隐藏；`MahjongSeatChip` 角标仍有胡/听/缺/托副本，不构成信息丢失。
 

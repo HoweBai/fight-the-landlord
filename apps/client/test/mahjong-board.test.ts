@@ -258,7 +258,7 @@ describe('MahjongBoard：装配与动作上抛', () => {
     expect(wrapper.find('.mj-action-bar').exists()).toBe(false);
   });
 
-  it('结束态「本局结束」只出现一次；有胡家时显示已胡 N 家', () => {
+  it('结束态「本局结束」只出现一次；有胡家时显示已胡N家', () => {
     const ended = mount(MahjongBoard, {
       props: props({ view: view({ state: 'ended', activeSeats: [] }) }),
     });

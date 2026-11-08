@@ -937,7 +937,7 @@ Expected: test 全绿；lint exit 0；build `DONE Build complete.`。
 - 设计/审查：spec 路径 + §10 审查记录；计划 §计划审查记录；预览路径；真浏览器截图路径或「未执行」登记。
 - 回滚：本片只动两个组件与测试；回滚 = `git revert` 对应提交；部署回滚点仍 `dev-362b9f9`（v16 未部署）。
 - 下一步（需用户裁决）：推送 dev → 部署测试服 → 重打 APK → 真机走查（扇形可读性、5 字提示不溢出、金点随选中抬升、摸牌位与选中一眼可分）。
-- 已知取舍：claim/rob 沿用 `currentPlayer` 语义；160 视觉小于布局矩形；conic-gradient 最低内核 Chrome 69（单色标写法）。
+- 已知取舍：claim/rob 沿用 `currentPlayer` 语义；160 视觉小于布局矩形；conic-gradient 最低内核 Chrome 87+（单色标写法；`inset` / flex `gap` 已是仓库既有基线）。
 
 - [ ] **Step 4: 提交**
 

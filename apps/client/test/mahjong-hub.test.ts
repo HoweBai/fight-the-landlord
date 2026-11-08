@@ -14,7 +14,7 @@ const DIRS = ['top', 'left', 'right', 'self'] as const;
 type TestSeat = {
   seat: number;
   dir: 'top' | 'left' | 'right' | 'self';
-  badge?: 'hu' | 'ting' | 'lack' | 'trustee';
+  badge?: 'hu' | 'ting' | 'lack' | 'trustee' | null;
   badgeText?: string;
 };
 const seats: TestSeat[] = [
@@ -111,6 +111,13 @@ describe('MahjongHub（铜钱信息井）', () => {
     expect(slot(w, 'right').exists()).toBe(false);
     expect(slot(w, 'top').classes()).not.toContain('mj-hub__slot--badge');
     expect(slot(w, 'self').classes()).toContain('mj-hub__slot--badge');
+  });
+
+  it('徽标：badge 为 null 或 badgeText 为空都不渲染', () => {
+    const none = mountHub({ seats: [{ seat: 0, dir: 'self', badge: null, badgeText: '听' }] });
+    expect(none.findAll('.mj-hub__slot')).toHaveLength(0);
+    const empty = mountHub({ seats: [{ seat: 0, dir: 'self', badge: 'ting', badgeText: '' }] });
+    expect(empty.findAll('.mj-hub__slot')).toHaveLength(0);
   });
 
   it('多块同时亮（exchange）：每块显示同一 seconds，徽标被覆盖', () => {
@@ -248,6 +255,7 @@ describe('MahjongHub（铜钱信息井）', () => {
     expect(slotRule).toContain('font-size: 18px');
     expect(slotRule).toContain('font-weight: 700');
     expect(slotRule).toContain('tabular-nums');
+    expect(slotRule).not.toContain('transform');
     const top = ruleBody(styleCode, '.mj-hub__slot--top');
     expect(top).toContain('top: 12%');
     expect(top).toContain('text-align: center');
@@ -256,10 +264,16 @@ describe('MahjongHub（铜钱信息井）', () => {
     expect(self).toContain('bottom: 6%');
     expect(self).toContain('text-align: center');
     expect(self).not.toContain('transform');
-    expect(ruleBody(styleCode, '.mj-hub__slot--left')).toContain('translate(-50%, -50%)');
-    expect(ruleBody(styleCode, '.mj-hub__slot--right')).toContain('translate(50%, -50%)');
+    const left = ruleBody(styleCode, '.mj-hub__slot--left');
+    expect(left).toContain('left: 11%');
+    expect(left).toContain('translate(-50%, -50%)');
+    const right = ruleBody(styleCode, '.mj-hub__slot--right');
+    expect(right).toContain('right: 11%');
+    expect(right).toContain('translate(50%, -50%)');
     expect(ruleBody(styleCode, '.mj-hub__slot--urgent')).toContain('$ftl-color-mj-urgent');
     const badge = ruleBody(styleCode, '.mj-hub__slot--badge');
+    expect(badge).toContain('width: max-content');
+    expect(badge).toContain('margin: 0 auto');
     expect(badge).toContain('font-size: 11px');
     expect(badge).toContain('padding: 0 5px');
     expect(badge).toContain('border: $ftl-hairline solid $ftl-color-mj-border');

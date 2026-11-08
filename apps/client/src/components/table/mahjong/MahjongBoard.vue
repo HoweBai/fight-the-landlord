@@ -662,7 +662,7 @@ const handHintAffected = computed(() => {
 
 const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
 
-/** 血战盘状态行（v6 §3.4）：全部以我是否 pending 分「请… / 等待…」两态。 */
+/** 血战盘方孔提示（v16）：全部以我是否 pending 分「请… / 等待…」两态。 */
 const statusText = computed(() => {
   if (phase.value === 'ended') {
     return endReason.value > 0 ? `已胡${endReason.value}家` : '本局结束';
