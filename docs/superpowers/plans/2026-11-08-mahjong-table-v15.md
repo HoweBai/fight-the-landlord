@@ -117,7 +117,7 @@ then full `pnpm -C apps/client test` + `lint` + `build`.
 - **I7** `ting.cols = min(count,5)`（0 张为 0）；宽度/grid 都用它，不能固定 5。
 - **I8** ting 与自家河实际间隙 184–224px（自家河 12 列时）；不要写“≥250px”，改为“≥180px / 不相交”。
 - **I9** 牌格 h 四舍五入 **37.17**（`56*75/113=37.16814`）；测试用 `toBeCloseTo` 或 37.17；块高用 37.168，0.02px 差可接受但注明。
-- **I10** 侧河块 x 随上/下河 16→17 张从 8→12 列跳约 78.5px（左 393.33→314.99；右 826.67→905.17）。本版**接受并测试**该一次性布局跳变（用户选 2 列方案），补 16/17 张 fixture。
+- **I10** 侧河块 x 随上/下河 16→17 张从 8→12 列跳约 78.5px（左 393.33→314.99；右 826.67→**905.01**，以几何原型实测为准；原文 905.17 系笔误）。本版**接受并测试**该一次性布局跳变（用户选 2 列方案），补 16/17 张 fixture。
 - **I11** 增加 pair/gap 断言：`selfMeld×leftRiver/rightRiver`、`topMeld×leftRiver/rightRiver`；最紧间隙侧河底 565.84 vs selfMeld 顶 569.2（3.36px），断言为正间隙。
 - **I12** Board 测试：`mahjong-board.test.ts` 里所有 `mahjongTableLayoutV2` import 改 v3；ting label 测试（原 `layout.ting.left/top`）改 `ting.rect`；加 v3-only 锚点（如 `ting.rect.left` 或侧河 rect），确保 Board 真的用 v3。
 - **I13** Task 1 不是照抄原型：**从 v2 复制**，保留 `normalizeSeat`/`r2`/顶层输出形状/`rects`/`backs`/`seatPlates`/`hand`/`actions`/`topMeld`/`bannerAnchors`；只替换侧区/侧河/ting 的数学。规范化测试 `[5,2,3,3,4]→4 组/3,4,3,3` 必须保留。

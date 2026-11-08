@@ -18,7 +18,7 @@
 - 位置：`sideTop = 左/右座位牌底 + gap`（不再取 topRiver 顶；侧区元素在中央河列之外，不会被顶河挡住）；`sideBottom = handTop − 16`。
 - 侧背：`backW = 45.714×75/113 = 30.34`，14 张、`pitch = clamp((avail−45.714)/13, 8, 22)`。
 - 侧副露 lane：`x = outer + backW + gap`（左）/ `W − outer − backW − gap − laneW`（右）；垂直居中于 side 带；`laneW` 按 0.65 缩放（最多 4 组，必要时缩到 ≥0.4）。
-- 侧区宽 `zoneW = backW + gap + laneW`；中央区 `centerW = W − 2×(outer + zoneW + gap)`。
+- 侧区宽按左右两侧取最大（对称居中）：`zoneW = backW + gap + max(laneW_left, laneW_right)`；中央区 `centerW = W − 2×(outer + zoneW + gap)`。
 - 上/下河宽度随 centerW 变宽；上/下河仍是 8/12 列 × 2 行。
 
 ### 1.2 侧河块（内侧，hub 左右）
@@ -38,10 +38,11 @@
 - 牌格 **30×45**；`2 行 × 5 列`（最多 9）；gap 2。
 - 位置：`x = outer + backW + gap + laneW + gap`（= 侧副露 lane 右侧）；`y = ownRiverTop + (ownRiverH − tingH)/2`（自家河带内，但 x 远离自家河）。
 - 标签「听 N 张」在 ting 上方 18px；12px、漆底金边。
-- 距自家河横向 ≥250px；距左侧河（若存在）≥20px。
+- 与自家河横向间隙 ≥180px（自家河 12 列时实测约 184–224px），且与左侧河（若存在）不相交。
 
 ### 1.4 不变量
-- 上/下河、hub、动作区、手牌、座位牌、banner 锚点、tile 尺寸（顶/自/背）不变。
+- 上/下河、手牌、座位牌、banner 锚点、tile 尺寸（顶/自/背）不变。
+- hub 恒居中（`zoneW` 取左右最大值）；动作区随侧区宽度右移，**不再等同 v13**：normal 左缘 ≈1107.66、有副露（zoneW=74.74）≈1067.26。
 - 所有 rect 在画布内、互不相交（v15 原型的 pairs 全绿）。
 - 旧 v1 `mahjong-layout.ts` 与其测试冻结；v2 `mahjong-layout-v2.ts` 保留（回滚面），生产切到 v3。
 
@@ -52,7 +53,7 @@
 - `rivers.left/right`：`rect`（2 列块）、`tile {w:56,h:37.168}`、`cols:2`、`rows`、`window*`、`badge*`、`meldRect`（外缘 lane）、`laneWidth`。
 - `rivers.top/self`：同 v13（8/12 列 ×2，窗口 23+N）。
 - `ting`：`{ rect, tile:{w:30,h:45}, cols:5, rows }`。
-- `backs`：侧背同 v13；`seatPlates`/`hand`/`actions`/`hub`/`bar` 同 v13。
+- `backs`：侧背仍在最外缘，但 `sideTop` 改为「座位牌底 + gap」（亮牌再 +16），比 v13 上移（heavy 等态约 38.8px）；`seatPlates`/`hand`/`bar` 同 v13，`actions`/`hub` 按 v15 新值。
 - `rects` 包含左右河块、侧 lane、侧背、badge。
 
 ## 3. 组件接线
@@ -77,6 +78,6 @@
 
 - 侧河显示上限从 24 降到 **19 + N**（2 列×10 行；20 格含徽标）。要显示 24 需 3 列或缩小牌高；用户选 19+N。
 - 侧背/侧副露留在外缘，侧河在内侧 → 两者之间有空档；这是“侧河靠近信息井”的代价。
-- 左右牌面 aspectFit → 可见牌面 45.5×37.17（比上下家牌面 37.17×56 略小 19% 面积；格尺寸相同）。
+- 左右牌面 aspectFit → 可见牌面 45.53×37.17（比上下家牌面 36.67×56 小约 17.6% 面积；格尺寸相同）。
 - 侧河 2 列块的位置随上/下河宽度（8/12 列）移动；距 hub 约 60–140px。
 - 旧 v2 布局保留，可随时回滚。
