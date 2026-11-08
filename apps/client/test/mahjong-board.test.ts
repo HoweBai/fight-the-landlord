@@ -16,8 +16,9 @@ import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.v
 import MahjongHuBanner from '../src/components/table/mahjong/MahjongHuBanner.vue';
 import MahjongRiver from '../src/components/table/mahjong/MahjongRiver.vue';
 import MahjongMeld from '../src/components/table/mahjong/MahjongMeld.vue';
+import MahjongTile from '../src/components/table/mahjong/MahjongTile.vue';
 import { CANVAS_METRICS_KEY } from '../src/composables/useLandscapeCanvas';
-import { mahjongTableLayoutV2 } from '../src/game/mahjong-layout-v2';
+import { mahjongTableLayoutV3 } from '../src/game/mahjong-layout-v3';
 
 /**
  * Task 8：MahjongBoard v2 装配与交互契约。
@@ -648,7 +649,7 @@ describe('MahjongBoard：胡牌 banner（bannerSeq + reduced-motion）', () => {
   });
 });
 
-describe('MahjongBoard：v2 布局接线', () => {
+describe('MahjongBoard：v3 布局接线', () => {
   it('对手牌背数量与 src 逐座对位（不是只数个数）', () => {
     const wrapper = mount(MahjongBoard, {
       props: props({ view: view({ cardCounts: [14, 10, 7, 0] }) }),
@@ -662,13 +663,13 @@ describe('MahjongBoard：v2 布局接线', () => {
     }
   });
 
-  it('提供画布尺寸时手牌尺寸与 v2 纯函数逐值一致', () => {
+  it('提供画布尺寸时手牌尺寸与 v3 纯函数逐值一致', () => {
     const metrics = computed(() => ({ width: 1334, height: 1000, scale: 1 }));
     const wrapper = mount(MahjongBoard, {
       props: props(),
       global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
     });
-    const layout = mahjongTableLayoutV2(1334, 1000);
+    const layout = mahjongTableLayoutV3(1334, 1000);
     const first = wrapper.find('.mj__hand .mj-tile');
     expect(first.attributes('style')).toContain(`width: ${layout.hand.tile.w}px`);
     expect(first.attributes('style')).toContain(`height: ${layout.hand.tile.h}px`);
@@ -716,6 +717,142 @@ describe('MahjongBoard：v2 布局接线', () => {
   });
 });
 
+describe('MahjongBoard：v3 布局接线（2 列侧河 / 30×45 听牌）', () => {
+  const riverOfDir = (wrapper: Wrapper, dir: string) =>
+    wrapper.findAllComponents(MahjongRiver).find((r) => r.classes().includes(`mj-river--${dir}`))!;
+
+  /** 29 张合法牌（花色/点数循环）；只用于窗口计数断言。 */
+  const discards29 = Array.from({ length: 29 }, (_, i) =>
+    tile((i % 3) as 0 | 1 | 2, (i % 9) + 1),
+  );
+
+  it('侧河 tileW=56 / tileH≈37.17 / cols=2（me=0：right=seat1 / left=seat3）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({
+        view: view({
+          discards: [
+            [],
+            [tile(0, 1), tile(0, 2), tile(0, 3)],
+            [],
+            [tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4), tile(1, 5)],
+          ],
+        }),
+      }),
+    });
+    const left = riverOfDir(wrapper, 'left');
+    const right = riverOfDir(wrapper, 'right');
+    for (const [dir, river, rows] of [
+      ['left', left, 3],
+      ['right', right, 2],
+    ] as const) {
+      expect(river.props('tileW'), `${dir} tileW`).toBe(56);
+      expect(river.props('tileH'), `${dir} tileH`).toBeCloseTo(37.17, 2);
+      expect(river.props('cols'), `${dir} cols`).toBe(2);
+      expect(river.props('rows'), `${dir} rows`).toBe(rows);
+    }
+  });
+
+  it('29 张侧河：19 + 10 窗口 / +10 徽标；badgeRect 为河内局部坐标', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ discards: [[], [], [], discards29] }) }),
+    });
+    const left = riverOfDir(wrapper, 'left');
+    expect(left.props('cols')).toBe(2);
+    expect(left.props('rows')).toBe(10);
+    expect(left.props('windowStart')).toBe(10);
+    expect(left.props('windowCount')).toBe(19);
+    expect(left.props('latestIndex')).toBe(18);
+    expect(left.props('badgeCount')).toBe(10);
+    // 画布 badgeRect (451.33, 528.67, 56, 37.17) − 河块 rect (393.33, 176.16)
+    expect(left.props('badgeRect')).toEqual({
+      left: 58,
+      top: 352.51,
+      width: 56,
+      height: 37.17,
+    });
+    expect(wrapper.findAll('.mj-river--left .mj-river__grid .mj-tile')).toHaveLength(19);
+    expect(wrapper.find('.mj-river--left .mj-river__badge').text()).toBe('+10');
+  });
+
+  it('侧副露 lane：0 弃牌（河块 0×0）仍渲染副露；meldRect 局部 x 为负（I14）', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [], [PENG_5]] }) }),
+    });
+    const left = riverOfDir(wrapper, 'left');
+    expect(left.props('cols')).toBe(0);
+    expect(left.props('discards')).toHaveLength(0);
+    expect(left.props('laneWidth')).toBeCloseTo(40.4, 2);
+    expect(left.props('meldRect').width).toBeCloseTo(40.4, 2);
+    expect(left.props('meldRect').left, '侧副露局部 x 必须在河块左侧（负）').toBeLessThan(0);
+    expect(wrapper.find('.mj-river--left').attributes('style')).toContain('width: 0px');
+    expect(wrapper.findAll('.mj-river--left .mj-meld')).toHaveLength(1);
+  });
+
+  it('听牌行：9 张 30×45，容器 5 列 grid（cols=5 / autoRows=45 / gap=2u）', () => {
+    const ting9 = Array.from({ length: 9 }, (_, i) => tile((i % 3) as 0 | 1 | 2, (i % 9) + 1));
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ tingTiles: ting9 }) }),
+    });
+    const container = wrapper.find('.mj__ting');
+    expect(container.exists()).toBe(true);
+    const style = container.attributes('style') ?? '';
+    expect(style).toContain('display: grid');
+    expect(style).toContain('grid-template-columns: repeat(5, 30px)');
+    expect(style).toContain('grid-auto-rows: 45px');
+    expect(style).toContain('gap: 2px');
+    // v3 ting.rect = (50.34, 511, 158, 92)
+    expect(style).toContain('left: 50.34px');
+    expect(style).toContain('top: 511px');
+    expect(style).toContain('width: 158px');
+    expect(style).toContain('height: 92px');
+
+    const tiles = container.findAllComponents(MahjongTile);
+    expect(tiles).toHaveLength(9);
+    for (const t of tiles) {
+      expect(t.props('w')).toBe(30);
+      expect(t.props('h')).toBe(45);
+      expect(t.attributes('style')).toContain('width: 30px');
+      expect(t.attributes('style')).toContain('height: 45px');
+    }
+    expect(wrapper.find('.mj__ting-label').text()).toBe('听 9 张');
+  });
+
+  it('6 张听牌：仍 5 列宽 158，残行由 grid 从第 1 列左对齐（不得 flex 居中）', () => {
+    const ting6 = Array.from({ length: 6 }, (_, i) => tile((i % 3) as 0 | 1 | 2, (i % 9) + 1));
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ tingTiles: ting6 }) }),
+    });
+    const container = wrapper.find('.mj__ting');
+    const style = container.attributes('style') ?? '';
+    expect(style).toContain('grid-template-columns: repeat(5, 30px)');
+    expect(style, '6 张仍按 5 列宽，不是 6 列').toContain('width: 158px');
+    expect(style).toContain('height: 92px');
+    expect(container.findAllComponents(MahjongTile)).toHaveLength(6);
+
+    // 静态样式清掉 flex 居中：第二行（第 6 张）由 grid 自动放置到行首。
+    const rule = ruleBody(boardStyle, '.mj__ting');
+    expect(rule).not.toContain('display: flex');
+    expect(rule).not.toContain('flex-wrap');
+    expect(rule).not.toContain('justify-content');
+    expect(rule).not.toContain('align-content');
+  });
+
+  it('v3-only 锚点：动作区 left 1107.66（v2 会侧河占宽后左移）；侧河块 left 393.33', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const bar = wrapper.findComponent(MahjongActionBar);
+    expect(bar.exists()).toBe(true);
+    const style = bar.attributes('style') ?? '';
+    expect(style).toContain('left: 1107.66px');
+    expect(style).toContain('top: 438px');
+    expect(style).toContain('width: 176px');
+
+    const withSide = mount(MahjongBoard, {
+      props: props({ view: view({ discards: [[], [], [], [tile(0, 1)]] }) }),
+    });
+    expect(withSide.find('.mj-river--left').attributes('style')).toContain('left: 393.33px');
+  });
+});
+
 describe('MahjongBoard：摸牌分离与 display 下标', () => {
   const baseHand = view().hand;
 
@@ -728,7 +865,7 @@ describe('MahjongBoard：摸牌分离与 display 下标', () => {
     const last = tiles[tiles.length - 1]!;
     expect(last.classes()).toContain('mj__hand-tile--drawn');
     expect(last.attributes('aria-label')).toBe('筒9');
-    const layout = mahjongTableLayoutV2(1334, 750);
+    const layout = mahjongTableLayoutV3(1334, 750);
     expect(last.attributes('style')).toContain(
       `margin-left: ${layout.hand.drawnGap - layout.hand.gap}px`,
     );
@@ -869,7 +1006,7 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
       props: props(),
       global: { provide: { [CANVAS_METRICS_KEY]: metrics } },
     });
-    const layout = mahjongTableLayoutV2(1623, 750);
+    const layout = mahjongTableLayoutV3(1623, 750);
     const inline = wrapper.find('.mj__felt').attributes('style') ?? '';
     expect(inline).toContain(`left: ${layout.offsetX}px`);
     expect(inline).toContain(`top: ${layout.offsetY}px`);
@@ -1027,14 +1164,14 @@ describe('MahjongBoard：红金皮肤（Task 2：听牌标签 / 盘金光）', (
     expect(label.exists(), '.mj__ting-label 必须存在').toBe(true);
     expect(label.text()).toBe('听 2 张');
 
-    const layout = mahjongTableLayoutV2(1334, 750, {
+    const layout = mahjongTableLayoutV3(1334, 750, {
       ...emptyLoads,
       tingCount: 2,
     });
     const inline = label.attributes('style') ?? '';
     expect(inline).toContain('position: absolute');
-    expect(inline).toContain(`left: ${layout.ting.left}px`);
-    expect(inline).toContain(`top: ${layout.ting.top - 18 * layout.u}px`);
+    expect(inline).toContain(`left: ${layout.ting.rect.left}px`);
+    expect(inline).toContain(`top: ${layout.ting.rect.top - 18 * layout.u}px`);
 
     // 静态样式：12px sheen 字、漆底金边、6px 圆角、padding 2px 4px、z-index 1。
     const rule = ruleBody(boardStyle, '.mj__ting-label');
@@ -1344,7 +1481,7 @@ describe('MahjongBoard：红金皮肤（Task 4：对家副露压缩 k）', () =>
       props: props({ view: view({ melds: [[], [], [gang5, gang5, gang5, gang5], []] }) }),
     });
     // 与 Board 同一口径的布局输入（me=0 ⇒ top=2；just top has 4 gang groups）
-    const layout = mahjongTableLayoutV2(1334, 750, {
+    const layout = mahjongTableLayoutV3(1334, 750, {
       bySlot: {
         self: { discards: 0, melds: [], revealedCount: 0 },
         top: { discards: 0, melds: [4, 4, 4, 4], revealedCount: 0 },

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * 四川麻将·血战到底牌桌（红金牌桌 v2 装配）。
+ * 四川麻将·血战到底牌桌（红金牌桌 v3 装配）。
  *
  * 与 DdzBoard/PdkBoard 同一套边界：只收 props、只 emit（不读 store）；
  * 所有合法性/番数/可响应动作都来自 `MahjongPlayerView`（`claimsForMe`/`activeSeats`/
  * `tingTiles` 等），客户端只做**展示性**选择与按钮禁用。
  *
  * 装配契约：
- *  - 布局：`mahjongTableLayoutV2`（固定 1334×750 base，u/offset 缩放居中）；
+ *  - 布局：`mahjongTableLayoutV3`（固定 1334×750 base，u/offset 缩放居中；
+ *    2 列侧河 19+N 窗口 / 听牌 30×45 2×5）；
  *  - 牌河：claimed 过滤（`visibleDiscards`）后的可见数组 + 布局窗口字段；
  *  - claim：来源座最后一枚弃牌由 `claimSourceIndex` 描边/可点，rob 无弃牌点击；
  *  - last-discard：`lastDiscardAbs` 记 serverDiscards 绝对下标，再映射到可见窗口；
@@ -28,12 +29,12 @@ import {
 } from '@fight-the-landlord/protocol';
 import { CANVAS_METRICS_KEY } from '../../../composables/useLandscapeCanvas';
 import {
-  mahjongTableLayoutV2,
+  mahjongTableLayoutV3,
   type Rect,
-  type RiverLayoutV2,
-  type SeatLoadV2,
-  type TableInputV2,
-} from '../../../game/mahjong-layout-v2';
+  type RiverLayoutV3,
+  type SeatLoadV3,
+  type TableInputV3,
+} from '../../../game/mahjong-layout-v3';
 import {
   claimSource,
   visibleDiscards,
@@ -85,7 +86,7 @@ const sortedRevealedHands = computed(() =>
   props.view?.revealedHands.map((r) => ({ ...r, tiles: sortTiles(r.tiles) })) ?? [],
 );
 
-// —— 布局（v2）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
+// —— 布局（v3）：画布尺寸由 LandscapeStage provide；独立挂载回退 1334×750 ——
 const stageMetrics = inject(CANVAS_METRICS_KEY, null);
 const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750, scale: 1 });
 const canvasH = computed(() =>
@@ -181,8 +182,8 @@ const visibleBySeat = computed<Tile[][]>(() => {
   );
 });
 
-const loads = computed<TableInputV2>(() => {
-  const seatLoad = (seat: number): SeatLoadV2 => ({
+const loads = computed<TableInputV3>(() => {
+  const seatLoad = (seat: number): SeatLoadV3 => ({
     discards: visibleBySeat.value[seat]?.length ?? 0,
     melds: (props.view?.melds[seat] ?? []).map((m) => m.tiles.length),
     revealedCount: sortedRevealedHands.value.find((r) => r.seat === seat)?.tiles.length ?? 0,
@@ -199,7 +200,7 @@ const loads = computed<TableInputV2>(() => {
   };
 });
 const layout = computed(() =>
-  mahjongTableLayoutV2(canvas.value.width, canvas.value.height, loads.value),
+  mahjongTableLayoutV3(canvas.value.width, canvas.value.height, loads.value),
 );
 
 function rectStyle(r: Rect) {
@@ -216,15 +217,19 @@ const handStyle = computed(() => ({
   gap: `${layout.value.hand.gap}px`,
   '--mj-tile-lift': `${10 * layout.value.u}px`,
 }));
+/** 听牌行（v3）：容器 = `ting.rect`；最多 5 列固定网格，残行由 grid 从第 1 列左对齐（C3）。 */
 const tingStyle = computed(() => ({
-  ...rectStyle(layout.value.ting),
+  ...rectStyle(layout.value.ting.rect),
+  display: 'grid',
+  gridTemplateColumns: `repeat(${layout.value.ting.cols}, ${layout.value.ting.tile.w}px)`,
+  gridAutoRows: `${layout.value.ting.tile.h}px`,
   gap: `${2 * layout.value.u}px`,
 }));
 /** 听牌行标签（Task 2）：钉在听牌行上方 18u 处；其余静态样式在 `.mj__ting-label`。 */
 const tingLabelStyle = computed(() => ({
   position: 'absolute' as const,
-  left: `${layout.value.ting.left}px`,
-  top: `${layout.value.ting.top - 18 * layout.value.u}px`,
+  left: `${layout.value.ting.rect.left}px`,
+  top: `${layout.value.ting.rect.top - 18 * layout.value.u}px`,
 }));
 /** 动作区在河/副露之上（河内副露条带 z-index: 1）。 */
 const actionsStyle = computed(() => ({ ...rectStyle(layout.value.actions), zIndex: 3 }));
@@ -282,7 +287,7 @@ watch(
 );
 
 /** 该座最后一张弃牌在当前窗口里的下标；被 claimed 隐藏/不在窗口 ⇒ null（不亮旧牌）。 */
-function latestIndexFor(seat: number, river: RiverLayoutV2): number | null {
+function latestIndexFor(seat: number, river: RiverLayoutV3): number | null {
   const abs = lastDiscardAbs.value[seat];
   if (abs == null) return null;
   const map = visibleIndexMap(
@@ -760,7 +765,7 @@ function riverMelds(seat: number) {
     return { key, meld: m, pop: newMeldKeySet.value.has(key) };
   });
 }
-function riverOf(seat: number): RiverLayoutV2 {
+function riverOf(seat: number): RiverLayoutV3 {
   if (seat === topSeat.value) return layout.value.rivers.top;
   if (seat === leftSeat.value) return layout.value.rivers.left;
   if (seat === rightSeat.value) return layout.value.rivers.right;
@@ -1166,8 +1171,8 @@ function onMeldPopDone(key: string) {
           :key="`ting-${i}`"
           :tile="t"
           direction="my"
-          :w="20 * layout.u"
-          :h="30 * layout.u"
+          :w="layout.ting.tile.w"
+          :h="layout.ting.tile.h"
         />
       </view>
 
@@ -1413,13 +1418,9 @@ function onMeldPopDone(key: string) {
   white-space: nowrap;
 }
 
-/* —— 听牌行（自己听牌时的 20×30 小牌） —— */
+/* —— 听牌行（自己听牌时的 30×45 小牌；5 列 grid 定位/尺寸由 inline `tingStyle` 给） —— */
 .mj__ting {
   position: absolute;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
 }
 /* Task 2：听 N 张行标签（mockup `.ting-label`）；位置由 inline `tingLabelStyle` 给。 */
 .mj__ting-label {
