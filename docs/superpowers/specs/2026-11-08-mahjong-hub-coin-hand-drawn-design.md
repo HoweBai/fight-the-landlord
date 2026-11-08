@@ -79,7 +79,7 @@
 
 ### 1.6 删除与保留
 
-- **删除**：四个边缘 10px 方位点、四角徽标（胡/听/缺/托）及其 CSS、`compact` prop、`.mj-hub--compact` 类、`.mj-hub__status`、`.mj-hub__wall-label`。
+- **删除**：四个边缘 10px 方位点、四角徽标（胡/听/缺/托）及其 CSS、`compact` 与 `hub` props、`.mj-hub--compact` 类、`.mj-hub__status`、`.mj-hub__wall-label`。
 - **保留**：胡牌金光覆盖层（`flashKey` / `anim-mj-hub-flash`）、`statusText`/`endedText`（并入方孔提示）、`seconds`、`activeSeats`、`seats` props 形状。
 - 新类：`.mj-hub__sector*`、`.mj-hub__slot*`、`.mj-hub__hole`、`.mj-hub__hint`、`.mj-hub__diag*`。
 
@@ -112,9 +112,9 @@
 - `MahjongHub.vue`
   - `sectors = DIRS.map(...)`：`{ dir, lit, urgent, text, kind: 'clock' | 'badge' }`。
   - 模板：4 个扇形层 + 2 条对角线发丝 + 1 个方孔（牌墙 + 提示）+ 4 个文本槽（外层 `v-for` + 内层 `v-if`）+ 金光层。
-  - 删除 `compact` prop / `.mj-hub--compact` / dots / badges / status / wall-label。
+  - 删除 `compact` / `hub` props、`.mj-hub--compact`、dots / badges / status / wall-label。
 - `MahjongBoard.vue`
-  - 信息井 style 改 `hubStyle`（§1.1，含 `position:absolute` 与 `transform-origin:center`）；删除 `:compact` 绑定。
+  - 信息井 style 改 `hubStyle`（§1.1，含 `position:absolute` 与 `transform-origin:center`）；删除 `:hub` / `:compact` 绑定。
   - 手牌：`entry.drawn` 走包裹层 + 金点（§2.1）；事件仍挂在 `MahjongTile` 上。
   - Board 测试里的 `.mj-hub__status` 选择器改 `.mj-hub__hint`（3 处）。
   - `statusText` 两处文案压缩（D6）。
