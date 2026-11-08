@@ -448,11 +448,15 @@ watch(
   },
 );
 
+interface HandEntry {
+  tile: Tile;
+  drawn: boolean;
+  dealNonce: number | null;
+}
+
 /** display 顺序：sorted 13 + 摸牌单独移到行尾；找不到幽灵牌就退回原文。
  *  每张 entry 带 `dealNonce` 哨兵：非摸牌 = dealEpoch，摸牌 = null（不重播发牌）。 */
-const displayTiles = computed<
-  Array<{ tile: Tile; drawn: boolean; dealNonce: number | null }>
->(() => {
+const displayTiles = computed<HandEntry[]>(() => {
   const entries = hand.value.map((tile) => ({ tile, drawn: false, dealNonce: dealEpoch.value }));
   if (drawnType.value === null) return entries;
   const idx = entries.findIndex((e) => tileType(e.tile) === drawnType.value);
@@ -469,6 +473,33 @@ function dealOffsetX(index: number): string {
   const pitch = layout.value.hand.tile.w + layout.value.hand.gap;
   return `${Math.round((center - index) * pitch)}px`;
 }
+
+/** v16：手牌单张的绑定（包裹层内外同一份，摸牌位只多包一层 + 金点）。 */
+function handTileBind(entry: HandEntry, i: number) {
+  return {
+    tile: entry.tile,
+    direction: 'my' as const,
+    w: layout.value.hand.tile.w,
+    h: layout.value.hand.tile.h,
+    selected: selected.value.includes(i),
+    disabled: !handSelectable.value,
+    class: {
+      'anim-deal-in-radial':
+        entry.dealNonce != null && entry.dealNonce === dealEpoch.value && !entry.drawn,
+      'mj__hand-tile--drawn': entry.drawn,
+    },
+    style: {
+      '--ftl-delay': `${i * 30}ms`,
+      '--mj-deal-x': dealOffsetX(i),
+    },
+  };
+}
+/** v16：摸牌位包裹层尺寸 = 牌面尺寸；margin-left 补足 drawnGap（原挂在 image 上）。 */
+const drawnWrapStyle = computed(() => ({
+  width: `${layout.value.hand.tile.w}px`,
+  height: `${layout.value.hand.tile.h}px`,
+  marginLeft: `${layout.value.hand.drawnGap - layout.value.hand.gap}px`,
+}));
 
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
@@ -1197,29 +1228,23 @@ function onMeldPopDone(key: string) {
           />
         </template>
         <template v-else>
-          <MahjongTile
-            v-for="(entry, i) in displayTiles"
-            :key="`hand-${entry.dealNonce ?? 'seed'}-${i}`"
-            :tile="entry.tile"
-            direction="my"
-            :w="layout.hand.tile.w"
-            :h="layout.hand.tile.h"
-            :selected="selected.includes(i)"
-            :disabled="!handSelectable"
-            :class="{
-              'anim-deal-in-radial': entry.dealNonce != null && entry.dealNonce === dealEpoch && !entry.drawn,
-              'mj__hand-tile--drawn': entry.drawn,
-            }"
-            :style="{
-              '--ftl-delay': `${i * 30}ms`,
-              '--mj-deal-x': dealOffsetX(i),
-              marginLeft: entry.drawn
-                ? `${layout.hand.drawnGap - layout.hand.gap}px`
-                : undefined,
-            }"
-            @click="onTileClick(i)"
-            @longpress="onTileLongPress(i)"
-          />
+          <template v-for="(entry, i) in displayTiles" :key="`hand-${entry.dealNonce ?? 'seed'}-${i}`">
+            <view
+              v-if="entry.drawn"
+              class="mj__hand-drawn"
+              :class="{ 'mj__hand-drawn--selected': selected.includes(i) }"
+              :style="drawnWrapStyle"
+            >
+              <MahjongTile v-bind="handTileBind(entry, i)" @click="onTileClick(i)" @longpress="onTileLongPress(i)" />
+              <view class="mj__hand-drawn-dot" />
+            </view>
+            <MahjongTile
+              v-else
+              v-bind="handTileBind(entry, i)"
+              @click="onTileClick(i)"
+              @longpress="onTileLongPress(i)"
+            />
+          </template>
         </template>
         <view
           v-if="phase === 'play' && handSelectable && selected.length === 1"
@@ -1458,16 +1483,27 @@ function onMeldPopDone(key: string) {
 .mj__hand--selectable :deep(.mj-tile) {
   cursor: pointer;
 }
-/* —— 摸牌位（红金皮肤 Task 4）：抬 8u + 金边（outline 不占布局，v4 §6.2） —— */
-.mj__hand :deep(.mj__hand-tile--drawn) {
-  transform: translateY(calc(-8px * var(--mj-u)));
-  outline: $ftl-hairline solid $ftl-color-mj-gold;
-  outline-offset: 0;
-  border-radius: 3px;
+/* v16：摸牌位 = 包裹层 + 右上金点；抬升只属于选中（金点用兄弟选择器跟随）。 */
+.mj__hand-drawn {
+  position: relative;
+  flex: 0 0 auto;
 }
-/* 摸牌位同时被选中：选中抬升 10u 必须赢（专属选择器权重更高，压过上面两条规则）。 */
-.mj__hand :deep(.mj-tile--selected.mj__hand-tile--drawn) {
-  transform: translateY(calc(-10px * var(--mj-u)));
+.mj__hand-drawn--selected {
+  z-index: 10;
+}
+.mj__hand-drawn-dot {
+  position: absolute;
+  top: calc(-2px * var(--mj-u));
+  right: calc(-2px * var(--mj-u));
+  width: calc(8px * var(--mj-u));
+  height: calc(8px * var(--mj-u));
+  border-radius: 50%;
+  background: $ftl-color-mj-gold;
+  box-shadow: 0 0 calc(6px * var(--mj-u)) $ftl-color-mj-gold;
+  pointer-events: none;
+}
+.mj__hand :deep(.mj-tile--selected) + .mj__hand-drawn-dot {
+  transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
 }
 
 .mj__hand-hint {

@@ -867,9 +867,13 @@ describe('MahjongBoard：摸牌分离与 display 下标', () => {
     expect(last.classes()).toContain('mj__hand-tile--drawn');
     expect(last.attributes('aria-label')).toBe('筒9');
     const layout = mahjongTableLayoutV3(1334, 750);
-    expect(last.attributes('style')).toContain(
+    const wrap = last.element.parentElement as HTMLElement;
+    expect(wrap.className).toContain('mj__hand-drawn');
+    expect(wrap.getAttribute('style')).toContain(
       `margin-left: ${layout.hand.drawnGap - layout.hand.gap}px`,
     );
+    expect(wrap.querySelector('.mj__hand-drawn-dot')).not.toBeNull();
+    expect(wrapper.findAll('.mj__hand-drawn')).toHaveLength(1);
   });
 
   it('13→14 标出后丢一张非摸牌 → 标记消失；13→13 不标', async () => {
@@ -1535,24 +1539,44 @@ describe('MahjongBoard：红金皮肤（Task 4：对家副露压缩 k）', () =>
   });
 });
 
-describe('MahjongBoard：红金皮肤（Task 4：摸牌位抬 8 + 金边）', () => {
-  it('源码闸：摸牌位 translateY(-8px * u) + 金边 outline（不占布局）', () => {
-    const rule = /\.mj__hand\s+:deep\(\.mj__hand-tile--drawn\)\s*\{([^}]*)\}/.exec(boardStyle);
-    expect(rule, '.mj__hand :deep(.mj__hand-tile--drawn) 规则必须存在').not.toBeNull();
-    const body = rule![1]!;
-    expect(body).toContain('transform: translateY(calc(-8px * var(--mj-u)))');
-    expect(body).toContain('outline: $ftl-hairline solid $ftl-color-mj-gold');
-    expect(body).toContain('outline-offset: 0');
-    expect(body).toContain('border-radius: 3px');
+describe('MahjongBoard：v16 摸牌位金点', () => {
+  it('源码闸：旧摸牌位抬升/金边规则整体删除；金点 8u + pointer-events none', () => {
+    expect(boardStyle).not.toContain('.mj__hand-tile--drawn)');
+    const dot = /\.mj__hand-drawn-dot\s*\{([^}]*)\}/.exec(boardStyle);
+    expect(dot, '.mj__hand-drawn-dot 规则必须存在').not.toBeNull();
+    const body = dot![1]!;
+    expect(body).toContain('width: calc(8px * var(--mj-u))');
+    expect(body).toContain('height: calc(8px * var(--mj-u))');
+    expect(body).toContain('pointer-events: none');
+    expect(body).toContain('$ftl-color-mj-gold');
   });
 
-  it('源码闸：摸牌位同时选中 ⇒ 选中抬 10 优先（权重更高的专属规则）', () => {
-    const rule =
-      /\.mj__hand\s+:deep\(\.mj-tile--selected\.mj__hand-tile--drawn\)\s*\{([^}]*)\}/.exec(
+  it('源码闸：金点跟随选中抬升（兄弟选择器）+ 包裹层 z-index', () => {
+    const follow =
+      /\.mj__hand\s+:deep\(\.mj-tile--selected\)\s*\+\s*\.mj__hand-drawn-dot\s*\{([^}]*)\}/.exec(
         boardStyle,
       );
-    expect(rule, '选中 + 摸牌位联合规则必须存在').not.toBeNull();
-    expect(rule![1]).toContain('transform: translateY(calc(-10px * var(--mj-u)))');
+    expect(follow, '金点跟随选中抬升规则必须存在').not.toBeNull();
+    expect(follow![1]).toContain('translateY(calc(-1 * var(--mj-tile-lift, 10px)))');
+    const z = /\.mj__hand-drawn--selected\s*\{([^}]*)\}/.exec(boardStyle);
+    expect(z, '包裹层选中 z-index 规则必须存在').not.toBeNull();
+    expect(z![1]).toContain('z-index: 10');
+  });
+
+  it('摸牌位可选中（包裹层挂 selected 类）并双击出牌', async () => {
+    const baseHand = view().hand;
+    const wrapper = mount(MahjongBoard, { props: props() });
+    await wrapper.setProps({ view: view({ hand: [...baseHand, tile(1, 9)] }) });
+    await nextTick();
+    const drawn = wrapper.findAll('.mj__hand .mj-tile').at(-1)!;
+    await drawn.trigger('click');
+    expect(wrapper.findAll('.mj-tile--selected')).toHaveLength(1);
+    expect(wrapper.find('.mj__hand-drawn').classes()).toContain('mj__hand-drawn--selected');
+    await drawn.trigger('click');
+    expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
+      type: 'discard',
+      tile: { s: 1, r: 9 },
+    });
   });
 });
 
