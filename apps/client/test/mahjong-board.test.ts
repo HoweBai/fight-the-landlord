@@ -254,7 +254,7 @@ describe('MahjongBoard：装配与动作上抛', () => {
         }),
       }),
     });
-    expect(wrapper.find('.mj-hub__status').text()).toContain('等待响应');
+    expect(wrapper.find('.mj-hub__hint').text()).toContain('等待响应');
     expect(wrapper.find('.mj-action-bar').exists()).toBe(false);
   });
 
@@ -262,7 +262,7 @@ describe('MahjongBoard：装配与动作上抛', () => {
     const ended = mount(MahjongBoard, {
       props: props({ view: view({ state: 'ended', activeSeats: [] }) }),
     });
-    expect(ended.find('.mj-hub__status').text()).toBe('本局结束');
+    expect(ended.find('.mj-hub__hint').text()).toBe('本局结束');
     expect((ended.text().match(/本局结束/g) ?? [])).toHaveLength(1);
 
     const withHu = mount(MahjongBoard, {
@@ -275,7 +275,7 @@ describe('MahjongBoard：装配与动作上抛', () => {
         }),
       }),
     });
-    expect(withHu.find('.mj-hub__status').text()).toBe('已胡 2 家');
+    expect(withHu.find('.mj-hub__hint').text()).toBe('已胡2家');
   });
 
   describe('自己胡牌后：手牌不重复渲染', () => {
@@ -1099,6 +1099,30 @@ describe('MahjongBoard：红金皮肤（Task 1：牌桌/顶栏）', () => {
       props: props({ view: view({ trustees: [true, false, false, false] }) }),
     });
     expect(wrapper.find('.mj__trustee').classes()).toContain('mj__bar-action--on');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 红金皮肤 v16 —— 铜钱信息井 160×160 定位
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：红金皮肤（v16：铜钱信息井定位）', () => {
+  it('信息井 160×160 居中 + scale(u)（v16）', () => {
+    const wrapper = mount(MahjongBoard, { props: props() });
+    const layout = mahjongTableLayoutV3(1334, 750);
+    const style = wrapper.findComponent(MahjongHub).attributes('style')!;
+    expect(style).toContain('position: absolute');
+    expect(style).toContain('width: 160px');
+    expect(style).toContain('height: 160px');
+    expect(style).toContain(`left: ${layout.hub.cx - 80}px`);
+    expect(style).toContain(`top: ${layout.hub.cy - 80}px`);
+    expect(style).toContain(`transform: scale(${layout.u})`);
+    expect(style).toContain('transform-origin: center');
+  });
+
+  it('源码闸：v16 删除 :hub/:compact 绑定', () => {
+    expect(boardSfc).not.toContain(':hub="layout.hub"');
+    expect(boardSfc).not.toContain(':compact');
   });
 });
 

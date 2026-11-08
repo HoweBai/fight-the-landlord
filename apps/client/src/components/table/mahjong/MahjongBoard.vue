@@ -233,6 +233,16 @@ const tingLabelStyle = computed(() => ({
 }));
 /** 动作区在河/副露之上（河内副露条带 z-index: 1）。 */
 const actionsStyle = computed(() => ({ ...rectStyle(layout.value.actions), zIndex: 3 }));
+/** v16：信息井视觉恒为紧凑档（160×160 设计 px），居中于 hub.cx/cy；scale(u) 防御。 */
+const hubStyle = computed(() => ({
+  position: 'absolute' as const,
+  left: `${layout.value.hub.cx - 80}px`,
+  top: `${layout.value.hub.cy - 80}px`,
+  width: '160px',
+  height: '160px',
+  transform: `scale(${layout.value.u})`,
+  transformOrigin: 'center',
+}));
 const trusteeMaskStyle = computed(() => ({
   bottom: `${canvasH.value - (layout.value.hand.rect.top - 8 * layout.value.u)}px`,
 }));
@@ -655,11 +665,11 @@ const endReason = computed(() => props.view?.isOut.filter(Boolean).length ?? 0);
 /** 血战盘状态行（v6 §3.4）：全部以我是否 pending 分「请… / 等待…」两态。 */
 const statusText = computed(() => {
   if (phase.value === 'ended') {
-    return endReason.value > 0 ? `已胡 ${endReason.value} 家` : '本局结束';
+    return endReason.value > 0 ? `已胡${endReason.value}家` : '本局结束';
   }
   switch (phase.value) {
     case 'exchange':
-      return amActive.value ? '选同花色3张' : '等待换三张';
+      return amActive.value ? '选同花3张' : '等待换三张';
     case 'lack':
       return amActive.value ? '请定缺' : '等待定缺';
     case 'play':
@@ -1144,18 +1154,16 @@ function onMeldPopDone(key: string) {
 
       <MahjongHub
         v-if="view"
-        :hub="layout.hub"
         :wall-count="wallCount"
         :seconds="seconds"
         :phase="hubPhase"
         :current-player="currentPlayer"
         :active-seats="activeSeats"
         :seats="hubSeats"
-        :compact="layout.hub.compact"
         :status-text="statusText"
         ended-text=""
         :flash-key="huFlashKey"
-        :style="rectStyle(layout.hub.rect)"
+        :style="hubStyle"
         @flash-done="huFlashKey = 0"
       />
 
