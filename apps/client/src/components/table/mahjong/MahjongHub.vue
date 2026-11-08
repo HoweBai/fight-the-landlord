@@ -284,11 +284,12 @@ function onFlashEnd(e: AnimationEvent): void {
   top: 14%;
   left: 14%;
 }
-.mj-hub__badge--top {
+/* mockup top29：右家徽标在右上；对家在右下；自家左下。 */
+.mj-hub__badge--right {
   top: 14%;
   left: 86%;
 }
-.mj-hub__badge--right {
+.mj-hub__badge--top {
   top: 86%;
   left: 86%;
 }

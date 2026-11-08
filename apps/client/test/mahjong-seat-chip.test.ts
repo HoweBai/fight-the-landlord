@@ -52,20 +52,20 @@ describe('MahjongSeatChip', () => {
     }
   });
 
-  it('角标：庄 + 缺万 → 左上 1 + 左下 1，共 2 个（v13 mockup：左上一字 / 左下缺）', () => {
+  it('角标：缺万 + 庄 → 缺左上 / 庄左下，共 2 个（mockup 槽位顺序）', () => {
     const w = mountChip({ isDealer: true, lackSuit: 0 });
     const tl = w.findAll('.mj-chip__corner--tl');
     expect(tl).toHaveLength(1);
-    expect(tl[0].text()).toBe('庄');
-    expect(tl[0].classes()).toContain('mj-chip__corner--dealer');
+    expect(tl[0].text()).toBe('缺万');
+    expect(tl[0].classes()).toContain('mj-chip__corner--lack');
     const bl = w.findAll('.mj-chip__corner--bl');
     expect(bl).toHaveLength(1);
-    expect(bl[0].text()).toBe('缺万');
-    expect(bl[0].classes()).toContain('mj-chip__corner--lack');
+    expect(bl[0].text()).toBe('庄');
+    expect(bl[0].classes()).toContain('mj-chip__corner--dealer');
     expect(w.findAll('.mj-chip__corner')).toHaveLength(2);
   });
 
-  it('角标优先级：胡 > 听 > 托 > 庄，每槽最多一个', () => {
+  it('角标优先级：胡 > 听 > 托 > 庄，每槽最多一个（缺优先左上）', () => {
     const w = mountChip({
       hu: huInfo,
       ting: true,
@@ -75,11 +75,12 @@ describe('MahjongSeatChip', () => {
     });
     const tl = w.findAll('.mj-chip__corner--tl');
     expect(tl).toHaveLength(1);
-    expect(tl[0].text()).toBe('胡');
-    expect(tl[0].classes()).toContain('mj-chip__corner--hu');
+    expect(tl[0].text()).toBe('缺筒');
+    expect(tl[0].classes()).toContain('mj-chip__corner--lack');
     const bl = w.findAll('.mj-chip__corner--bl');
     expect(bl).toHaveLength(1);
-    expect(bl[0].text()).toBe('缺筒');
+    expect(bl[0].text()).toBe('胡');
+    expect(bl[0].classes()).toContain('mj-chip__corner--hu');
     expect(w.findAll('.mj-chip__corner')).toHaveLength(2);
   });
 

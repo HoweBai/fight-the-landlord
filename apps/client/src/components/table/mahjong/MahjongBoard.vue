@@ -686,14 +686,15 @@ const hubSeats = computed<HubSeatEntry[]>(() => {
   return entries.map(({ seat, dir }) => {
     const hu = v.huInfos.find((h) => h.seat === seat);
     if (hu) {
-      return { seat, dir, badge: 'hu', badgeText: hu.fan > 0 ? `胡 ${hu.fan}` : '胡' };
+      // mockup 的盘缘徽标是单字（缺/听/胡/托）；番数/缺门细节在座位牌角标里。
+      return { seat, dir, badge: 'hu', badgeText: '胡' };
     }
     if (v.tingSeats.includes(seat)) return { seat, dir, badge: 'ting', badgeText: '听' };
     const lack = v.lackSuits[seat] ?? null;
     if (lack !== null) {
-      return { seat, dir, badge: 'lack', badgeText: `缺${MAHJONG_SUIT_NAMES[lack]}` };
+      return { seat, dir, badge: 'lack', badgeText: '缺' };
     }
-    if (v.trustees[seat]) return { seat, dir, badge: 'trustee', badgeText: '托管' };
+    if (v.trustees[seat]) return { seat, dir, badge: 'trustee', badgeText: '托' };
     return { seat, dir, badge: null, badgeText: '' };
   });
 });
@@ -1295,6 +1296,8 @@ function onMeldPopDone(key: string) {
   padding: 0;
   position: relative;
   color: $ftl-color-text;
+  /* mockup 字体栈：Windows 下中文/数字统一 Microsoft YaHei（全局栈会先命中 Segoe UI，数字形状不同）。 */
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
   /* 画布留边 = stage 底色（近黑）；1334×750 构图由 .mj__felt 单独铺（offset 居中）。 */
   background: $ftl-color-mj-stage;
   overflow: hidden;

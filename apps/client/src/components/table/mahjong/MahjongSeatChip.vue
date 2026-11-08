@@ -56,6 +56,7 @@ const props = withDefaults(defineProps<{
 });
 
 type CornerKind = 'hu' | 'ting' | 'trustee' | 'dealer';
+type CornerSlot = 'tl' | 'bl';
 /** 右上槽：胡 > 听 > 托 > 庄，最多一个。 */
 const corner = computed<{ kind: CornerKind; char: string } | null>(() => {
   if (props.hu) return { kind: 'hu', char: '胡' };
@@ -68,6 +69,26 @@ const corner = computed<{ kind: CornerKind; char: string } | null>(() => {
 const lackLabel = computed(() =>
   props.lackSuit === null ? '' : `缺${MAHJONG_SUIT_NAMES[props.lackSuit]}`,
 );
+/**
+ * 角标槽位按 mockup：**第一个徽标左上、第二个左下**。
+ * 缺门优先占左上（mockup 的 `['缺万','庄']` → 缺万左上 / 庄左下；
+ * 只有「听」时 → 听左上；只有「缺筒」时 → 缺筒左上）。
+ */
+const badges = computed<Array<{ key: string; text: string; kind: string; slot: CornerSlot }>>(() => {
+  const list: Array<{ key: string; text: string; kind: string; slot: CornerSlot }> = [];
+  if (lackLabel.value) {
+    list.push({ key: 'lack', text: lackLabel.value, kind: 'lack', slot: 'tl' });
+  }
+  if (corner.value) {
+    list.push({
+      key: corner.value.kind,
+      text: corner.value.char,
+      kind: corner.value.kind,
+      slot: list.length === 0 ? 'tl' : 'bl',
+    });
+  }
+  return list;
+});
 const deltaLabel = computed(() => {
   if (props.pendingDelta === 0) return '';
   return props.pendingDelta > 0 ? `+${props.pendingDelta}` : `${props.pendingDelta}`;
@@ -96,16 +117,14 @@ const scoreLabel = computed(() =>
       <image class="mj-chip__avatar" src="/static/ui/default.png" mode="aspectFit" />
     </view>
 
-    <!-- 角标相对牌面（mockup）：左上一字槽 / 左下缺槽；不再挂在头像框上。 -->
+    <!-- 角标相对牌面（mockup）：第一个左上、第二个左下；缺门优先左上。 -->
     <text
-      v-if="corner"
-      class="mj-chip__corner mj-chip__corner--tl"
-      :class="`mj-chip__corner--${corner.kind}`"
+      v-for="b in badges"
+      :key="b.key"
+      class="mj-chip__corner"
+      :class="[`mj-chip__corner--${b.slot}`, `mj-chip__corner--${b.kind}`]"
     >
-      {{ corner.char }}
-    </text>
-    <text v-if="lackLabel" class="mj-chip__corner mj-chip__corner--bl mj-chip__corner--lack">
-      {{ lackLabel }}
+      {{ b.text }}
     </text>
 
     <view v-if="variant !== 'self'" class="mj-chip__info">

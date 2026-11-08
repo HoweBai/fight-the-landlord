@@ -162,8 +162,8 @@ describe('MahjongHub（血战盘）', () => {
 
     const corners: Array<[string, string, string]> = [
       ['.mj-hub__badge--left', 'top: 14%', 'left: 14%'],
-      ['.mj-hub__badge--top', 'top: 14%', 'left: 86%'],
-      ['.mj-hub__badge--right', 'top: 86%', 'left: 86%'],
+      ['.mj-hub__badge--right', 'top: 14%', 'left: 86%'],
+      ['.mj-hub__badge--top', 'top: 86%', 'left: 86%'],
       ['.mj-hub__badge--self', 'top: 86%', 'left: 14%'],
     ];
     for (const [selector, top, left] of corners) {
