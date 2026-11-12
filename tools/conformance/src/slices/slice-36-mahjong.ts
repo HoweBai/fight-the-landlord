@@ -130,6 +130,7 @@ export async function runSlice36(): Promise<{ passed: string[] }> {
     step('③ 驱动整局：换三张 → 定缺 → 出牌/claim → 终局');
     const out = await playMahjongToEnd(room);
     checks.atLeast(out.actions, 20, '整局动作数');
+    checks.atLeast(out.mustDiscardSeen, 1, '整局至少观察到一次非 null mustDiscardSuit');
     const finished = out.finished;
     checks.eq(finished.payload?.gameType, 'mahjong', 'game.finished.gameType=mahjong');
     checks.that(Array.isArray(finished.payload?.winnerSeats), 'game.finished.winnerSeats 是数组');

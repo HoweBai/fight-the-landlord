@@ -138,6 +138,17 @@ export function pickDiscardTile(view: MahjongPlayerView): Tile {
   return { ...tile };
 }
 
+/** 缺门引导契约：mustDiscardSuit 必须与「手里仍有缺门牌」一致（独立 oracle）。 */
+export function assertMustDiscard(view: MahjongPlayerView): void {
+  const lack = view.lackSuits[view.seat];
+  const expected = lack !== null && view.hand.some((t) => t.s === lack) ? lack : null;
+  if ((view.mustDiscardSuit ?? null) !== expected) {
+    throw new ConformanceError(
+      `${view.seat} 座 mustDiscardSuit=${String(view.mustDiscardSuit)}，期望 ${String(expected)}`,
+    );
+  }
+}
+
 /** 纯策略：只读视图字段，不判规则。 */
 export function pickMahjongAction(view: MahjongPlayerView): MahjongAction | null {
   if (view.state === 'ended') return null;
@@ -158,6 +169,7 @@ export function pickMahjongAction(view: MahjongPlayerView): MahjongAction | null
 
 export interface MahjongOutcome {
   actions: number;
+  mustDiscardSeen: number;
   finished: any;
   settlement: any;
   finalViews: MahjongPlayerView[];
@@ -171,6 +183,7 @@ export async function playMahjongToEnd(room: MahjongRoom): Promise<MahjongOutcom
   const sent = new Set<string>();
   const deadline = Date.now() + MAHJONG_STEP_TIMEOUT_MS;
   let actions = 0;
+  let mustDiscardSeen = 0;
 
   const finishedOn = (): any | undefined => {
     for (const client of room.clients) {
@@ -194,6 +207,8 @@ export async function playMahjongToEnd(room: MahjongRoom): Promise<MahjongOutcom
       pending.map(async (client) => {
         const view = currentMahjongView(client);
         if (!view) return;
+        assertMustDiscard(view);
+        if (view.mustDiscardSuit != null) mustDiscardSeen += 1;
         const action = pickMahjongAction(view);
         if (!action) return;
         const key = `${view.windowId ?? 'x'}:${view.version}:${view.seat}`;
@@ -241,6 +256,7 @@ export async function playMahjongToEnd(room: MahjongRoom): Promise<MahjongOutcom
   if (settlement === undefined) throw new ConformanceError('麻将对局结束后 10s 内未收到 game.settlement');
   return {
     actions,
+    mustDiscardSeen,
     finished,
     settlement,
     finalViews: room.clients.map((c) => currentMahjongView(c)!).filter(Boolean),

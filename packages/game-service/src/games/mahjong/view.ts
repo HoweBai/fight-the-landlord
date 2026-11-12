@@ -14,6 +14,7 @@ import {
   checkHu,
   isForcedHu,
   isTing,
+  mustClearLack,
   tingResult,
 } from '@fight-the-landlord/shared';
 
@@ -107,6 +108,7 @@ function pendingScoreChanges(session: MahjongSession): Array<{ seat: number; del
 export function buildMahjongView(session: MahjongSession, seat: number): MahjongPlayerView {
   const player = session.players[seat];
   if (!player) throw new Error(`mahjong view: seat ${seat} missing`);
+  const mustDiscardSuit = mustClearLack(player) ? player.lackSuit : null;
   const ting =
     player.lackSuit === null
       ? undefined
@@ -141,6 +143,7 @@ export function buildMahjongView(session: MahjongSession, seat: number): Mahjong
     isOut: session.players.map((p) => p.isOut),
     huInfos,
     claimsForMe: claimsForMe(session, seat),
+    mustDiscardSuit,
     ...(ting === undefined ? {} : { tingTiles: ting.tiles, maxFanForMe: ting.maxFan }),
     mahjongRules: session.rules,
     pendingScoreChanges: pendingScoreChanges(session),

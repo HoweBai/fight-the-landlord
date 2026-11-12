@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CHENGDU_RULES, type MahjongPlayerView, type Tile } from '@fight-the-landlord/protocol';
 import {
+  assertMustDiscard,
   pickDiscardTile,
   pickExchangeTiles,
   pickLackSuit,
@@ -92,5 +93,20 @@ describe('mahjong-driver oracle', () => {
       lackSuits: [2, null, null, null],
     });
     expect(pickMahjongAction(discard)).toEqual({ type: 'discard', tile: t(2, 9) });
+  });
+
+  it('assertMustDiscard：与手牌一致才通过', () => {
+    expect(() =>
+      assertMustDiscard(view({ hand: [t(0, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 0 })),
+    ).not.toThrow();
+    expect(() =>
+      assertMustDiscard(view({ hand: [t(1, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: null })),
+    ).not.toThrow();
+    expect(() =>
+      assertMustDiscard(view({ hand: [t(0, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 1 })),
+    ).toThrow();
+    expect(() =>
+      assertMustDiscard(view({ hand: [t(1, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 0 })),
+    ).toThrow();
   });
 });
