@@ -34,7 +34,7 @@
 
 - [ ] **Step 1: 写失败测试**
 
-在 `packages/protocol/src/mahjong/mahjong.test.ts` 增加（`MahjongSuit` 类型已可从 `./types`/`./rules` 引入；`baseView()` hand 含 0 花色）：
+在 `packages/protocol/src/mahjong/mahjong.test.ts` 增加（`MahjongSuit` 必须从 `./tile` 导入；`baseView()` hand 含 0 花色）：
 
 ```ts
 it('mustDiscardSuit：可选、值域 0|1|2|null、语义=lackSuits[seat] 且在手牌', () => {
@@ -112,7 +112,7 @@ Run: `pnpm -C packages/protocol exec vitest run src/mahjong/mahjong.test.ts` →
 
 ```bash
 git add packages/protocol/src/mahjong/types.ts packages/protocol/src/validate.ts packages/protocol/src/mahjong/mahjong.test.ts
-git commit -m "feat(protocol): 麻将视图下发 mustDiscardSuit（缺门引导）"
+git commit -m "feat(protocol): 麻将视图下发 mustDiscardSuit（缺门引导）" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -132,7 +132,7 @@ git commit -m "feat(protocol): 麻将视图下发 mustDiscardSuit（缺门引导
 - [ ] **Step 1: 写失败测试（跨座位 + oracle）**
 
 `packages/game-service/test/mahjong-runtime.test.ts`：
-- import 加 `hasLackTiles, canDiscard`（from `@fight-the-landlord/shared`）与 `type MahjongPlayerView`（from `@fight-the-landlord/protocol`）。
+- import 加 `hasLackTiles, canDiscard`（from `@fight-the-landlord/shared`）与 `type MahjongPlayerView`、`validateOutbound`（from `@fight-the-landlord/protocol`）。
 - 加 helper：
 ```ts
 function advanceToPlay() {
@@ -173,13 +173,24 @@ it('mustDiscardSuit 按查看者投影（不跟 currentPlayer 走）', () => {
   expect(canDiscard(view1.hand, 1, { s: 0, r: 1 })).toBe(true);
   s.players[0]!.hand = Array.from({ length: 13 }, (_, i) => t(1, (i % 9) + 1));
   expect((runtime.buildView(s, 0) as MahjongPlayerView).mustDiscardSuit).toBe(null);
+  // 未定缺 ⇒ null
+  s.players[2]!.lackSuit = null;
+  expect((runtime.buildView(s, 2) as MahjongPlayerView).mustDiscardSuit).toBe(null);
+  // 与生产同源的出站校验（gateway 会整帧丢弃不一致视图）
+  expect(() =>
+    validateOutbound({ type: 'game.state_update', version: 1, payload: view0 }),
+  ).not.toThrow();
+  // 非 play 阶段也带（客户端自行按阶段使用）
+  s.state = 'lack';
+  s.players[0]!.hand = [t(0, 1), ...Array.from({ length: 12 }, (_, i) => t(1, (i % 9) + 1))];
+  expect((runtime.buildView(s, 0) as MahjongPlayerView).mustDiscardSuit).toBe(0);
 });
 ```
 
-`tools/conformance/src/lib/mahjong-driver.ts` 加独立 oracle（在 `playMahjongToEnd` 循环里、`pickMahjongAction` 之前调用）：
+`tools/conformance/src/lib/mahjong-driver.ts` 加独立 oracle（**导出**，供单测；在 `playMahjongToEnd` 循环里、`pickMahjongAction` 之前调用）：
 ```ts
 /** 缺门引导契约：mustDiscardSuit 必须与「手里仍有缺门牌」一致（独立 oracle）。 */
-function assertMustDiscard(view: MahjongPlayerView): void {
+export function assertMustDiscard(view: MahjongPlayerView): void {
   const lack = view.lackSuits[view.seat];
   const expected = lack !== null && view.hand.some((t) => t.s === lack) ? lack : null;
   if ((view.mustDiscardSuit ?? null) !== expected) {
@@ -189,20 +200,31 @@ function assertMustDiscard(view: MahjongPlayerView): void {
   }
 }
 ```
-调用点：
-```ts
-const action = pickMahjongAction(view);
-```
-之前加 `assertMustDiscard(view);`。
+`MahjongOutcome` 增加 `mustDiscardSeen: number`；`playMahjongToEnd` 里 `let mustDiscardSeen = 0;`，在 `assertMustDiscard(view);` 之后 `if (view.mustDiscardSuit != null) mustDiscardSeen += 1;`，返回值加 `mustDiscardSeen`。
 
-`tools/conformance/src/slices/slice-36-mahjong.ts` 末尾（`out.finalViews` 可得处）加：
+`tools/conformance/test/mahjong-driver.test.ts` 增加（import `assertMustDiscard`）：
 ```ts
-for (const view of out.finalViews) {
-  const lack = view.lackSuits[view.seat];
-  const expected = lack !== null && view.hand.some((t) => t.s === lack) ? lack : null;
-  checks.eq(view.mustDiscardSuit ?? null, expected, `final[${view.seat}] mustDiscardSuit 与手牌一致`);
-}
+it('assertMustDiscard：与手牌一致才通过', () => {
+  expect(() =>
+    assertMustDiscard(view({ hand: [t(0, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 0 })),
+  ).not.toThrow();
+  expect(() =>
+    assertMustDiscard(view({ hand: [t(1, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: null })),
+  ).not.toThrow();
+  expect(() =>
+    assertMustDiscard(view({ hand: [t(0, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 1 })),
+  ).toThrow();
+  expect(() =>
+    assertMustDiscard(view({ hand: [t(1, 1)], lackSuits: [0, null, null, null], mustDiscardSuit: 0 })),
+  ).toThrow();
+});
 ```
+
+`tools/conformance/src/slices/slice-36-mahjong.ts` 末尾（`out` 可得处）加：
+```ts
+checks.atLeast(out.mustDiscardSeen, 1, '整局至少观察到一次非 null mustDiscardSuit');
+```
+（`finalViews` 在 ended 态判别力弱，不再用它做该断言；逐步 oracle 已覆盖。）
 
 Run: `pnpm -C packages/protocol build && pnpm -C packages/game-service exec vitest run test/mahjong-runtime.test.ts`
 Expected: FAIL（视图未下发字段）。
@@ -210,12 +232,10 @@ Expected: FAIL（视图未下发字段）。
 - [ ] **Step 2: 实现服务端视图**
 
 `packages/game-service/src/games/mahjong/view.ts`：
-- import `hasLackTiles`（from `@fight-the-landlord/shared`）。
+- import `mustClearLack`（from `@fight-the-landlord/shared`；现成 helper：`lackSuit !== null && hasLackTiles(hand, lackSuit)`）。
 - `buildMahjongView` 里（`const player = ...` 之后）：
 ```ts
-const lackSuit = player.lackSuit;
-const mustDiscardSuit =
-  lackSuit !== null && hasLackTiles(player.hand, lackSuit) ? lackSuit : null;
+const mustDiscardSuit = mustClearLack(player) ? player.lackSuit : null;
 ```
 - 返回对象加 `mustDiscardSuit`（`claimsForMe`/`tingTiles` 附近）。
 
@@ -225,7 +245,7 @@ Run: `pnpm -C packages/protocol build && pnpm -C packages/game-service exec vite
 
 ```bash
 git add packages/game-service/src/games/mahjong/view.ts packages/game-service/test/mahjong-runtime.test.ts tools/conformance/src/lib/mahjong-driver.ts tools/conformance/src/slices/slice-36-mahjong.ts
-git commit -m "feat(mahjong): 视图下发 mustDiscardSuit + conformance 独立 oracle"
+git commit -m "feat(mahjong): 视图下发 mustDiscardSuit + conformance 独立 oracle" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -246,6 +266,7 @@ git commit -m "feat(mahjong): 视图下发 mustDiscardSuit + conformance 独立 
 
 ```ts
 describe('MahjongBoard：v18 缺门出牌引导', () => {
+  // ⚠️ 不要给基础 view() 加非 null 默认值（会打红既有摸牌位用例）；非 null 一律走 mustView()。
   const mustView = (over: Partial<Parameters<typeof view>[0]> = {}) =>
     view({ mustDiscardSuit: 0, ...over });
   const tileByLabel = (w: Wrapper, label: string) =>
@@ -263,7 +284,7 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
 
   it('点非缺门牌：不选中、不发请求、显示缺门提示；点缺门牌正常选中', async () => {
     const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
-    await tileByLabel(w, '筒8').trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
     expect(w.findAll('.mj-tile--selected')).toHaveLength(0);
     expect(w.emitted('mahjong')).toBeUndefined();
     expect(w.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
@@ -275,13 +296,13 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
   it('先选缺门牌再点非缺门牌：缺门提示优先于「再点一次」', async () => {
     const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
     await tileByLabel(w, '万1').trigger('click');
-    await tileByLabel(w, '筒8').trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
     expect(w.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
   });
 
   it('双击非缺门牌不出牌；双击缺门牌出牌', async () => {
     const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
-    const blocked = tileByLabel(w, '筒8');
+    const blocked = tileByLabel(w, '筒6');
     await blocked.trigger('click');
     await blocked.trigger('click');
     expect(w.emitted('mahjong')).toBeUndefined();
@@ -292,15 +313,19 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
   });
 
   it('摸牌位：缺门牌可选中/可双击；非缺门牌被拦', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
     const hand14 = [...view().hand, tile(0, 9)];
-    const w = mount(MahjongBoard, { props: props({ view: mustView({ hand: hand14 }) }) });
+    await w.setProps({ view: mustView({ hand: hand14 }) });
+    await nextTick();
     const drawn = w.findAll('.mj__hand .mj-tile').at(-1)!;
     expect(drawn.classes()).toContain('mj__hand-tile--lack-first');
     await drawn.trigger('click');
     expect(w.findAll('.mj-tile--selected')).toHaveLength(1);
 
+    const w2 = mount(MahjongBoard, { props: props({ view: mustView() }) });
     const hand14b = [...view().hand, tile(2, 1)];
-    const w2 = mount(MahjongBoard, { props: props({ view: mustView({ hand: hand14b }) }) });
+    await w2.setProps({ view: mustView({ hand: hand14b }) });
+    await nextTick();
     const drawn2 = w2.findAll('.mj__hand .mj-tile').at(-1)!;
     expect(drawn2.classes()).toContain('mj__hand-tile--lack-blocked');
     expect(w2.find('.mj__hand-drawn').classes()).toContain('mj__hand-drawn--blocked');
@@ -309,9 +334,20 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
     expect(w2.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
   });
 
-  it('清零：点缺门牌 / 阶段变化 / 字段消失', async () => {
+  it('清零：点缺门牌 / handSelectable 翻转 / 手牌内容变化 / 阶段变化 / 字段消失', async () => {
     const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
-    await tileByLabel(w, '筒8').trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.find('.mj__hand-hint').exists()).toBe(true);
+    await w.setProps({ interactive: false });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+    await w.setProps({
+      interactive: true,
+      view: mustView({ hand: [...view().hand.slice(1), tile(0, 1)] }),
+    });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+    await tileByLabel(w, '筒6').trigger('click');
     expect(w.find('.mj__hand-hint').exists()).toBe(true);
     await w.setProps({ view: mustView({ state: 'ended' }) });
     await nextTick();
@@ -323,7 +359,7 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
 
   it('D11 版本错配：先选非缺门牌，再收到 mustDiscardSuit ⇒ 清选择、出牌禁用', async () => {
     const w = mount(MahjongBoard, { props: props({ view: view() }) });
-    await tileByLabel(w, '筒8').trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
     expect(w.findAll('.mj-tile--selected')).toHaveLength(1);
     await w.setProps({ view: mustView({ hand: view().hand }) });
     await nextTick();
@@ -332,7 +368,9 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
   });
 
   it('非我的回合 / 字段 null：无提示、无置灰', () => {
-    const w = mount(MahjongBoard, { props: props({ view: mustView({ currentPlayer: 1 }) }) });
+    const w = mount(MahjongBoard, {
+      props: props({ view: mustView({ currentPlayer: 1, activeSeats: [1] }) }),
+    });
     expect(w.find('.mj-hub__hint').text()).toBe('等待出牌');
     expect(w.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
     const w2 = mount(MahjongBoard, { props: props({ view: view() }) });
@@ -355,6 +393,7 @@ const mustDiscardName = computed(() =>
   mustDiscardSuit.value === null ? '' : MAHJONG_SUIT_NAMES[mustDiscardSuit.value],
 );
 ```
+**声明位置（防 TDZ）**：这两条 computed 必须紧跟现有的 `amActive`（Board:110-114）声明；所有 `watch(mustDiscardSuit, ...)` / `watch(handSelectable, ...)` 必须声明在它们之后（`watch` 注册时会立即求值 source，早于 computed 声明会 `ReferenceError` 崩组件）。
 
 2.2 `statusText` play 分支：
 ```ts
@@ -440,7 +479,7 @@ Expected: PASS。
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongBoard.vue apps/client/test/mahjong-board.test.ts
-git commit -m "feat(mahjong): 缺门出牌引导（先打缺门提示 + 手牌置灰拦截）"
+git commit -m "feat(mahjong): 缺门出牌引导（先打缺门提示 + 手牌置灰拦截）" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -461,6 +500,7 @@ pnpm -C packages/game-service lint
 pnpm -C tools/conformance test
 pnpm -C tools/conformance build
 pnpm -C tools/conformance lint
+pnpm -C packages/api-gateway test
 pnpm -C apps/client test
 pnpm -C apps/client lint
 pnpm -C apps/client build
@@ -469,7 +509,7 @@ Expected: 全绿。
 
 - [ ] **Step 2: 真机/真栈（条件执行）**
 
-- conformance slice-36（需重建 game-service 镜像 + 真栈）：部署阶段或本机栈可用时跑 `pnpm -C tools/conformance conformance:slice-36`（或仓内等效命令）；断言 `mustDiscardSuit` oracle。
+- conformance slice-36（需重建 game-service 镜像 + 真栈）：部署阶段或本机栈可用时跑 `pnpm -C tools/conformance conformance:slice-36-mahjong`（脚本全名；需先 build）；断言 `mustDiscardSuit` oracle + `mustDiscardSeen > 0`。
 - 真浏览器/真机：进入一局，定缺后确认「先打缺门X」、缺门牌金边、非缺门牌置灰、点击被拦提示；无法执行则交接登记「未验证（原因）」。
 
 - [ ] **Step 3: 交接**
@@ -486,7 +526,7 @@ Expected: 全绿。
 
 ```bash
 git add docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint-handoff.md
-git commit -m "docs(mahjong): v18 缺门出牌引导实现交接"
+git commit -m "docs(mahjong): v18 缺门出牌引导实现交接" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -500,4 +540,9 @@ git commit -m "docs(mahjong): v18 缺门出牌引导实现交接"
 
 ## 计划审查记录
 
-（待计划对抗审查后填写）
+2026-11-13 按 `docs/dev-process.md` §5 做独立对抗计划审查（sonnet，只读）：核对了 Task 1 的协议类型/validator 插入点与测试类型（`validateOutbound(msg: unknown)` 无上下文类型；`MahjongSuit` 仅由 `tile.ts` 导出）、Task 2 的 `advanceToPlay` 与既有用例同形、`buildView` 返回 `GameView` 需 `as MahjongPlayerView`、`hasLackTiles/canDiscard` 由 shared barrel 导出、跨座位断言能区分查看者/currentPlayer、driver oracle 与 slice-36、Task 3 的 `statusText`/`handTileBind`/`onTileClick`/模板分支/清零 watch 与 Board 现有行为及既有用例。
+
+结论：**3 阻断 + 2 高 + 9 低**，均已修订：
+- 阻断：① 新测试引用的 `筒8` 不在 `view()` 夹具（改为 `筒6`，保持 13 张）；② 摸牌位用例必须以 13→14 `setProps` 构造（挂载即 14 张不会产生 `drawnType`/`.mj__hand-drawn`）；③「非我的回合」必须同时把 `activeSeats` 设为 `[1]`（`amActive` 只认 `activeSeats`）。
+- 高：① 基础 `view()` 不得加非 null 默认值（会打红 3 个既有摸牌位用例）⇒ 明写「非 null 一律走 mustView()」；② `mustDiscardSuit` computed 与 watch 的声明顺序钉死（防 setup 期 TDZ）。
+- 低：`MahjongSuit` 从 `./tile` 导入；conformance 脚本全名 `conformance:slice-36-mahjong`；四条 commit 命令补 attribution 尾行；清零用例补 `handSelectable` 翻转与手牌内容变化；finalViews 断言改为 `mustDiscardSeen > 0` 计数；driver `assertMustDiscard` 导出 + 单测；服务端补未定缺/all-phases/validateOutbound；view 复用 `mustClearLack`；Task 4 加 api-gateway test。
