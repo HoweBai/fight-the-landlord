@@ -37,6 +37,7 @@
 | D8 | 提示状态**不建计时器**：`lackBlockedHint` 只在点非缺门牌时置真，点缺门牌/阶段变化/手牌长度变化/`mustDiscardSuit` 变 null 时清零 | 牌桌区不新造时钟 |
 | D9 | 旧服务端/字段缺失 ⇒ 无提示、无置灰（优雅降级）；新客户端 + 旧服务端不报错 | 兼容 |
 | D10 | 不动 claim/lack/exchange UI、动作区、长按弹层、听牌行、音效/动画 | 范围 |
+| D11 | 进入「必须打缺门」时，若当前选中含非缺门牌 ⇒ **清空选择**（防御跨回合残留，避免出现「选中+置灰」并让出牌按钮可点） | 开发方 |
 
 ## 1. 协议
 
@@ -80,6 +81,7 @@
   - `mj__hand-tile--lack-blocked`：`mustDiscardSuit !== null && entry.tile.s !== mustDiscardSuit`
 - `onTileClick(index)` 开头：若 `mustDiscardSuit !== null` 且该牌花色不同 ⇒ `lackBlockedHint.value = true; return;`（不 emit select、不选中、不触发双击出牌）。
 - `lackBlockedHint` 清零：点缺门牌成功进入选中逻辑时；`watch(phase)`；`watch(() => hand.length)`；`watch(mustDiscardSuit)` 变 null。
+- `watch(mustDiscardSuit, (suit) => { if (suit !== null && selected 中含非该花色) selected.value = []; lastClickIndex.value = -1; lackBlockedHint.value = false; })`（D11 防御）。
 - 模板：`.mj__hand-hint` 增加 `v-else-if="lackBlockedHint"` 分支，文案「先打完{{mustDiscardName}}，才能出其它花色」；不新增计时器。
 - 样式：
   ```scss
@@ -118,6 +120,7 @@
 - 我的回合但手里已无缺门牌：字段 null ⇒ 正常出牌。
 - 非我的回合/claim/lack：字段忽略。
 - 缺门牌同时是摸牌位/选中：金边、金点、选中框叠加，不冲突。
+- 跨回合残留选中：进入「必须打缺门」时清空非缺门选中（D11），避免「选中+置灰」并存。
 - 长按非缺门牌：现有听牌弹层不变（信息性，不发出牌）。
 
 ## 6. 风险
