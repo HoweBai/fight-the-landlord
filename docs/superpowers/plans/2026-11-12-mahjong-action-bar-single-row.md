@@ -14,7 +14,7 @@
 - 条：右缘 = `actions.right`、底边 = `actions.bottom`、高 64；gap 6；最大宽 **218**（claim-4）。
 - 宽度：play 1→176/2→102/3→66（4 防御 50）；claim 1→102/2→102/3→66/≥4→50；lack 66；exchange 140。
 - 主字 **24px**（皮肤测试钉死）；副字 `$ftl-font-xs`（22px）；按钮 `line-height: 1`。
-- 尺寸一律 `calc(Npx * var(--mj-u, 1))`；根宽由组件显式给出（`rowW = n×w + (n−1)×6`）。
+- 布局尺寸（条宽/高/gap）一律 `calc(Npx * var(--mj-u, 1))`；内容细节（按钮内 gap 2、border-radius、发丝边）保持 px（生产 u≡1）；根宽由组件显式给出（`rowW = n×w + (n−1)×6`）。
 - claim 胡带 tile：**20×30 牌面在上 + 「胡」**；play 胡不渲染牌面。
 - 多杠：「杠」+ 下方小数字；面板绝对定位在条上方（宽 218、显式 2 列、项高 48）。
 - exchange：单按钮「换三张」+ 副字「已选 x/3」。
@@ -79,6 +79,14 @@ const barStyle = [...barSrc.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
   .map((m) => m[1] ?? '')
   .join('\n');
 
+/** 取一条选择器规则的声明体（本文件的这些规则没有嵌套块）。 */
+function barRule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(barStyle);
+  expect(m, `${selector} 规则必须存在`).not.toBeNull();
+  return m![1]!;
+}
+
 describe('MahjongActionBar（v17 单行）', () => {
   it('claim 4 键：一行 50×64，gap 6，根宽 218；无 grid', () => {
     const w = mountBar({ mode: 'claim', options: [peng, gang3, hu5, pass], showPass: true });
@@ -94,27 +102,30 @@ describe('MahjongActionBar（v17 单行）', () => {
     const root = w.find('.mj-action-bar');
     expect(root.attributes('style')).toContain('width: calc(218px * var(--mj-u, 1))');
     expect(barStyle).toContain('gap: calc(6px * var(--mj-u, 1))');
-    expect(barSrc).not.toContain('grid-template');
-    expect(barSrc).not.toContain('gridColumn');
+    expect(barSrc).not.toMatch(/grid-template|gridTemplate/);
+    expect(barStyle).not.toMatch(/display:\s*grid/);
   });
 
-  it('play：1/2/3 键宽度 176/102/66，出牌最右', () => {
+  it('play：1/2/3 键宽度 176/102/66，根宽 176/210/210，出牌最右', () => {
     const one = mountBar({ mode: 'play', selectedCount: 1 });
     expect(one.findAll('.mj-action-bar__btn')).toHaveLength(1);
     expect(btnStyle(one.find('.mj-action-bar__btn'))).toContain('width: calc(176px * var(--mj-u, 1))');
     expect(one.find('.mj-action-bar__btn').text()).toBe('出牌');
+    expect(one.find('.mj-action-bar').attributes('style')).toContain('width: calc(176px * var(--mj-u, 1))');
 
     const two = mountBar({ mode: 'play', options: [hu5], selectedCount: 1 });
     const twoBtns = two.findAll('.mj-action-bar__btn');
     expect(twoBtns).toHaveLength(2);
     for (const b of twoBtns) expect(btnStyle(b)).toContain('width: calc(102px * var(--mj-u, 1))');
     expect(twoBtns.map((b) => b.text())).toEqual(['胡', '出牌']);
+    expect(two.find('.mj-action-bar').attributes('style')).toContain('width: calc(210px * var(--mj-u, 1))');
 
     const three = mountBar({ mode: 'play', options: [hu5, gang3], selectedCount: 1 });
     const threeBtns = three.findAll('.mj-action-bar__btn');
     expect(threeBtns).toHaveLength(3);
     for (const b of threeBtns) expect(btnStyle(b)).toContain('width: calc(66px * var(--mj-u, 1))');
     expect(threeBtns.map((b) => b.text())).toEqual(['胡', '杠', '出牌']);
+    expect(three.find('.mj-action-bar').attributes('style')).toContain('width: calc(210px * var(--mj-u, 1))');
   });
 
   it('claim：1/2/3/4 键宽度 102/102/66/50；过固定在最后', () => {
@@ -132,6 +143,9 @@ describe('MahjongActionBar（v17 单行）', () => {
         expect(btnStyle(b), `count ${count}`).toContain(`width: calc(${width}px * var(--mj-u, 1))`);
       }
       if (showPass) expect(buttons.at(-1)!.text()).toBe('过');
+      const rootW = count === 1 ? 102 : count === 2 || count === 3 ? 210 : 218;
+      expect(w.find('.mj-action-bar').attributes('style'), `count ${count} root`)
+        .toContain(`width: calc(${rootW}px * var(--mj-u, 1))`);
     }
   });
 
@@ -144,6 +158,11 @@ describe('MahjongActionBar（v17 单行）', () => {
     expect(img.exists()).toBe(true);
     expect(img.attributes('style')).toContain('width: 20px');
     expect(img.attributes('style')).toContain('height: 30px');
+    expect(img.attributes('aria-label')).toBe('万5');
+
+    const noTile = mountBar({ mode: 'claim', options: [{ claim: 'hu' } as MahjongClaimOption] });
+    expect(noTile.find('.mj-action-bar__btn').text()).toBe('胡');
+    expect(noTile.find('.mj-action-bar__btn').find('image').exists()).toBe(false);
 
     const play = mountBar({ mode: 'play', options: [hu5], selectedCount: 1 });
     expect(play.findAll('.mj-action-bar__btn').find((b) => b.text() === '胡')!.find('image').exists()).toBe(false);
@@ -183,16 +202,21 @@ describe('MahjongActionBar（v17 单行）', () => {
     expect(btn.text()).toContain('已选 2/3');
     expect(btn.find('.mj-action-bar__sub').exists()).toBe(true);
     expect(btnStyle(btn)).toContain('width: calc(140px * var(--mj-u, 1))');
+    expect(w.find('.mj-action-bar').attributes('style')).toContain('width: calc(140px * var(--mj-u, 1))');
   });
 
-  it('lack：3×66 + 推荐副字；点击 emit', async () => {
+  it('lack：3×66 + 推荐副字 + 根宽 210；点击 emit；busy 禁用', async () => {
     const w = mountBar({ mode: 'lack', recommendedSuit: 1 });
     const buttons = w.findAll('.mj-action-bar__btn');
     expect(buttons).toHaveLength(3);
     for (const b of buttons) expect(btnStyle(b)).toContain('width: calc(66px * var(--mj-u, 1))');
+    expect(w.find('.mj-action-bar').attributes('style')).toContain('width: calc(210px * var(--mj-u, 1))');
     expect(buttons[1]!.find('.mj-action-bar__rec').text()).toBe('推荐');
     await buttons[0]!.trigger('click');
     expect(w.emitted('action')?.[0]?.[0]).toEqual({ kind: 'lack', suit: 0 });
+
+    const busy = mountBar({ mode: 'lack', busy: true });
+    for (const b of busy.findAll('.mj-action-bar__btn')) expect(b.attributes('disabled')).toBeDefined();
   });
 
   it('claim 呼吸只在 claim；禁用态/emit 不变', async () => {
@@ -211,12 +235,63 @@ describe('MahjongActionBar（v17 单行）', () => {
   });
 
   it('源码闸：按钮 line-height 1；无裸 1px / em / rem / vw / vh / pt；动画 import 保留', () => {
-    expect(barStyle).toContain('line-height: 1');
+    expect(barRule('.mj-action-bar__btn')).toMatch(/line-height:\s*1\s*;/);
     expect(barSrc).not.toMatch(/(?:^|[^\d])1px\b/);
     expect(barStyle).not.toMatch(/\b(?:em|rem|vw|vh|pt)\b/);
     expect(barStyle).toMatch(/@import\s+['"][^'"]*styles\/animations\.scss['"]/);
     expect(barSrc).toContain('anim-action-slide-in');
     expect(barSrc).toContain('anim-claim-pulse');
+  });
+});
+
+// 红金皮肤（2026-11-08 Task 3）：v17 只改布局，皮肤与动画断言原样保留。
+describe('MahjongActionBar：红金皮肤（Task 3）', () => {
+  it('按钮：漆底 / 金棕发丝边 / 12px 圆角 / 24px cream / 3D 阴影', () => {
+    const body = barRule('.mj-action-bar__btn');
+    expect(body).toContain('background: rgba($ftl-color-mj-lacquer, .92)');
+    expect(body).toContain('border: $ftl-hairline solid $ftl-color-mj-border');
+    expect(body).toContain('border-radius: 12px');
+    expect(body).toContain('color: $ftl-color-mj-cream');
+    expect(body).toContain('font-size: 24px');
+    expect(body).toContain('font-weight: 700');
+    expect(body).toContain('box-shadow: 0 4px 0 $ftl-color-mj-border');
+    expect(body).not.toMatch(/rgba\(40, 76, 51|rgba\(23, 50, 33/);
+  });
+
+  it('主按钮：status→gold 渐变 + ink 字 + edge 描边', () => {
+    const body = barRule('.mj-action-bar__btn--primary');
+    expect(body).toContain('background: linear-gradient($ftl-color-mj-status, $ftl-color-mj-gold)');
+    expect(body).toContain('color: $ftl-color-mj-ink');
+    expect(body).toContain('border-color: $ftl-color-mj-edge');
+  });
+
+  it('过 / 幽灵：muted 字 + 半透明漆底', () => {
+    const body = barRule('.mj-action-bar__btn--pass');
+    expect(body).toContain('$ftl-color-mj-muted');
+    expect(body).toContain('rgba($ftl-color-mj-lacquer');
+  });
+
+  it('多杠选择器项：漆底金边（绿色渐变已删）', () => {
+    const body = barRule('.mj-action-bar__gang-item');
+    expect(body).toContain('rgba($ftl-color-mj-lacquer');
+    expect(body).toContain('$ftl-color-mj-gold');
+    expect(body).not.toMatch(/rgba\(60, 110, 75|rgba\(35, 75, 50/);
+  });
+
+  it('推荐缺：金色描边（recommended 保留）', () => {
+    const body = barRule('.mj-action-bar__btn--recommended');
+    expect(body).toContain('$ftl-color-mj-gold');
+  });
+
+  it('推荐缺：金环与 3D 底边合并（不丢 `0 4px 0` 的立体感）', () => {
+    const body = barRule('.mj-action-bar__btn--recommended');
+    expect(body).toContain('rgba($ftl-color-mj-gold, .5)');
+    expect(body).toContain('0 4px 0 $ftl-color-mj-border');
+  });
+
+  it('根挂 anim-action-slide-in（入场滑入）', () => {
+    const w = mountBar();
+    expect(w.find('.mj-action-bar').classes()).toContain('anim-action-slide-in');
   });
 });
 ```
@@ -319,6 +394,7 @@ function widthFor(mode: ActionBarMode, count: number): number {
 }
 
 const n = computed(() => Math.max(1, Math.min(4, buttonCount.value)));
+// n>4 只保护宽度表（钳到 4），不防按钮溢出；服务端可达上限 4（play 3）。
 const btnW = computed(() => widthFor(props.mode, n.value));
 const rowW = computed(() => n.value * btnW.value + (n.value - 1) * 6);
 
@@ -488,7 +564,7 @@ function pickGang(opt: MahjongClaimOption): void {
     </template>
 
     <view
-      v-if="gangOpen && gangOptions.length > 1"
+      v-if="mode === 'play' && gangOpen && gangOptions.length > 1"
       class="mj-action-bar__gang-selector"
       :style="selectorStyle"
     >
@@ -611,20 +687,35 @@ Expected: PASS。
 
 - [ ] **Step 4: Board 接线 + 迁移 board 测试**
 
-4.1 `MahjongBoard.vue`：替换 `actionsStyle`：
+4.1 `MahjongBoard.vue`：替换 `actionsStyle`（**必须 round2 + 用 sanitize 后的画布尺寸**，否则 `right` 会渲染成长浮点串）：
 ```ts
+const round2 = (v: number) => Math.round(v * 100) / 100;
+const canvasW = computed(() =>
+  Number.isFinite(canvas.value.width) && canvas.value.width > 0 ? canvas.value.width : 1334,
+);
 /** v17：动作带贴旧动作区右下角；高度/宽度由组件 calc(* u) 给出。 */
-const actionBarStyle = computed(() => ({
-  position: 'absolute' as const,
-  right: `${canvas.value.width - (layout.value.actions.left + layout.value.actions.width)}px`,
-  bottom: `${canvas.value.height - (layout.value.actions.top + layout.value.actions.height)}px`,
-  zIndex: 3,
-}));
+const actionBarStyle = computed(() => {
+  const a = layout.value.actions;
+  return {
+    position: 'absolute' as const,
+    right: `${round2(canvasW.value - (a.left + a.width))}px`,
+    bottom: `${round2(canvasH.value - (a.top + a.height))}px`,
+    zIndex: 3,
+  };
+});
 ```
-模板 `:style="actionBarStyle"`（原 `actionsStyle` 删除）。
+模板 `:style="actionBarStyle"`（原 `actionsStyle` 删除）。`canvasH` 已存在（`:92`）。
 
 4.2 `mahjong-board.test.ts`：
 - `buttonTexts(wrapper)` 两处 `['胡 5万']` → `['胡']`（约 :421、:437）。
+- `buttonByText(wrapper, '换三张')` 两处（约 :157、:952）：D7 把「已选 x/3」并入按钮后文本是 `换三张已选 3/3`，精确匹配会红 ⇒ 改前缀查找：
+```ts
+const confirm = wrapper
+  .findAll('.mj-action-bar button')
+  .find((b) => b.text().startsWith('换三张'))!;
+expect(confirm, '动作区按钮「换三张」').toBeDefined();
+```
+（:952 的点击同理：`await wrapper.findAll('.mj-action-bar button').find((b) => b.text().startsWith('换三张'))!.trigger('click');`）
 - v3-only 锚点用例（约 :842-855）改：
 ```ts
 const style = bar.attributes('style') ?? '';
@@ -671,6 +762,11 @@ describe('v17 动作带几何守护（218 宽）', () => {
     const actionRight = l.actions.left + l.actions.width;
     const barLeft = actionRight - 218;
     const sideRiverRight = l.rivers.right.rect.left + l.rivers.right.rect.width;
+    // fixture 自证是最坏态：动作区左缘、右河 2 列宽、19+N 窗口
+    expect(l.actions.left).toBeCloseTo(1067.26, 2);
+    expect(l.rivers.right.rect.width).toBe(114);
+    expect(l.rivers.right.windowCount).toBe(19);
+    expect(barLeft - sideRiverRight).toBeCloseTo(6.25, 1);
     expect(barLeft - sideRiverRight).toBeGreaterThanOrEqual(6);
     expect(l.actions.width).toBe(176);
   });
@@ -717,9 +813,10 @@ Expected: test 全绿；lint exit 0；build `DONE Build complete.`。
 - 场景（`?mode=`）：
   - `play3`：play、胡+杠+出牌（3 键）、选中 1 张；
   - `claim4`：claim、碰/杠/胡（带 20×30 牌面）/过（4 键）；
+  - `claim4meld`：claim-4 + 左侧副露 + top/self ≥17（最坏几何态，条左缘距右河 ~6px）；
   - `exchange`：exchange、已选 2/3；
   - `lack`：lack、推荐筒；
-  - `gang`：play 多杠，点开面板（截图含面板）。
+  - `gang`：play 多杠；截图前在 preview 脚本里 `document.querySelector('.mj-action-bar__btn--gang')?.click()` 打开面板，再截「面板在条上方」。
 - `pnpm -C apps/client exec vite --port 5179 --host 127.0.0.1` 后台；Chromium 1243 headless `--window-size=1334,750 --virtual-time-budget=4000`；截图存 `.superpowers/mahjong-redgold/v17-shots/`。
 - 用 Read 对照：单行、宽度、出牌最右、claim-4 牌面+「胡」、exchange 副字、lack 推荐、面板在条上方且不遮侧河。
 - 无法渲染则登记「真浏览器未验证（原因）」，不得声称通过。
@@ -752,4 +849,11 @@ git commit -m "docs(mahjong): v17 动作区单行化实现交接"
 
 ## 计划审查记录
 
-（待计划对抗审查后填写）
+2026-11-12 按 `docs/dev-process.md` §5 做独立对抗审查（sonnet，只读）：核对了计划代码可编译性（`as MahjongClaimOption`、`Partial<typeof baseProps>`、`btnStyle` 对 VTU `DOMWrapper` 重载、`.at(-1)`、strict/noUnusedLocals，仓内 tsc 实测通过）、D3 宽度表与各模式 `buttonCount/widthFor/rowW`（claim-4=218、play 1/2/3=176/102/66、lack 210、exchange 140、claim 仅过 102）、jsdom 对 `calc(*var(--mj-u,1))` 内联样式的序列化、既有 mahjong-board/action-bar/skin/animations/ui-tokens 闸的冲突面、Board 右/底锚点与最坏态几何（复算 6.25px 余量、15.84px 纵向重叠带）、布局守护 fixture 与 Task 2 场景。
+
+结论：**需修订计划**，已全部修订：
+- 阻断：① `actionBarStyle` 对已四舍五入的 layout 值做减法会得到 `50.33999999999992` / `90.74000000000001` ⇒ 改为 Board 内 `round2` + sanitize 后的 `canvasW/canvasH`；② 迁移清单漏了 board 测试 `:157/:952` 的 `buttonByText('换三张')`（D7 后文本为「换三张已选 3/3」）⇒ 改为前缀查找。
+- 高：整文件重写会删掉现有「红金皮肤（Task 3）」8 条断言与根滑入测试 ⇒ 新测试文件末尾原样保留该 describe（含 `barRule` 帮助函数）。
+- 低：布局守护补 fixture 自证（actions.left 1067.26/右河宽 114/windowCount 19/余量 6.25）；grid 闸改 `grid-template|gridTemplate` + `display: grid`；line-height 断言改用规则体正则；根宽补 play/lack/exchange/claim 各数量断言；多杠面板加 `mode === 'play'` 守卫；画布尺寸 sanitize；Global Constraints 改为「布局尺寸 calc、内容细节 px（u≡1）」；n>4 钳位注释；Task 2 补 `claim4meld` 最坏态与面板点击方式；保留无 tile 胡、aria-label、lack busy 覆盖。
+
+修订后可开工。
