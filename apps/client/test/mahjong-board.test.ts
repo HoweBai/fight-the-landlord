@@ -1865,5 +1865,35 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
     const w2 = mount(MahjongBoard, { props: props({ view: view() }) });
     expect(w2.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
   });
+
+  it('手牌内容变化（仅换牌）清缺门提示（内容 watch 独立覆盖）', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.find('.mj__hand-hint').exists()).toBe(true);
+    // 只换手牌：interactive / phase / mustDiscardSuit 均不变 ⇒ 只有内容 watch 能清
+    await w.setProps({
+      view: mustView({ hand: [...view().hand.slice(0, -1), tile(1, 9)] }),
+    });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+  });
+
+  it('A→B(被拦)→A 在 400ms 内不触发出牌（被拦点击复位双击计时）', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    const lack = tileByLabel(w, '万1');
+    await lack.trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
+    await lack.trigger('click');
+    expect(w.emitted('mahjong')).toBeUndefined();
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(0);
+  });
+
+  it('claim/rob 相位：即使字段非 null 也不提示/不置灰', () => {
+    const w = mount(MahjongBoard, {
+      props: props({ view: mustView({ state: 'claim', currentPlayer: 1, activeSeats: [0] }) }),
+    });
+    expect(w.find('.mj-hub__hint').text()).not.toContain('先打缺门');
+    expect(w.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
+  });
 });
 

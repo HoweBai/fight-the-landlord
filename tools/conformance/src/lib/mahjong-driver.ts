@@ -169,6 +169,7 @@ export function pickMahjongAction(view: MahjongPlayerView): MahjongAction | null
 
 export interface MahjongOutcome {
   actions: number;
+  /** 观测次数（重试/轮询会重复计；仅用于 atLeast ≥1）。 */
   mustDiscardSeen: number;
   finished: any;
   settlement: any;

@@ -150,7 +150,7 @@
   - D11（版本错配形态）：先以**无字段**视图选中非缺门牌，再 `setProps` 同手牌 + `mustDiscardSuit: 0` ⇒ 选择被清、提示清、出牌按钮禁用。
   - 非我的回合 / `mustDiscardSuit: null`：无提示、无置灰。
   - 源码闸：无新增定时器（animations 闸）；发丝线走 `$ftl-hairline`。
-- conformance `slice-36-mahjong.ts`（**必选**，不只可选）：利用 driver 独立维护的 hand/lack 推导，对 `playMahjongToEnd` 的最终视图断言 `mustDiscardSuit === (lack !== null && hand.some(t=>t.s===lack) ? lack : null)`。
+- conformance `slice-36-mahjong.ts`（**必选**，不只可选）：driver 逐步 oracle（`assertMustDiscard`）+ `mustDiscardSeen > 0`（终局 finalViews 判别力弱，不再使用）。
 - 全量：`pnpm -C packages/protocol test`、`pnpm -C packages/game-service test`、`pnpm -C apps/client test`、`pnpm -C apps/client lint`、`pnpm -C apps/client build`；conformance slice-36（真栈，部署阶段）。
 
 ## 5. 错误处理与边界

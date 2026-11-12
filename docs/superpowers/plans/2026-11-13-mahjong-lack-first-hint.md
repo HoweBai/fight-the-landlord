@@ -32,7 +32,7 @@
 **Interfaces:**
 - Produces: `MahjongPlayerView.mustDiscardSuit?: MahjongSuit | null`；validator 语义不变式。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `packages/protocol/src/mahjong/mahjong.test.ts` 增加（`MahjongSuit` 必须从 `./tile` 导入；`baseView()` hand 含 0 花色）：
 
@@ -80,7 +80,7 @@ it('mustDiscardSuit：可选、值域 0|1|2|null、语义=lackSuits[seat] 且在
 Run: `pnpm -C packages/protocol exec vitest run src/mahjong/mahjong.test.ts`
 Expected: FAIL（字段未声明/validator 未实现）。
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 `types.ts` `MahjongPlayerView`（`claimsForMe`/`tingTiles` 附近）加：
 ```ts
@@ -108,7 +108,7 @@ if (v.mustDiscardSuit !== undefined) {
 
 Run: `pnpm -C packages/protocol exec vitest run src/mahjong/mahjong.test.ts` → PASS；`pnpm -C packages/protocol lint` → exit 0；`pnpm -C packages/protocol build` → exit 0。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add packages/protocol/src/mahjong/types.ts packages/protocol/src/validate.ts packages/protocol/src/mahjong/mahjong.test.ts
@@ -129,7 +129,7 @@ git commit -m "feat(protocol): 麻将视图下发 mustDiscardSuit（缺门引导
 - Consumes: Task 1 的字段/validator。
 - Produces: `buildMahjongView` 返回 `mustDiscardSuit`；driver `assertMustDiscard`。
 
-- [ ] **Step 1: 写失败测试（跨座位 + oracle）**
+- [x] **Step 1: 写失败测试（跨座位 + oracle）**
 
 `packages/game-service/test/mahjong-runtime.test.ts`：
 - import 加 `hasLackTiles, canDiscard`（from `@fight-the-landlord/shared`）与 `type MahjongPlayerView`、`validateOutbound`（from `@fight-the-landlord/protocol`）。
@@ -229,7 +229,7 @@ checks.atLeast(out.mustDiscardSeen, 1, '整局至少观察到一次非 null must
 Run: `pnpm -C packages/protocol build && pnpm -C packages/game-service exec vitest run test/mahjong-runtime.test.ts`
 Expected: FAIL（视图未下发字段）。
 
-- [ ] **Step 2: 实现服务端视图**
+- [x] **Step 2: 实现服务端视图**
 
 `packages/game-service/src/games/mahjong/view.ts`：
 - import `mustClearLack`（from `@fight-the-landlord/shared`；现成 helper：`lackSuit !== null && hasLackTiles(hand, lackSuit)`）。
@@ -241,7 +241,7 @@ const mustDiscardSuit = mustClearLack(player) ? player.lackSuit : null;
 
 Run: `pnpm -C packages/protocol build && pnpm -C packages/game-service exec vitest run test/mahjong-runtime.test.ts` → PASS；`pnpm -C packages/game-service lint` → exit 0；`pnpm -C tools/conformance test` + `pnpm -C tools/conformance build` + `pnpm -C tools/conformance lint` → 绿。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add packages/game-service/src/games/mahjong/view.ts packages/game-service/test/mahjong-runtime.test.ts tools/conformance/src/lib/mahjong-driver.ts tools/conformance/src/slices/slice-36-mahjong.ts
@@ -260,7 +260,7 @@ git commit -m "feat(mahjong): 视图下发 mustDiscardSuit + conformance 独立 
 - Consumes: `view.mustDiscardSuit`。
 - Produces: 信息井 `先打缺门X`、手牌类 `mj__hand-tile--lack-first` / `--lack-blocked`、包裹层 `mj__hand-drawn--blocked`、`lackBlockedHint`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `apps/client/test/mahjong-board.test.ts` 新增（`view()` fixture 加字段；手牌花色分布：万 7 张、筒/条若干）：
 
@@ -382,7 +382,7 @@ describe('MahjongBoard：v18 缺门出牌引导', () => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-board.test.ts`
 Expected: FAIL（无字段/无提示）。
 
-- [ ] **Step 2: 实现 Board**
+- [x] **Step 2: 实现 Board**
 
 2.1 computed：
 ```ts
@@ -475,7 +475,7 @@ watch(mustDiscardSuit, (suit) => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-board.test.ts test/mahjong-hub.test.ts test/mahjong-action-bar.test.ts test/animations.test.ts test/ui-tokens.test.ts`
 Expected: PASS。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongBoard.vue apps/client/test/mahjong-board.test.ts

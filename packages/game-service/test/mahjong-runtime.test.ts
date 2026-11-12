@@ -78,6 +78,7 @@ describe('MahjongRuntime', () => {
     s.currentPlayer = 1;
     expect((runtime.buildView(s, 0) as MahjongPlayerView).mustDiscardSuit).toBe(0);
     expect((runtime.buildView(s, 1) as MahjongPlayerView).mustDiscardSuit).toBe(null);
+    // 此处与生产共用 hasLackTiles（抓接线错误）；公式级独立 oracle 在 conformance driver。
     for (const v of [view0, view1]) {
       const lack = v.lackSuits[v.seat]!;
       const expected = lack !== null && hasLackTiles(v.hand, lack) ? lack : null;
