@@ -40,7 +40,7 @@
 - [ ] **Step 1: 先改测试（RED）**
 
 1.1 `mahjong-layout-v3.test.ts`：
-- `50.34` → `146.23`（:362/:367/:372/:377/:384/:416）。
+- `50.34` → `146.23`（按字面量替换 6 处：:362/:367/:372/:377/:384/:415）。
 - `90.74` → `146.23`（:387/:391/:404）。
 - `181.48` → `292.46`（:464，2668×1500）。
 - 标题（:382/:397）改为新语义：:382「normal + ting:9 → (146.23, 511, 158, 92)；heavy/mid x=146.23」；:397「左侧副露不再影响听牌 x；与自家河/左侧河间隙」。
@@ -53,7 +53,7 @@ it('听牌贴手牌行左缘；12 列自家河间隙 ≥120；左侧河最坏 10
   const wide = mahjongTableLayoutV3(
     1334,
     750,
-    input({ top: seat(8), self: seat(17), ting: 9 }),
+    input({ top: seat(8), left: seat(8), self: seat(17), ting: 9 }),
   );
   const gap12 = wide.rects.ownRiver.left - (wide.ting.rect.left + wide.ting.rect.width);
   expect(gap12).toBeCloseTo(128.76, 1);
@@ -66,9 +66,12 @@ it('听牌贴手牌行左缘；12 列自家河间隙 ≥120；左侧河最坏 10
 
   const mid = mahjongTableLayoutV3(1334, 750, STATES.mid);
   expect(mid.ting.rect.left).toBe(mid.rects.hand.left);
+
+  const heavy = mahjongTableLayoutV3(1334, 750, STATES.heavy);
+  expect(heavy.ting.rect.left).toBe(heavy.rects.hand.left);
 });
 ```
-1.2 `mahjong-board.test.ts`：`.mj__ting` 的 `left: 50.34px`（:808-809）→ `left: 146.23px`；**不要动** `right: 50.34px`/`right: 90.74px`（动作带）。
+1.2 `mahjong-board.test.ts`：`.mj__ting` 的注释（:808 `// v3 ting.rect = (50.34, ...)`）与断言（:809 `left: 50.34px`）一起改为 146.23；**不要动** `right: 50.34px`/`right: 90.74px`（动作带）。
 1.3 `landscape-canvas.test.ts` manifest 用例：解析类型加 `fullscreen?: boolean`，断言 `expect(m['app-plus']?.fullscreen, 'App 全屏').toBe(true)`。
 1.4 新建 `apps/client/test/app-fullscreen.test.ts`：
 ```ts
@@ -81,8 +84,10 @@ describe('App 全屏（运行时兜底）', () => {
   it('APP-PLUS 下 onLaunch/onShow 调 plus.navigator.setFullscreen(true)', () => {
     expect(app).toContain('#ifdef APP-PLUS');
     expect(app).toContain('setFullscreen?.(true)');
-    expect(app).toContain('onShow');
     expect(app).toContain("typeof plus !== 'undefined'");
+    // 接线闸（防「定义了 enterFullscreen 但没接」死代码）
+    expect(app).toMatch(/onLaunch\(\)\s*\{\s*enterFullscreen\(\)/);
+    expect(app).toMatch(/onShow\(\)\s*\{\s*enterFullscreen\(\)/);
   });
 });
 ```
@@ -123,14 +128,16 @@ function enterFullscreen() {
 2.3 `manifest.json`：`app-plus` 加 `"fullscreen" : true,`；`versionName` 0.1.14、`versionCode` `"114"`。
 2.4 `pack-apk.sh`：在端点校验之后加：
 ```bash
-if ! unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/app-service.js" | grep -q "setFullscreen"; then
+HITS="$(unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/app-service.js" | grep -c "setFullscreen" || true)"
+if [ "${HITS:-0}" -lt 1 ]; then
   printf '❌ [pack-apk] 产物 app-service.js 未包含 setFullscreen —— 全屏兜底没进包，拒绝继续\n' >&2
   exit 1
 fi
 printf '✅ [pack-apk] 运行时全屏已在包内\n'
+unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/manifest.json" | grep -o '"fullscreen"[^,}]*' || true
 ```
-2.5 v15 spec §1.3 / plan I8 行加注：
-`（v19 2026-11-13 起听牌贴手牌行左缘：12 列自家河间隙 128.76 ≥120；本行基线以 v19 spec 为准。）`
+2.5 v15 spec §1.3（位置公式 bullet + ≥180 bullet 两处）/ plan I8 行加注：
+`（v19 2026-11-13 起听牌贴手牌行左缘：12 列自家河间隙 128.76 ≥120；与左侧河最坏 10.76px 不相交；本行/本 bullet 基线以 v19 spec 为准。）`
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-layout-v3.test.ts test/mahjong-board.test.ts test/landscape-canvas.test.ts test/app-fullscreen.test.ts` → PASS；`pnpm -C apps/client lint` → exit 0。
 
@@ -154,6 +161,7 @@ git commit -m "feat(mahjong): 听牌贴手牌左缘 + App 运行时全屏（0.1.
 pnpm -C apps/client test
 pnpm -C apps/client lint
 pnpm -C apps/client build
+pnpm verify:apk
 ```
 Expected: 全绿（记录计数）。
 
@@ -162,7 +170,7 @@ Expected: 全绿（记录计数）。
 ```bash
 bash scripts/deploy/pack-apk.sh ssh.yobeeo.com
 ```
-Expected: 版本 `0.1.14/114`；`app-service.js` 含 `setFullscreen`；产物闸通过；记录 size/sha256。
+Expected: 版本 `0.1.14/114`（产物断言 `"code":"114"`）；`app-service.js` 含 `setFullscreen`；产物闸通过；记录 size/sha256（`sha256sum deploy/download/ubigame.apk`）。
 （发布 Release/preview 待用户裁决；本 Task 只打包并报告。）
 
 - [ ] **Step 3: 交接**
@@ -173,6 +181,7 @@ Expected: 版本 `0.1.14/114`；`app-service.js` 含 `setFullscreen`；产物闸
 - 审查：spec §7（1 阻断 + 3 高 + 低）；计划审查记录。
 - 风险/真机验收：状态栏消失、广告后仍隐藏、顶部无空白条（safeArea 残留）、导航条不隐藏（不承诺）。
 - 回滚：代码 revert；APK 旧版 0.1.13/113。
+- 收尾：`git status`（HBuilderX 可能回写 manifest）、`pnpm verify:apk` 结果、sha256、v15 记忆/文档同步。
 - 下一步（用户裁决）：推送 dev → 部署测试服（H5 听牌变更）→ 发布 APK 0.1.14/114（Release+edge）→ 真机验收。
 
 - [ ] **Step 4: 提交**
@@ -193,4 +202,14 @@ git commit -m "docs(mahjong): v19 听牌贴手牌 + App 全屏实现交接" -m "
 
 ## 计划审查记录
 
-（待计划对抗审查后填写）
+2026-11-13 独立对抗审查（sonnet，只读）：核对 `hand`/`tr()` 语义、全部 50.34/90.74/181.48 出现点、7×15 `checks`、Board `.mj__ting` 与 v17 右锚点区别、App.vue Options API/`#ifdef`/`typeof plus`、manifest 构建产物形态、`pack-apk.sh` 端点校验与 unzip/minify、v15 spec/plan 插入点。结论：**可开工**，无阻断/高；10 条低风险已修订：
+- 50.34 行号 :416 → :415，并写明按字面量替换 6 处；
+- 语义等值补 heavy 态（normal/heavy/mid）；
+- 12 列 fixture 补 `left: seat(8)`；
+- pack-apk 闸改 `grep -c`（避 SIGPIPE 误红）+ 产物 manifest 根级 fullscreen 诊断打印；
+- 全量验证加 `pnpm verify:apk`，产物版本断言 `"code":"114"`、记录 sha256；
+- 静态闸补 `onLaunch/onShow` 接线正则（防死代码）；
+- v15 supersede 注覆盖 §1.3 两个 bullet 并写 10.76；
+- 交接补 git status/verify:apk/sha256/记忆同步；
+- Board 注释 :808 显式同步。
+修订后可开工。
