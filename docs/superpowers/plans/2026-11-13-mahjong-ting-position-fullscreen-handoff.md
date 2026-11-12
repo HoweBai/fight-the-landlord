@@ -92,3 +92,12 @@
 2. 部署测试服（H5 听牌变更可见；`bash scripts/deploy/deploy-dev.sh`）。
 3. 发布 APK 0.1.14/114（`bash scripts/deploy/publish-apk.sh deploy/download/ubigame.apk` + `bash scripts/deploy/preview.sh download` ⇒ Release `apk-latest` + edge `/download/ubigame.apk`）。
 4. 真机验收（上面 5 条硬项）。
+
+## 落地（2026-11-13，用户一次授权全链路）
+
+- **推送**：`200ef01e..32f5068a dev -> dev`（代理 8889 在线，常规推送成功）。
+- **APK 发布**：`publish-apk.sh deploy/download/ubigame.apk` → Release `apk-latest` 资产 `ubigame.apk` 20,399,710 B（替换 0.1.13/113）。
+- **部署**：`deploy-dev.sh` → tag **`dev-32f5068`**；GitHub images 构建成功；冒烟三条过；钉 IP `/api/health` = 200；`/admin/app.js` 与 tag 逐字节一致（sha256 `9f06b0b3…`）。
+- **独立核验**：edge `/download/ubigame.apk` 回读 sha256 `00e047e39f44627fe0bdc60bc050fd2ca4fbb99573d13b7d3980533dcd545b05`（与本地逐字节一致，证 edge 烘入 0.1.14）；线上 H5 `pages-table-table.WhDhsy_K.js`（141,958 B）归一化 6 个共享依赖文件名后与本地 v19 构建 chunk `pages-table-table.DGM7773j.js` **逐字节一致**（差异仅 import 的构建 hash 文件名）。
+- **剩余**：用户真机验收 5 条硬项（本文件「真机验收硬项」节）。
+- **回滚**：`bash scripts/deploy/rollback.sh dev-200ef01`；APK 回 0.1.13/113 需先卸载（versionCode 降级）。
