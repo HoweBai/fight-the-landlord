@@ -7,10 +7,10 @@
   - `ebe0aee9` feat(mahjong): 视图下发 mustDiscardSuit + conformance 独立 oracle —— Task 2
   - `b7f7c190` feat(mahjong): 缺门出牌引导（先打缺门提示 + 手牌置灰拦截）—— Task 3
   - `0e797106` fix(mahjong): v18 终审测试补强（内容清零/双击复位/相位门）—— 终审
-  - 文档提交：`15190035` / `fb9c5d02`（spec 与计划 / 计划审查修订）
+  - 文档提交：`1cba6efe` / `fdaf8091`（spec 初稿 + D11 选中防御）、`15190035` / `fb9c5d02`（spec 审查修订 + 计划 / 计划审查修订）
   - 本 Task 提交：`docs(mahjong): v18 缺门出牌引导实现交接`（本文件）
 - **全量验证已过**（2026-11-13 01:13–01:15，见下表）：12 条命令全 exit 0；`client test` **2000 passed / 2 skipped**（133 passed + 2 skipped 文件，共 135）。
-- **未推送、未部署、未重打 APK**：origin/dev 不含以上提交（本交接提交后本机 dev 领先 8 个提交）；部署回滚点仍 `dev-e10ed4b`。
+- **未推送、未部署、未重打 APK**：origin/dev 不含以上提交（本交接提交后本机 dev 领先 9 个提交）；部署回滚点仍 `dev-e10ed4b`。
 - **版本保持 0.1.12/112**（`apps/client/src/manifest.json`，未 bump）；是否 bump 0.1.13/113 由用户裁决。
 
 ## 改动
@@ -37,7 +37,7 @@
 ## 设计 / 审查
 
 - 设计 spec：`docs/superpowers/specs/2026-11-13-mahjong-lack-first-hint-design.md`（**§8 审查记录：无阻断；5 高 + 9 低，均已修订**）。
-- 实现计划：`docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint.md`（**计划审查记录：3 阻断 + 2 高 + 9 低，均已修订**；Task 1–3 已勾选，Task 4 勾选随交付由用户裁决）。
+- 实现计划：`docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint.md`（**计划审查记录：3 阻断 + 2 高 + 9 低，均已修订**；Task 1–4 已勾选）。
 - 任务审查：Task 1–3 各自完成后按 sdd 流程做任务级审查再提交（报告在 `.superpowers/sdd/task-lack-{1,2,3}-report.md`，`.superpowers/` 已 gitignore 未入库）。
 - **整片终审：With fixes** ⇒ 3 条测试补强已落 `0e797106`（①「仅换手牌」内容清零独立覆盖；② A→B(被拦)→A 400ms 内不触发出牌；③ claim/rob 相位门），另补服务端注释（公式级 oracle 在 conformance）与 driver `mustDiscardSeen` 语义注释。
 

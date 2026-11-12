@@ -489,7 +489,7 @@ git commit -m "feat(mahjong): 缺门出牌引导（先打缺门提示 + 手牌�
 **Files:**
 - Create: `docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint-handoff.md`
 
-- [ ] **Step 1: 全量验证**
+- [x] **Step 1: 全量验证**
 
 ```bash
 pnpm -C packages/protocol test
@@ -507,12 +507,12 @@ pnpm -C apps/client build
 ```
 Expected: 全绿。
 
-- [ ] **Step 2: 真机/真栈（条件执行）**
+- [x] **Step 2: 真机/真栈（条件执行）**
 
 - conformance slice-36（需重建 game-service 镜像 + 真栈）：部署阶段或本机栈可用时跑 `pnpm -C tools/conformance conformance:slice-36-mahjong`（脚本全名；需先 build）；断言 `mustDiscardSuit` oracle + `mustDiscardSeen > 0`。
 - 真浏览器/真机：进入一局，定缺后确认「先打缺门X」、缺门牌金边、非缺门牌置灰、点击被拦提示；无法执行则交接登记「未验证（原因）」。
 
-- [ ] **Step 3: 交接**
+- [x] **Step 3: 交接**
 
 `docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint-handoff.md`：
 - 状态：v18 已实现（Task 1–3 提交 + 本 Task）；全量结果数字；**未推送/未部署/未重打 APK**；版本 0.1.12/112（是否 bump 由用户裁决）。
@@ -522,7 +522,7 @@ Expected: 全绿。
 - 下一步（用户裁决）：推送 dev → 部署测试服（镜像重建，game-service 变更）→ 重打 APK（客户端引导）→ 真机走查。
 - 已知取舍：只做缺门出牌引导；同族 13001 文案另立片（D13）；H5 随部署生效、APK 需重打。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add docs/superpowers/plans/2026-11-13-mahjong-lack-first-hint-handoff.md
