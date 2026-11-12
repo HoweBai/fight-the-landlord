@@ -193,6 +193,10 @@ export const MAHJONG_TABLE_TOKENS_V3 = {
   sideVisibleCap: 20,
 } as const;
 
+// v17：动作区可视条最大宽 218（4×50 + 3×6），由 MahjongActionBar 使用；
+// 该条向左超出 actions 矩形（176）42px，布局 checks 不覆盖 ⇒ 改几何时必须重算
+// mahjong-layout-v3.test.ts 的「v17 动作带几何守护」。
+
 const T = MAHJONG_TABLE_TOKENS_V3;
 
 /** 手牌整行宽（14 张 + 13 个缝 + 摸牌缝），base px。 */

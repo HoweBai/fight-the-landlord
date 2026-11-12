@@ -154,7 +154,10 @@ describe('MahjongBoard：装配与动作上抛', () => {
     await tiles[0]!.trigger('click');
     await tiles[1]!.trigger('click');
     await tiles[2]!.trigger('click');
-    const confirm = buttonByText(wrapper, '换三张');
+    const confirm = wrapper
+      .findAll('.mj-action-bar button')
+      .find((b) => b.text().startsWith('换三张'))!;
+    expect(confirm, '动作区按钮「换三张」').toBeDefined();
     expect(confirm.attributes('disabled')).toBeUndefined();
     await confirm.trigger('click');
     expect(wrapper.emitted('mahjong')?.[0]?.[0]).toEqual({
@@ -418,7 +421,7 @@ describe('MahjongBoard：牌河契约（claimed / claimSource / lastDiscard）',
     await riverTile.trigger('click');
     expect(wrapper.emitted('mahjong')).toBeUndefined();
 
-    expect(buttonTexts(wrapper)).toEqual(['胡 5万']);
+    expect(buttonTexts(wrapper)).toEqual(['胡']);
     expect(wrapper.findAll('button').some((b) => b.text() === '过')).toBe(false);
   });
 
@@ -434,7 +437,7 @@ describe('MahjongBoard：牌河契约（claimed / claimSource / lastDiscard）',
         }),
       }),
     });
-    expect(buttonTexts(wrapper)).toEqual(['胡 5万']);
+    expect(buttonTexts(wrapper)).toEqual(['胡']);
     expect(wrapper.findAll('button').some((b) => b.text() === '过')).toBe(false);
   });
 
@@ -839,19 +842,33 @@ describe('MahjongBoard：v3 布局接线（2 列侧河 / 30×45 听牌）', () =
     expect(rule).not.toContain('align-content');
   });
 
-  it('v3-only 锚点：动作区 left 1107.66（v2 会侧河占宽后左移）；侧河块 left 393.33', () => {
+  it('v17 动作带锚点：right 50.34 / bottom 136（无 left/top）；侧河块 left 393.33', () => {
     const wrapper = mount(MahjongBoard, { props: props() });
     const bar = wrapper.findComponent(MahjongActionBar);
     expect(bar.exists()).toBe(true);
     const style = bar.attributes('style') ?? '';
-    expect(style).toContain('left: 1107.66px');
-    expect(style).toContain('top: 438px');
-    expect(style).toContain('width: 176px');
+    expect(style).toContain('position: absolute');
+    expect(style).toContain('right: 50.34px');
+    expect(style).toContain('bottom: 136px');
+    expect(style).toContain('z-index: 3');
+    expect(style).not.toContain('left:');
+    expect(style).not.toContain('top:');
+    expect(style).not.toContain('width: 176px');
+    expect(style).not.toContain('height: 176px');
 
     const withSide = mount(MahjongBoard, {
       props: props({ view: view({ discards: [[], [], [], [tile(0, 1)]] }) }),
     });
     expect(withSide.find('.mj-river--left').attributes('style')).toContain('left: 393.33px');
+  });
+
+  it('v17 动作带：有副露时右锚点 90.74px', () => {
+    const wrapper = mount(MahjongBoard, {
+      props: props({ view: view({ melds: [[], [], [], [PENG_5]] }) }),
+    });
+    const style = wrapper.findComponent(MahjongActionBar).attributes('style') ?? '';
+    expect(style).toContain('right: 90.74px');
+    expect(style).toContain('bottom: 136px');
   });
 });
 
@@ -949,7 +966,7 @@ describe('MahjongBoard：摸牌分离与 display 下标', () => {
     await tiles[0]!.trigger('click');
     await tiles[1]!.trigger('click');
     await tiles[2]!.trigger('click');
-    await buttonByText(wrapper, '换三张').trigger('click');
+    await wrapper.findAll('.mj-action-bar button').find((b) => b.text().startsWith('换三张'))!.trigger('click');
     const emitted = wrapper.emitted('mahjong')?.[0]?.[0] as { tiles: unknown[] };
     expect(emitted.tiles).toHaveLength(3);
   });

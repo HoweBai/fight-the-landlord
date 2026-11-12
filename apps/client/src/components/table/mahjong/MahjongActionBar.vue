@@ -1,10 +1,6 @@
 <script lang="ts">
 /**
  * 动作区对外契约（Task 7）。类型放普通 `<script>` 里才能 `export`。
- *
- * - `ActionBarMode`：四个窗口形态。
- * - `ActionBarAction`：唯一出口 `action` 的载荷；claim 直接带原 option，
- *   由 Board（Task 8）翻译成协议动作。
  */
 import type { MahjongClaimOption, MahjongSuit } from '@fight-the-landlord/protocol';
 
@@ -20,22 +16,15 @@ export type ActionBarAction =
 
 <script setup lang="ts">
 /**
- * 麻将动作区（哑组件）：只渲染 props、只 emit `action`，不判规则、不取数。
+ * 麻将动作区（哑组件）：v17 单行动作带。
  *
- * 设计：docs/superpowers/specs/2026-11-05-mahjong-table-redgold-design-v4.md §4.6
- *   - play：严格 2×2 网格（84px 格）：胡 (1,1) / 杠 (2,1) / 过 (1,2) / 出牌 (2,2)；
- *     多杠合并为「杠 N」选择器。
- *   - claim：碰/杠/胡/过；options 过滤 pass，`showPass` 只认 claimsForMe 里的 pass
- *     （强制胡无“过”，v12 §2）。
- *   - exchange：换三张（宽 176）+ 已选 x/3。
- *   - lack：万/筒/条三个 84 + 推荐标记。
- *   - rob 的胡按钮显示待响应牌「胡 5万」（v13 §10.2）。
- *
- * 尺寸：2 列 × 2 行、每格 84、gap 8（内联样式由测试钉死；行也必须显式固定 ——
- * 否则 play 只出牌一格时隐式行会在 `align-content: normal` 下被拉伸、出牌离右下角 42px）。
- * 主按钮 `status→gold` 渐变实心、次按钮描金。
- * 动效（Task 10）：claim 窗口给按钮挂 `anim-claim-pulse` —— 它是**麻将唯一允许的
- * infinite 类**（定义在 animations.scss；本组件不写 @keyframes）。
+ * - play：胡 / 杠 / 过 / 出牌（出牌最右）；多杠合并为「杠」+ 副字数字 + 上方选择面板。
+ * - claim：选项顺序（碰/杠/胡）+ 过最右；胡按钮把 20×30 待响应牌放在「胡」上方（仅 claim）。
+ * - exchange：单按钮「换三张」+ 副字「已选 x/3」。
+ * - lack：万/筒/条。
+ * - 尺寸：高 64、gap 6；宽度按模式+数量（最大根宽 218）；全部 calc(px * var(--mj-u, 1))。
+ * - 主字 24px（皮肤固定），副字 $ftl-font-xs；按钮 line-height: 1（牌面 + 文本的 64 高预算）。
+ * - 只渲染 props、只 emit action；不判规则/不取数/不造计时器。
  */
 import { computed, ref, watch } from 'vue';
 import { MAHJONG_SUIT_NAMES } from '@fight-the-landlord/protocol';
@@ -60,45 +49,67 @@ const emit = defineEmits<{
   (e: 'action', action: ActionBarAction): void;
 }>();
 
-/** 渲染面永远排除 pass：过只由 `showPass` 单独渲染，保证恰好一个。 */
 const claimOptions = computed(() => props.options.filter((o) => o.claim !== 'pass'));
 const huOption = computed(() => claimOptions.value.find((o) => o.claim === 'hu') ?? null);
 const gangOptions = computed(() => claimOptions.value.filter((o) => o.claim === 'gang'));
-
 const SUITS: readonly MahjongSuit[] = [0, 1, 2];
 
-/** 换窗口（options 引用变化）时收起多杠选择器。 */
 const gangOpen = ref(false);
 watch(() => props.options, () => {
   gangOpen.value = false;
 });
 
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, 84px)',
-  // 行也必须显式：动作区矩形是 176×176，2×84+8 正好铺满。
-  // 只给隐式行时 play 单格（出牌）会让空行 1 在 align-content: normal 下被拉伸 ≈42px，
-  // 出牌被顶到右上一格 —— 固定行轨道才能把它钉死在右下角。
-  gridTemplateRows: 'repeat(2, 84px)',
-  gap: '8px',
-  justifyContent: 'end',
-} as const;
+/** 当前行渲染的按钮数（决定宽度）。 */
+const buttonCount = computed(() => {
+  if (props.mode === 'claim') return claimOptions.value.length + (props.showPass ? 1 : 0);
+  if (props.mode === 'play') {
+    return (
+      1 +
+      (huOption.value ? 1 : 0) +
+      (gangOptions.value.length > 0 ? 1 : 0) +
+      (props.showPass ? 1 : 0)
+    );
+  }
+  if (props.mode === 'lack') return 3;
+  return 1;
+});
 
-const btnStyle = { width: '84px', height: '84px' } as const;
-/**
- * 严格 2×2 布局（2026-11-08 红金皮肤 Task 3，mockup `.actions`）：
- * play 窗口四格固定 —— 胡 (1,1) / 杠 (2,1) / 过 (1,2) / 出牌 (2,2)。
- * 出牌不再是 176px 宽按钮（mockup 里 2×2 的右下格才是主按钮）。
- */
-const discardBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '2' } as const;
-const huBtnStyle = { width: '84px', height: '84px', gridColumn: '1', gridRow: '1' } as const;
-const gangBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '1' } as const;
-const playPassBtnStyle = { width: '84px', height: '84px', gridColumn: '1', gridRow: '2' } as const;
-/** claim 窗口：非过选项自动排布，过固定在右下格。 */
-const claimPassBtnStyle = { width: '84px', height: '84px', gridColumn: '2', gridRow: '2' } as const;
-const wideBtnStyle = { width: '176px', height: '84px', gridColumn: 'span 2' } as const;
-const wideRowStyle = { gridColumn: 'span 2' } as const;
-const gangSelectorStyle = { gridColumn: 'span 2' } as const;
+/** D3：按模式+数量给单键宽度（px，未乘 u）。 */
+function widthFor(mode: ActionBarMode, count: number): number {
+  if (mode === 'exchange') return 140;
+  if (mode === 'lack') return 66;
+  if (mode === 'claim') {
+    if (count <= 2) return 102;
+    if (count === 3) return 66;
+    return 50;
+  }
+  if (count <= 1) return 176;
+  if (count === 2) return 102;
+  if (count === 3) return 66;
+  return 50;
+}
+
+const n = computed(() => Math.max(1, Math.min(4, buttonCount.value)));
+// n>4 只保护宽度表（钳到 4），不防按钮溢出；服务端可达上限 4（play 3）。
+const btnW = computed(() => widthFor(props.mode, n.value));
+const rowW = computed(() => n.value * btnW.value + (n.value - 1) * 6);
+
+const px = (v: number) => `calc(${v}px * var(--mj-u, 1))`;
+const btnStyle = computed(() => ({ width: px(btnW.value), height: px(64) }));
+const barStyle = computed(() => ({ width: px(rowW.value) }));
+const selectorStyle = {
+  position: 'absolute',
+  right: '0',
+  bottom: 'calc(100% + 8px * var(--mj-u, 1))',
+  width: 'calc(218px * var(--mj-u, 1))',
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 'calc(6px * var(--mj-u, 1))',
+} as const;
+const selectorItemStyle = {
+  flex: '0 0 calc(50% - 3px * var(--mj-u, 1))',
+  height: 'calc(48px * var(--mj-u, 1))',
+} as const;
 
 function emitAction(action: ActionBarAction): void {
   emit('action', action);
@@ -108,21 +119,16 @@ function emitClaim(option: MahjongClaimOption): void {
   emit('action', { kind: 'claim', option });
 }
 
-/** 牌面文案：点数 + 花色名（如 `5万`；契约按这个顺序，见 task-7-brief）。 */
-function tileLabel(tile: { s: MahjongSuit; r: number }): string {
-  return `${tile.r}${MAHJONG_SUIT_NAMES[tile.s]}`;
-}
-
-/** claim 模式的按钮文案；胡带待响应牌（rob 窗口）。 */
+/** claim 文案：胡/杠/碰；胡的牌面由 20×30 图片表达，不再写「胡 5万」。 */
 function claimLabel(opt: MahjongClaimOption): string {
-  if (opt.claim === 'hu') return opt.tile ? `胡 ${tileLabel(opt.tile)}` : '胡';
+  if (opt.claim === 'hu') return '胡';
   if (opt.claim === 'gang') return '杠';
   return '碰';
 }
 
 /** 多杠选择器行文案：牌型（如 `5万`）。 */
 function gangLabel(opt: MahjongClaimOption): string {
-  return opt.tile ? tileLabel(opt.tile) : '杠';
+  return opt.tile ? `${opt.tile.r}${MAHJONG_SUIT_NAMES[opt.tile.s]}` : '杠';
 }
 
 function pickHu(): void {
@@ -145,161 +151,149 @@ function pickGang(opt: MahjongClaimOption): void {
 </script>
 
 <template>
-  <view class="mj-action-bar anim-action-slide-in">
-    <view class="mj-action-bar__grid" :style="gridStyle">
-      <template v-if="mode === 'play'">
-        <button
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--discard"
-          :style="discardBtnStyle"
-          :disabled="busy || (mode === 'play' && selectedCount !== 1)"
-          @click="emitAction({ kind: 'discard' })"
-        >
-          出牌
-        </button>
+  <view class="mj-action-bar anim-action-slide-in" :style="barStyle">
+    <template v-if="mode === 'play'">
+      <button
+        v-if="huOption"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--hu"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="pickHu"
+      >胡</button>
+      <button
+        v-if="gangOptions.length === 1"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--gang"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="pickSoleGang"
+      >杠</button>
+      <button
+        v-else-if="gangOptions.length > 1"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--gang"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="toggleGang"
+      >
+        杠
+        <text class="mj-action-bar__sub">{{ gangOptions.length }}</text>
+      </button>
+      <button
+        v-if="showPass"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--pass"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="emitAction({ kind: 'pass' })"
+      >过</button>
+      <button
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--discard"
+        :style="btnStyle"
+        :disabled="busy || selectedCount !== 1"
+        @click="emitAction({ kind: 'discard' })"
+      >出牌</button>
+    </template>
 
-        <button
-          v-if="huOption"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--hu"
-          :style="huBtnStyle"
-          :disabled="busy"
-          @click="pickHu"
-        >
-          胡
-        </button>
+    <template v-else-if="mode === 'claim'">
+      <button
+        v-for="(opt, i) in claimOptions"
+        :key="i"
+        type="button"
+        class="mj-action-bar__btn anim-claim-pulse"
+        :class="{
+          'mj-action-bar__btn--primary': opt.claim === 'hu',
+          'mj-action-bar__btn--gang': opt.claim === 'gang',
+        }"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="emitClaim(opt)"
+      >
+        <MahjongTile
+          v-if="opt.claim === 'hu' && opt.tile"
+          :tile="opt.tile"
+          direction="my"
+          :w="20"
+          :h="30"
+        />
+        {{ claimLabel(opt) }}
+      </button>
+      <button
+        v-if="showPass"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--pass anim-claim-pulse"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="emitAction({ kind: 'pass' })"
+      >过</button>
+    </template>
 
-        <button
-          v-if="gangOptions.length === 1"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--gang"
-          :style="gangBtnStyle"
-          :disabled="busy"
-          @click="pickSoleGang"
-        >
-          杠
-        </button>
-        <button
-          v-else-if="gangOptions.length > 1"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--gang"
-          :style="gangBtnStyle"
-          :disabled="busy"
-          @click="toggleGang"
-        >
-          杠 {{ gangOptions.length }}
-        </button>
+    <template v-else-if="mode === 'exchange'">
+      <button
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--exchange"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="emitAction({ kind: 'exchange' })"
+      >
+        换三张
+        <text class="mj-action-bar__sub">已选 {{ selectedCount }}/3</text>
+      </button>
+    </template>
 
-        <button
-          v-if="showPass"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--pass"
-          :style="playPassBtnStyle"
-          :disabled="busy"
-          @click="emitAction({ kind: 'pass' })"
-        >
-          过
-        </button>
+    <template v-else>
+      <button
+        v-for="suit in SUITS"
+        :key="suit"
+        type="button"
+        class="mj-action-bar__btn mj-action-bar__btn--lack"
+        :class="{ 'mj-action-bar__btn--recommended': recommendedSuit === suit }"
+        :style="btnStyle"
+        :disabled="busy"
+        @click="emitAction({ kind: 'lack', suit })"
+      >
+        {{ MAHJONG_SUIT_NAMES[suit] }}
+        <text v-if="recommendedSuit === suit" class="mj-action-bar__rec">推荐</text>
+      </button>
+    </template>
 
-        <view
-          v-if="gangOpen && gangOptions.length > 1"
-          class="mj-action-bar__gang-selector"
-          :style="gangSelectorStyle"
-        >
-          <button
-            v-for="(opt, i) in gangOptions"
-            :key="i"
-            type="button"
-            class="mj-action-bar__gang-item"
-            :disabled="busy"
-            @click="pickGang(opt)"
-          >
-            {{ gangLabel(opt) }}
-          </button>
-        </view>
-      </template>
-
-      <template v-else-if="mode === 'claim'">
-        <button
-          v-for="(opt, i) in claimOptions"
-          :key="i"
-          type="button"
-          class="mj-action-bar__btn anim-claim-pulse"
-          :class="{
-            'mj-action-bar__btn--primary': opt.claim === 'hu',
-            'mj-action-bar__btn--gang': opt.claim === 'gang',
-          }"
-          :style="btnStyle"
-          :disabled="busy"
-          @click="emitClaim(opt)"
-        >
-          <!-- rob 胡待响应牌（v13 §10.2 / 红金皮肤 Task 3）：20×30 小牌浮在「胡」文本上方。 -->
-          <MahjongTile
-            v-if="opt.claim === 'hu' && opt.tile"
-            :tile="opt.tile"
-            direction="my"
-            :w="20"
-            :h="30"
-          />
-          {{ claimLabel(opt) }}
-        </button>
-        <button
-          v-if="showPass"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--pass anim-claim-pulse"
-          :style="claimPassBtnStyle"
-          :disabled="busy"
-          @click="emitAction({ kind: 'pass' })"
-        >
-          过
-        </button>
-      </template>
-
-      <template v-else-if="mode === 'exchange'">
-        <button
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--primary mj-action-bar__btn--exchange"
-          :style="wideBtnStyle"
-          :disabled="busy"
-          @click="emitAction({ kind: 'exchange' })"
-        >
-          换三张
-        </button>
-        <text class="mj-action-bar__hint" :style="wideRowStyle">已选 {{ selectedCount }}/3</text>
-      </template>
-
-      <template v-else>
-        <button
-          v-for="suit in SUITS"
-          :key="suit"
-          type="button"
-          class="mj-action-bar__btn mj-action-bar__btn--lack"
-          :class="{ 'mj-action-bar__btn--recommended': recommendedSuit === suit }"
-          :style="btnStyle"
-          :disabled="busy"
-          @click="emitAction({ kind: 'lack', suit })"
-        >
-          {{ MAHJONG_SUIT_NAMES[suit] }}
-          <text v-if="recommendedSuit === suit" class="mj-action-bar__rec">推荐</text>
-        </button>
-      </template>
+    <view
+      v-if="mode === 'play' && gangOpen && gangOptions.length > 1"
+      class="mj-action-bar__gang-selector"
+      :style="selectorStyle"
+    >
+      <button
+        v-for="(opt, i) in gangOptions"
+        :key="i"
+        type="button"
+        class="mj-action-bar__gang-item"
+        :style="selectorItemStyle"
+        :disabled="busy"
+        @click="pickGang(opt)"
+      >
+        {{ gangLabel(opt) }}
+      </button>
     </view>
   </view>
 </template>
 
 <style scoped lang="scss">
-// Task 10：claim 呼吸（`.anim-claim-pulse`）。scoped CSS 按组件重命名 @keyframes
-// ⇒ 必须导入动画类文件（同 MahjongMeld / MahjongHandBacks 的纪律）。
+// claim 呼吸 / 滑入动画的类与 keyframes 都在 animations.scss（scoped 会重命名 @keyframes ⇒ 必须导入）。
 @import '../../../styles/animations.scss';
 
 .mj-action-bar {
   display: flex;
-  justify-content: flex-end;
+  align-items: stretch;
+  gap: calc(6px * var(--mj-u, 1));
+  height: calc(64px * var(--mj-u, 1));
 }
 
-// 红金皮肤（Task 3，mockup `.act`）：漆底 / 金棕发丝边 / 12px 圆角 / 24px cream / 3D 阴影。
+// 红金皮肤（v4 §4.6）：漆底 / 金棕发丝边 / 12px 圆角 / 24px cream / 3D 阴影。
 .mj-action-bar__btn {
   @include ftl-btn;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -313,30 +307,27 @@ function pickGang(opt: MahjongClaimOption): void {
   color: $ftl-color-mj-cream;
   font-size: 24px;
   font-weight: 700;
+  line-height: 1;
   box-shadow: 0 4px 0 $ftl-color-mj-border;
 }
 
-// 主按钮：status→gold 渐变 + 深字（出牌 / 胡 / 换三张）
 .mj-action-bar__btn--primary {
   border-color: $ftl-color-mj-edge;
   background: linear-gradient($ftl-color-mj-status, $ftl-color-mj-gold);
   color: $ftl-color-mj-ink;
 }
 
-// 杠：描金加强
 .mj-action-bar__btn--gang {
   border-color: rgba($ftl-color-mj-gold, .75);
   color: $ftl-color-mj-gold-light;
 }
 
-// 过：弱化处理（幽灵按钮）
 .mj-action-bar__btn--pass {
   border-color: rgba($ftl-color-mj-muted, .5);
   background: rgba($ftl-color-mj-lacquer, .6);
   color: $ftl-color-mj-muted;
 }
 
-// 推荐缺：金色描边 + 小标记（必须**合并** 3D 底边，单写 ring 会丢掉 `0 4px 0` 的立体感）
 .mj-action-bar__btn--recommended {
   border-color: $ftl-color-mj-gold;
   box-shadow: 0 0 0 $ftl-hairline rgba($ftl-color-mj-gold, .5), 0 4px 0 $ftl-color-mj-border;
@@ -346,26 +337,28 @@ function pickGang(opt: MahjongClaimOption): void {
   display: block;
   font-size: $ftl-font-xs;
   font-weight: 400;
+  line-height: 1;
   color: $ftl-color-mj-gold-light;
 }
 
-.mj-action-bar__hint {
-  font-size: $ftl-font-sm;
-  color: $ftl-color-mj-gold-light;
-  text-align: center;
+.mj-action-bar__sub {
+  display: block;
+  font-size: $ftl-font-xs;
+  font-weight: 400;
+  line-height: 1;
+  color: inherit;
+  opacity: .85;
 }
 
 .mj-action-bar__gang-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  z-index: 1;
 }
 
-// 多杠选择器项（红金皮肤）：漆底金边（旧绿渐变已删）。
+// 多杠选择器项（红金皮肤）：漆底金边。
 .mj-action-bar__gang-item {
   @include ftl-btn;
   min-height: 0;
-  height: 56px;
+  height: 48px;
   padding: 0 $ftl-space-4;
   border: $ftl-hairline solid rgba($ftl-color-mj-gold, .7);
   border-radius: 12px;
@@ -373,6 +366,7 @@ function pickGang(opt: MahjongClaimOption): void {
   color: $ftl-color-mj-cream;
   font-size: $ftl-font-md;
   font-weight: 700;
+  line-height: 1;
 }
 
 .mj-action-bar__btn[disabled],

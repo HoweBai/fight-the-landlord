@@ -92,6 +92,9 @@ const canvas = computed(() => stageMetrics?.value ?? { width: 1334, height: 750,
 const canvasH = computed(() =>
   Number.isFinite(canvas.value.height) && canvas.value.height > 0 ? canvas.value.height : 750,
 );
+const canvasW = computed(() =>
+  Number.isFinite(canvas.value.width) && canvas.value.width > 0 ? canvas.value.width : 1334,
+);
 
 const view = computed(() => props.view);
 const phase = computed(() => props.view?.state ?? null);
@@ -231,8 +234,17 @@ const tingLabelStyle = computed(() => ({
   left: `${layout.value.ting.rect.left}px`,
   top: `${layout.value.ting.rect.top - 18 * layout.value.u}px`,
 }));
-/** 动作区在河/副露之上（河内副露条带 z-index: 1）。 */
-const actionsStyle = computed(() => ({ ...rectStyle(layout.value.actions), zIndex: 3 }));
+const round2 = (v: number) => Math.round(v * 100) / 100;
+/** v17：动作带贴旧动作区右下角；高度/宽度由组件 calc(* u) 给出。 */
+const actionBarStyle = computed(() => {
+  const a = layout.value.actions;
+  return {
+    position: 'absolute' as const,
+    right: `${round2(canvasW.value - (a.left + a.width))}px`,
+    bottom: `${round2(canvasH.value - (a.top + a.height))}px`,
+    zIndex: 3,
+  };
+});
 /** v16：信息井视觉恒为紧凑档（160×160 设计 px），居中于 hub.cx/cy；scale(u) 防御。 */
 const hubStyle = computed(() => ({
   position: 'absolute' as const,
@@ -1262,7 +1274,7 @@ function onMeldPopDone(key: string) {
         :busy="busy || (phase === 'exchange' && !exchangeReady)"
         :selected-count="selected.length"
         :recommended-suit="lackRecommendation"
-        :style="actionsStyle"
+        :style="actionBarStyle"
         @action="onActionBarAction"
       />
 

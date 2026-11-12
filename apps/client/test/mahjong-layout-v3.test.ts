@@ -606,3 +606,27 @@ describe('MAHJONG_TABLE_TOKENS_V3', () => {
     expect(MAHJONG_TABLE_TOKENS_V3.displayCap).toBe(24);
   });
 });
+
+describe('v17 动作带几何守护（218 宽）', () => {
+  it('最坏态：动作带左缘比右侧河右缘至少多 6px', () => {
+    const l = mahjongTableLayoutV3(1334, 750, {
+      bySlot: {
+        top: { discards: 17, melds: [] },
+        left: { discards: 0, melds: [] },
+        right: { discards: 29, melds: [3, 3, 3, 3] },
+        self: { discards: 17, melds: [] },
+      },
+      tingCount: 0,
+    });
+    const actionRight = l.actions.left + l.actions.width;
+    const barLeft = actionRight - 218;
+    const sideRiverRight = l.rivers.right.rect.left + l.rivers.right.rect.width;
+    // fixture 自证是最坏态：动作区左缘、右河 2 列宽、19+N 窗口
+    expect(l.actions.left).toBeCloseTo(1067.26, 2);
+    expect(l.rivers.right.rect.width).toBe(114);
+    expect(l.rivers.right.windowCount).toBe(19);
+    expect(barLeft - sideRiverRight).toBeCloseTo(6.25, 1);
+    expect(barLeft - sideRiverRight).toBeGreaterThanOrEqual(6);
+    expect(l.actions.width).toBe(176);
+  });
+});
