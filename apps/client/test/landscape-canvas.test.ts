@@ -359,12 +359,13 @@ describe('⑤ 八页接入与全局配置（源码级）', () => {
     const m = JSON.parse(
       stripComments(sources.find((f) => f.path === 'src/manifest.json')!.content),
     ) as {
-      'app-plus'?: { screenOrientation?: string[] };
+      'app-plus'?: { screenOrientation?: string[]; fullscreen?: boolean };
     };
     expect(m['app-plus']?.screenOrientation, 'App 锁横屏').toEqual([
       'landscape-primary',
       'landscape-secondary',
     ]);
+    expect(m['app-plus']?.fullscreen, 'App 全屏').toBe(true);
   });
 
   /**

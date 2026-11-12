@@ -68,6 +68,13 @@ if ! unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/app-se
   printf '❌ [pack-apk] 产物 app-service.js 未注入端点 %s —— 打包会白屏，拒绝继续\n' "$HOST" >&2
   exit 1
 fi
+HITS="$(unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/app-service.js" | grep -c "setFullscreen" || true)"
+if [ "${HITS:-0}" -lt 1 ]; then
+  printf '❌ [pack-apk] 产物 app-service.js 未包含 setFullscreen —— 全屏兜底没进包，拒绝继续\n' >&2
+  exit 1
+fi
+printf '✅ [pack-apk] 运行时全屏已在包内\n'
+unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/manifest.json" | grep -o '"fullscreen"[^,}]*' || true
 VER="$(unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/manifest.json" 2>/dev/null \
   | grep -oE '"version":\{[^}]*\}' | head -1 || true)"
 printf '✅ [pack-apk] 端点已注入；版本 %s\n' "${VER:-（未知）}"

@@ -7,7 +7,7 @@
  * v15 相对 v2 的变更：
  *  - 侧河固定 2 列、最多 10 行（20 格 = 19 张 + N 徽标），河块移到信息井左右两侧；
  *  - 侧背 / 侧副露 lane 留在外缘，`sideTop = 座位牌底 + gap`（亮牌再 +16）；
- *  - 听牌 30×45、2 行 × 5 列，放在侧副露 lane 右侧、自家河左侧；
+ *  - 听牌 30×45、2 行 × 5 列，贴手牌行左缘（v19）；
  *  - `zoneW` 取左右两侧最大值（hub 恒居中）；输出带 `checks`（越界 + 原型 pairs）。
  *
  * 几何逐行移植自
@@ -661,13 +661,13 @@ function layoutBase(W: number, H: number, input: NormalizedInput): BaseLayout {
       )
     : rect(0, 0, 0, 0);
 
-  // —— 听牌（左下空区：侧副露 lane 右侧、自家河左侧）——
+  // —— 听牌（左下空区：贴手牌行左缘（v19））——
   const tingCount = Math.min(input.tingCount, T.tingMax);
   const tingCols = Math.min(tingCount, T.tingPerRow);
   const tingRows = tingCount ? Math.ceil(tingCount / T.tingPerRow) : 0;
   const tingW = tingCols * sc(T.tingW) + Math.max(0, tingCols - 1) * gapT;
   const tingH = tingRows * sc(T.tingH) + Math.max(0, tingRows - 1) * gapT;
-  const tingX = outer + leftZ.backW + gap + leftZ.meld.w + gap;
+  const tingX = hand.left;
   const tingY = ownRiverBox.rect.top + Math.max(0, (ownRiverBox.rect.height - tingH) / 2);
   const tingRect = tingCount ? rect(tingX, tingY, tingW, tingH) : rect(0, 0, 0, 0);
   const ting: BaseTing = {

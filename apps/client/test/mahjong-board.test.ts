@@ -805,8 +805,8 @@ describe('MahjongBoard：v3 布局接线（2 列侧河 / 30×45 听牌）', () =
     expect(style).toContain('grid-template-columns: repeat(5, 30px)');
     expect(style).toContain('grid-auto-rows: 45px');
     expect(style).toContain('gap: 2px');
-    // v3 ting.rect = (50.34, 511, 158, 92)
-    expect(style).toContain('left: 50.34px');
+    // v3 ting.rect = (146.23, 511, 158, 92)
+    expect(style).toContain('left: 146.23px');
     expect(style).toContain('top: 511px');
     expect(style).toContain('width: 158px');
     expect(style).toContain('height: 92px');

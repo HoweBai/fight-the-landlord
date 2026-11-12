@@ -359,60 +359,85 @@ describe('mahjongTableLayoutV3：听牌 30×45 / 2×5', () => {
 
   it('1/5 张 → 1 行；6/9 张 → 2 行（C1/C2）', () => {
     const t1 = mahjongTableLayoutV3(1334, 750, input({ ting: 1 }));
-    expect(t1.ting.rect).toEqual({ left: 50.34, top: 534.5, width: 30, height: 45 });
+    expect(t1.ting.rect).toEqual({ left: 146.23, top: 534.5, width: 30, height: 45 });
     expect(t1.ting.cols).toBe(1);
     expect(t1.ting.rows).toBe(1);
 
     const t5 = mahjongTableLayoutV3(1334, 750, input({ ting: 5 }));
-    expect(t5.ting.rect).toEqual({ left: 50.34, top: 534.5, width: 158, height: 45 });
+    expect(t5.ting.rect).toEqual({ left: 146.23, top: 534.5, width: 158, height: 45 });
     expect(t5.ting.cols).toBe(5);
     expect(t5.ting.rows).toBe(1);
 
     const t6 = mahjongTableLayoutV3(1334, 750, input({ ting: 6 }));
-    expect(t6.ting.rect).toEqual({ left: 50.34, top: 511, width: 158, height: 92 });
+    expect(t6.ting.rect).toEqual({ left: 146.23, top: 511, width: 158, height: 92 });
     expect(t6.ting.cols).toBe(5);
     expect(t6.ting.rows).toBe(2);
 
     const t9 = mahjongTableLayoutV3(1334, 750, input({ ting: 9 }));
-    expect(t9.ting.rect).toEqual({ left: 50.34, top: 511, width: 158, height: 92 });
+    expect(t9.ting.rect).toEqual({ left: 146.23, top: 511, width: 158, height: 92 });
     expect(t9.ting.cols).toBe(5);
     expect(t9.ting.rows).toBe(2);
   });
 
-  it('normal + ting:9 → (50.34, 511, 158, 92)；heavy → (90.74, 511)；mid → (90.74, 462.2)', () => {
+  it('normal + ting:9 → (146.23, 511, 158, 92)；heavy/mid x=146.23', () => {
     const normal9 = mahjongTableLayoutV3(1334, 750, input({ ting: 9 }));
-    expect(normal9.ting.rect).toEqual({ left: 50.34, top: 511, width: 158, height: 92 });
+    expect(normal9.ting.rect).toEqual({ left: 146.23, top: 511, width: 158, height: 92 });
 
     const heavy = mahjongTableLayoutV3(1334, 750, STATES.heavy);
-    expect(heavy.ting.rect.left).toBeCloseTo(90.74, 2);
+    expect(heavy.ting.rect.left).toBeCloseTo(146.23, 2);
     expect(heavy.ting.rect.top).toBeCloseTo(511, 2);
 
     const mid = mahjongTableLayoutV3(1334, 750, STATES.mid);
-    expect(mid.ting.rect.left).toBeCloseTo(90.74, 2);
+    expect(mid.ting.rect.left).toBeCloseTo(146.23, 2);
     expect(mid.ting.rect.top).toBeCloseTo(462.2, 2);
     expect(mid.ting.rect.width).toBe(158);
     expect(mid.ting.rect.height).toBe(92);
   });
 
-  it('左侧副露 lane 右移听牌；与自家河间隙 ≥180px（I8）', () => {
+  it('左侧副露不再影响听牌 x；与自家河/左侧河间隙', () => {
     const l = mahjongTableLayoutV3(
       1334,
       750,
       input({ top: seat(17), left: seat(8, groups(1)), right: seat(8), self: seat(8), ting: 9 }),
     );
     expect(l.rects.leftMelds.width).toBeCloseTo(40.4, 2);
-    expect(l.ting.rect.left).toBeCloseTo(90.74, 2);
+    expect(l.ting.rect.left).toBeCloseTo(146.23, 2);
     const gap = l.rects.ownRiver.left - (l.ting.rect.left + l.ting.rect.width);
     expect(gap).toBeGreaterThanOrEqual(180);
     // 与侧河块不相交
     expect(l.ting.rect.left + l.ting.rect.width).toBeLessThan(l.rects.leftRiver.left);
   });
 
+  it('听牌贴手牌行左缘；12 列自家河间隙 ≥120；左侧河最坏 10.76', () => {
+    const normal = mahjongTableLayoutV3(1334, 750, input({ ting: 9 }));
+    expect(normal.ting.rect.left).toBe(normal.rects.hand.left);
+
+    const wide = mahjongTableLayoutV3(
+      1334,
+      750,
+      input({ top: seat(8), left: seat(8), self: seat(17), ting: 9 }),
+    );
+    const gap12 = wide.rects.ownRiver.left - (wide.ting.rect.left + wide.ting.rect.width);
+    expect(gap12).toBeCloseTo(128.76, 1);
+    expect(gap12).toBeGreaterThanOrEqual(120);
+    expect(wide.ting.rect.left + wide.ting.rect.width).toBeLessThan(wide.rects.leftRiver.left);
+
+    const worst = mahjongTableLayoutV3(1334, 750, STATES.overlayWorst);
+    const gapLeft = worst.rects.leftRiver.left - (worst.ting.rect.left + worst.ting.rect.width);
+    expect(gapLeft).toBeCloseTo(10.76, 1);
+
+    const mid = mahjongTableLayoutV3(1334, 750, STATES.mid);
+    expect(mid.ting.rect.left).toBe(mid.rects.hand.left);
+
+    const heavy = mahjongTableLayoutV3(1334, 750, STATES.heavy);
+    expect(heavy.ting.rect.left).toBe(heavy.rects.hand.left);
+  });
+
   it('听牌 rect 与 rects.ting 一致；无副露时 x 不随上家弃牌变化', () => {
     const a = mahjongTableLayoutV3(1334, 750, input({ ting: 9 }));
     const b = mahjongTableLayoutV3(1334, 750, input({ top: seat(29, groups(4)), right: seat(29), ting: 9 }));
     expect(a.rects.ting).toEqual(a.ting.rect);
-    expect(b.ting.rect.left).toBeCloseTo(50.34, 2);
+    expect(b.ting.rect.left).toBeCloseTo(146.23, 2);
     expect(b.ting.rect.top).toBeCloseTo(511, 2);
   });
 });
@@ -461,7 +486,7 @@ describe('mahjongTableLayoutV3：副露 / 坐标帧 / 窗口字段', () => {
     expect(l.rivers.left.badgeRect).toEqual({ left: 902.65, top: 1057.35, width: 112, height: 74.34 });
     expect(l.rects.leftMelds).toEqual({ left: 92.68, top: 660.86, width: 80.8, height: 162.28 });
     expect(l.rivers.left.meldRect).toEqual(l.rects.leftMelds);
-    expect(l.ting.rect).toEqual({ left: 181.48, top: 924.4, width: 316, height: 184 });
+    expect(l.ting.rect).toEqual({ left: 292.46, top: 924.4, width: 316, height: 184 });
     // 徽标/副露 rect 与河块同帧等比：x 关系保持
     expect(l.rivers.left.badgeRect!.left - l.rivers.left.rect.left).toBeCloseTo(58 * 2, 1);
     expect(l.checks).toEqual([]);

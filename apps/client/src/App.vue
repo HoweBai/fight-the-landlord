@@ -24,7 +24,25 @@ function toError(value) {
   return new Error(value === undefined ? 'unknown error' : String(value));
 }
 
+/** 全屏兜底：manifest 的 fullscreen 非 uni-app 官方键（HBuilderX 可能丢弃）⇒ 运行时设置。 */
+function enterFullscreen() {
+  // #ifdef APP-PLUS
+  try {
+    const api = typeof plus !== 'undefined' ? plus : globalThis.plus;
+    api?.navigator?.setFullscreen?.(true);
+  } catch (err) {
+    // 全屏失败不得阻断启动
+  }
+  // #endif
+}
+
 export default {
+  onLaunch() {
+    enterFullscreen();
+  },
+  onShow() {
+    enterFullscreen();
+  },
   onError(err) {
     // uni 应用级未捕获异常（同步为主）。
     reportError('app.onError', toError(err));
