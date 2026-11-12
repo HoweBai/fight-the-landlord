@@ -39,7 +39,7 @@
 - Consumes: `ActionBarMode` / `ActionBarAction` / props 不变。
 - Produces: 单行根 DOM（`.mj-action-bar`，直接子按钮）、`.mj-action-bar__sub` 副字、`.mj-action-bar__gang-selector` 绝对面板；Board `actionBarStyle`（right/bottom/z-index 3）。
 
-- [ ] **Step 1: 重写 `apps/client/test/mahjong-action-bar.test.ts`（失败测试）**
+- [x] **Step 1: 重写 `apps/client/test/mahjong-action-bar.test.ts`（失败测试）**
 
 完整文件：
 
@@ -299,7 +299,7 @@ describe('MahjongActionBar：红金皮肤（Task 3）', () => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-action-bar.test.ts`
 Expected: FAIL（旧 2×2/84/176 结构）。
 
-- [ ] **Step 2: 整文件替换 `apps/client/src/components/table/mahjong/MahjongActionBar.vue`**
+- [x] **Step 2: 整文件替换 `apps/client/src/components/table/mahjong/MahjongActionBar.vue`**
 
 ```vue
 <script lang="ts">
@@ -680,12 +680,12 @@ function pickGang(opt: MahjongClaimOption): void {
 </style>
 ```
 
-- [ ] **Step 3: 跑 action-bar 测试确认 GREEN**
+- [x] **Step 3: 跑 action-bar 测试确认 GREEN**
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-action-bar.test.ts`
 Expected: PASS。
 
-- [ ] **Step 4: Board 接线 + 迁移 board 测试**
+- [x] **Step 4: Board 接线 + 迁移 board 测试**
 
 4.1 `MahjongBoard.vue`：替换 `actionsStyle`（**必须 round2 + 用 sanitize 后的画布尺寸**，否则 `right` 会渲染成长浮点串）：
 ```ts
@@ -744,7 +744,7 @@ it('v17 动作带：有副露时右锚点 90.74px', () => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-action-bar.test.ts test/mahjong-board.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 布局 218 守护测试 + token 注释**
+- [x] **Step 5: 布局 218 守护测试 + token 注释**
 
 5.1 `mahjong-layout-v3.test.ts` 新增：
 ```ts
@@ -782,7 +782,7 @@ describe('v17 动作带几何守护（218 宽）', () => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-action-bar.test.ts test/mahjong-board.test.ts test/mahjong-layout-v3.test.ts`
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/client/src/components/table/mahjong/MahjongActionBar.vue apps/client/src/components/table/mahjong/MahjongBoard.vue apps/client/test/mahjong-action-bar.test.ts apps/client/test/mahjong-board.test.ts apps/client/test/mahjong-layout-v3.test.ts apps/client/src/game/mahjong-layout-v3.ts

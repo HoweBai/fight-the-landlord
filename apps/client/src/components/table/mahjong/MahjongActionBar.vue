@@ -358,7 +358,6 @@ function pickGang(opt: MahjongClaimOption): void {
 .mj-action-bar__gang-item {
   @include ftl-btn;
   min-height: 0;
-  height: 48px;
   padding: 0 $ftl-space-4;
   border: $ftl-hairline solid rgba($ftl-color-mj-gold, .7);
   border-radius: 12px;

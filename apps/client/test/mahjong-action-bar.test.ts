@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import type { MahjongClaimOption } from '@fight-the-landlord/protocol';
 import MahjongActionBar from '../src/components/table/mahjong/MahjongActionBar.vue';
+import { stripComments } from './helpers/source-scan';
 
 const tile = (s: 0 | 1 | 2, r: number) => ({ s, r });
 const peng = { claim: 'peng', tile: tile(0, 5) } as MahjongClaimOption;
@@ -56,7 +57,7 @@ describe('MahjongActionBar（v17 单行）', () => {
     const root = w.find('.mj-action-bar');
     expect(root.attributes('style')).toContain('width: calc(218px * var(--mj-u, 1))');
     expect(barStyle).toContain('gap: calc(6px * var(--mj-u, 1))');
-    expect(barSrc).not.toMatch(/grid-template|gridTemplate/);
+    expect(stripComments(barSrc)).not.toMatch(/grid-template|gridTemplate/);
     expect(barStyle).not.toMatch(/display:\s*grid/);
   });
 
@@ -85,6 +86,7 @@ describe('MahjongActionBar（v17 单行）', () => {
   it('claim：1/2/3/4 键宽度 102/102/66/50；过固定在最后', () => {
     const cases: Array<[number, number, MahjongClaimOption[], boolean]> = [
       [1, 102, [hu5], false],
+      [1, 102, [], true],
       [2, 102, [hu5], true],
       [3, 66, [peng, hu5], true],
       [4, 50, [peng, gang3, hu5], true],
@@ -147,6 +149,38 @@ describe('MahjongActionBar（v17 单行）', () => {
     for (const item of items) {
       expect(item.attributes('style')).toContain('flex: 0 0 calc(50% - 3px * var(--mj-u, 1))');
     }
+    expect(items.map((i) => i.text())).toEqual(['3万', '7万']);
+    await items[0]!.trigger('click');
+    expect(multi.emitted('action')).toEqual([[{ kind: 'claim', option: gang3 }]]);
+    expect(multi.find('.mj-action-bar__gang-selector').exists()).toBe(false);
+  });
+
+  it('出牌禁用：未选/多选禁用；胡/杠不受 selectedCount 影响', () => {
+    const zero = mountBar({ mode: 'play', options: [hu5, gang3], selectedCount: 0 });
+    const byText = (text: string) =>
+      zero.findAll('.mj-action-bar__btn').find((b) => b.text() === text)!;
+    expect(byText('出牌').attributes('disabled')).toBeDefined();
+    expect(byText('胡').attributes('disabled')).toBeUndefined();
+    expect(byText('杠').attributes('disabled')).toBeUndefined();
+
+    const two = mountBar({ mode: 'play', options: [hu5], selectedCount: 2 });
+    expect(
+      two.findAll('.mj-action-bar__btn').find((b) => b.text() === '出牌')!.attributes('disabled'),
+    ).toBeDefined();
+    const one = mountBar({ mode: 'play', options: [hu5], selectedCount: 1 });
+    expect(
+      one.findAll('.mj-action-bar__btn').find((b) => b.text() === '出牌')!.attributes('disabled'),
+    ).toBeUndefined();
+  });
+
+  it('claim 过不是主按钮；胡是主按钮', () => {
+    const w = mountBar({ mode: 'claim', options: [peng, hu5], showPass: true });
+    const passBtn = w.findAll('.mj-action-bar__btn').find((b) => b.text() === '过')!;
+    expect(passBtn.classes()).toContain('mj-action-bar__btn--pass');
+    expect(passBtn.classes()).not.toContain('mj-action-bar__btn--primary');
+    expect(
+      w.findAll('.mj-action-bar__btn').find((b) => b.text() === '胡')!.classes(),
+    ).toContain('mj-action-bar__btn--primary');
   });
 
   it('exchange：单按钮「换三张」+ 副字「已选 x/3」，宽 140', () => {
@@ -190,7 +224,7 @@ describe('MahjongActionBar（v17 单行）', () => {
 
   it('源码闸：按钮 line-height 1；无裸 1px / em / rem / vw / vh / pt；动画 import 保留', () => {
     expect(barRule('.mj-action-bar__btn')).toMatch(/line-height:\s*1\s*;/);
-    expect(barSrc).not.toMatch(/(?:^|[^\d])1px\b/);
+    expect(stripComments(barSrc)).not.toMatch(/(?:^|[^\d])1px\b/);
     expect(barStyle).not.toMatch(/\b(?:em|rem|vw|vh|pt)\b/);
     expect(barStyle).toMatch(/@import\s+['"][^'"]*styles\/animations\.scss['"]/);
     expect(barSrc).toContain('anim-action-slide-in');
