@@ -97,7 +97,7 @@
 - 多杠：按钮文本「杠」+ 数字（下方副字）；面板 style 含 `position:absolute`、`bottom: calc(100% + 8px * var(--mj-u, 1))`、`width: calc(218px * var(--mj-u, 1))`、`flex-wrap: wrap`；面板项 `flex: 0 0 calc(50% - 3px * var(--mj-u, 1))`；面板是根的**直接子元素**且不占行。
 - exchange：单按钮文本「换三张」+ 副字「已选 x/3」。
 - lack：3 键 + 推荐副字。
-- 源码闸：`line-height: 1`；无裸 `1px`（含注释；源码闸扫整份 SFC）；无 `em/rem/vw/vh/pt`；动画类保留。
+- 源码闸：`line-height: 1`；无裸 `1px`（源码闸扫 `stripComments` 后的 SFC）；无 `em/rem/vw/vh/pt`；动画类保留。
 - 动画/禁用/emit 行为不变。
 
 ### 5.2 `mahjong-board.test.ts`
@@ -133,7 +133,7 @@
 - claim 胡 20×30 + 24px 主字：内容盒 60，`line-height:1` 下 56 ≤60；若浏览器行框异常，真机兜底。
 - 面板绝对定位在根上方，z-index 随根（3）；面板 `width/right` 与条一致。
 - 主字保持 24px 会与 `mahjong-skin.test.ts` 的既有断言一致；副字统一 22px 令牌。
-- 源码闸扫整份 SFC：新注释避免出现 `1px` 字面量。
+- 源码闸扫 `stripComments` 视图（注释不参与判定）。
 
 ## 8. 涉及文件
 

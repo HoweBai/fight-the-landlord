@@ -857,3 +857,13 @@ git commit -m "docs(mahjong): v17 动作区单行化实现交接"
 - 低：布局守护补 fixture 自证（actions.left 1067.26/右河宽 114/windowCount 19/余量 6.25）；grid 闸改 `grid-template|gridTemplate` + `display: grid`；line-height 断言改用规则体正则；根宽补 play/lack/exchange/claim 各数量断言；多杠面板加 `mode === 'play'` 守卫；画布尺寸 sanitize；Global Constraints 改为「布局尺寸 calc、内容细节 px（u≡1）」；n>4 钳位注释；Task 2 补 `claim4meld` 最坏态与面板点击方式；保留无 tile 胡、aria-label、lack busy 覆盖。
 
 修订后可开工。
+
+## Review corrections（终审后，2026-11-12）
+
+终审修复 `1dc9c590` 与复审注释对齐后，本文 Task 1 的代码/测试快照与当前仓库有以下差异（重放时以当前代码/测试为准）：
+
+- `MahjongActionBar.vue` 头注释的 claim 顺序改为服务端顺序（当前 胡→杠→碰→过），不再是「碰/杠/胡」。
+- `.mj-action-bar__gang-item` 的 `height: 48px` 已删除（由 inline `selectorItemStyle.height = calc(48px * var(--mj-u, 1))` 提供）。
+- `mahjong-action-bar.test.ts` 新增/变更：多杠面板项文本 `['3万','7万']` + 点击首项 emit `{kind:'claim', option: gang3}` + 面板关闭；出牌禁用（selectedCount 0/2 禁用、1 启用，胡/杠不受影响）；claim 过非主按钮；claim 仅过 tuple `[1, 102, [], true]`；源码闸改用 `stripComments(barSrc)`。
+- `mahjong-board.test.ts` 的两处 `换三张` 已改前缀查找（`startsWith`），`胡 5万` 已改 `胡`；v3-only 锚点断言已替换为 right/bottom/z-index。
+- 布局守护测试与 token 注释已落地（`mahjong-layout-v3.test.ts` / `mahjong-layout-v3.ts`）。
