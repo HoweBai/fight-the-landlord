@@ -1750,3 +1750,120 @@ describe('MahjongBoard：Task 4 收口（水位 / matchMedia 兜底 / 跨局已�
   });
 });
 
+// ---------------------------------------------------------------------------
+// v18 缺门出牌引导（mustDiscardSuit：信息井提示 + 手牌置灰拦截）
+// ---------------------------------------------------------------------------
+
+describe('MahjongBoard：v18 缺门出牌引导', () => {
+  // ⚠️ 不要给基础 view() 加非 null 默认值（会打红既有摸牌位用例）；非 null 一律走 mustView()。
+  const mustView = (over: Partial<Parameters<typeof view>[0]> = {}) =>
+    view({ mustDiscardSuit: 0, ...over });
+  const tileByLabel = (w: Wrapper, label: string) =>
+    w.findAll('.mj__hand .mj-tile').find((t) => t.attributes('aria-label') === label)!;
+
+  it('我的回合 + 缺万：信息井「先打缺门万」，万金边、其它置灰', () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    expect(w.find('.mj-hub__hint').text()).toBe('先打缺门万');
+    expect(w.findAll('.mj__hand-tile--lack-first').length).toBeGreaterThan(0);
+    expect(w.findAll('.mj__hand-tile--lack-blocked').length).toBeGreaterThan(0);
+    for (const t of w.findAll('.mj__hand-tile--lack-first')) {
+      expect(t.attributes('aria-label')).toMatch(/^万/);
+    }
+  });
+
+  it('点非缺门牌：不选中、不发请求、显示缺门提示；点缺门牌正常选中', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(0);
+    expect(w.emitted('mahjong')).toBeUndefined();
+    expect(w.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
+    await tileByLabel(w, '万1').trigger('click');
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(1);
+    expect(w.find('.mj__hand-hint').text()).toBe('再点一次出牌（或点"出牌"按钮）');
+  });
+
+  it('先选缺门牌再点非缺门牌：缺门提示优先于「再点一次」', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    await tileByLabel(w, '万1').trigger('click');
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
+  });
+
+  it('双击非缺门牌不出牌；双击缺门牌出牌', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    const blocked = tileByLabel(w, '筒6');
+    await blocked.trigger('click');
+    await blocked.trigger('click');
+    expect(w.emitted('mahjong')).toBeUndefined();
+    const lack = tileByLabel(w, '万1');
+    await lack.trigger('click');
+    await lack.trigger('click');
+    expect(w.emitted('mahjong')?.[0]?.[0]).toEqual({ type: 'discard', tile: { s: 0, r: 1 } });
+  });
+
+  it('摸牌位：缺门牌可选中/可双击；非缺门牌被拦', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    const hand14 = [...view().hand, tile(0, 9)];
+    await w.setProps({ view: mustView({ hand: hand14 }) });
+    await nextTick();
+    const drawn = w.findAll('.mj__hand .mj-tile').at(-1)!;
+    expect(drawn.classes()).toContain('mj__hand-tile--lack-first');
+    await drawn.trigger('click');
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(1);
+
+    const w2 = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    const hand14b = [...view().hand, tile(2, 1)];
+    await w2.setProps({ view: mustView({ hand: hand14b }) });
+    await nextTick();
+    const drawn2 = w2.findAll('.mj__hand .mj-tile').at(-1)!;
+    expect(drawn2.classes()).toContain('mj__hand-tile--lack-blocked');
+    expect(w2.find('.mj__hand-drawn').classes()).toContain('mj__hand-drawn--blocked');
+    await drawn2.trigger('click');
+    expect(w2.findAll('.mj-tile--selected')).toHaveLength(0);
+    expect(w2.find('.mj__hand-hint').text()).toBe('先打完万，才能出其它花色');
+  });
+
+  it('清零：点缺门牌 / handSelectable 翻转 / 手牌内容变化 / 阶段变化 / 字段消失', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: mustView() }) });
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.find('.mj__hand-hint').exists()).toBe(true);
+    await w.setProps({ interactive: false });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+    await w.setProps({
+      interactive: true,
+      view: mustView({ hand: [...view().hand.slice(1), tile(0, 1)] }),
+    });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.find('.mj__hand-hint').exists()).toBe(true);
+    await w.setProps({ view: mustView({ state: 'ended' }) });
+    await nextTick();
+    expect(w.find('.mj__hand-hint').exists()).toBe(false);
+    await w.setProps({ view: view() });
+    await nextTick();
+    expect(w.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
+  });
+
+  it('D11 版本错配：先选非缺门牌，再收到 mustDiscardSuit ⇒ 清选择、出牌禁用', async () => {
+    const w = mount(MahjongBoard, { props: props({ view: view() }) });
+    await tileByLabel(w, '筒6').trigger('click');
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(1);
+    await w.setProps({ view: mustView({ hand: view().hand }) });
+    await nextTick();
+    expect(w.findAll('.mj-tile--selected')).toHaveLength(0);
+    expect(w.find('.mj-action-bar__btn--discard').attributes('disabled')).toBeDefined();
+  });
+
+  it('非我的回合 / 字段 null：无提示、无置灰', () => {
+    const w = mount(MahjongBoard, {
+      props: props({ view: mustView({ currentPlayer: 1, activeSeats: [1] }) }),
+    });
+    expect(w.find('.mj-hub__hint').text()).toBe('等待出牌');
+    expect(w.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
+    const w2 = mount(MahjongBoard, { props: props({ view: view() }) });
+    expect(w2.find('.mj__hand-tile--lack-blocked').exists()).toBe(false);
+  });
+});
+

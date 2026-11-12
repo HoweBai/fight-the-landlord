@@ -108,6 +108,17 @@ const wallCount = computed(() => props.view?.wallCount ?? 0);
 const dealerSeat = computed(() => props.view?.dealerSeat ?? 0);
 const activeSeats = computed<number[]>(() => [...(props.view?.activeSeats ?? [])]);
 const amActive = computed(() => activeSeats.value.includes(me.value));
+/**
+ * v18 缺门出牌引导：只在「我的出牌回合」暴露必打缺门。
+ * ⚠️ 必须紧跟 `amActive` 声明（防 TDZ）：下方 `watch(handSelectable)` / `watch(mustDiscardSuit)`
+ * 注册时立即求值 source，早于这里的 computed 声明会 ReferenceError 崩组件。
+ */
+const mustDiscardSuit = computed(() =>
+  phase.value === 'play' && amActive.value ? props.view?.mustDiscardSuit ?? null : null,
+);
+const mustDiscardName = computed(() =>
+  mustDiscardSuit.value === null ? '' : MAHJONG_SUIT_NAMES[mustDiscardSuit.value],
+);
 const myClaims = computed<MahjongClaimOption[]>(() => [...(props.view?.claimsForMe ?? [])]);
 const myTrustee = computed(() => props.view?.trustees[me.value] ?? false);
 const sceneBase = computed<number | null>(() => props.view?.baseScore ?? null);
@@ -392,6 +403,13 @@ const selected = ref<number[]>([]);
 // 双击出牌需要的追踪状态（T4 Batch 1）
 const lastClickIndex = ref<number>(-1);
 const lastClickTime = ref<number>(0);
+/** v18 缺门引导：被守卫拦下的点击提示（「先打完X，才能出其它花色」）；无计时器，靠状态清零。 */
+const lackBlockedHint = ref(false);
+
+// v18：手牌可选性翻转（交互开关/结算/回合切换）⇒ 旧拦截提示立即失效。
+watch(handSelectable, () => {
+  lackBlockedHint.value = false;
+});
 // T4 Batch 2：胡牌 banner 增量判定 + FIFO queue（H3 修法 + B2 跨局 reset）
 const seenHuSeats = new Set<number>();
 const bannerQueue = ref<Array<{ seat: number; fan: number; selfDraw: boolean }>>([]);
@@ -411,6 +429,7 @@ watch(
   () => {
     selected.value = [];
     lastClickIndex.value = -1;
+    lackBlockedHint.value = false;
   },
 );
 
@@ -477,6 +496,26 @@ const displayTiles = computed<HandEntry[]>(() => {
   return [...entries, { tile: entry!.tile, drawn: true, dealNonce: null }];
 });
 
+/**
+ * v18 D11（跨回合选中防御）：选中非缺门牌后服务端才下发 mustDiscardSuit（版本错配）⇒
+ * 清掉非缺门选择并复位双击追踪；字段消失/变化一律清拦截提示。
+ */
+watch(mustDiscardSuit, (suit) => {
+  if (suit !== null && selected.value.some((i) => displayTiles.value[i]?.tile.s !== suit)) {
+    selected.value = [];
+    lastClickIndex.value = -1;
+  }
+  lackBlockedHint.value = false;
+});
+
+/** v18：缺门牌金边高亮 / 非缺门牌置灰。 */
+function isLackFirst(entry: HandEntry): boolean {
+  return mustDiscardSuit.value !== null && entry.tile.s === mustDiscardSuit.value;
+}
+function isLackBlocked(entry: HandEntry): boolean {
+  return mustDiscardSuit.value !== null && entry.tile.s !== mustDiscardSuit.value;
+}
+
 /** Task 10：发牌径向起点 —— 每张牌的起手横向偏移 = 手牌行中心到本张的距离。
  *  只服务 `.anim-deal-in-radial`（`--mj-deal-x`）；摸牌位不挂发牌类，值无副作用。 */
 function dealOffsetX(index: number): string {
@@ -499,6 +538,8 @@ function handTileBind(entry: HandEntry, i: number) {
       'anim-deal-in-radial':
         entry.dealNonce != null && entry.dealNonce === dealEpoch.value && !entry.drawn,
       'mj__hand-tile--drawn': entry.drawn,
+      'mj__hand-tile--lack-first': isLackFirst(entry),
+      'mj__hand-tile--lack-blocked': isLackBlocked(entry),
     },
     style: {
       '--ftl-delay': `${i * 30}ms`,
@@ -515,6 +556,18 @@ const drawnWrapStyle = computed(() => ({
 
 function onTileClick(index: number): void {
   if (!handSelectable.value) return;
+
+  // v18 缺门守卫：非缺门牌一律拦下（按 display 下标取牌，摸牌位同样生效）；
+  // 拦截点击复位双击追踪，避免「被拦 + 首击」拼成一次出牌。
+  const guard = mustDiscardSuit.value;
+  const entry = displayTiles.value[index];
+  if (guard !== null && entry && entry.tile.s !== guard) {
+    lackBlockedHint.value = true;
+    lastClickIndex.value = -1;
+    return;
+  }
+  lackBlockedHint.value = false;
+
   emit('select');
   haptic('light');
 
@@ -688,7 +741,7 @@ function onTileLongPress(index: number) {
 function closeHandHint() { handHintIndex.value = null; }
 
 // handHintIndex reset
-watch(phase, () => { handHintIndex.value = null; });
+watch(phase, () => { handHintIndex.value = null; lackBlockedHint.value = false; });
 watch(() => hand.value.length, () => { handHintIndex.value = null; });
 
 /** 高项 H4：纯布尔判断（不做牌库搜索）。
@@ -716,7 +769,11 @@ const statusText = computed(() => {
     case 'lack':
       return amActive.value ? '请定缺' : '等待定缺';
     case 'play':
-      return amActive.value ? '请出牌' : '等待出牌';
+      return amActive.value
+        ? mustDiscardSuit.value !== null
+          ? `先打缺门${mustDiscardName.value}`
+          : '请出牌'
+        : '等待出牌';
     case 'claim':
     case 'rob':
       return amActive.value ? '请响应' : '等待响应';
@@ -1244,7 +1301,10 @@ function onMeldPopDone(key: string) {
             <view
               v-if="entry.drawn"
               class="mj__hand-drawn"
-              :class="{ 'mj__hand-drawn--selected': selected.includes(i) }"
+              :class="{
+                'mj__hand-drawn--selected': selected.includes(i),
+                'mj__hand-drawn--blocked': isLackBlocked(entry),
+              }"
               :style="drawnWrapStyle"
             >
               <MahjongTile v-bind="handTileBind(entry, i)" @click="onTileClick(i)" @longpress="onTileLongPress(i)" />
@@ -1259,7 +1319,13 @@ function onMeldPopDone(key: string) {
           </template>
         </template>
         <view
-          v-if="phase === 'play' && handSelectable && selected.length === 1"
+          v-if="phase === 'play' && handSelectable && lackBlockedHint"
+          class="mj__hand-hint"
+        >
+          <text>先打完{{ mustDiscardName }}，才能出其它花色</text>
+        </view>
+        <view
+          v-else-if="phase === 'play' && handSelectable && selected.length === 1"
           class="mj__hand-hint"
         >
           <text>再点一次出牌（或点"出牌"按钮）</text>
@@ -1495,6 +1561,14 @@ function onMeldPopDone(key: string) {
 .mj__hand--selectable :deep(.mj-tile) {
   cursor: pointer;
 }
+/* v18 缺门出牌引导：缺门牌金边、非缺门牌置灰（类由 handTileBind 绑定）。 */
+.mj__hand :deep(.mj__hand-tile--lack-first) {
+  outline: $ftl-hairline solid $ftl-color-mj-gold;
+  outline-offset: 0;
+}
+.mj__hand :deep(.mj__hand-tile--lack-blocked) {
+  opacity: .45;
+}
 /* v16：摸牌位 = 包裹层 + 右上金点；抬升只属于选中（金点用兄弟选择器跟随）。 */
 .mj__hand-drawn {
   position: relative;
@@ -1517,6 +1591,10 @@ function onMeldPopDone(key: string) {
 }
 .mj__hand :deep(.mj-tile--selected) + .mj__hand-drawn-dot {
   transform: translateY(calc(-1 * var(--mj-tile-lift, 10px)));
+}
+/* v18：摸牌位被缺门守卫拦下时金点同步变暗（包裹层类在模板绑定）。 */
+.mj__hand-drawn--blocked .mj__hand-drawn-dot {
+  opacity: .45;
 }
 
 .mj__hand-hint {
