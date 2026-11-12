@@ -37,7 +37,7 @@
 **Interfaces:**
 - Produces: `ting.rect.left === rects.hand.left`；App 全屏运行时；APK 版本 0.1.14/114；打包闸。
 
-- [ ] **Step 1: 先改测试（RED）**
+- [x] **Step 1: 先改测试（RED）**
 
 1.1 `mahjong-layout-v3.test.ts`：
 - `50.34` → `146.23`（按字面量替换 6 处：:362/:367/:372/:377/:384/:415）。
@@ -95,7 +95,7 @@ describe('App 全屏（运行时兜底）', () => {
 Run: `pnpm -C apps/client exec vitest run test/mahjong-layout-v3.test.ts test/mahjong-board.test.ts test/landscape-canvas.test.ts test/app-fullscreen.test.ts`
 Expected: FAIL（布局/清单/App 未改）。
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 2.1 `mahjong-layout-v3.ts`：
 ```ts
@@ -141,7 +141,7 @@ unzip -p "deploy/download/$APK_NAME" "assets/apps/__UNI__CE6765E/www/manifest.js
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-layout-v3.test.ts test/mahjong-board.test.ts test/landscape-canvas.test.ts test/app-fullscreen.test.ts` → PASS；`pnpm -C apps/client lint` → exit 0。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add apps/client/src/game/mahjong-layout-v3.ts apps/client/test/mahjong-layout-v3.test.ts apps/client/src/App.vue apps/client/src/manifest.json apps/client/test/landscape-canvas.test.ts apps/client/test/app-fullscreen.test.ts apps/client/test/mahjong-board.test.ts scripts/deploy/pack-apk.sh docs/superpowers/specs/2026-11-08-mahjong-table-v15-design.md docs/superpowers/plans/2026-11-08-mahjong-table-v15.md
@@ -155,7 +155,7 @@ git commit -m "feat(mahjong): 听牌贴手牌左缘 + App 运行时全屏（0.1.
 **Files:**
 - Create: `docs/superpowers/plans/2026-11-13-mahjong-ting-position-fullscreen-handoff.md`
 
-- [ ] **Step 1: 全量验证**
+- [x] **Step 1: 全量验证**
 
 ```bash
 pnpm -C apps/client test
@@ -165,7 +165,7 @@ pnpm verify:apk
 ```
 Expected: 全绿（记录计数）。
 
-- [ ] **Step 2: APK 打包 + 产物闸**
+- [x] **Step 2: APK 打包 + 产物闸**
 
 ```bash
 bash scripts/deploy/pack-apk.sh ssh.yobeeo.com
@@ -173,7 +173,7 @@ bash scripts/deploy/pack-apk.sh ssh.yobeeo.com
 Expected: 版本 `0.1.14/114`（产物断言 `"code":"114"`）；`app-service.js` 含 `setFullscreen`；产物闸通过；记录 size/sha256（`sha256sum deploy/download/ubigame.apk`）。
 （发布 Release/preview 待用户裁决；本 Task 只打包并报告。）
 
-- [ ] **Step 3: 交接**
+- [x] **Step 3: 交接**
 
 `docs/superpowers/plans/2026-11-13-mahjong-ting-position-fullscreen-handoff.md`：
 - 状态：v19 已实现（Task 1 提交 + 本 Task）；全量结果；APK 0.1.14/114 产物路径/sha256；**未推送/未部署/未发布 APK**。
@@ -184,7 +184,7 @@ Expected: 版本 `0.1.14/114`（产物断言 `"code":"114"`）；`app-service.js
 - 收尾：`git status`（HBuilderX 可能回写 manifest）、`pnpm verify:apk` 结果、sha256、v15 记忆/文档同步。
 - 下一步（用户裁决）：推送 dev → 部署测试服（H5 听牌变更）→ 发布 APK 0.1.14/114（Release+edge）→ 真机验收。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add docs/superpowers/plans/2026-11-13-mahjong-ting-position-fullscreen-handoff.md
