@@ -401,6 +401,20 @@ function assertMahjongPlayerView(v: unknown, path: string): asserts v is Mahjong
       throw new ProtocolError(`${path}.lackSuits[${i}] must be null|0|1|2`);
     }
   }
+  if (v.mustDiscardSuit !== undefined) {
+    const m = v.mustDiscardSuit;
+    if (m !== null && m !== 0 && m !== 1 && m !== 2) {
+      throw new ProtocolError(`${path}.mustDiscardSuit must be null|0|1|2`);
+    }
+    if (m !== null) {
+      if ((v.lackSuits as Array<number | null>)[v.seat as number] !== m) {
+        throw new ProtocolError(`${path}.mustDiscardSuit must equal lackSuits[seat]`);
+      }
+      if (!(v.hand as Tile[]).some((t) => t.s === m)) {
+        throw new ProtocolError(`${path}.mustDiscardSuit must be present in hand`);
+      }
+    }
+  }
   if (!Array.isArray(v.melds) || v.melds.length !== 4) {
     throw new ProtocolError(`${path}.melds must have length 4`);
   }

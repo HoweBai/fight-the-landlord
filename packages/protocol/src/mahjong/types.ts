@@ -114,6 +114,8 @@ export interface MahjongPlayerView extends GameViewBase<Tile> {
   tingSeats: number[];
   /** 仅接收者可用的候选动作；服务端算好，客户端只展示。 */
   claimsForMe: MahjongClaimOption[];
+  /** 仅当自己手里仍有缺门牌时 = 缺门花色；否则 null/省略。仅作展示提示，服务端仍权威。 */
+  mustDiscardSuit?: MahjongSuit | null;
   tingTiles?: Tile[];
   maxFanForMe?: number;
   /** 规则快照（字段名不是 rules）。 */

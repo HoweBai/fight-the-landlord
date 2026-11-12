@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GAME_META } from '../game';
 import { resolveGameType } from '../views';
 import { validateClientMessage, validateOutbound, ProtocolError } from '../validate';
-import { decodeMahjongHand, encodeMahjongHand, type Tile } from './tile';
+import { decodeMahjongHand, encodeMahjongHand, type MahjongSuit, type Tile } from './tile';
 import { DEFAULT_CHENGDU_RULES, DEFAULT_SBR_RULES, parseMahjongRules } from './rules';
 import type { MahjongPlayerView, MahjongSettlementResult } from './types';
 import type { MahjongRulesConfig } from './rules';
@@ -129,6 +129,45 @@ describe('mahjong protocol', () => {
         payload: { ...baseView(), rngSeed: 'x' },
       }),
     ).toThrow(/rngSeed/);
+  });
+
+  it('mustDiscardSuit：可选、值域 0|1|2|null、语义=lackSuits[seat] 且在手牌', () => {
+    const ok = {
+      ...baseView(),
+      lackSuits: [0, null, null, null] as Array<MahjongSuit | null>,
+      mustDiscardSuit: 0 as MahjongSuit,
+    };
+    expect(() =>
+      validateOutbound({ type: 'game.state_update', version: 1, payload: ok }),
+    ).not.toThrow();
+    expect(() =>
+      validateOutbound({
+        type: 'game.state_update',
+        version: 1,
+        payload: { ...baseView(), mustDiscardSuit: null },
+      }),
+    ).not.toThrow();
+    for (const bad of [3, -1, '0'] as unknown[]) {
+      expect(() =>
+        validateOutbound({ type: 'game.state_update', version: 1, payload: { ...ok, mustDiscardSuit: bad } }),
+      ).toThrow(ProtocolError);
+    }
+    // 与 lackSuits[seat] 不一致
+    expect(() =>
+      validateOutbound({
+        type: 'game.state_update',
+        version: 1,
+        payload: { ...ok, lackSuits: [1, null, null, null] },
+      }),
+    ).toThrow(ProtocolError);
+    // 手牌不含该花色
+    expect(() =>
+      validateOutbound({
+        type: 'game.state_update',
+        version: 1,
+        payload: { ...baseView(), lackSuits: [1, null, null, null], mustDiscardSuit: 1 },
+      }),
+    ).toThrow(ProtocolError);
   });
 
   it('mahjong settlement must be zero-sum', () => {
