@@ -13,6 +13,9 @@
  * 几何逐行移植自
  * docs/superpowers/specs/2026-11-08-mahjong-table-v15-geometry.mjs 的 layoutBase；
  * 输出层统一把矩形/长度四舍五入到 2 位小数，u / offset 保持精确值。
+ *
+ * ⚠️ v19（2026-11-13）听牌 x **有意偏离**原型：生产 `tingX = hand.left`（贴手牌行左缘），
+ *    原型 `.mjs` 仍为 v15 旧值（仅作历史对照）。
  */
 
 export interface Rect {

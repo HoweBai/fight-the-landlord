@@ -207,6 +207,7 @@ function layoutBase(W, H, state) {
   const tingRows = Math.ceil(tingCount / T.tingPerRow) || 1;
   const tingW = tingCols * T.tingW + Math.max(0, tingCols - 1) * T.tingGap;
   const tingH = tingRows * T.tingH + Math.max(0, tingRows - 1) * T.tingGap;
+  // v19（2026-11-13）起生产 tingX = hand.left（贴手牌行左缘）；本原型保留 v15 旧值作对照。
   const tingX = outer + leftZ.backW + gap + leftZ.meld.w + gap;
   const tingY = ownRiverTop + Math.max(0, (ownRiverH - tingH) / 2);
   const ting = tingCount ? rect(tingX, tingY, tingW, tingH) : rect(0, 0, 0, 0);

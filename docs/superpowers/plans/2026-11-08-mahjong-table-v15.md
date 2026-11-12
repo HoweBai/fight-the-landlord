@@ -101,6 +101,7 @@ then full `pnpm -C apps/client test` + `lint` + `build`.
   - `normal + ting:9` → `ting.rect = (50.34, 511, 158, 92)`；
   - `heavy` → `(90.74, 511)`；`mid` → `(90.74, 462.2)`；
   - `ting:1` → `(50.34, 534.5, 30, 45)`；`ting:5` → `(50.34, 534.5, 158, 45)`；
+  - **v19（2026-11-13）起听牌贴手牌行左缘：x=146.23（12 列自家河间隙 128.76）；以上旧值仅作历史。**
   - 侧 `0` 张 → `cols=0, rows=0, rect=0×0`（不是 2 列）。
 - **C2 ting y**：`tingH = rows*45 + (rows-1)*2`；`y = ownRiverTop + (ownRiverH - tingH)/2`（不能硬编码 92）。
 - **C3 ting 对齐**：Board 的 `.mj__ting` 从 flex 换 **5 列 grid**（`grid-template-columns: repeat(ting.cols, ting.tile.w)`，`grid-auto-rows: ting.tile.h`；或至少 `justify-content:flex-start`），否则 6–9 张的部分行会居中，和 mockup 不一致；补 Board 对齐测试。

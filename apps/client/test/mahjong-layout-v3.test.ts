@@ -403,6 +403,7 @@ describe('mahjongTableLayoutV3：听牌 30×45 / 2×5', () => {
     expect(l.rects.leftMelds.width).toBeCloseTo(40.4, 2);
     expect(l.ting.rect.left).toBeCloseTo(146.23, 2);
     const gap = l.rects.ownRiver.left - (l.ting.rect.left + l.ting.rect.width);
+    // 8 列 fixture（实际 207.10）；v19 基线见下方 12 列 ≥120 用例
     expect(gap).toBeGreaterThanOrEqual(180);
     // 与侧河块不相交
     expect(l.ting.rect.left + l.ting.rect.width).toBeLessThan(l.rects.leftRiver.left);
