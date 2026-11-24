@@ -14,6 +14,7 @@ import { extractJsLiteral } from '@fight-the-landlord/test-utils';
 import {
   DEFAULT_CHENGDU_RULES,
   MAHJONG_ADDITIVE_FAN_KEYS,
+  MAHJONG_FAN_INFO,
   MAHJONG_NAMED_FAN_KEYS,
   MAHJONG_OPTIONAL_FAN_KEYS,
   parseMahjongRules,
@@ -59,6 +60,13 @@ interface FormTable {
 }
 interface MahjongRulesForm {
   fanLabels: Record<string, string>;
+  fanNotes: Record<string, {
+    desc: string;
+    example?: string;
+    playerCaveat?: string;
+    adminOnly?: string;
+    wired: boolean;
+  }>;
   tables: Record<string, FormTable>;
   groups: FormGroup[];
 }
@@ -142,6 +150,28 @@ describe('MAHJONG_RULES_FORM ⇄ protocol', () => {
   it('fanLabels 恰好覆盖全部番键、无多余', () => {
     const all = new Set(Object.values(FORM.tables).flatMap((t) => t.keys));
     expect(Object.keys(FORM.fanLabels).sort()).toEqual([...all].sort());
+  });
+
+  it('fanNotes 键集 = 三张番表并集，且与 protocol 元数据投影逐字一致', () => {
+    const all = new Set(Object.values(FORM.tables).flatMap((t) => t.keys));
+    expect(Object.keys(FORM.fanNotes).sort()).toEqual([...all].sort());
+    for (const key of all) {
+      const info = MAHJONG_FAN_INFO[key]!;
+      const expected = {
+        desc: info.desc,
+        ...(info.example ? { example: info.example } : {}),
+        ...(info.playerCaveat ? { playerCaveat: info.playerCaveat } : {}),
+        ...(info.adminOnly ? { adminOnly: info.adminOnly } : {}),
+        wired: info.wired,
+      };
+      expect(FORM.fanNotes[key], key).toStrictEqual(expected);
+    }
+  });
+
+  it('fanLabels 与 protocol label 逐键一致', () => {
+    for (const [key, info] of Object.entries(MAHJONG_FAN_INFO)) {
+      expect(FORM.fanLabels[key], key).toBe(info.label);
+    }
   });
 
   it('按描述表组装的完整对象经真解析器往返不变', () => {
