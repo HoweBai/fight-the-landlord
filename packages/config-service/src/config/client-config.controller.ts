@@ -1,11 +1,14 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger } from '@nestjs/common';
 import {
   ErrCode,
   GAME_META,
+  mahjongRulesClientView,
   parseConfigValue,
+  parseMahjongRules,
   type BaseScoreLevel,
   type ClientConfig,
   type ClientGameConfig,
+  type MahjongRulesClientView,
 } from '@fight-the-landlord/protocol';
 import { maxVersion, PlatformConfigService } from './platform-config.service';
 
@@ -106,7 +109,32 @@ function readReliefThreshold(byKey: ConfigByKey): number | null {
  */
 @Controller('config')
 export class ClientConfigController {
+  private readonly logger = new Logger(ClientConfigController.name);
+
   constructor(private readonly config: PlatformConfigService) {}
+
+  /**
+   * 麻将规则客户端视图（Task 6）：`game.mahjong.rules` 合法 ⇒ 下发白名单视图；
+   * 行缺失/null/{}/坏值 ⇒ 不下发（客户端回退静态介绍）。
+   * 缺行是旧服务端的正常形态（不告警）；null/空对象/坏值属异常配置（WARN）。
+   */
+  private readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefined {
+    const raw = byKey.get('game.mahjong.rules');
+    if (raw === undefined) return undefined; // 旧服务端/缺行：正常，不告警
+    if (
+      raw === null ||
+      (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0)
+    ) {
+      this.logger.warn('game.mahjong.rules missing/empty; client intro falls back to static');
+      return undefined;
+    }
+    try {
+      return mahjongRulesClientView(parseMahjongRules(raw));
+    } catch {
+      this.logger.warn('game.mahjong.rules invalid; client intro falls back to static');
+      return undefined;
+    }
+  }
 
   /**
    * 代理分润（2026-10-26，r3 Critical #1）：**登录前**公开启动配置。
@@ -193,6 +221,7 @@ export class ClientConfigController {
     const mahjongGold = readBoolean(byKey, 'game.mahjong.goldRoomEnabled', undefined, false);
     const mahjongFriend = readBoolean(byKey, 'game.mahjong.friendRoomEnabled', undefined, false);
     const mahjongEntryMultiplier = readInt(byKey, 'game.mahjong.entryMultiplier', undefined, 10);
+    const mahjongRulesView = this.readMahjongRules(byKey);
     const games: Record<'doudizhu' | 'paodekuai' | 'mahjong', ClientGameConfig> = {
       doudizhu: {
         enabled: ddzEnabled,
@@ -213,6 +242,7 @@ export class ClientConfigController {
         goldRoomEnabled: mahjongGold,
         friendRoomEnabled: mahjongFriend,
         entryMultiplier: mahjongEntryMultiplier,
+        ...(mahjongRulesView ? { mahjongRules: mahjongRulesView } : {}),
       },
       paodekuai: {
         enabled: pdkEnabled,

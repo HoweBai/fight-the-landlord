@@ -1,6 +1,11 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { CLIENT_CONFIG_KEYS, ErrCode } from '@fight-the-landlord/protocol';
+import {
+  CLIENT_CONFIG_KEYS,
+  DEFAULT_CHENGDU_RULES,
+  ErrCode,
+  mahjongRulesClientView,
+} from '@fight-the-landlord/protocol';
 import { makeService, seedDb, startHttpProbe } from './helpers/config-probe';
 
 /**
@@ -120,6 +125,7 @@ describe('GET /api/config（C7 半边）', () => {
           goldRoomEnabled: false,
           friendRoomEnabled: false,
           entryMultiplier: 10,
+          mahjongRules: mahjongRulesClientView(DEFAULT_CHENGDU_RULES),
         },
         paodekuai: {
           enabled: false,
@@ -542,4 +548,34 @@ describe('GET /api/config（C7 半边）', () => {
       await probe.close();
     }
   });
+
+  it('game.mahjong.rules 合法 ⇒ 下发客户端白名单视图', async () => {
+    const { svc } = makeService(seedDb());
+    const probe = await startHttpProbe(svc);
+    try {
+      const { body } = await probe.get('/api/config');
+      expect(body.data.games.mahjong.mahjongRules).toEqual(
+        mahjongRulesClientView(DEFAULT_CHENGDU_RULES),
+      );
+      expect(body.data.games.mahjong.mahjongRules).not.toHaveProperty('claimWindowMs');
+      expect(body.data.games.mahjong.mahjongRules).not.toHaveProperty('preset');
+    } finally {
+      await probe.close();
+    }
+  }, 20000);
+
+  it('rules 缺失/null/{}/坏值 ⇒ 不下发 mahjongRules（不 500）', async () => {
+    for (const value of [undefined, null, {}, { nope: 1 }, { fanCap: 99 }]) {
+      const { svc, db } = makeService(seedDb());
+      if (value === undefined) db.rows.delete('game.mahjong.rules');
+      else db.rows.set('game.mahjong.rules', { value, version: 2, updatedAt: 'x', updatedBy: 'x' });
+      const probe = await startHttpProbe(svc);
+      try {
+        const { body } = await probe.get('/api/config');
+        expect(body.data.games.mahjong).not.toHaveProperty('mahjongRules');
+      } finally {
+        await probe.close();
+      }
+    }
+  }, 20000);
 });
