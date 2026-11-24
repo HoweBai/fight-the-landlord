@@ -56,7 +56,7 @@
 | D3 | `tianHu` / `diHu` 的 `wired=false`；玩家文案显示“当前版本未启用（预留）”，不宣传为可用 | 阻断 B3：`huContext()` 从不置位这两个标记 |
 | D4 | 静态文案拆成“配置中立段落”+“默认计分段”；有 rules 时用动态【番型与倍率】+【当前流程设置】**替换**默认计分段，其余段落保留 | 阻断 B1 + 高危 H2：避免静态“6 番/32×”与后台配置并存 |
 | D5 | 客户端字段名 `mahjongRules`（不叫 `rules`），类型为显式白名单 `MahjongRulesClientView` | 高危 H7：`rules` 是禁出站键；pdk 用 `pdkRules`，XLCH 规划用 `mahjongRules.variant` |
-| D6 | config-service 读取语义：行缺失 / `null` / `{}` / 坏值 ⇒ 不下发 + WARN；合法值 ⇒ 下发客户端视图 | 高危 H6 + L4/L5；缺失时实际引擎也用 chengdu 默认，客户端静态 fallback 与之一致 |
+| D6 | config-service 读取语义：行缺失 ⇒ 不下发（静默，旧服务端正常态）；`null` / `{}` / 坏值 ⇒ 不下发 + WARN；合法值 ⇒ 下发客户端视图 | 高危 H6 + L4/L5；缺失时实际引擎也用 chengdu 默认，客户端静态 fallback 与之一致 |
 | D7 | 客户端点开介绍走专用轻量刷新：只更新 `mahjongRules`、不调用 `repairActiveMode`/`repairRoomMode`、单飞、响应缺 `mahjongRules` 时保留旧值 | 高危 H3/H4/H13：信息动作不得改变玩家选择；慢请求不得覆盖新值 |
 | D8 | 动态段只列“已启用且 wired”的番；禁用番合并一行；命名/加法口径分别渲染；加番不单独显示倍率；说明文字值中立，数字从配置注入 | 高危 H1/H10/H11：可选番语义、格式契约、倍率口径 |
 | D9 | 标签单一真源 = `MAHJONG_FAN_INFO.label`；shared `NAMED_LABELS` 从它派生；补加法表 9 个中文标签 | 高危 H8：三份标签漂移、SBR 结算英文键 |
@@ -218,8 +218,11 @@ export function buildMahjongRuleSummary(rules?: MahjongRulesClientView): string;
 ```ts
 function readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefined {
   const raw = byKey.get('game.mahjong.rules');
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0) return undefined;
+  if (raw === undefined) return undefined; // 旧服务端/缺行：正常，不告警
+  if (raw === null || (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0)) {
+    this.logger.warn('game.mahjong.rules missing/empty; client intro falls back to static');
+    return undefined;
+  }
   try {
     return mahjongRulesClientView(parseMahjongRules(raw));
   } catch {
@@ -239,7 +242,7 @@ function readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefine
 ### 5.1 store
 
 - `ClientConfigState` 增加**可选** `mahjongRules?: MahjongRulesClientView | null`（可选：既有 7 个测试用完整字面量构造该类型）；state 初值 `null as MahjongRulesClientView | null`。
-- `normalizeClientConfig` 把 `games.mahjong.mahjongRules` 提升到顶层 `mahjongRules`。
+- `normalizeClientConfig` 把 `games.mahjong.mahjongRules` 提升到顶层 `mahjongRules`，并复用 `isMahjongRulesView` 形状守卫（坏形状 ⇒ null，避免初始加载的坏配置让规则弹层渲染崩）。
 - `setClientConfig(cfg)`：
   - `if (cfg.mahjongRules) this.mahjongRules = cfg.mahjongRules;`
   - **响应缺字段/为 null 时保留旧值**，不得清空。
@@ -250,6 +253,17 @@ function readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefine
 `apps/client/src/composables/useClientConfig.ts` 新增：
 
 ```ts
+function isMahjongRulesView(value: unknown): value is MahjongRulesClientView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.scoringPolicy === 'string'
+    && (v.fanBase === 0 || v.fanBase === 1)
+    && typeof v.fanCap === 'number'
+    && typeof v.fanTable === 'object' && v.fanTable !== null
+    && typeof v.additiveFanTable === 'object' && v.additiveFanTable !== null
+    && typeof v.optionalFans === 'object' && v.optionalFans !== null;
+}
+
 let mahjongRulesInFlight: Promise<boolean> | null = null;
 
 export function refreshMahjongRules(): Promise<boolean> {
@@ -259,7 +273,7 @@ export function refreshMahjongRules(): Promise<boolean> {
       const res = await fetchClientConfig();
       if (res.code !== 0 || !res.data) return false;
       const rules = res.data.games?.mahjong?.mahjongRules;
-      if (!rules) return false; // 保留旧值
+      if (!isMahjongRulesView(rules)) return false; // 缺字段/坏值：保留旧值
       useGameStore().setMahjongRules(rules);
       return true;
     } catch {

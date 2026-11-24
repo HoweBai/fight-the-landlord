@@ -414,7 +414,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```ts
 import { MAHJONG_FAN_INFO } from '@fight-the-landlord/protocol';
 
-it('NAMED_LABELS 覆盖全部 34 个番键，且与 protocol label 逐字一致', () => {
+it('NAMED_LABELS 覆盖全部番键，且与 protocol label 逐字一致', () => {
   expect(Object.keys(NAMED_LABELS).sort()).toEqual(Object.keys(MAHJONG_FAN_INFO).sort());
   for (const [key, info] of Object.entries(MAHJONG_FAN_INFO)) {
     expect(NAMED_LABELS[key], key).toBe(info.label);
@@ -846,9 +846,11 @@ describe('buildMahjongRuleSummary', () => {
     expect(text).not.toMatch(/· 天胡 \d+ 番/);
   });
 
-  it('pingHu=0 ⇒ 明示引擎兜底 1 番', () => {
+  it('pingHu=0 ⇒ 明示引擎兜底 1 番，且不混进未启用列表', () => {
     const view = { ...chengdu, fanTable: { ...chengdu.fanTable, pingHu: 0 } };
-    expect(buildMahjongRuleSummary(view)).toContain('平胡：表值为 0，但引擎仍按兜底 1 番处理');
+    const text = buildMahjongRuleSummary(view);
+    expect(text).toContain('平胡：表值为 0，但引擎仍按兜底 1 番处理');
+    expect(text).not.toMatch(/未启用：[^\n]*平胡/);
   });
 
   it('起胡番 > 封顶 ⇒ 明示当前配置无法胡牌', () => {
@@ -1019,14 +1021,16 @@ function buildScoringSection(rules: MahjongRulesClientView): string {
 
     const disabled: string[] = [];
     for (const key of MAHJONG_NAMED_FAN_KEYS) {
-      if (key === 'ziMo') continue;
+      if (key === 'ziMo' || key === 'pingHu') continue;
       if ((rules.fanTable[key] ?? 0) === 0) disabled.push(labelOf(key));
     }
     for (const key of MAHJONG_OPTIONAL_FAN_KEYS) {
       if ((rules.optionalFans[key] ?? 0) === 0) disabled.push(labelOf(key));
     }
     if (disabled.length > 0) lines.push(`· 未启用：${disabled.join('、')}`);
-    if (enabledCount === 0) lines.push('· 当前未配置任何番型，只按底分结算。');
+    if (enabledCount === 0) {
+      lines.push('· 当前未配置任何番型；平胡按兜底 1 番结算。');
+    }
     if (reserved.length > 0) {
       lines.push(`· 预留未启用：${reserved.join('、')}（当前版本不会触发）`);
     }
@@ -1488,13 +1492,14 @@ describe('番型行为审计', () => {
 
   it('shiBaLuoHan 反例：只有 3 个杠不成立', () => {
     const r = scoreBestHand({
-      hand: [...T(0, [2, 3, 4]), t(1, 5), t(1, 5)],
+      hand: [...T(0, [4, 4, 4]), t(1, 5), t(1, 5)],
       melds: [gang(0, 1), gang(0, 2), gang(0, 3)],
       lackSuit: 2,
       winningTile: t(1, 5),
       context: EMPTY_HU_CONTEXT,
       rules: withOptional(DEFAULT_CHENGDU_RULES, { shiBaLuoHan: 8 }, 8),
     });
+    expect(r.baseName).toBe('duiDuiHu');
     expect(r.baseName).not.toBe('shiBaLuoHan');
   });
 
@@ -1565,6 +1570,13 @@ describe('mahjongRules store', () => {
     expect(cfg.mahjongRules).toEqual(view);
   });
 
+  it('normalize 坏形状 ⇒ null', () => {
+    const cfg = normalizeClientConfig({
+      games: { mahjong: { mahjongRules: { scoringPolicy: 'named' } } },
+    } as never);
+    expect(cfg.mahjongRules).toBeNull();
+  });
+
   it('setClientConfig 写入；缺失时保留旧值', () => {
     const store = useGameStore();
     store.setClientConfig({
@@ -1596,9 +1608,22 @@ Expected: FAIL（`mahjongRules` 不存在）。
 `useClientConfig.ts`：
 - import `type MahjongRulesClientView`。
 - `FAILSAFE_CLIENT_CONFIG` 增加 `mahjongRules: null`。
-- `normalizeClientConfig` 返回值增加：
+- 新增形状守卫（Task 9 复用）：
   ```ts
-  mahjongRules: raw?.games?.mahjong?.mahjongRules ?? null,
+  function isMahjongRulesView(value: unknown): value is MahjongRulesClientView {
+    if (typeof value !== 'object' || value === null) return false;
+    const v = value as Record<string, unknown>;
+    return typeof v.scoringPolicy === 'string'
+      && (v.fanBase === 0 || v.fanBase === 1)
+      && typeof v.fanCap === 'number'
+      && typeof v.fanTable === 'object' && v.fanTable !== null
+      && typeof v.additiveFanTable === 'object' && v.additiveFanTable !== null
+      && typeof v.optionalFans === 'object' && v.optionalFans !== null;
+  }
+  ```
+- `normalizeClientConfig` 在 return 前取 `const rawMahjongRules: unknown = raw?.games?.mahjong?.mahjongRules;`，返回值增加：
+  ```ts
+  mahjongRules: isMahjongRulesView(rawMahjongRules) ? rawMahjongRules : null,
   ```
 
 `stores/game.ts`：
@@ -1743,17 +1768,6 @@ Expected: FAIL（未导出）。
 
 ```ts
 let mahjongRulesInFlight: Promise<boolean> | null = null;
-
-function isMahjongRulesView(value: unknown): value is MahjongRulesClientView {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return typeof v.scoringPolicy === 'string'
-    && (v.fanBase === 0 || v.fanBase === 1)
-    && typeof v.fanCap === 'number'
-    && typeof v.fanTable === 'object' && v.fanTable !== null
-    && typeof v.additiveFanTable === 'object' && v.additiveFanTable !== null
-    && typeof v.optionalFans === 'object' && v.optionalFans !== null;
-}
 
 /**
  * 打开麻将规则介绍时的轻量刷新：
@@ -2129,11 +2143,29 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 先改探针（先红）**
 
+在探针顶部增加：
+
+```js
+import { runInNewContext } from 'node:vm';
+```
+
 `scripts/admin-mahjong-rules-form-probe.mjs` 在 `34 个番表输入` 断言之后替换/追加：
 
 ```js
+const formStart = appJs.indexOf('const MAHJONG_RULES_FORM');
+const formBrace = appJs.indexOf('{', formStart);
+let formDepth = 0;
+let formEnd = -1;
+for (let i = formBrace; i < appJs.length; i += 1) {
+  if (appJs[i] === '{') formDepth += 1;
+  else if (appJs[i] === '}') {
+    formDepth -= 1;
+    if (formDepth === 0) { formEnd = i; break; }
+  }
+}
+if (formEnd < 0) throw new Error('MAHJONG_RULES_FORM literal not found');
+const formTables = runInNewContext(`(${appJs.slice(formBrace, formEnd + 1)})`).tables;
 const fanRows = qa(w, '#settings-rows .mj-fan-row');
-const formTables = w.eval('MAHJONG_RULES_FORM.tables');
 const expectedFanRows = Object.values(formTables).reduce((n, t) => n + t.keys.length, 0);
 ok(fanRows.length === expectedFanRows, `番表行数 = 三表键数（实测 ${fanRows.length}/${expectedFanRows}）`);
 const noteRows = fanRows.filter((row) => row.querySelector('.mj-fan-note'));
@@ -2320,6 +2352,7 @@ pnpm -C packages/protocol build
 pnpm -C packages/protocol test
 pnpm -C packages/protocol lint
 pnpm -C packages/shared test
+pnpm -C packages/shared lint
 pnpm -C packages/config-service test
 pnpm -C packages/config-service lint
 pnpm -C apps/client test
@@ -2358,7 +2391,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 | H3 | 高 | 缺 pingHu=0、minFanToHu>cap、表值>cap、addFan 自摸边界测试 | Task 5 追加四条断言 |
 | H4 | 高 | 刷新未校验形状，坏值会崩规则弹层 | 加 `isMahjongRulesView` 守卫 + 坏值保留旧值测试 |
 | H5 | 高 | 缺 lobby 无 rules 回退静态的集成测试 | Task 10 追加无 mahjongRules 用例 |
-| H6 | 高 | 探针删掉 34 计数后只断言 >0，回归面缩水 | 从 `MAHJONG_RULES_FORM.tables` 派生期望行数；说明去重数等于有 desc 的行数 |
+| H6 | 高 | 探针删掉 34 计数后只断言 >0，回归面缩水 | 从 `appJs` 源码花括号配平切片 + `vm.runInNewContext` 提取 `MAHJONG_RULES_FORM.tables` 派生期望行数；说明去重数等于有 desc 的行数 |
 | H7 | 高 | 缺失/null/{}/坏值 WARN 语义与 spec 偏差 | null/{} 加 WARN；缺行（旧服务端）静默 |
 | L1 | 低 | spec 写从 `cfg.games` 读，计划改为顶层 `cfg.mahjongRules` | 以计划为准，spec §5.1 同步改为 normalize 提升到顶层 |
 | L2 | 低 | Task 2 新门禁是派生后的重言式 | 保留用于“先红”；真正的漂移门禁以 Task 11 为准，不单独宣称 |
@@ -2373,6 +2406,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 | L11 | 低 | `mahjongRules` 与牌桌快照同名不同义 | 实现注释点明“客户端视图 vs 牌桌规则快照” |
 
 修订后按流程做一次聚焦复审（只核对上述阻断/高危项），通过后进入实现。
+
+**聚焦复审（第二轮，2026-11-24）**：B1–B6、H1–H5、H7、L1–L11 均闭合；H6 首轮修订的 `w.eval('MAHJONG_RULES_FORM.tables')` 被复现实证不可用（探针经间接 eval 加载 app.js，顶层 `const` 不挂 window），已改为读取 `appJs` 源码 + 花括号配平 + `vm.runInNewContext` 提取。复审新增 6 条低项已处置：
+- 低 1：`shiBaLuoHan` 反例改为 3 杠 + 全刻子手（`444万 + 55筒`），钉住 3 vs 4 边界（预期 `duiDuiHu`）。
+- 低 2：`pingHu=0` 时不再把平胡列进“未启用”；全 0 文案补“平胡按兜底 1 番结算”。
+- 低 3：spec §4/§5.2/D6 与计划同步（缺行静默、null/{}/坏值 WARN、形状守卫）。
+- 低 4：Task 13 全量清单补 `pnpm -C packages/shared lint`。
+- 低 5：`normalizeClientConfig` 复用 `isMahjongRulesView`，初始加载坏形状 ⇒ null。
+- 低 6：Task 2 测试标题去掉硬编码 34。
 
 ## Self-Review Checklist（写完计划后由执行者复核）
 
