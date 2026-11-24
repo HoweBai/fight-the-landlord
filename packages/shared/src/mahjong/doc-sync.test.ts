@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MAHJONG_RULE_SUMMARY } from '@fight-the-landlord/protocol';
+import { MAHJONG_FAN_INFO, MAHJONG_RULE_SUMMARY } from '@fight-the-landlord/protocol';
 import { DEFAULT_CHENGDU_RULES, DEFAULT_SBR_RULES } from './rules';
 
 const doc = readFileSync(join(__dirname, '../../../../docs/games/mahjong.md'), 'utf8');
@@ -28,5 +28,17 @@ describe('mahjong doc-sync', () => {
     expect(MAHJONG_RULE_SUMMARY).toContain('血战到底');
     expect(MAHJONG_RULE_SUMMARY).toContain('定缺');
     expect(MAHJONG_RULE_SUMMARY).toContain('刮风下雨');
+  });
+
+  it('每个番 label 在文档中出现', () => {
+    for (const [key, info] of Object.entries(MAHJONG_FAN_INFO)) {
+      const normalized = info.label.replace(/（.*?）/g, '');
+      expect(doc, key).toContain(normalized);
+    }
+  });
+
+  it('文档包含客户端动态番表说明与 mahjongRules 字段', () => {
+    expect(doc).toContain('mahjongRules');
+    expect(doc).toContain('当前版本预留未启用');
   });
 });

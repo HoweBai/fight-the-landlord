@@ -69,6 +69,8 @@
 ⚠️ **第 6 条的 `baseScore` 可选**：不传 ⇒ 服务端用缺省档；传了则**必须**是第 8 条
 `GET /api/config` 的 `baseScoreLevels` 里的一档，否则 `10001`。
 
+⚠️ `games.mahjong.mahjongRules?`：麻将规则客户端白名单（配分方式/番表/可选番/自摸/换三张/最后4张/过水/直杠/杠分转移/花猪/查叫）。不含计时窗口、`preset`、`rulesVersion`。缺失 ⇒ 客户端回退静态玩法介绍。
+
 **鉴权**：`Authorization: Bearer <accessToken>`。公开路径**恰好五条**（上表 1–3 + `/api/health` + `/api/health/live`），
 其余一律要令牌。
 
