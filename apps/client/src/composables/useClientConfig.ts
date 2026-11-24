@@ -1,4 +1,7 @@
-import type { ClientConfig } from '@fight-the-landlord/protocol';
+import type {
+  ClientConfig,
+  MahjongRulesClientView,
+} from '@fight-the-landlord/protocol';
 import type { ClientConfigState, RoomMode } from '../stores/game';
 import { useGameStore } from '../stores/game';
 import { fetchBootClientConfig, fetchClientConfig } from '../net/rest';
@@ -40,11 +43,30 @@ export const FAILSAFE_CLIENT_CONFIG: ClientConfigState = {
   withdrawReAuthEnabled: false,
   agentInviteEnabled: false,
   agentInviteRequired: false,
+  mahjongRules: null,
   version: 0,
 };
 
+/**
+ * 麻将规则客户端视图的形状守卫（Task 9 复用）：只认 `mahjongRulesClientView`
+ * 下发的形状；坏形状 ⇒ `null`（未取到/旧服务端 ⇒ 静态介绍）。
+ */
+function isMahjongRulesView(value: unknown): value is MahjongRulesClientView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.scoringPolicy === 'string'
+    && (v.fanBase === 0 || v.fanBase === 1)
+    && typeof v.fanCap === 'number'
+    && typeof v.fanTable === 'object' && v.fanTable !== null
+    && typeof v.additiveFanTable === 'object' && v.additiveFanTable !== null
+    && typeof v.optionalFans === 'object' && v.optionalFans !== null;
+}
+
 /** 响应归一化（缺键语义见文件头）。 */
 export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConfigState {
+  // 麻将规则客户端视图住在 `games.mahjong.mahjongRules`；归一化时**提升到顶层**，
+  // 让 store/页面只认一个字段（坏形状 ⇒ null ⇒ 静态介绍）。
+  const rawMahjongRules: unknown = raw?.games?.mahjong?.mahjongRules;
   return {
     baseScoreLevels: raw?.baseScoreLevels ?? [],
     friendRoomEnabled: raw?.friendRoomEnabled === true,
@@ -97,6 +119,7 @@ export function normalizeClientConfig(raw: ClientConfig | undefined): ClientConf
     agentInviteRequired: raw?.agentInviteRequired === true,
     // 多玩法（S5.4）：新服务端下发 `games`；缺省 = 旧服务端（只有斗地主可见）。
     games: raw?.games,
+    mahjongRules: isMahjongRulesView(rawMahjongRules) ? rawMahjongRules : null,
     version: raw?.version ?? 0,
   };
 }

@@ -20,6 +20,7 @@ import {
   type GameType,
   type GameView,
   type MahjongPlayerView,
+  type MahjongRulesClientView,
   type PlayerView,
   type RoomPlayer,
   type ServerMessage,
@@ -113,6 +114,8 @@ export interface ClientConfigState
   agentInviteEnabled?: boolean;
   /** 代理分润：邀请码必填（缺省/旧服务端 ⇒ false）。 */
   agentInviteRequired?: boolean;
+  /** 麻将规则客户端视图；null/缺省 = 未取到/旧服务端 ⇒ 静态介绍。 */
+  mahjongRules?: MahjongRulesClientView | null;
 }
 
 /** 记牌器收费片：本局开通状态（`game.card_counter` 载荷；按 roomCode 存）。 */
@@ -285,6 +288,11 @@ export const useGameStore = defineStore('game', {
      */
     agentInviteEnabled: false,
     agentInviteRequired: false,
+    /**
+     * 麻将规则客户端视图（`games.mahjong.mahjongRules` 归一化后提升到顶层）。
+     * `null` = 未取到/旧服务端 ⇒ 麻将玩法介绍走静态 fallback。
+     */
+    mahjongRules: null as MahjongRulesClientView | null,
     /**
      * 入场门槛倍率（`currency.entryMultiplier`，客户端可见的唯一货币键）。
      *
@@ -773,6 +781,11 @@ export const useGameStore = defineStore('game', {
       this.agentInviteRequired = value === true;
     },
 
+    /** 麻将规则视图：只改这一个字段（Task 9 的 `refreshMahjongRules` 复用；null = 清空）。 */
+    setMahjongRules(rules: MahjongRulesClientView | null) {
+      this.mahjongRules = rules;
+    },
+
     setClientConfig(cfg: ClientConfigState) {      // P1-10：服务端配置到达 ⇒ 上一轮的「失败标记」退场（false 现在是权威的「关」）。
       this.clientConfigFailsafe = false;
       this.baseScoreLevels = cfg.baseScoreLevels;
@@ -790,6 +803,9 @@ export const useGameStore = defineStore('game', {
       this.reliefAdpid = cfg.reliefAdpid;
       this.agentInviteEnabled = cfg.agentInviteEnabled === true;
       this.agentInviteRequired = cfg.agentInviteRequired === true;
+      // 麻将规则视图：null/缺省**不清空**已有值（Task 8；与「失败路径写 fail-safe」同族 ——
+      // 一次网络抖动/旧服务端不得把已取到的规则视图擦掉 ⇒ 比赛介绍退回静态）。
+      if (cfg.mahjongRules) this.mahjongRules = cfg.mahjongRules;
       this.entryMultiplier = cfg.entryMultiplier;
       this.rechargeEnabled = cfg.rechargeEnabled;
       this.withdrawEnabled = cfg.withdrawEnabled;
