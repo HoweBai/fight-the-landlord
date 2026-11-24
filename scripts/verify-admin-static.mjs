@@ -1040,6 +1040,8 @@ ok(buildSimpleRowBlock.includes('input.disabled = !writable'), 'buildSimpleRow �
 /* ── 12. 四川麻将规则表单（2026-10-29）────────────────────────── */
 const mjFormBlock = balancedBlock(app, 'const MAHJONG_RULES_FORM', '{', '}');
 ok(mjFormBlock.length > 500, `麻将规则描述表块可提取且非空（实测 ${mjFormBlock.length} 字符）`);
+ok(mjFormBlock.includes('fanNotes:'), '麻将描述表含 fanNotes');
+ok(app.includes('mj-fan-note'), '麻将行内说明渲染器存在');
 for (const title of ['计分', '命名番表', '加法番表', '可选番', '换牌与流程', '杠与转账', '花猪与查叫', '决策时长']) {
   ok(mjFormBlock.includes(`title: '${title}'`), `麻将表单分组：${title}`);
 }

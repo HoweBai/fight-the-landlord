@@ -2759,6 +2759,17 @@ function buildMahjongRulesEditor(body, ctx) {
         onChange();
       });
       row.append(input, errEl);
+      const note = MAHJONG_RULES_FORM.fanNotes[fanKey];
+      if (note) {
+        const noteEl = el('div', 'mj-fan-note');
+        noteEl.dataset.noteFor = `${group.table}.${fanKey}`;
+        noteEl.append(el('p', 'mj-fan-desc', note.desc));
+        if (note.example) noteEl.append(el('p', 'mj-fan-example', `例：${note.example}`));
+        if (note.playerCaveat) noteEl.append(el('p', 'mj-fan-caveat', `⚠ ${note.playerCaveat}`));
+        if (note.adminOnly) noteEl.append(el('p', 'mj-fan-admin', `内部：${note.adminOnly}`));
+        if (note.wired === false) noteEl.append(el('span', 'mj-fan-wired', '当前版本未接入'));
+        row.append(noteEl);
+      }
       rows.set(fanKey, { input, errEl });
       details.append(row);
     }

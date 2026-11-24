@@ -1145,3 +1145,24 @@ input[type="datetime-local"]:focus {
 .mj-fan-row { display: flex; align-items: center; gap: 10px; padding: 3px 0 3px 12px; flex-wrap: wrap; }
 .mj-fan-name { width: 120px; font-size: 13px; }
 .mj-fan-row .mj-field-err { flex-basis: 100%; padding-left: 130px; }
+.mj-fan-note {
+  flex-basis: 100%;
+  margin: 2px 0 4px 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.mj-fan-note p { margin: 0; }
+.mj-fan-desc { color: var(--dim); }
+.mj-fan-example { color: var(--dim); opacity: 0.85; }
+.mj-fan-caveat { color: #b8860b; }
+.mj-fan-admin { color: var(--dim); font-style: italic; }
+.mj-fan-wired {
+  align-self: flex-start;
+  color: #b8860b;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}

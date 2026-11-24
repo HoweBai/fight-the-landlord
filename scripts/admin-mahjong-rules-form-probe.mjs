@@ -9,6 +9,7 @@
 import { deepStrictEqual } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 const require = createRequire(new URL('../apps/client/package.json', import.meta.url));
 const { JSDOM, VirtualConsole } = require('jsdom');
@@ -206,7 +207,37 @@ const w = main.window;
 
 ok(qa(w, '#settings-rows .mj-group').length === 8, `8 个分组（实测 ${qa(w, '#settings-rows .mj-group').length}）`);
 ok(qa(w, '#settings-rows .mj-field').length === 20, `20 个字段控件（实测 ${qa(w, '#settings-rows .mj-field').length}）`);
-ok(qa(w, '#settings-rows .mj-fan-row').length === 34, `34 个番表输入（实测 ${qa(w, '#settings-rows .mj-fan-row').length}）`);
+const formStart = appJs.indexOf('const MAHJONG_RULES_FORM');
+const formBrace = appJs.indexOf('{', formStart);
+let formDepth = 0;
+let formEnd = -1;
+for (let i = formBrace; i < appJs.length; i += 1) {
+  if (appJs[i] === '{') formDepth += 1;
+  else if (appJs[i] === '}') {
+    formDepth -= 1;
+    if (formDepth === 0) { formEnd = i; break; }
+  }
+}
+if (formEnd < 0) throw new Error('MAHJONG_RULES_FORM literal not found');
+const formTables = runInNewContext(`(${appJs.slice(formBrace, formEnd + 1)})`).tables;
+const fanRows = qa(w, '#settings-rows .mj-fan-row');
+const expectedFanRows = Object.values(formTables).reduce((n, t) => n + t.keys.length, 0);
+ok(fanRows.length === expectedFanRows, `番表行数 = 三表键数（实测 ${fanRows.length}/${expectedFanRows}）`);
+const noteRows = fanRows.filter((row) => row.querySelector('.mj-fan-note'));
+ok(noteRows.length === fanRows.length, `每个番行都有说明（实测 ${noteRows.length}/${fanRows.length}）`);
+const descOf = (p) => fieldOf(w, p)?.querySelector('.mj-fan-desc')?.textContent ?? '';
+const caveatOf = (p) => fieldOf(w, p)?.querySelector('.mj-fan-caveat')?.textContent ?? '';
+const adminOf = (p) => fieldOf(w, p)?.querySelector('.mj-fan-admin')?.textContent ?? '';
+ok(descOf('fanTable.pingHu').includes('任意合法胡牌型'), '平胡说明渲染');
+ok(descOf('fanTable.qingYiSe').includes('同一花色'), '清一色说明渲染');
+ok(caveatOf('fanTable.gen').includes('不计'), '根边界说明渲染');
+ok(descOf('optionalFans.perGang').includes('每个副露杠'), '每杠说明渲染');
+ok(adminOf('optionalFans.tianHu').includes('从未置位'), '天胡内部说明渲染');
+ok(fieldOf(w, 'optionalFans.tianHu')?.querySelector('.mj-fan-wired')?.textContent.includes('未接入'),
+  '天胡 wired 徽标');
+const descRows = fanRows.filter((row) => row.querySelector('.mj-fan-desc'));
+const uniqueDesc = new Set(descRows.map((row) => row.querySelector('.mj-fan-desc')?.textContent));
+ok(uniqueDesc.size === descRows.length, `说明不是同一段复制（实测 ${uniqueDesc.size}/${descRows.length}）`);
 ok(fieldOf(w, 'fanCap')?.querySelector('input')?.value === '6', 'fanCap 初值 6');
 ok(fieldOf(w, 'huazhuMode')?.querySelector('select')?.value === 'payEach', 'huazhuMode 初值 payEach');
 ok(fieldOf(w, 'fanTable.pingHu')?.querySelector('input')?.value === '1', '番表 pingHu 初值 1');
