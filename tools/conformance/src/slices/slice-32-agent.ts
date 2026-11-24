@@ -601,7 +601,11 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
       inviteCode: requiredCode,
       nickname: `s30-required-ok-${RUN_TAG}`,
     });
-    checks.eq(requiredReg.status, 201, '必填开 + 有效码 ⇒ 201');
+    checks.eq(
+      requiredReg.status,
+      201,
+      `必填开 + 有效码 ⇒ 201 —— 实际 HTTP ${requiredReg.status} ${JSON.stringify(requiredReg.body)}`,
+    );
     await putConfigAndWaitBoth(admin, REQUIRED_KEY, false);
 
     // ══════════════════════════════════════════════════════════════════════

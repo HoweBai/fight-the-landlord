@@ -90,7 +90,7 @@ const EXPECTED_JOBS = [
   'douzero', 'node-exporter', 'cadvisor', 'prometheus', 'alertmanager', 'grafana', 'alert-relay',
 ] as const;
 
-/** C3：41 条规则的**名字集合**（数量之外再钉集合——只有数量的话，41 条错规则也绿）。 */
+/** C3：44 条规则的**名字集合**（数量之外再钉集合——只有数量的话，44 条错规则也绿）。 */
 const EXPECTED_RULES = [
   'Watchdog', 'ServiceDown', 'Http5xxRatioHigh', 'Http5xxRatioCritical',
   'HostDiskSpaceLow', 'HostDiskSpaceCritical', 'HostMemoryAvailableLow',
@@ -116,6 +116,8 @@ const EXPECTED_RULES = [
   'RecordsReconcileMismatch', 'RecordsReconcileOrphanOps', 'RecordsReconcileStalled',
   // C3（2026-10-28）：资金异常三条规则（数量 38→41；41 条 = 38 类）。
   'RiskFundScanQueryFailures', 'RiskFundScanStalled', 'RiskFundHitsHigh',
+  // 代理邀请码（2026-11-03）：三条新规则（数量 41→44 与名集同提交）。
+  'AgentBindIgnoredConfigUnavailable', 'AgentInviteGeneratedSpike', 'AgentInviteMissingSpike',
 ] as const;
 
 /** C1：九个目标的 exec 探测面（八 Nest + douzero；指标端口**不发布宿主口**——D2）。 */
@@ -716,7 +718,7 @@ export async function runSlice16(): Promise<Checks> {
     );
 
     // ═════════════════════════════════════════════════════════════════════════
-    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 41 + 正则自证 + 降级开关
+    // C2：Prometheus 目标面（15 恰逐个 up）+ 规则 44 + 正则自证 + 降级开关
     // ═════════════════════════════════════════════════════════════════════════
     step(`C2：/api/v1/targets 15 目标逐个 up · /api/v1/rules = ${EXPECTED_RULES.length} · 容器名正则自证 · MONITORING_EXPECT_CADVISOR=${EXPECT_CADVISOR ? '1' : '0'}`);
     // 谓词正/负对照（R115 同族）：判别力用合成样本自证，防「谓词写瞎 ⇒ 恒绿」。
@@ -767,7 +769,7 @@ export async function runSlice16(): Promise<Checks> {
         `违规：${tViolations.join(' | ') || '无'}${targetsErr ? `（末次读取错误：${targetsErr}）` : ''}` +
         ` 实测快照 ${JSON.stringify(targets.map((t) => `${t.job}:${t.health}`))}`,
     );
-    // rules：数量 + **名字集合**（只钉数量的话，41 条错规则也绿）。
+    // rules：数量 + **名字集合**（只钉数量的话，44 条错规则也绿）。
     const rulesResp = await httpText(`${PROM_URL}/api/v1/rules`);
     const rulesParsed = JSON.parse(rulesResp.text) as {
       data?: { groups?: Array<{ rules?: Array<{ name?: string; type?: string }> }> };
