@@ -36,3 +36,195 @@ export const MAHJONG_RULE_SUMMARY = [
   MAHJONG_DEFAULT_SCORING,
   MAHJONG_TIMEOUT_SECTION,
 ].join('\n\n');
+
+import {
+  MAHJONG_ADDITIVE_FAN_KEYS,
+  MAHJONG_NAMED_FAN_KEYS,
+  MAHJONG_OPTIONAL_FAN_KEYS,
+} from './rules';
+import { MAHJONG_FAN_INFO, type MahjongFanInfo } from './fan-info';
+import type { MahjongRulesClientView } from './client-view';
+
+function labelOf(key: string): string {
+  return MAHJONG_FAN_INFO[key]?.label ?? key;
+}
+
+function multiplierOf(fan: number, rules: MahjongRulesClientView): number {
+  return 2 ** Math.max(0, Math.min(fan, rules.fanCap) - rules.fanBase);
+}
+
+function noteText(info: MahjongFanInfo): string {
+  const parts = [info.desc];
+  if (info.example) parts.push(`例：${info.example}`);
+  if (info.playerCaveat) parts.push(`⚠ ${info.playerCaveat}`);
+  return parts.join(' ');
+}
+
+function mainLine(key: string, info: MahjongFanInfo, value: number, rules: MahjongRulesClientView): string {
+  const mult = multiplierOf(value, rules);
+  const head = value > rules.fanCap
+    ? `${labelOf(key)} 表值 ${value} 番 / 封顶后 ×${mult}`
+    : `${labelOf(key)} ${value} 番（×${mult}）`;
+  return `· ${head}：${noteText(info)}`;
+}
+
+function addonLine(key: string, info: MahjongFanInfo, value: number): string {
+  return `· ${labelOf(key)} +${value} 番：${noteText(info)}`;
+}
+
+function selfDrawText(rules: MahjongRulesClientView): string {
+  switch (rules.selfDrawMode) {
+    case 'addFan': {
+      const v = rules.fanTable.ziMo ?? 0;
+      return v > 0 ? `番 +${v}` : '番 +0（命名番表“自摸”项未配置）';
+    }
+    case 'none':
+      return '无加成';
+    default:
+      return '每家多付 1×底';
+  }
+}
+
+function directionText(dir: MahjongRulesClientView['exchangeDirection']): string {
+  switch (dir) {
+    case 'clockwise': return '顺时针';
+    case 'counterclockwise': return '逆时针';
+    case 'opposite': return '对家';
+    default: return '随机';
+  }
+}
+
+function passHuText(mode: MahjongRulesClientView['passHuMode']): string {
+  switch (mode) {
+    case 'sameTile': return '同张不可再胡';
+    case 'sameTileOrHigherFan': return '同张或加番可胡';
+    default: return '不限制';
+  }
+}
+
+function transferText(mode: MahjongRulesClientView['gangTransfer']): string {
+  switch (mode) {
+    case 'toEachWinner': return '转给每个赢家';
+    case 'split': return '均分（余数按座位升序）';
+    default: return '退回原付款人';
+  }
+}
+
+function huazhuText(mode: MahjongRulesClientView['huazhuMode']): string {
+  switch (mode) {
+    case 'burn48': return '销毁 48×底';
+    case 'off': return '不罚';
+    default: return '按当前配置赔给未胡玩家（封顶分）';
+  }
+}
+
+function buildScoringSection(rules: MahjongRulesClientView): string {
+  const lines: string[] = [];
+  lines.push(
+    `计分方式：${rules.scoringPolicy === 'named' ? '命名番表' : '加法番表'}；` +
+    `底番 ${rules.fanBase}；封顶 ${rules.fanCap} 番（×${multiplierOf(rules.fanCap, rules)}）；` +
+    `自摸：${selfDrawText(rules)}`,
+  );
+  if (rules.minFanToHu > rules.fanCap) {
+    lines.push('⚠ 起胡番高于封顶番：当前配置无法胡牌。');
+  }
+
+  if (rules.scoringPolicy === 'named') {
+    const reserved: string[] = [];
+    let enabledCount = 0;
+    const consider = (key: string, info: MahjongFanInfo, value: number): void => {
+      if (value <= 0) return;
+      if (!info.wired) {
+        reserved.push(labelOf(key));
+        return;
+      }
+      enabledCount += 1;
+      lines.push(
+        info.kind === 'namedAddon' || info.kind === 'optionalAddon'
+          ? addonLine(key, info, value)
+          : mainLine(key, info, value, rules),
+      );
+    };
+
+    for (const key of MAHJONG_NAMED_FAN_KEYS) {
+      const info = MAHJONG_FAN_INFO[key]!;
+      if (info.kind === 'namedMain') consider(key, info, rules.fanTable[key] ?? 0);
+    }
+    for (const key of MAHJONG_NAMED_FAN_KEYS) {
+      const info = MAHJONG_FAN_INFO[key]!;
+      if (info.kind === 'namedAddon' && key !== 'ziMo') {
+        consider(key, info, rules.fanTable[key] ?? 0);
+      }
+    }
+    for (const key of MAHJONG_OPTIONAL_FAN_KEYS) {
+      const info = MAHJONG_FAN_INFO[key]!;
+      if (info.kind === 'optionalMain' || info.kind === 'optionalAddon') {
+        consider(key, info, rules.optionalFans[key] ?? 0);
+      }
+    }
+
+    if ((rules.fanTable.pingHu ?? 0) === 0) {
+      lines.push('· 平胡：表值为 0，但引擎仍按兜底 1 番处理。');
+    }
+
+    const disabled: string[] = [];
+    for (const key of MAHJONG_NAMED_FAN_KEYS) {
+      if (key === 'ziMo' || key === 'pingHu') continue;
+      if ((rules.fanTable[key] ?? 0) === 0) disabled.push(labelOf(key));
+    }
+    for (const key of MAHJONG_OPTIONAL_FAN_KEYS) {
+      if ((rules.optionalFans[key] ?? 0) === 0) disabled.push(labelOf(key));
+    }
+    if (disabled.length > 0) lines.push(`· 未启用：${disabled.join('、')}`);
+    if (enabledCount === 0) {
+      lines.push('· 当前未配置任何番型；平胡按兜底 1 番结算。');
+    }
+    if (reserved.length > 0) {
+      lines.push(`· 预留未启用：${reserved.join('、')}（当前版本不会触发）`);
+    }
+  } else {
+    let enabledCount = 0;
+    for (const key of MAHJONG_ADDITIVE_FAN_KEYS) {
+      const info = MAHJONG_FAN_INFO[key]!;
+      const value = rules.additiveFanTable[key] ?? 0;
+      if (value > 0) {
+        enabledCount += 1;
+        lines.push(addonLine(key, info, value));
+      }
+    }
+    if (enabledCount === 0) {
+      lines.push('· 当前未配置任何加法番型，只按底分结算。');
+    }
+    lines.push(
+      `· 各项相加后按封顶 ${rules.fanCap} 番（×${multiplierOf(rules.fanCap, rules)}）结算。`,
+    );
+    lines.push('· 加法口径不使用可选番。');
+  }
+
+  return ['【番型与倍率】', ...lines].join('\n');
+}
+
+function buildFlowSection(rules: MahjongRulesClientView): string {
+  const lines = [
+    `· 换三张：${rules.exchangeThreeEnabled ? `开（方向：${directionText(rules.exchangeDirection)}）` : '关'}`,
+    '· 定缺：必选',
+    `· 最后 4 张：${rules.lastFourForcedHu ? '能胡必胡' : '可过'}`,
+    `· 过水：${passHuText(rules.passHuMode)}`,
+    `· 直杠：${rules.directGangMode === 'contract' ? '仅点杠者付 2×底' : '家家有（点杠者 2×底 + 其余未胡每家 1×底）'}`,
+    `· 杠分转移：${transferText(rules.gangTransfer)}`,
+    `· 花猪：${huazhuText(rules.huazhuMode)}`,
+    `· 查叫：${rules.chajiaoEnabled ? '开' : '关'}`,
+    `· 自摸：${selfDrawText(rules)}`,
+  ];
+  return ['【当前流程设置】', ...lines].join('\n');
+}
+
+export function buildMahjongRuleSummary(rules?: MahjongRulesClientView): string {
+  if (!rules) return MAHJONG_RULE_SUMMARY;
+  return [
+    MAHJONG_BASE_SUMMARY,
+    buildScoringSection(rules),
+    buildFlowSection(rules),
+    MAHJONG_TIMEOUT_SECTION,
+  ].join('\n\n');
+}
