@@ -796,8 +796,26 @@ export async function runSlice19(): Promise<Checks> {
     expectHttp(checks, await g5('P6 只读', 'POST', '/api/admin/wallet/reverse', s.viewerToken, {}), 403, ErrCode.FORBIDDEN, 'G5 P6 只读 ⇒ 403');
 
     // P7（POST /wallet/reconcile/run 精确）：超管+财务 放行（真跑一轮 ⇒ 200）；运营/只读 403
-    expectHttp(checks, await g5('P7 超管', 'POST', '/api/admin/wallet/reconcile/run', s.adminToken, undefined), 200, ErrCode.OK, 'G5 P7 超管（放行 ⇒ 真跑一轮 200）');
-    expectHttp(checks, await g5('P7 财务', 'POST', '/api/admin/wallet/reconcile/run', s.finToken, undefined), 200, ErrCode.OK, 'G5 P7 财务（放行 ⇒ 真跑一轮 200）');
+    // ⚠️ 后台定时轮可能正在跑 ⇒ 手动触发按规格返回 409「对账正在运行」。先等 running=false；
+    //    若窗口内又开跑，409 重试（最多 10s）。只对 409 重试，403/其它原样返回。
+    const reconcileWhenIdle = async (label: string, token: string): Promise<RawResult> => {
+      for (let i = 0; i < 40; i += 1) {
+        const status = await getJson<{ running?: boolean }>(
+          '/api/admin/wallet/reconcile',
+          s.adminToken,
+        );
+        if (status.status === 200 && status.body?.data?.running === false) break;
+        await sleep(250);
+      }
+      for (let i = 0; i < 40; i += 1) {
+        const res = await g5(label, 'POST', '/api/admin/wallet/reconcile/run', token, undefined);
+        if (res.status !== 409) return res;
+        await sleep(250);
+      }
+      return g5(label, 'POST', '/api/admin/wallet/reconcile/run', token, undefined);
+    };
+    expectHttp(checks, await reconcileWhenIdle('P7 超管', s.adminToken), 200, ErrCode.OK, 'G5 P7 超管（放行 ⇒ 真跑一轮 200）');
+    expectHttp(checks, await reconcileWhenIdle('P7 财务', s.finToken), 200, ErrCode.OK, 'G5 P7 财务（放行 ⇒ 真跑一轮 200）');
     expectHttp(checks, await g5('P7 运营', 'POST', '/api/admin/wallet/reconcile/run', s.operToken, undefined), 403, ErrCode.FORBIDDEN, 'G5 P7 运营 ⇒ 403');
     expectHttp(checks, await g5('P7 只读', 'POST', '/api/admin/wallet/reconcile/run', s.viewerToken, undefined), 403, ErrCode.FORBIDDEN, 'G5 P7 只读 ⇒ 403');
 

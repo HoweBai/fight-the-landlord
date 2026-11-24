@@ -23,7 +23,7 @@
  * ─── 十二组（组序与状态链；未列组沿用前组末态——规格 §5.2 前言）────────────────────
  *  ⓪ 起手自证（前置 = 空/脏库任意；末态 = 干净命名空间 + 种子态自证）：四容器 healthy ·
  *     `relief:claim:*`/`ad:notify:rate` 清源归零 · 开关=false / adpid='' 种子态自证 ·
- *     第四键空间种子在场 · Prometheus rules 恰 41 含两新告警。
+ *     第四键空间种子在场 · Prometheus rules 恰 44 含两新告警。
  *  ① 键空间面（ad-channel 管理面）：掩码读（value 恒 null+指纹=宿主复算）· super_admin
  *     写读回 · 非 SA（operator/finance/viewer）×（PUT/DELETE）⇒ 403 · 种子密钥生效
  *     （末态 = 四键空间回种子）。
@@ -173,7 +173,7 @@ const C2_ALERT_RULES = [
   'RecordsReconcileOrphanOps',
   'RecordsReconcileStalled',
 ] as const;
-/** C3（2026-10-28）：资金异常三条规则（总数 38→41）。 */
+/** C3（2026-10-28）：资金异常三条规则（总数 38→41）；代理邀请码（2026-11-03）再 +3 ⇒ 44。 */
 const C3_ALERT_RULES = [
   'RiskFundScanQueryFailures',
   'RiskFundScanStalled',
@@ -339,6 +339,15 @@ function purgeClaimKeys(): number {
   const keys = scanRedisKeys('relief:claim:*');
   for (const key of keys) redisRaw(['DEL', key]);
   return keys.length;
+}
+
+/**
+ * 清空**全部** IP 维桶（上一片/本片前段的 burst 会在 60s 窗口里波及后续请求；
+ * slice-21/22 先例）。只在各段起点调用，不掩盖本片要验的 `ad:notify:rate` 桶。
+ */
+function clearIpBuckets(): void {
+  const keys = scanRedisKeys('ratelimit:http-ip:*');
+  for (const key of keys) redisRaw(['DEL', key]);
 }
 
 /** 读一条 claim 记录的**原文**（不存在 ⇒ `''`）。 */
@@ -679,7 +688,7 @@ export async function runSlice24(): Promise<Checks> {
 
   try {
     /* ── ⓪ 起手自证 ──────────────────────────────────────────────────────── */
-    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 41 含两新告警');
+    step('⓪ 起手自证：四容器 healthy · relief:claim/ad:notify:rate 清源归零 · 开关=false/adpid=空串种子态 · 第四键空间种子在场 · rules 恰 44 含两新告警');
     for (const container of HEALTH_CONTAINERS) {
       const h = await waitContainerHealthy(container);
       checks.that(h.ok, `⓪ ${container} healthy（${h.last}）`);
@@ -698,6 +707,7 @@ export async function runSlice24(): Promise<Checks> {
     adminToken = await adminLogin();
     checks.that(adminToken.length > 0, '⓪ 引导号管理登录 ⇒ token（本片全部管理面的 actor 真源）');
     clearAdminWriteBucket(adminToken);
+    clearIpBuckets();
 
     const cfg0 = await adminGetConfig<{ config: Record<string, { value: unknown; version: number }> }>(adminToken);
     checks.eq(
@@ -715,10 +725,10 @@ export async function runSlice24(): Promise<Checks> {
     );
 
     const ruleNames0 = await fetchPromRuleNames();
-    checks.that(ruleNames0.length === 41, `⓪ Prometheus /api/v1/rules 恰 41 条（29 既有 + 2 救助 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账 + 3 C3 资金异常；A1 同步面）—— 实际 ${ruleNames0.length}`);
+    checks.that(ruleNames0.length === 44, `⓪ Prometheus /api/v1/rules 恰 44 条（29 既有 + 2 救助 + 1 B 组 SQL 失败 + 3 C1 记录 outbox + 3 C2 记录对账 + 3 C3 资金异常 + 3 代理邀请码；A1 同步面）—— 实际 ${ruleNames0.length}`);
     checks.that(
       AD_ALERT_RULES.every((n) => ruleNames0.includes(n)),
-      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 41 条错规则也绿）`,
+      `⓪ 两新告警名逐个在场（${AD_ALERT_RULES.join('/')}；只钉数量的话 44 条错规则也绿）`,
     );
     const A1_ALERT_RULES = [
       'GameStartFailuresHigh', 'GameSettleFailures', 'SettleDroppedByGame', 'RecordWriteFailuresHigh',
@@ -933,6 +943,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ④ 拒发穷尽 ─────────────────────────────────────────────────────── */
     step('④ 拒发穷尽：公开路径不得 404 反例钉（裸 GET 缺参 ⇒ 200 {"isValid":true} 走 malformed / POST ⇒ 恰 405 / 近邻 uiadx 匿名 ⇒ 401 / /api 面匿名 ⇒ 401）· 405/401 不入计数 · 畸形 200/true · 坏签名 200/true · 改串归 claim_invalid · 未签发/过期 200/true · 中途切开关/充值 ⇒ 终态拒绝');
+    clearIpBuckets();
     const m0 = readMetricCounts();
     /** v1.4 终态确认信号（逐字 JSON；坏签名/畸形等全体确定性拒绝同形）。 */
     const ANSWER_TRUE = JSON.stringify({ isValid: true });
@@ -1059,6 +1070,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑤ 正路一次（经门口）────────────────────────────────────────────── */
     step('⑤ 正路一次（经门口 https://localhost:8443/ad/notify/uniad）：GET 签发 ⇒ 签名 GET 回调 ⇒ 200 {"isValid":true} + 余额 +200 + GET 已发（今天已经领过了）+ 记录 done:granted + 索引删（done 落定）+ 两指标 +1');
+    clearIpBuckets();
     const uE = await registerUser(68);
     const rE1 = await getRelief(uE);
     expectHttp(checks, rE1 as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑤ GET 签发（正路）');
@@ -1102,6 +1114,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑦ 账本先行重放 ─────────────────────────────────────────────────── */
     step('⑦ 账本先行重放：GET 签发 → rpcApply 预置同锚流水（relief:<u>:<claim.date>；不得以记录移除构造）→ 回调 ⇒ 200 + 余额不变 + done:replayed + replayed+1/granted+0 + GET 已发（账本=唯一真源）');
+    clearIpBuckets();
     const uF = await registerUser(69);
     const rF = await getRelief(uF);
     expectHttp(checks, rF as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑦ GET 签发（账本先行组）');
@@ -1144,6 +1157,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑧ 跨零点重投 ───────────────────────────────────────────────────── */
     step('⑧ 跨零点重投：redisRaw 回写记录 date=昨日（KEEPTTL）⇒ 回调按昨日锚 ⇒ apply 成功（余额 +200/昨日锚流水在场）且今日 grantedToday 未翻转');
+    clearIpBuckets();
     const uG = await registerUser(70);
     const rG = await getRelief(uG);
     expectHttp(checks, rG as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑧ GET 签发（跨零点组）');
