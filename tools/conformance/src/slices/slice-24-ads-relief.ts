@@ -341,6 +341,15 @@ function purgeClaimKeys(): number {
   return keys.length;
 }
 
+/**
+ * 清空**全部** IP 维桶（上一片/本片前段的 burst 会在 60s 窗口里波及后续请求；
+ * slice-21/22 先例）。只在各段起点调用，不掩盖本片要验的 `ad:notify:rate` 桶。
+ */
+function clearIpBuckets(): void {
+  const keys = scanRedisKeys('ratelimit:http-ip:*');
+  for (const key of keys) redisRaw(['DEL', key]);
+}
+
 /** 读一条 claim 记录的**原文**（不存在 ⇒ `''`）。 */
 const claimRecordRaw = (nonce: string): string => redisCliText(['GET', `relief:claim:${nonce}`]);
 
@@ -698,6 +707,7 @@ export async function runSlice24(): Promise<Checks> {
     adminToken = await adminLogin();
     checks.that(adminToken.length > 0, '⓪ 引导号管理登录 ⇒ token（本片全部管理面的 actor 真源）');
     clearAdminWriteBucket(adminToken);
+    clearIpBuckets();
 
     const cfg0 = await adminGetConfig<{ config: Record<string, { value: unknown; version: number }> }>(adminToken);
     checks.eq(
@@ -933,6 +943,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ④ 拒发穷尽 ─────────────────────────────────────────────────────── */
     step('④ 拒发穷尽：公开路径不得 404 反例钉（裸 GET 缺参 ⇒ 200 {"isValid":true} 走 malformed / POST ⇒ 恰 405 / 近邻 uiadx 匿名 ⇒ 401 / /api 面匿名 ⇒ 401）· 405/401 不入计数 · 畸形 200/true · 坏签名 200/true · 改串归 claim_invalid · 未签发/过期 200/true · 中途切开关/充值 ⇒ 终态拒绝');
+    clearIpBuckets();
     const m0 = readMetricCounts();
     /** v1.4 终态确认信号（逐字 JSON；坏签名/畸形等全体确定性拒绝同形）。 */
     const ANSWER_TRUE = JSON.stringify({ isValid: true });
@@ -1059,6 +1070,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑤ 正路一次（经门口）────────────────────────────────────────────── */
     step('⑤ 正路一次（经门口 https://localhost:8443/ad/notify/uniad）：GET 签发 ⇒ 签名 GET 回调 ⇒ 200 {"isValid":true} + 余额 +200 + GET 已发（今天已经领过了）+ 记录 done:granted + 索引删（done 落定）+ 两指标 +1');
+    clearIpBuckets();
     const uE = await registerUser(68);
     const rE1 = await getRelief(uE);
     expectHttp(checks, rE1 as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑤ GET 签发（正路）');
@@ -1102,6 +1114,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑦ 账本先行重放 ─────────────────────────────────────────────────── */
     step('⑦ 账本先行重放：GET 签发 → rpcApply 预置同锚流水（relief:<u>:<claim.date>；不得以记录移除构造）→ 回调 ⇒ 200 + 余额不变 + done:replayed + replayed+1/granted+0 + GET 已发（账本=唯一真源）');
+    clearIpBuckets();
     const uF = await registerUser(69);
     const rF = await getRelief(uF);
     expectHttp(checks, rF as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑦ GET 签发（账本先行组）');
@@ -1144,6 +1157,7 @@ export async function runSlice24(): Promise<Checks> {
 
     /* ── ⑧ 跨零点重投 ───────────────────────────────────────────────────── */
     step('⑧ 跨零点重投：redisRaw 回写记录 date=昨日（KEEPTTL）⇒ 回调按昨日锚 ⇒ apply 成功（余额 +200/昨日锚流水在场）且今日 grantedToday 未翻转');
+    clearIpBuckets();
     const uG = await registerUser(70);
     const rG = await getRelief(uG);
     expectHttp(checks, rG as { status: number; body: Envelope | null }, 200, ErrCode.OK, '⑧ GET 签发（跨零点组）');

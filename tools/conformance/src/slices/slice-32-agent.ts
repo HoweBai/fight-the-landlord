@@ -599,7 +599,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     const requiredCode = await mintCodeViaRotate(admin, agentA.account.id);
     const requiredReg = await register({
       inviteCode: requiredCode,
-      nickname: `s30-required-ok-${RUN_TAG}`,
+      nickname: `s30-req-ok-${RUN_TAG}`,
     });
     checks.eq(
       requiredReg.status,
