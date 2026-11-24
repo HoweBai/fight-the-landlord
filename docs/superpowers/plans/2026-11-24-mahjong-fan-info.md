@@ -12,6 +12,7 @@
 
 - 日常开发在 `dev` 分支；每次改动单独提交，提交信息末尾：`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`。
 - 每个任务按 TDD：先写失败测试 → 跑红 → 最小实现 → 跑绿 → 提交。
+- 协议改动后，跨包测试/lint 前先运行 `pnpm -C packages/protocol build`（config-service 与 `apps/client` 的 `vue-tsc` 走 `packages/protocol/dist`）。
 - 客户端字段名必须是 `mahjongRules`；**不得**出现 `rules` 作为出站字段名（`FORBIDDEN_OUTBOUND_KEYS` 含 `rules`）。
 - 所有 34 项计数必须从 `MAHJONG_NAMED_FAN_KEYS` / `MAHJONG_ADDITIVE_FAN_KEYS` / `MAHJONG_OPTIONAL_FAN_KEYS` 派生；不得在新测试里硬编码 34/8。
 - 玩家可见文案（`desc/example/playerCaveat`）不得包含内部标记：`代码未实现`、`另立片`、`死配置`、`settle.ts`、`TODO`。
@@ -199,7 +200,7 @@ const FAN_INFO: Record<string, MahjongFanInfo> = {
   qingYaoJiu: {
     label: '清幺九', kind: 'namedMain', wired: true,
     desc: '清一色 + 带幺九。',
-    example: '1-2-3万 7-8-9万 1-1-1万 9-9-9万 1-1万',
+    example: '1-2-3万 1-2-3万 7-8-9万 7-8-9万 1-1万',
     playerCaveat: '取代清一色/带幺九，不叠加。',
   },
   qingLongQiDui: {
@@ -238,7 +239,7 @@ const FAN_INFO: Record<string, MahjongFanInfo> = {
     label: '根', kind: 'namedAddon', wired: true,
     desc: '四张相同且未杠，每组计一份。',
     example: '手里 5-5-5-5筒 未杠 ⇒ 计 1 组根',
-    playerCaveat: '龙七对/清龙七对的定义四张不算根；“根包含杠”开启时副露杠也计根。',
+    playerCaveat: '龙七对/清龙七对的定义四张不计根；“根包含杠”开启时副露杠也计根。',
   },
   ziMo: {
     label: '自摸', kind: 'namedAddon', wired: true,
@@ -678,17 +679,21 @@ describe('MAHJONG_RULE_SUMMARY fallback', () => {
   it('base 段不含可被后台关闭的完整性断言', () => {
     expect(MAHJONG_BASE_SUMMARY).not.toContain('最后 4 张能胡必胡');
     expect(MAHJONG_BASE_SUMMARY).not.toContain('过水同张锁定');
+    expect(MAHJONG_BASE_SUMMARY).not.toContain('直杠：点杠者付');
+    expect(MAHJONG_BASE_SUMMARY).not.toContain('强胡时=胡');
   });
 
   it('默认计分段标注默认口径并提供默认流程', () => {
     expect(MAHJONG_DEFAULT_SCORING).toContain('默认口径');
     expect(MAHJONG_DEFAULT_SCORING).toContain('默认封顶 6 番');
     expect(MAHJONG_DEFAULT_SCORING).toContain('最后 4 张能胡必胡');
+    expect(MAHJONG_DEFAULT_SCORING).toContain('直杠仅点杠者付 2×底');
   });
 
   it('超时段保留托管说明', () => {
     expect(MAHJONG_TIMEOUT_SECTION).toContain('超时与托管');
     expect(MAHJONG_TIMEOUT_SECTION).toContain('托管');
+    expect(MAHJONG_TIMEOUT_SECTION).not.toContain('强胡时=胡');
   });
 });
 ```
@@ -717,7 +722,7 @@ export const MAHJONG_BASE_SUMMARY =
   '· 点炮者付；自摸其余未胡每家付；一炮多响每个赢家分别收\n' +
   '· 胡 > 杠 > 碰 > 摸牌；最后 4 张与过水规则按房间设置\n\n' +
   '【刮风下雨】\n' +
-  '· 直杠：点杠者付 2×底；补杠：其余未胡每家 1×底；暗杠：其余未胡每家 2×底\n' +
+  '· 直杠/补杠/暗杠的杠分按房间设置结算\n' +
   '· 杠上炮：本次杠分按房间设置处理；抢杠只抢补杠\n' +
   '· 荒庄：花猪 / 查大叫 / 退税按规则配置结算';
 
@@ -727,11 +732,11 @@ export const MAHJONG_DEFAULT_SCORING =
   '· 默认成都口径：平胡 1 番（×1），每 +1 番翻倍，默认封顶 6 番（32×）\n' +
   '· 主番：平胡/对对胡/清一色/带幺九/七对/清对/将对/龙七对/清七对/清幺九/清龙七对\n' +
   '· 另加：杠上花/杠上炮/抢杠胡/金钩钓/根/自摸；具体番值全部可配置\n' +
-  '· 默认流程：最后 4 张能胡必胡；过水同张或加番可胡；换三张开启；直杠仅点杠者付';
+  '· 默认流程：最后 4 张能胡必胡；过水同张或加番可胡；换三张开启；直杠仅点杠者付 2×底；补杠其余未胡每家 1×底；暗杠其余未胡每家 2×底';
 
 export const MAHJONG_TIMEOUT_SECTION =
   '【超时与托管】\n' +
-  '· 换三张/定缺超时自动选；响应窗口超时=过（强胡时=胡）\n' +
+  '· 换三张/定缺超时自动选；响应窗口超时=过；最后 4 张的处理按房间设置\n' +
   '· 超时、托管、机器人共用同一套自动决策';
 
 export const MAHJONG_RULE_SUMMARY = [
@@ -839,6 +844,35 @@ describe('buildMahjongRuleSummary', () => {
     const text = buildMahjongRuleSummary(view);
     expect(text).toContain('预留未启用：天胡、地胡');
     expect(text).not.toMatch(/· 天胡 \d+ 番/);
+  });
+
+  it('pingHu=0 ⇒ 明示引擎兜底 1 番', () => {
+    const view = { ...chengdu, fanTable: { ...chengdu.fanTable, pingHu: 0 } };
+    expect(buildMahjongRuleSummary(view)).toContain('平胡：表值为 0，但引擎仍按兜底 1 番处理');
+  });
+
+  it('起胡番 > 封顶 ⇒ 明示当前配置无法胡牌', () => {
+    const view = { ...chengdu, minFanToHu: 6, fanCap: 5 };
+    expect(buildMahjongRuleSummary(view)).toContain('当前配置无法胡牌');
+  });
+
+  it('主番表值 > 封顶 ⇒ 显示表值与封顶后倍率', () => {
+    const view = {
+      ...chengdu,
+      fanCap: 5,
+      fanTable: { ...chengdu.fanTable, qingYiSe: 8 },
+    };
+    expect(buildMahjongRuleSummary(view)).toContain('清一色 表值 8 番 / 封顶后 ×16');
+  });
+
+  it('自摸口径：addFan 读 ziMo；addBase 每家多付', () => {
+    const addFan = {
+      ...chengdu,
+      selfDrawMode: 'addFan' as const,
+      fanTable: { ...chengdu.fanTable, ziMo: 2 },
+    };
+    expect(buildMahjongRuleSummary(addFan)).toContain('自摸：番 +2');
+    expect(buildMahjongRuleSummary(chengdu)).toContain('自摸：每家多付 1×底');
   });
 });
 ```
@@ -1090,7 +1124,7 @@ it('game.mahjong.rules 合法 ⇒ 下发客户端白名单视图', async () => {
   } finally {
     await probe.close();
   }
-});
+}, 20000);
 
 it('rules 缺失/null/{}/坏值 ⇒ 不下发 mahjongRules（不 500）', async () => {
   for (const value of [undefined, null, {}, { nope: 1 }, { fanCap: 99 }]) {
@@ -1105,7 +1139,7 @@ it('rules 缺失/null/{}/坏值 ⇒ 不下发 mahjongRules（不 500）', async 
       await probe.close();
     }
   }
-});
+}, 20000);
 ```
 
 并在文件顶部 import：
@@ -1151,8 +1185,9 @@ import {
 
   private readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefined {
     const raw = byKey.get('game.mahjong.rules');
-    if (raw === undefined || raw === null) return undefined;
-    if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0) {
+    if (raw === undefined) return undefined; // 旧服务端/缺行：正常，不告警
+    if (raw === null || (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0)) {
+      this.logger.warn('game.mahjong.rules missing/empty; client intro falls back to static');
       return undefined;
     }
     try {
@@ -1179,8 +1214,11 @@ import {
     const mahjongRulesView = this.readMahjongRules(byKey);
 ```
 
-- [ ] **Step 4: 跑绿**
+- [ ] **Step 4: 构建 protocol 后跑绿**
 
+先构建，否则 config-service 解析到旧 dist：
+
+Run: `pnpm -C packages/protocol build`
 Run: `pnpm -C packages/config-service exec vitest run test/client-config.test.ts`
 Expected: PASS。
 Run: `pnpm -C packages/config-service lint`
@@ -1217,7 +1255,12 @@ import type {
 import { DEFAULT_CHENGDU_RULES, DEFAULT_SBR_RULES } from './rules';
 import { EMPTY_HU_CONTEXT, type HuContext } from './features';
 import { scoreBestHand } from './scoring';
-import { MAHJONG_FAN_INFO } from '@fight-the-landlord/protocol';
+import {
+  MAHJONG_ADDITIVE_FAN_KEYS,
+  MAHJONG_FAN_INFO,
+  MAHJONG_NAMED_FAN_KEYS,
+  MAHJONG_OPTIONAL_FAN_KEYS,
+} from '@fight-the-landlord/protocol';
 import { huContext } from './claims';
 import type { MahjongSession } from './session';
 
@@ -1283,7 +1326,7 @@ const CASES: Case[] = [
   },
   {
     key: 'qingYaoJiu', lack: 2, expectedBase: 'qingYaoJiu',
-    hand: [...T(0, [1, 2, 3, 7, 8, 9, 1, 1, 1, 9, 9, 9, 1, 1])],
+    hand: [...T(0, [1, 2, 3, 1, 2, 3, 7, 8, 9, 7, 8, 9, 1, 1])],
   },
   {
     key: 'qingLongQiDui', lack: 2, expectedBase: 'qingLongQiDui',
@@ -1307,7 +1350,7 @@ const CASES: Case[] = [
     winning: t(1, 5),
   },
   {
-    key: 'gen', lack: 1, expectedItem: '根',
+    key: 'gen', lack: 2, expectedItem: '根',
     hand: [...T(0, [1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9]), t(1, 5), t(1, 5)],
   },
   {
@@ -1321,7 +1364,7 @@ const CASES: Case[] = [
   },
 
   // 加法口径
-  { key: 'root', hand: [...T(0, [1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9]), t(1, 5), t(1, 5)], lack: 1, rules: DEFAULT_SBR_RULES, expectedItem: '根（每组）' },
+  { key: 'root', hand: [...T(0, [1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9]), t(1, 5), t(1, 5)], lack: 2, rules: DEFAULT_SBR_RULES, expectedItem: '根（每组）' },
   { key: 'allPungs', hand: pungsHand, winning: t(0, 4), rules: DEFAULT_SBR_RULES, expectedItem: '碰碰胡' },
   { key: 'goldenWait', hand: pungsHand, winning: t(1, 5), rules: DEFAULT_SBR_RULES, expectedItem: '金钩钓' },
   { key: 'fullFlush', hand: flushHand, lack: 1, rules: DEFAULT_SBR_RULES, expectedItem: '清一色' },
@@ -1394,6 +1437,65 @@ describe('番型行为审计', () => {
       if (key === 'pingHu') continue;
       expect(r.items.join('|'), key).not.toContain(info.label);
     }
+  });
+
+  it('CASES 覆盖全部番键', () => {
+    const covered = new Set(CASES.map((c) => c.key));
+    for (const key of [
+      ...MAHJONG_NAMED_FAN_KEYS,
+      ...MAHJONG_ADDITIVE_FAN_KEYS,
+      ...MAHJONG_OPTIONAL_FAN_KEYS,
+    ]) {
+      expect(covered.has(key), key).toBe(true);
+    }
+  });
+
+  const negativeScore = (hand: Tile[], rules: MahjongRulesConfig) =>
+    scoreBestHand({
+      hand, melds: [], lackSuit: 2,
+      winningTile: hand[hand.length - 1]!,
+      context: EMPTY_HU_CONTEXT, rules,
+    });
+
+  it('duanYaoJiu 反例：有幺九不成立', () => {
+    const r = negativeScore(plainHand, withOptional(DEFAULT_CHENGDU_RULES, { duanYaoJiu: 1 }));
+    expect(r.items.join('|')).not.toContain('断幺九');
+  });
+
+  it('haiDi 反例：非海底不成立', () => {
+    const r = negativeScore(plainHand, withOptional(DEFAULT_CHENGDU_RULES, { haiDi: 1 }));
+    expect(r.items.join('|')).not.toContain('海底');
+  });
+
+  it('perGang 反例：无杠不成立', () => {
+    const r = negativeScore(plainHand, withOptional(DEFAULT_CHENGDU_RULES, { perGang: 1 }));
+    expect(r.items.join('|')).not.toContain('每杠');
+  });
+
+  it('shuangLong 反例：只有 1 组四张不成立', () => {
+    const r = negativeScore(
+      dragonPairsHand,
+      withOptional(DEFAULT_CHENGDU_RULES, { shuangLong: 8 }, 8),
+    );
+    expect(r.baseName).not.toBe('shuangLong');
+  });
+
+  it('sanLong 反例：只有 2 组四张不成立', () => {
+    const twoQuads = [...T(0, [1, 1, 1, 1, 2, 2, 2, 2]), ...T(1, [3, 3, 4, 4, 5, 5])];
+    const r = negativeScore(twoQuads, withOptional(DEFAULT_CHENGDU_RULES, { sanLong: 8 }, 8));
+    expect(r.baseName).not.toBe('sanLong');
+  });
+
+  it('shiBaLuoHan 反例：只有 3 个杠不成立', () => {
+    const r = scoreBestHand({
+      hand: [...T(0, [2, 3, 4]), t(1, 5), t(1, 5)],
+      melds: [gang(0, 1), gang(0, 2), gang(0, 3)],
+      lackSuit: 2,
+      winningTile: t(1, 5),
+      context: EMPTY_HU_CONTEXT,
+      rules: withOptional(DEFAULT_CHENGDU_RULES, { shiBaLuoHan: 8 }, 8),
+    });
+    expect(r.baseName).not.toBe('shiBaLuoHan');
   });
 
   it('huContext 不置位天胡/地胡（接线守卫）', () => {
@@ -1501,13 +1603,16 @@ Expected: FAIL（`mahjongRules` 不存在）。
 
 `stores/game.ts`：
 - import `type MahjongRulesClientView`。
-- `ClientConfigState` 接口增加：
+- `ClientConfigState` 接口增加**可选**字段（可选是为了不破坏既有 7 个测试里构造的完整字面量；`apps/client/tsconfig.json` 的 include 含 `test/**/*.ts`）：
   ```ts
-  /** 麻将规则客户端视图；null = 未取到/旧服务端 ⇒ 静态介绍。 */
-  mahjongRules: MahjongRulesClientView | null;
+  /** 麻将规则客户端视图；null/缺省 = 未取到/旧服务端 ⇒ 静态介绍。 */
+  mahjongRules?: MahjongRulesClientView | null;
   ```
-- state 初值增加 `mahjongRules: null`。
-- `setClientConfig` 内增加（**null 不清空**）：
+- state 初值增加（照 `reliefThresholdCoins` 先例断言）：
+  ```ts
+  mahjongRules: null as MahjongRulesClientView | null,
+  ```
+- `setClientConfig` 内增加（**null/缺省不清空**）：
   ```ts
   if (cfg.mahjongRules) this.mahjongRules = cfg.mahjongRules;
   ```
@@ -1522,6 +1627,8 @@ Expected: FAIL（`mahjongRules` 不存在）。
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-rules-store.test.ts`
 Expected: PASS。
+Run: `pnpm -C packages/protocol build`
+Expected: exit 0。
 Run: `pnpm -C apps/client run lint`
 Expected: exit 0。
 
@@ -1585,16 +1692,19 @@ describe('refreshMahjongRules', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('成功 ⇒ 只更新 mahjongRules，不改 activeMode/roomMode', async () => {
+  it('成功 ⇒ 只更新 mahjongRules，不改 activeMode/roomMode/底分', async () => {
     const store = useGameStore();
     store.setActiveMode('doudizhu');
+    store.setSelectedBaseScore(15);
     const beforeMode = store.activeMode;
     const beforeRoom = store.roomMode;
+    const beforeScore = store.selectedBaseScore;
     stubConfig(okBody(sbr));
     expect(await refreshMahjongRules()).toBe(true);
     expect(store.mahjongRules).toEqual(sbr);
     expect(store.activeMode).toBe(beforeMode);
     expect(store.roomMode).toBe(beforeRoom);
+    expect(store.selectedBaseScore).toBe(beforeScore);
   });
 
   it('并发调用单飞：只发一次请求', async () => {
@@ -1608,6 +1718,14 @@ describe('refreshMahjongRules', () => {
     const store = useGameStore();
     store.setMahjongRules(chengdu);
     stubConfig({ code: 0, data: { version: 8, games: { mahjong: {} } } });
+    expect(await refreshMahjongRules()).toBe(false);
+    expect(store.mahjongRules).toEqual(chengdu);
+  });
+
+  it('坏值 ⇒ 保留旧值', async () => {
+    const store = useGameStore();
+    store.setMahjongRules(chengdu);
+    stubConfig(okBody({ scoringPolicy: 'named' }));
     expect(await refreshMahjongRules()).toBe(false);
     expect(store.mahjongRules).toEqual(chengdu);
   });
@@ -1626,9 +1744,20 @@ Expected: FAIL（未导出）。
 ```ts
 let mahjongRulesInFlight: Promise<boolean> | null = null;
 
+function isMahjongRulesView(value: unknown): value is MahjongRulesClientView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.scoringPolicy === 'string'
+    && (v.fanBase === 0 || v.fanBase === 1)
+    && typeof v.fanCap === 'number'
+    && typeof v.fanTable === 'object' && v.fanTable !== null
+    && typeof v.additiveFanTable === 'object' && v.additiveFanTable !== null
+    && typeof v.optionalFans === 'object' && v.optionalFans !== null;
+}
+
 /**
  * 打开麻将规则介绍时的轻量刷新：
- * 只更新 store.mahjongRules；不修复玩法/场次选择；单飞；缺字段保留旧值。
+ * 只更新 store.mahjongRules；不修复玩法/场次选择；单飞；缺字段/坏值保留旧值。
  */
 export function refreshMahjongRules(): Promise<boolean> {
   if (mahjongRulesInFlight) return mahjongRulesInFlight;
@@ -1637,7 +1766,7 @@ export function refreshMahjongRules(): Promise<boolean> {
       const res = await fetchClientConfig();
       if (res.code !== 0 || res.data === null || res.data === undefined) return false;
       const rules = res.data.games?.mahjong?.mahjongRules;
-      if (!rules) return false;
+      if (!isMahjongRulesView(rules)) return false;
       useGameStore().setMahjongRules(rules);
       return true;
     } catch {
@@ -1654,6 +1783,8 @@ export function refreshMahjongRules(): Promise<boolean> {
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-rules-refresh.test.ts`
 Expected: PASS。
+Run: `pnpm -C packages/protocol build`
+Expected: exit 0。
 Run: `pnpm -C apps/client run lint`
 Expected: exit 0。
 
@@ -1797,6 +1928,34 @@ describe('麻将规则介绍动态文案', () => {
     expect(calls.filter((u) => u.includes('/config')).length, '点开触发一次配置刷新')
       .toBe(beforeCalls + 1);
   });
+
+  it('无 mahjongRules ⇒ 回退静态默认文案', async () => {
+    const noRules = JSON.parse(JSON.stringify(CONFIG));
+    delete noRules.data.games.mahjong.mahjongRules;
+    const sockets: FakeSocket[] = [];
+    startGameSession(() => {
+      const s = new FakeSocket();
+      sockets.push(s);
+      return s;
+    });
+    stubFetch(noRules);
+    useAuthStore().navigate('lobby');
+    const wrapper = mount(LobbyPage, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    const cards = wrapper.findAll('.lobby__mode');
+    const mahjongCard = cards.find((c) => flat(c.text()).includes('四川麻将'))!;
+    const info = mahjongCard.element.parentElement!.querySelector(
+      '.lobby__mode-info',
+    ) as HTMLElement;
+    info.click();
+    await flushPromises();
+
+    const body = flat(wrapper.find('.lobby__rule-body').text());
+    expect(body).toContain('默认封顶 6 番');
+    expect(body).toContain('默认口径');
+    expect(body).not.toContain('番型与倍率');
+  });
 });
 ```
 
@@ -1850,6 +2009,8 @@ function openRule(modeId: string) {
 
 Run: `pnpm -C apps/client exec vitest run test/mahjong-rules-intro.test.ts test/lobby-modes.test.ts`
 Expected: PASS（含既有「点 info 不得切换玩法」）。
+Run: `pnpm -C packages/protocol build`
+Expected: exit 0。
 Run: `pnpm -C apps/client run lint`
 Expected: exit 0。
 
@@ -1903,7 +2064,7 @@ it('fanNotes 键集 = 三张番表并集，且与 protocol 元数据投影逐字
       ...(info.adminOnly ? { adminOnly: info.adminOnly } : {}),
       wired: info.wired,
     };
-    expect(FORM.fanNotes[key], key).toEqual(expected);
+    expect(FORM.fanNotes[key], key).toStrictEqual(expected);
   }
 });
 
@@ -1972,7 +2133,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ```js
 const fanRows = qa(w, '#settings-rows .mj-fan-row');
-ok(fanRows.length > 0, `番表输入存在（实测 ${fanRows.length}）`);
+const formTables = w.eval('MAHJONG_RULES_FORM.tables');
+const expectedFanRows = Object.values(formTables).reduce((n, t) => n + t.keys.length, 0);
+ok(fanRows.length === expectedFanRows, `番表行数 = 三表键数（实测 ${fanRows.length}/${expectedFanRows}）`);
 const noteRows = fanRows.filter((row) => row.querySelector('.mj-fan-note'));
 ok(noteRows.length === fanRows.length, `每个番行都有说明（实测 ${noteRows.length}/${fanRows.length}）`);
 const descOf = (p) => fieldOf(w, p)?.querySelector('.mj-fan-desc')?.textContent ?? '';
@@ -1985,8 +2148,9 @@ ok(descOf('optionalFans.perGang').includes('每个副露杠'), '每杠说明渲�
 ok(adminOf('optionalFans.tianHu').includes('从未置位'), '天胡内部说明渲染');
 ok(fieldOf(w, 'optionalFans.tianHu')?.querySelector('.mj-fan-wired')?.textContent.includes('未接入'),
   '天胡 wired 徽标');
-const uniqueDesc = new Set(fanRows.map((row) => row.querySelector('.mj-fan-desc')?.textContent));
-ok(uniqueDesc.size >= 30, `说明不是同一段复制（实测 ${uniqueDesc.size} 种）`);
+const descRows = fanRows.filter((row) => row.querySelector('.mj-fan-desc'));
+const uniqueDesc = new Set(descRows.map((row) => row.querySelector('.mj-fan-desc')?.textContent));
+ok(uniqueDesc.size === descRows.length, `说明不是同一段复制（实测 ${uniqueDesc.size}/${descRows.length}）`);
 ```
 
 删除原有的硬编码 `34` 断言那一行。
@@ -2152,6 +2316,7 @@ Expected: PASS。
 Run each; all must pass:
 
 ```bash
+pnpm -C packages/protocol build
 pnpm -C packages/protocol test
 pnpm -C packages/protocol lint
 pnpm -C packages/shared test
@@ -2163,6 +2328,8 @@ pnpm verify:admin
 pnpm verify:admin-mahjong-rules
 ```
 
+发布口径：admin 静态面走 `bash scripts/deploy/preview.sh`；客户端改动需 H5 部署 + 新 APK；旧 APK/旧服务端回退静态玩法介绍，验收时分端记录。
+
 - [ ] **Step 6: 提交**
 
 ```bash
@@ -2173,6 +2340,39 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
+
+## 计划审查记录（2026-11-24 独立对抗审查）
+
+审查者：独立子代理（sonnet），只读核对计划与真实代码。结论：需修订；B1–B6 必须修，H1–H6 必须补覆盖。以下为处置：
+
+| 编号 | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| B1 | 阻断 | `gen`/`root` 用例 `lack:1` 但手牌含筒，`scoreBestHand` 必抛错 | 两处改 `lack:2`（缺条），手牌不变 |
+| B2 | 阻断 | `ClientConfigState` 加必填 `mahjongRules` 会打破 7 个既有测试字面量 | 字段改可选 `mahjongRules?: MahjongRulesClientView | null`；初值 `null as …` |
+| B3 | 阻断 | Pinia 初值 `null` 推断为 null 字面量，`setMahjongRules` 赋值 TS2322 | 初值显式断言 |
+| B4 | 阻断 | config-service/client lint 走 protocol dist；计划未先 build | Global Constraints + Task 6/8/9/10/13 显式 `pnpm -C packages/protocol build` |
+| B5 | 阻断 | 探针断言 `gen` caveat 含“不计”，元数据写“不算根” | 元数据统一为“不计根” |
+| B6 | 阻断 | 静态 base 仍断言“直杠：点杠者付”，与 `directGangMode` 冲突；时间文案含“强胡时=胡” | base 改为“按房间设置结算”；默认流程事实移入默认计分段；超时段去掉强胡断言；补 not.toContain 测试 |
+| H1 | 高 | 清幺九牌例 1 万 6 张，物理非法 | 改为 `1-2-3万 1-2-3万 7-8-9万 7-8-9万 1-1万`（各 4 张内） |
+| H2 | 高 | 缺每番反例与 CASES 覆盖门禁 | 加 CASES 全键覆盖断言 + 断幺九/海底/每杠/双龙/三龙/十八罗汉 六条反例 |
+| H3 | 高 | 缺 pingHu=0、minFanToHu>cap、表值>cap、addFan 自摸边界测试 | Task 5 追加四条断言 |
+| H4 | 高 | 刷新未校验形状，坏值会崩规则弹层 | 加 `isMahjongRulesView` 守卫 + 坏值保留旧值测试 |
+| H5 | 高 | 缺 lobby 无 rules 回退静态的集成测试 | Task 10 追加无 mahjongRules 用例 |
+| H6 | 高 | 探针删掉 34 计数后只断言 >0，回归面缩水 | 从 `MAHJONG_RULES_FORM.tables` 派生期望行数；说明去重数等于有 desc 的行数 |
+| H7 | 高 | 缺失/null/{}/坏值 WARN 语义与 spec 偏差 | null/{} 加 WARN；缺行（旧服务端）静默 |
+| L1 | 低 | spec 写从 `cfg.games` 读，计划改为顶层 `cfg.mahjongRules` | 以计划为准，spec §5.1 同步改为 normalize 提升到顶层 |
+| L2 | 低 | Task 2 新门禁是派生后的重言式 | 保留用于“先红”；真正的漂移门禁以 Task 11 为准，不单独宣称 |
+| L3 | 低 | spec 与计划的 `+N 番/组`、`封顶后 ×M` 措辞微差 | spec §3.4 对齐计划的 `+N 番` / `（×M）` |
+| L4 | 低 | 刷新测试未断言底分不变 | 加 `setSelectedBaseScore(15)` 前后相等 |
+| L5 | 低 | 计划缺审查记录 | 本节 |
+| L6 | 低 | 发布/回退面未登记 | Task 13 发布口径 |
+| L7 | 低 | config-service 新用例无 timeout | 两处补 `20000` |
+| L8 | 低 | 动态文本断言不证明“刷新后更新” | 保留调用计数判别；后续可加两段式响应测试 |
+| L9 | 低 | admin 深比较用 `toEqual` | 改 `toStrictEqual` |
+| L10 | 低 | stubFetch 未按路由分派 | 本用例不受影响，登记 |
+| L11 | 低 | `mahjongRules` 与牌桌快照同名不同义 | 实现注释点明“客户端视图 vs 牌桌规则快照” |
+
+修订后按流程做一次聚焦复审（只核对上述阻断/高危项），通过后进入实现。
 
 ## Self-Review Checklist（写完计划后由执行者复核）
 

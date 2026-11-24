@@ -181,14 +181,14 @@ export function buildMahjongRuleSummary(rules?: MahjongRulesClientView): string;
 动态段内容规则：
 1. 首行：`计分方式：命名番表 / 加法番表；底番 B；封顶 F 番（×M）；自摸：…`。
 2. 命名口径：
-   - 主番候选（`namedMain`，且值 > 0、wired）：`· 名称 N 番（封顶后 ×M）：desc。例：example。⚠ playerCaveat`；
+   - 主番候选（`namedMain`，且值 > 0、wired）：`· 名称 N 番（×M）：desc。例：example。⚠ playerCaveat`；
    - 另加番（`namedAddon`，`ziMo` 单独在自摸行说明）：`· 名称 +N 番：desc…`，不显示独立倍率；
    - 可选主番（`optionalMain`，值 > 0）：同主番候选；
    - 可选另加番（`optionalAddon`，值 > 0）：同另加番；
    - 值为 0：不列出；末尾一行 `· 未启用：…`；
    - 全部为 0：输出“当前未配置任何番型，只按底分结算”。
 3. 加法口径：
-   - 逐项列出 `additive` 值 > 0 的键：`· 名称 +N 番/组：desc…`；
+   - 逐项列出 `additive` 值 > 0 的键：`· 名称 +N 番：desc…`（“按组/按杠”在 desc 中说明）；
    - 说明“各项相加后按封顶 F 番（×M）结算”；
    - `optionalFans` 整表不展示，并注明“加法口径不使用可选番”。
 4. 数值口径：
@@ -238,10 +238,11 @@ function readMahjongRules(byKey: ConfigByKey): MahjongRulesClientView | undefine
 
 ### 5.1 store
 
-- `ClientConfigState` 增加 `mahjongRules: MahjongRulesClientView | null`，初值 `null`。
+- `ClientConfigState` 增加**可选** `mahjongRules?: MahjongRulesClientView | null`（可选：既有 7 个测试用完整字面量构造该类型）；state 初值 `null as MahjongRulesClientView | null`。
+- `normalizeClientConfig` 把 `games.mahjong.mahjongRules` 提升到顶层 `mahjongRules`。
 - `setClientConfig(cfg)`：
-  - `this.mahjongRules = cfg.games?.mahjong?.mahjongRules ?? this.mahjongRules;`
-  - **响应缺 `mahjongRules` 时保留旧值**，不得清空。
+  - `if (cfg.mahjongRules) this.mahjongRules = cfg.mahjongRules;`
+  - **响应缺字段/为 null 时保留旧值**，不得清空。
 - 新增 `setMahjongRules(rules: MahjongRulesClientView | null)`，仅改这一个字段。
 
 ### 5.2 轻量刷新
