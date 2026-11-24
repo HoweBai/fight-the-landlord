@@ -44,7 +44,12 @@
  * （挂在 `LandscapeStage` 的 `overlay` 槽）——两页都要显示的东西**不写两遍**。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { entryFeeOfLevel as feeOfLevel, type BaseScoreLevel } from "@fight-the-landlord/protocol";
+import {
+  entryFeeOfLevel as feeOfLevel,
+  buildMahjongRuleSummary,
+  GAME_META,
+  type BaseScoreLevel,
+} from "@fight-the-landlord/protocol";
 import { useAuthStore } from "../../stores/auth";
 import {
   useGameStore,
@@ -53,6 +58,7 @@ import {
 import {
   FAILSAFE_CLIENT_CONFIG,
   normalizeClientConfig,
+  refreshMahjongRules,
   repairActiveMode,
   repairRoomMode,
 } from "../../composables/useClientConfig";
@@ -767,7 +773,13 @@ interface RuleSection {
   readonly lines: RuleLine[];
 }
 const ruleSections = computed<readonly RuleSection[]>(() => {
-  const desc = currentRuleMode.value?.description;
+  const mode = currentRuleMode.value;
+  // 麻将：按后台配置动态生成介绍（Task 10）。无 `mahjongRules` 时
+  // `buildMahjongRuleSummary(undefined)` 回退静态 `MAHJONG_RULE_SUMMARY`。
+  const desc =
+    mode?.id === GAME_META.mahjong.id
+      ? buildMahjongRuleSummary(store.mahjongRules ?? undefined)
+      : mode?.description;
   if (!desc) return [];
 
   const sections: RuleSection[] = [];
@@ -804,6 +816,8 @@ const ruleSections = computed<readonly RuleSection[]>(() => {
 function openRule(modeId: string) {
   ruleModeId.value = modeId;
   ruleOpen.value = true;
+  // 麻将规则介绍：轻量刷新一次配置（只更新 mahjongRules，不改玩法/场次/底分）。
+  if (modeId === GAME_META.mahjong.id) void refreshMahjongRules();
 }
 
 function closeRule() {
