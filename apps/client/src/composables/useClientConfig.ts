@@ -197,3 +197,28 @@ export async function refreshClientConfig(): Promise<boolean> {
     return false;
   }
 }
+
+let mahjongRulesInFlight: Promise<boolean> | null = null;
+
+/**
+ * 打开麻将规则介绍时的轻量刷新：
+ * 只更新 store.mahjongRules；不修复玩法/场次选择；单飞；缺字段/坏值保留旧值。
+ */
+export function refreshMahjongRules(): Promise<boolean> {
+  if (mahjongRulesInFlight) return mahjongRulesInFlight;
+  mahjongRulesInFlight = (async () => {
+    try {
+      const res = await fetchClientConfig();
+      if (res.code !== 0 || res.data === null || res.data === undefined) return false;
+      const rules = res.data.games?.mahjong?.mahjongRules;
+      if (!isMahjongRulesView(rules)) return false;
+      useGameStore().setMahjongRules(rules);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      mahjongRulesInFlight = null;
+    }
+  })();
+  return mahjongRulesInFlight;
+}
