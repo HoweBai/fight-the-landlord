@@ -201,13 +201,13 @@ const FAN_INFO: Record<string, MahjongFanInfo> = {
     label: '双龙七对', kind: 'optionalMain', wired: true,
     desc: '主番候选：七对且含至少 2 组未杠四张。',
     example: '1-1万 2-2万 3-3-3-3筒 5-5-5-5条 7-7万',
-    playerCaveat: '与其他主番取最高，不是另加番；定义四张不计根。',
+    playerCaveat: '与其他主番取最高，不是另加番；这些四张仍计入根。',
   },
   sanLong: {
     label: '三龙七对', kind: 'optionalMain', wired: true,
     desc: '主番候选：七对且含至少 3 组未杠四张。',
     example: '1-1万 2-2-2-2万 3-3-3-3筒 5-5-5-5条',
-    playerCaveat: '与其他主番取最高，不是另加番；定义四张不计根。',
+    playerCaveat: '与其他主番取最高，不是另加番；这些四张仍计入根。',
   },
   shiBaLuoHan: {
     label: '十八罗汉', kind: 'optionalMain', wired: true,

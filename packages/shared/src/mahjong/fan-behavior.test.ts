@@ -134,12 +134,12 @@ const CASES: Case[] = [
     expectedItem: '每杠',
   },
   {
-    key: 'shuangLong', lack: 2, expectedBase: 'shuangLong',
+    key: 'shuangLong', lack: 2, expectedBase: 'shuangLong', expectedItem: '根',
     hand: [...T(0, [1, 1, 1, 1, 2, 2, 2, 2]), ...T(1, [3, 3, 4, 4, 5, 5])],
     rules: withOptional(DEFAULT_CHENGDU_RULES, { shuangLong: 8 }, 8),
   },
   {
-    key: 'sanLong', lack: 2, expectedBase: 'sanLong',
+    key: 'sanLong', lack: 2, expectedBase: 'sanLong', expectedItem: '根',
     hand: [...T(0, [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3]), t(1, 4), t(1, 4)],
     rules: withOptional(DEFAULT_CHENGDU_RULES, { sanLong: 8 }, 8),
   },
