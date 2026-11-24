@@ -649,6 +649,8 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     tokenB = await agentReady(agentB, 'agent-pass-2');
 
     // 冻结仍可登录 + 只读（spec D10）；冻结代理生成码 ⇒ 11007
+    // 管理写桶 = 30 次/5min（token 指纹）：冻结块前旧桶已接近上限 ⇒ 换新令牌继续。
+    admin = await adminLogin();
     const frozenCode = await mintCodeViaRotate(admin, agentA.account.id);
     const freeze = await postJson(
       `/api/admin/agents/${agentA.account.id}/status`,
@@ -668,7 +670,7 @@ export async function runSlice32(): Promise<{ passed: string[] }> {
     );
     const frozenCodeReg = await register({
       inviteCode: frozenCode,
-      nickname: `s30-frozen-code-${RUN_TAG}`,
+      nickname: `s30-frz-${RUN_TAG}`,
     });
     checks.that(
       frozenCodeReg.status === 400 && frozenCodeReg.body?.code === ErrCode.AGENT_INVITE_INVALID,
