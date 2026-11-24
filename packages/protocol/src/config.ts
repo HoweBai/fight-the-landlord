@@ -8,6 +8,7 @@
 import { ProtocolError } from './validate'; // 真实位置 `validate.ts:24-29`（errors.ts 无此导出——r1 计划审查订正）
 import type { GameType } from './game';
 import { parseMahjongRules } from './mahjong/rules';
+import type { MahjongRulesClientView } from './mahjong/client-view';
 
 export const CONFIG_KEYS = [
   'robot.skillDistribution',
@@ -299,6 +300,8 @@ export interface ClientGameConfig {
   goldRoomEnabled?: boolean;
   friendRoomEnabled?: boolean;
   entryMultiplier?: number;
+  /** 麻将规则客户端视图；旧服务端/坏值 ⇒ 缺省，客户端回退静态介绍。 */
+  mahjongRules?: MahjongRulesClientView;
 }
 export interface ClientConfig {
   baseScoreLevels: BaseScoreLevel[];
