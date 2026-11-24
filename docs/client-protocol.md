@@ -49,7 +49,7 @@
 | 5 | `GET /api/rooms` | ✅ Bearer | — | `RoomInfo[]` |
 | 6 | `POST /api/rooms` | ✅ Bearer | `{ mode: 'random' \| 'practice', baseScore?: number }` | `RoomInfo` |
 | 7 | `POST /api/rooms/:code/join` | ✅ Bearer | `{}` | `RoomInfo` |
-| 8 | `GET /api/config` | ✅ Bearer | — | `{ baseScoreLevels: { name, baseScore, entryFeePercent?: number }[]; friendRoomEnabled: boolean; freeRoomEnabled: boolean; goldRoomEnabled: boolean; reliefEnabled: boolean; entryMultiplier: number; rechargeEnabled: boolean; withdrawEnabled: boolean; coinPerYuan: number; rechargePackages: number[]; withdrawMinCoins: number; withdrawMaxCoinsPerOrder: number; withdrawDailyMaxCoins: number; withdrawReAuthEnabled: boolean; reliefAdpid: string; cardCounterEnabled: boolean; cardCounterPricePerGameCoins: number; cardCounterPricePerHourCoins: number; games?: Partial<Record<'doudizhu' | 'paodekuai', { enabled: boolean; supportedPlayerCounts: number[]; defaultPlayerCount: number; baseScoreLevels: { name: string; baseScore: number }[]; freeRoomEnabled?: boolean; goldRoomEnabled?: boolean; friendRoomEnabled?: boolean; entryMultiplier?: number }>>; reliefThresholdCoins?: number | null; agentInviteEnabled: boolean; agentInviteRequired: boolean; version: number }`（`entryFeePercent` 是档位项的可选台费；**阶段 2 起不再下发派生字段 `entryFeePercents`**，客户端用 `entryFeeOfLevel(level)` 算入场费） |
+| 8 | `GET /api/config` | ✅ Bearer | — | `{ baseScoreLevels: { name, baseScore, entryFeePercent?: number }[]; friendRoomEnabled: boolean; freeRoomEnabled: boolean; goldRoomEnabled: boolean; reliefEnabled: boolean; entryMultiplier: number; rechargeEnabled: boolean; withdrawEnabled: boolean; coinPerYuan: number; rechargePackages: number[]; withdrawMinCoins: number; withdrawMaxCoinsPerOrder: number; withdrawDailyMaxCoins: number; withdrawReAuthEnabled: boolean; reliefAdpid: string; cardCounterEnabled: boolean; cardCounterPricePerGameCoins: number; cardCounterPricePerHourCoins: number; games?: Partial<Record<'doudizhu' | 'paodekuai' | 'mahjong', { enabled: boolean; supportedPlayerCounts: number[]; defaultPlayerCount: number; baseScoreLevels: { name: string; baseScore: number }[]; freeRoomEnabled?: boolean; goldRoomEnabled?: boolean; friendRoomEnabled?: boolean; entryMultiplier?: number; mahjongRules?: MahjongRulesClientView }>>; reliefThresholdCoins?: number | null; agentInviteEnabled: boolean; agentInviteRequired: boolean; version: number }`（`entryFeePercent` 是档位项的可选台费；**阶段 2 起不再下发派生字段 `entryFeePercents`**，客户端用 `entryFeeOfLevel(level)` 算入场费） |
 
 ⚠️ `nickname` **必填**（trim 后 1–20 字符，**不唯一**）；存量用户可能没有昵称（`user.nickname = null`），
 牌桌展示回落「玩家N」。`room.join` ack / `room.state_update` 的 `RoomPlayer` 可带可选 `nickname`；
@@ -69,7 +69,7 @@
 ⚠️ **第 6 条的 `baseScore` 可选**：不传 ⇒ 服务端用缺省档；传了则**必须**是第 8 条
 `GET /api/config` 的 `baseScoreLevels` 里的一档，否则 `10001`。
 
-⚠️ `games.mahjong.mahjongRules?`：麻将规则客户端白名单（配分方式/番表/可选番/自摸/换三张/最后4张/过水/直杠/杠分转移/花猪/查叫）。不含计时窗口、`preset`、`rulesVersion`。缺失 ⇒ 客户端回退静态玩法介绍。
+⚠️ `games.mahjong.mahjongRules?`：麻将规则客户端白名单（配分方式/番表/可选番/自摸/换三张/最后4张/过水/直杠/杠分转移/花猪/查叫）。不含计时窗口、`preset`、`rulesVersion`。从未取到 / 坏值 / 旧服务端 ⇒ 回退静态文案；已取到后字段消失 ⇒ 保留上次视图（store preserve semantics）。
 
 **鉴权**：`Authorization: Bearer <accessToken>`。公开路径**恰好五条**（上表 1–3 + `/api/health` + `/api/health/live`），
 其余一律要令牌。
