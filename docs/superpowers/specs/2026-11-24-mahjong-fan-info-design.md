@@ -105,7 +105,7 @@ export interface MahjongFanInfo {
   - `additive`：`root, allPungs, goldenWait, fullFlush, sevenPairs, winAfterKong, shootAfterKong, robbingKong, underTheSea`
   - `optionalAddon`：`duanYaoJiu, haiDi, perGang`
   - `optionalMain`：`shuangLong, sanLong, shiBaLuoHan, tianHu, diHu`
-- `tianHu` / `diHu`：`wired=false`，`adminOnly` 写明“`HuContext` 未置位，当前版本不会触发”。
+- `tianHu` / `diHu`：`wired=false`，`adminOnly` 写明“计分侧已有分支（scoring.ts），但 `huContext()` 从未置位；当前版本不会触发”。
 - `ziMo`：`playerCaveat` 写明“仅自摸加成 = 番 +1 时生效；addBase/addPoint/none 下不读本值”。
 - `gen` / `root`：写明“龙七对/清龙七对的定义四张不算根；根包含杠开启时杠也计根（仅加法表 root）”。
 - `perGang`：写明“按副露杠数线性相加；杠分另算”。
@@ -378,7 +378,7 @@ fanNotes: {
 
 - `docs/games/mahjong.md`：
   - §4.1/§4.2 明确“展示文案来自 `MAHJONG_FAN_INFO`，语义以本文 + 引擎为准”；
-  - §9 修正天胡/地胡：当前实现未触发，配置开启也不会生效（预留）。
+  - §9 修正天胡/地胡：计分分支已有、触发检测未接线，配置开启也不会生效（预留）。
   - 新增“客户端玩法介绍”小节：`games.mahjong.mahjongRules` 来源、缺失 fallback、打开时刷新。
 - `docs/client-protocol.md`：补充 `ClientGameConfig.mahjongRules` 形状、缺失语义、不下发字段清单。
 - `docs/superpowers/specs/2026-10-29-mahjong-rules-form-design.md`：仅在文首加 supersede 指针（不重写历史 spec）。
