@@ -128,6 +128,13 @@ describe('sbr additive scoring', () => {
     expect(r.fan).toBe(0);
     expect(r.selfDrawBonusBase).toBe(1);
   });
+
+  it('加法口径结算 items 使用中文标签（不出现英文键）', () => {
+    const hand = [...tiles(0, [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]), t(1, 5), t(1, 5)];
+    const r = score(hand, 2, DEFAULT_SBR_RULES);
+    expect(r.items.join('|')).toContain('碰碰胡');
+    expect(r.items.join('|')).not.toMatch(/allPungs|fullFlush|sevenPairs|root/);
+  });
 });
 
 describe('ting', () => {

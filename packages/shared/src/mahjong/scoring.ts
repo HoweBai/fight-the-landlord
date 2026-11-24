@@ -6,6 +6,7 @@
  * 多分解取最终番最大者；并列用固定优先级，保证真人/机器人/回放同结果。
  */
 import {
+  MAHJONG_FAN_INFO,
   ProtocolError,
   type MahjongMeldView,
   type MahjongRulesConfig,
@@ -50,33 +51,12 @@ export const NAMED_PRIORITY = [
   'shiBaLuoHan',
 ] as const;
 
-export const NAMED_LABELS: Record<string, string> = {
-  pingHu: '平胡',
-  duiDuiHu: '对对胡',
-  qingYiSe: '清一色',
-  daiYaoJiu: '带幺九',
-  qiDui: '七对',
-  qingDui: '清对',
-  jiangDui: '将对',
-  longQiDui: '龙七对',
-  qingQiDui: '清七对',
-  qingYaoJiu: '清幺九',
-  qingLongQiDui: '清龙七对',
-  tianHu: '天胡',
-  diHu: '地胡',
-  shuangLong: '双龙七对',
-  sanLong: '三龙七对',
-  shiBaLuoHan: '十八罗汉',
-  gangShangHua: '杠上花',
-  gangShangPao: '杠上炮',
-  qiangGangHu: '抢杠胡',
-  jinGouDiao: '金钩钓',
-  gen: '根',
-  ziMo: '自摸',
-  duanYaoJiu: '断幺九',
-  haiDi: '海底',
-  perGang: '每杠',
-};
+/** 番键 → 中文名：单一真源为 protocol 的 MAHJONG_FAN_INFO。 */
+export const NAMED_LABELS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(MAHJONG_FAN_INFO).map(([key, info]) => [key, info.label]),
+  ),
+);
 
 function label(key: string): string {
   return NAMED_LABELS[key] ?? key;

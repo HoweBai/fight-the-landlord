@@ -8,6 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { extractJsLiteral } from '@fight-the-landlord/test-utils';
+import { MAHJONG_FAN_INFO } from '@fight-the-landlord/protocol';
 import { NAMED_LABELS } from '../src/mahjong/scoring';
 
 function findRepoRoot(): string {
@@ -40,6 +41,13 @@ describe('admin 番名 ⇄ 对局展示名', () => {
     expect(overlap.length).toBeGreaterThanOrEqual(25);
     for (const key of overlap) {
       expect(form.fanLabels[key], key).toBe(NAMED_LABELS[key]);
+    }
+  });
+
+  it('NAMED_LABELS 覆盖全部番键，且与 protocol label 逐字一致', () => {
+    expect(Object.keys(NAMED_LABELS).sort()).toEqual(Object.keys(MAHJONG_FAN_INFO).sort());
+    for (const [key, info] of Object.entries(MAHJONG_FAN_INFO)) {
+      expect(NAMED_LABELS[key], key).toBe(info.label);
     }
   });
 });
